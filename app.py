@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 import zipfile
+from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, send_file, abort
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
@@ -47,10 +48,16 @@ def tasks():
         if os.path.isdir(tdir):
             meta_path = os.path.join(tdir, "meta.json")
             name = tid
+            created = None
             if os.path.exists(meta_path):
                 with open(meta_path, "r", encoding="utf-8") as f:
-                    name = json.load(f).get("name", tid)
-            task_list.append({"id": tid, "name": name})
+                    meta = json.load(f)
+                    name = meta.get("name", tid)
+                    created = meta.get("created")
+            if not created:
+                created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
+            task_list.append({"id": tid, "name": name, "created": created})
+    task_list.sort(key=lambda x: x["created"], reverse=True)
     return render_template("tasks.html", tasks=task_list)
 
 
@@ -69,8 +76,17 @@ def create_task():
     with zipfile.ZipFile(zpath, "r") as zf:
         zf.extractall(files_dir)
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
-        json.dump({"name": task_name}, meta, ensure_ascii=False, indent=2)
+        json.dump({"name": task_name, "created": datetime.utcnow().strftime("%Y-%m-%d %H:%M")}, meta, ensure_ascii=False, indent=2)
     return redirect(url_for("task_detail", task_id=tid))
+
+
+@app.post("/tasks/<task_id>/delete")
+def delete_task(task_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    if os.path.isdir(tdir):
+        import shutil
+        shutil.rmtree(tdir)
+    return redirect(url_for("tasks"))
 
 
 @app.get("/tasks/<task_id>")
@@ -86,7 +102,6 @@ def task_detail(task_id):
             name = json.load(f).get("name", task_id)
     file_list = list_files(files_dir)
     return render_template("task_detail.html", task={"id": task_id, "name": name}, files=file_list)
-
 
 def gather_available_files(files_dir):
     mapping = {"docx": [], "pdf": [], "zip": []}
@@ -152,13 +167,9 @@ def run_flow(task_id):
         schema = SUPPORTED_STEPS.get(stype, {})
         params = {}
         for k in schema.get("inputs", []):
-            accept = schema["accepts"].get(k, "text")
             field = f"step_{sid}_{k}"
             val = request.form.get(field, "")
-            if accept.startswith("file") and val:
-                params[k] = os.path.join(files_dir, val)
-            else:
-                params[k] = val
+            params[k] = val
         workflow.append({"type": stype, "params": params})
     flow_dir = os.path.join(tdir, "flows")
     os.makedirs(flow_dir, exist_ok=True)
@@ -168,10 +179,24 @@ def run_flow(task_id):
         with open(os.path.join(flow_dir, f"{flow_name}.json"), "w", encoding="utf-8") as f:
             json.dump(workflow, f, ensure_ascii=False, indent=2)
         return redirect(url_for("flow_builder", task_id=task_id))
+
+    runtime_steps = []
+    for step in workflow:
+        stype = step["type"]
+        schema = SUPPORTED_STEPS.get(stype, {})
+        params = {}
+        for k, v in step["params"].items():
+            accept = schema.get("accepts", {}).get(k, "text")
+            if accept.startswith("file") and v:
+                params[k] = os.path.join(files_dir, v)
+            else:
+                params[k] = v
+        runtime_steps.append({"type": stype, "params": params})
+
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
-    run_workflow(workflow, workdir=job_dir)
+    run_workflow(runtime_steps, workdir=job_dir)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -183,7 +208,6 @@ def delete_flow(task_id, flow_name):
     if os.path.exists(path):
         os.remove(path)
     return redirect(url_for("flow_builder", task_id=task_id))
-
 
 @app.get("/tasks/<task_id>/flows/export/<flow_name>")
 def export_flow(task_id, flow_name):

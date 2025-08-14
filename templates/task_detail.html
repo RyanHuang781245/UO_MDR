@@ -1,14 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="h4">{{ task.name }}</h1>
+<h1 class="h4 mb-3">{{ task.name }}</h1>
 
 <h2 class="h6">檔案結構</h2>
-<pre class="bg-light p-2">{% for f in files %}{{ f }}
-{% endfor %}</pre>
+<ul class="list-group mb-3">
+{% for f in files %}
+  <li class="list-group-item">{{ f }}</li>
+{% endfor %}
+</ul>
 
-<div class="mt-3">
+<div class="d-flex gap-2">
   <a class="btn btn-primary" href="{{ url_for('flow_builder', task_id=task.id) }}">管理流程</a>
-  <a class="btn btn-link" href="{{ url_for('tasks') }}">返回</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('tasks') }}">回首頁</a>
 </div>
 {% endblock %}
 

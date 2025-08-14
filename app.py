@@ -103,7 +103,6 @@ def task_detail(task_id):
     file_list = list_files(files_dir)
     return render_template("task_detail.html", task={"id": task_id, "name": name}, files=file_list)
 
-
 def gather_available_files(files_dir):
     mapping = {"docx": [], "pdf": [], "zip": []}
     for rel in list_files(files_dir):
@@ -209,7 +208,6 @@ def delete_flow(task_id, flow_name):
     if os.path.exists(path):
         os.remove(path)
     return redirect(url_for("flow_builder", task_id=task_id))
-
 
 @app.get("/tasks/<task_id>/flows/export/<flow_name>")
 def export_flow(task_id, flow_name):

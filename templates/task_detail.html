@@ -2,12 +2,19 @@
 {% block content %}
 <h1 class="h4 mb-3">{{ task.name }}</h1>
 
-<h2 class="h6">檔案結構</h2>
-<ul class="list-group mb-3">
-{% for f in files %}
-  <li class="list-group-item">{{ f }}</li>
-{% endfor %}
+{% macro render_tree(node) %}
+<ul class="list-group ms-3 mb-0">
+  {% for fname in node.files %}
+    <li class="list-group-item">{{ fname }}</li>
+  {% endfor %}
+  {% for dname, dnode in node.dirs.items() %}
+    <li class="list-group-item"><strong>{{ dname }}</strong>{{ render_tree(dnode) }}</li>
+  {% endfor %}
 </ul>
+{% endmacro %}
+
+<h2 class="h6">檔案結構</h2>
+{{ render_tree(files_tree) }}
 
 <div class="d-flex gap-2">
   <a class="btn btn-primary" href="{{ url_for('flow_builder', task_id=task.id) }}">管理流程</a>

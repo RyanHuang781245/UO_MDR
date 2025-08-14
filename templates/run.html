@@ -5,6 +5,9 @@
 <div class="vstack gap-2">
   <a class="btn btn-primary" href="{{ docx_path }}">下載結果 DOCX</a>
   <a class="btn btn-outline-secondary" href="{{ log_path }}">下載流程 Log</a>
-  <a class="btn btn-link" href="{{ url_for('index') }}">返回首頁</a>
+  {% if back_link %}
+  <a class="btn btn-secondary" href="{{ back_link }}">返回流程</a>
+  {% endif %}
+  <a class="btn btn-link" href="{{ url_for('tasks') }}">回首頁</a>
 </div>
 {% endblock %}

@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">定義流程</h1>
+
+<form action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
+  <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
+  <div id="steps" class="vstack gap-3"></div>
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">流程名稱</label>
+      <input class="form-control" name="flow_name" value="{{ loaded_name or '' }}">
+    </div>
+  </div>
+
+  <div class="d-flex gap-2 mt-2">
+    <div class="dropdown">
+      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
+      <ul class="dropdown-menu">
+        {% for key, meta in steps.items() %}
+        <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}')">{{ meta.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    <button class="btn btn-success" type="submit" name="action" value="run">執行流程</button>
+    <button class="btn btn-secondary" type="submit" name="action" value="save">保存流程</button>
+  </div>
+</form>
+
+<div class="mt-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('tasks') }}">回首頁</a>
+</div>
+
+<hr>
+<h2 class="h5 mt-4">已保存的流程</h2>
+<ul>
+  {% for f in flows %}
+  <li>{{ f.name }}
+    <a href="{{ url_for('flow_builder', task_id=task.id, flow=f.name) }}">編輯</a>
+    <form action="{{ url_for('delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" style="display:inline">
+      <button class="btn btn-link p-0" type="submit">刪除</button>
+    </form>
+    <a href="{{ url_for('export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a>
+  </li>
+  {% else %}
+  <li>尚無流程</li>
+  {% endfor %}
+</ul>
+
+<form action="{{ url_for('import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="mt-3">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-6">
+      <label class="form-label">匯入流程 JSON</label>
+      <input class="form-control" type="file" name="flow_file" required>
+    </div>
+    <div class="col-md-3">
+      <button class="btn btn-outline-primary" type="submit">匯入</button>
+    </div>
+  </div>
+</form>
+
+<script>
+const SUPPORTED_STEPS = {{ steps|tojson }};
+const AVAILABLE_FILES = {{ files|tojson }};
+const PRESET_FLOW = {{ preset|tojson }};
+function genId(){ return (Date.now().toString(36) + Math.random().toString(36).slice(2,7)); }
+function updateOrder(){
+  const ids = Array.from(document.querySelectorAll("#steps .card")).map(el => el.dataset.sid);
+  document.getElementById("ordered_ids").value = ids.join(",");
+}
+function addStep(typeKey, preset={}){
+  const spec = SUPPORTED_STEPS[typeKey];
+  const sid = genId();
+  const card = document.createElement("div");
+  card.className = "card";
+  card.dataset.sid = sid;
+  let body = `<div class="card-body">
+    <div class="d-flex justify-content-between align-items-center">
+      <h2 class="h5 mb-0">${spec.label}</h2>
+      <div class="btn-group">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
+      </div>
+    </div>
+    <input type="hidden" name="step_${sid}_type" value="${typeKey}">
+    <div class="row g-3 mt-1">`;
+
+  for (const k of spec.inputs){
+    const accept = spec.accepts[k];
+    let label = k;
+    if (k === "pdf_zip") label = "PDF ZIP 壓縮檔";
+    if (k === "target_section") label = "章節編號（例如 6.12.1）";
+    if (k === "target_chapter_section") label = "章節編號（例如 6.12.1）";
+    if (k === "target_title_section") label = "章節標題（完整比對）";
+
+    const val = preset[k] || "";
+    if (accept === "text"){
+      body += `<div class="col-md-6"><label class="form-label">${label}</label>
+               <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${label}"></div>`;
+    } else if (accept === "bool"){
+      body += `<div class="col-md-3"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_${k}">
+                 <option value="false" ${val==="false"?"selected": ""}>否</option>
+                 <option value="true" ${val==="true"?"selected": ""}>是</option>
+               </select>
+             </div>`;
+    } else if (accept === "int" || accept === "float"){
+      if (k === "level") {
+        let options = "", help = "";
+        if (typeKey === "insert_numbered_heading") {
+          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（1.）</option>
+                     <option value="1" ${val==="1"?"selected": ""}>Level 1（1.1.）</option>
+                     <option value="2" ${val==="2"?"selected": ""}>Level 2（1.1.1.）</option>`;
+          help = "建議僅用到 Level 2；更深層需先擴充樣式。";
+        } else if (typeKey === "insert_roman_heading") {
+          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（I.）</option>`;
+          help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式。";
+        } else {
+          options = `<option value="0" ${val==="0"?"selected": ""}>0</option>`;
+        }
+        body += `<div class="col-md-4">
+                   <label class="form-label">level</label>
+                   <select class="form-select" name="step_${sid}_${k}">${options}</select>
+                   <div class="form-text">${help}</div>
+                 </div>`;
+      } else if (k === "font_size") {
+        body += `<div class="col-md-3"><label class="form-label">字體大小</label>
+                 <select class="form-select" name="step_${sid}_${k}">
+                   <option value="12" ${val==="12"?"selected": ""}>12</option>
+                   <option value="13" ${val==="13"?"selected": ""}>13</option>
+                   <option value="14" ${val==="14"?"selected": ""}>14</option>
+                   <option value="16" ${val==="16"?"selected": ""}>16</option>
+                   <option value="18" ${val==="18"?"selected": ""}>18</option>
+                 </select></div>`;
+      } else if (k === "before_space" || k === "after_space") {
+        const nice = k === "before_space" ? "段前間距" : "段後間距";
+        body += `<div class="col-md-3"><label class="form-label">${nice}</label>
+                 <select class="form-select" name="step_${sid}_${k}">
+                   <option value="0" ${val==="0"?"selected": ""}>0 pt</option>
+                   <option value="6" ${val==="6"?"selected": ""}>6 pt</option>
+                   <option value="12" ${val==="12"?"selected": ""}>12 pt</option>
+                 </select></div>`;
+      } else {
+        body += `<div class="col-md-3"><label class="form-label">${label}</label>
+                 <input class="form-control" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${label}"></div>`;
+      }
+    } else if (accept.startsWith("file")){
+      const ext = accept.split(":")[1];
+      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
+      body += `<div class="col-md-6"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_${k}">${options}</select></div>`;
+    } else if (k === "align"){
+      body += `<div class="col-md-3"><label class="form-label">對齊</label>
+               <select class="form-select" name="step_${sid}_align">
+                 <option value="left" ${val==="left"?"selected": ""}>靠左</option>
+                 <option value="center" ${val==="center"?"selected": ""}>置中</option>
+                 <option value="right" ${val==="right"?"selected": ""}>靠右</option>
+                 <option value="justify" ${val==="justify"?"selected": ""}>左右對齊</option>
+               </select>
+               <div class="form-text">一般內文建議使用 左/左右對齊；標題多用 置中。</div>
+             </div>`;
+    }
+  }
+
+  body += `</div></div>`;
+  card.innerHTML = body;
+  document.getElementById("steps").appendChild(card);
+  updateOrder();
+}
+function removeStep(sid){
+  const el = document.querySelector(`.card[data-sid="${sid}"]`);
+  if (el) el.remove();
+  updateOrder();
+}
+function moveUp(sid){
+  const el = document.querySelector(`.card[data-sid="${sid}"]`);
+  if (!el) return;
+  const prev = el.previousElementSibling;
+  if (prev) el.parentNode.insertBefore(el, prev);
+  updateOrder();
+}
+function moveDown(sid){
+  const el = document.querySelector(`.card[data-sid="${sid}"]`);
+  if (!el) return;
+  const next = el.nextElementSibling;
+  if (next) el.parentNode.insertBefore(next, el);
+  updateOrder();
+}
+if (PRESET_FLOW){
+  for (const st of PRESET_FLOW){
+    addStep(st.type, st.params);
+  }
+}
+</script>
+{% endblock %}
+

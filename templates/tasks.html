@@ -29,6 +29,7 @@
       <td><a href="{{ url_for('task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
       <td>{{ t.created }}</td>
       <td class="text-end">
+        <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameTask('{{ t.id }}', '{{ t.name }}')">重新命名</button>
         <form action="{{ url_for('delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
           <button class="btn btn-sm btn-outline-danger">刪除</button>
         </form>
@@ -39,5 +40,21 @@
   {% endfor %}
   </tbody>
 </table>
+<script>
+function renameTask(id, current){
+  const name = prompt('輸入新名稱', current);
+  if(!name) return;
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = `/tasks/${id}/rename`;
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'name';
+  input.value = name;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+}
+</script>
 {% endblock %}
 

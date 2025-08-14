@@ -3,7 +3,15 @@ import uuid
 import json
 import zipfile
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, send_file, abort
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    send_file,
+    abort,
+)
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
 
@@ -40,6 +48,35 @@ def list_files(base_dir):
     return sorted(files)
 
 
+def build_file_tree(base_dir):
+    tree = {"dirs": {}, "files": []}
+    for root, dirs, files in os.walk(base_dir):
+        rel = os.path.relpath(root, base_dir)
+        node = tree
+        if rel != ".":
+            for part in rel.split(os.sep):
+                node = node["dirs"].setdefault(part, {"dirs": {}, "files": []})
+        node["files"].extend(sorted(files))
+    return tree
+
+
+def task_name_exists(name, exclude_id=None):
+    for tid in os.listdir(app.config["TASK_FOLDER"]):
+        if exclude_id and tid == exclude_id:
+            continue
+        tdir = os.path.join(app.config["TASK_FOLDER"], tid)
+        if not os.path.isdir(tdir):
+            continue
+        meta_path = os.path.join(tdir, "meta.json")
+        tname = tid
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                tname = json.load(f).get("name", tid)
+        if tname == name:
+            return True
+    return False
+
+
 @app.get("/")
 def tasks():
     task_list = []
@@ -67,6 +104,8 @@ def create_task():
     if not f or not f.filename or not allowed_file(f.filename, kinds=("zip",)):
         return "請上傳 ZIP 檔", 400
     task_name = request.form.get("task_name", "").strip() or "未命名任務"
+    if task_name_exists(task_name):
+        return "任務名稱已存在", 400
     tid = str(uuid.uuid4())[:8]
     tdir = os.path.join(app.config["TASK_FOLDER"], tid)
     files_dir = os.path.join(tdir, "files")
@@ -89,6 +128,29 @@ def delete_task(task_id):
     return redirect(url_for("tasks"))
 
 
+@app.post("/tasks/<task_id>/rename")
+def rename_task(task_id):
+    new_name = request.form.get("name", "").strip()
+    if not new_name:
+        return "缺少名稱", 400
+    if task_name_exists(new_name, exclude_id=task_id):
+        return "任務名稱已存在", 400
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    if not os.path.isdir(tdir):
+        abort(404)
+    meta_path = os.path.join(tdir, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    meta["name"] = new_name
+    if "created" not in meta:
+        meta["created"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+    return redirect(url_for("tasks"))
+
+
 @app.get("/tasks/<task_id>")
 def task_detail(task_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
@@ -100,8 +162,8 @@ def task_detail(task_id):
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             name = json.load(f).get("name", task_id)
-    file_list = list_files(files_dir)
-    return render_template("task_detail.html", task={"id": task_id, "name": name}, files=file_list)
+    tree = build_file_tree(files_dir)
+    return render_template("task_detail.html", task={"id": task_id, "name": name}, files_tree=tree)
 
 def gather_available_files(files_dir):
     mapping = {"docx": [], "pdf": [], "zip": []}
@@ -127,15 +189,29 @@ def flow_builder(task_id):
     flows = []
     for fn in os.listdir(flow_dir):
         if fn.endswith(".json"):
-            flows.append({"name": os.path.splitext(fn)[0]})
+            path = os.path.join(flow_dir, fn)
+            created = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    created = data.get("created", created)
+            except Exception:
+                pass
+            flows.append({"name": os.path.splitext(fn)[0], "created": created})
     preset = None
     loaded_name = request.args.get("flow")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
         if os.path.exists(p):
             with open(p, "r", encoding="utf-8") as f:
-                preset = json.load(f)
+                data = json.load(f)
+            if isinstance(data, dict) and "steps" in data:
+                preset = data["steps"]
+            else:
+                preset = data
     avail = gather_available_files(files_dir)
+    tree = build_file_tree(files_dir)
     return render_template(
         "flow.html",
         task={"id": task_id},
@@ -144,6 +220,7 @@ def flow_builder(task_id):
         flows=flows,
         preset=preset,
         loaded_name=loaded_name,
+        files_tree=tree,
     )
 
 
@@ -176,8 +253,19 @@ def run_flow(task_id):
     if action == "save":
         if not flow_name:
             return "缺少流程名稱", 400
-        with open(os.path.join(flow_dir, f"{flow_name}.json"), "w", encoding="utf-8") as f:
-            json.dump(workflow, f, ensure_ascii=False, indent=2)
+        path = os.path.join(flow_dir, f"{flow_name}.json")
+        created = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and "created" in data:
+                    created = data["created"]
+            except Exception:
+                pass
+        data = {"created": created, "steps": workflow}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
         return redirect(url_for("flow_builder", task_id=task_id))
 
     runtime_steps = []
@@ -207,6 +295,23 @@ def delete_flow(task_id, flow_name):
     path = os.path.join(flow_dir, f"{flow_name}.json")
     if os.path.exists(path):
         os.remove(path)
+    return redirect(url_for("flow_builder", task_id=task_id))
+
+
+@app.post("/tasks/<task_id>/flows/rename/<flow_name>")
+def rename_flow(task_id, flow_name):
+    new_name = request.form.get("name", "").strip()
+    if not new_name:
+        return "缺少流程名稱", 400
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(tdir, "flows")
+    old_path = os.path.join(flow_dir, f"{flow_name}.json")
+    new_path = os.path.join(flow_dir, f"{new_name}.json")
+    if not os.path.exists(old_path):
+        abort(404)
+    if os.path.exists(new_path):
+        return "流程名稱已存在", 400
+    os.rename(old_path, new_path)
     return redirect(url_for("flow_builder", task_id=task_id))
 
 @app.get("/tasks/<task_id>/flows/export/<flow_name>")

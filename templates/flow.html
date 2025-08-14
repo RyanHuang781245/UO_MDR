@@ -2,17 +2,6 @@
 {% block content %}
 <h1 class="h3 mb-3">定義流程</h1>
 
-{% macro render_tree(node) %}
-<ul class="list-group ms-3 mb-0">
-  {% for fname in node.files %}
-    <li class="list-group-item">{{ fname }}</li>
-  {% endfor %}
-  {% for dname, dnode in node.dirs.items() %}
-    <li class="list-group-item"><strong>{{ dname }}</strong>{{ render_tree(dnode) }}</li>
-  {% endfor %}
-</ul>
-{% endmacro %}
-
 <form action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
   <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
   <div id="steps" class="vstack gap-3"></div>
@@ -29,7 +18,7 @@
       <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
       <ul class="dropdown-menu">
         {% for key, meta in steps.items() %}
-        <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}')">{{ meta.label }}</a></li>
+        <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
         {% endfor %}
       </ul>
     </div>
@@ -78,9 +67,6 @@
     </div>
   </div>
 </form>
-
-<h2 class="h5 mt-4">檔案結構</h2>
-{{ render_tree(files_tree) }}
 
 <script>
 const TASK_ID = '{{ task.id }}';

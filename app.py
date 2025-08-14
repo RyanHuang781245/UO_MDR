@@ -211,7 +211,6 @@ def flow_builder(task_id):
             else:
                 preset = data
     avail = gather_available_files(files_dir)
-    tree = build_file_tree(files_dir)
     return render_template(
         "flow.html",
         task={"id": task_id},
@@ -220,7 +219,6 @@ def flow_builder(task_id):
         flows=flows,
         preset=preset,
         loaded_name=loaded_name,
-        files_tree=tree,
     )
 
 

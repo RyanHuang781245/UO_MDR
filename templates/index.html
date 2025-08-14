@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">建立文件處理流程</h1>
+
+<form action="{{ url_for('build') }}" method="post" enctype="multipart/form-data" class="vstack gap-3">
+  <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
+  <div id="steps" class="vstack gap-3"></div>
+
+  <div class="d-flex gap-2">
+    <div class="dropdown">
+      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
+      <ul class="dropdown-menu">
+        {% for key, meta in steps.items() %}
+        <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}')">{{ meta.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    <button class="btn btn-success" type="submit">執行流程</button>
+  </div>
+</form>
+
+<hr>
+<div class="alert alert-info small">
+  <div class="fw-bold mb-1">注意事項</div>
+  <ol class="mb-0">
+    <li>每個流程步驟可上傳不同的輸入檔案（PDF/Word 互不影響）。</li>
+    <li>PDF 章節擷取請上傳 ZIP，系統會自動解壓。</li>
+    <li>避免跑版：以 Spire.Doc 方式 Clone 內容保留版面。</li>
+  </ol>
+</div>
+
+<script>
+const SUPPORTED_STEPS = {{ steps|tojson }};
+function genId(){ return (Date.now().toString(36) + Math.random().toString(36).slice(2,7)); }
+function updateOrder(){
+  const ids = Array.from(document.querySelectorAll("#steps .card")).map(el => el.dataset.sid);
+  document.getElementById("ordered_ids").value = ids.join(",");
+}
+
+function addStep(typeKey){
+  const spec = SUPPORTED_STEPS[typeKey];
+  const sid = genId();
+  const card = document.createElement("div");
+  card.className = "card";
+  card.dataset.sid = sid;
+  let body = `<div class="card-body">
+    <div class="d-flex justify-content-between align-items-center">
+      <h2 class="h5 mb-0">${spec.label}</h2>
+      <div class="btn-group">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
+      </div>
+    </div>
+    <input type="hidden" name="step_${sid}_type" value="${typeKey}">
+    <div class="row g-3 mt-1">`;
+
+  for (const k of spec.inputs){
+    const accept = spec.accepts[k];
+    let label = k;
+    if (k === "pdf_zip") label = "PDF ZIP 壓縮檔";
+    if (k === "target_section") label = "章節編號（例如 6.12.1）";
+    if (k === "target_chapter_section") label = "章節編號（例如 6.12.1）";
+    if (k === "target_title_section") label = "章節標題（完整比對）";
+
+    if (accept === "text"){
+      body += `<div class="col-md-6"><label class="form-label">${label}</label>
+               <input class="form-control" name="step_${sid}_${k}" placeholder="${label}"></div>`;
+    } else if (accept === "bool"){
+      body += `<div class="col-md-3"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_${k}">
+                 <option value="false" selected>否</option>
+                 <option value="true">是</option>
+               </select>
+             </div>`;
+    } else if (accept === "int" || accept === "float"){
+      if (k === "level") {
+        let options = "", help = "";
+        if (typeKey === "insert_numbered_heading") {
+          options = `<option value="0" selected>Level 0（1.）</option>
+                     <option value="1">Level 1（1.1.）</option>
+                     <option value="2">Level 2（1.1.1.）</option>`;
+          help = "建議僅用到 Level 2；更深層需先擴充樣式。";
+        } else if (typeKey === "insert_roman_heading") {
+          options = `<option value="0" selected>Level 0（I.）</option>`;
+          help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式。";
+        } else {
+          options = `<option value="0" selected>0</option>`;
+        }
+        body += `<div class="col-md-4">
+                   <label class="form-label">level</label>
+                   <select class="form-select" name="step_${sid}_${k}">${options}</select>
+                   <div class="form-text">${help}</div>
+                 </div>`;
+      } else if (k === "font_size") {
+        body += `<div class="col-md-3"><label class="form-label">字體大小</label>
+                 <select class="form-select" name="step_${sid}_${k}">
+                   <option value="12" selected>12</option>
+                   <option value="13">13</option>
+                   <option value="14">14</option>
+                   <option value="16">16</option>
+                   <option value="18">18</option>
+                 </select></div>`;
+      } else if (k === "before_space" || k === "after_space") {
+        const nice = k === "before_space" ? "段前間距" : "段後間距";
+        body += `<div class="col-md-3"><label class="form-label">${nice}</label>
+                 <select class="form-select" name="step_${sid}_${k}">
+                   <option value="0" selected>0 pt</option>
+                   <option value="6">6 pt</option>
+                   <option value="12">12 pt</option>
+                 </select></div>`;
+      } else {
+        body += `<div class="col-md-3"><label class="form-label">${label}</label>
+                 <input class="form-control" type="number" step="any" name="step_${sid}_${k}" placeholder="${label}"></div>`;
+      }
+    } else if (accept.startsWith("file")){
+      body += `<div class="col-md-6"><label class="form-label">${label}</label>
+               <input class="form-control" type="file" name="step_${sid}_${k}"></div>`;
+    } else if (k === "align"){
+      body += `<div class="col-md-3"><label class="form-label">對齊</label>
+               <select class="form-select" name="step_${sid}_align">
+                 <option value="left" selected>靠左</option>
+                 <option value="center">置中</option>
+                 <option value="right">靠右</option>
+                 <option value="justify">左右對齊</option>
+               </select>
+               <div class="form-text">一般內文建議使用 左/左右對齊；標題多用 置中。</div>
+             </div>`;
+    }
+  }
+
+  body += `</div></div>`;
+  card.innerHTML = body;
+  document.getElementById("steps").appendChild(card);
+  updateOrder();
+}
+
+function removeStep(sid){
+  const el = document.querySelector(`.card[data-sid="${sid}"]`);
+  if (el) el.remove();
+  updateOrder();
+}
+function moveUp(sid){
+  const el = document.querySelector(`.card[data-sid="${sid}"]`);
+  if (!el) return;
+  const prev = el.previousElementSibling;
+  if (prev) el.parentNode.insertBefore(el, prev);
+  updateOrder();
+}
+function moveDown(sid){
+  const el = document.querySelector(`.card[data-sid="${sid}"]`);
+  if (!el) return;
+  const next = el.nextElementSibling;
+  if (next) el.parentNode.insertBefore(next, el);
+  updateOrder();
+}
+</script>
+{% endblock %}

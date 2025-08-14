@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h4">流程已完成</h1>
+<p class="mb-3">Job ID: <code>{{ job_id }}</code></p>
+<div class="vstack gap-2">
+  <a class="btn btn-primary" href="{{ docx_path }}">下載結果 DOCX</a>
+  <a class="btn btn-outline-secondary" href="{{ log_path }}">下載流程 Log</a>
+  <a class="btn btn-link" href="{{ url_for('index') }}">返回首頁</a>
+</div>
+{% endblock %}

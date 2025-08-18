@@ -30,7 +30,7 @@ SUPPORTED_STEPS = {
     "insert_text": {
         "label": "插入純文字段落",
         "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before"],
-        "accepts": {"text":"text","align":"text","bold":"bool","font_size":"float","before_space":"float","after_space":"float","page_break_before":"bool"}
+        "accepts": {"text":"text","align":"align","bold":"bool","font_size":"float","before_space":"float","after_space":"float","page_break_before":"bool"}
     },
     "insert_numbered_heading": {
         "label": "插入阿拉伯數字標題",

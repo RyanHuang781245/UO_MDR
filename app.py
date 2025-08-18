@@ -14,6 +14,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
+from modules.Extract_AllFile_to_FinalWord import center_table_figure_paragraphs
 
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
@@ -219,16 +220,25 @@ def flow_builder(task_id):
                 pass
             flows.append({"name": os.path.splitext(fn)[0], "created": created})
     preset = None
+    center_titles = True
     loaded_name = request.args.get("flow")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
         if os.path.exists(p):
             with open(p, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if isinstance(data, dict) and "steps" in data:
-                preset = data["steps"]
+            if isinstance(data, dict):
+                steps_data = data.get("steps", [])
+                center_titles = data.get("center_titles", True) or any(
+                    isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
+                )
             else:
-                preset = data
+                steps_data = data
+                center_titles = True
+            preset = [
+                s for s in steps_data
+                if isinstance(s, dict) and s.get("type") in SUPPORTED_STEPS
+            ]
     avail = gather_available_files(files_dir)
     return render_template(
         "flow.html",
@@ -238,6 +248,7 @@ def flow_builder(task_id):
         flows=flows,
         preset=preset,
         loaded_name=loaded_name,
+        center_titles=center_titles,
     )
 
 
@@ -250,13 +261,14 @@ def run_flow(task_id):
     action = request.form.get("action", "run")
     flow_name = request.form.get("flow_name", "").strip()
     ordered_ids = request.form.get("ordered_ids", "").split(",")
+    center_titles = request.form.get("center_titles") == "on"
     workflow = []
     for sid in ordered_ids:
         sid = sid.strip()
         if not sid:
             continue
         stype = request.form.get(f"step_{sid}_type", "")
-        if not stype:
+        if not stype or stype not in SUPPORTED_STEPS:
             continue
         schema = SUPPORTED_STEPS.get(stype, {})
         params = {}
@@ -280,7 +292,7 @@ def run_flow(task_id):
                     created = data["created"]
             except Exception:
                 pass
-        data = {"created": created, "steps": workflow}
+        data = {"created": created, "steps": workflow, "center_titles": center_titles}
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return redirect(url_for("flow_builder", task_id=task_id))
@@ -288,6 +300,8 @@ def run_flow(task_id):
     runtime_steps = []
     for step in workflow:
         stype = step["type"]
+        if stype not in SUPPORTED_STEPS:
+            continue
         schema = SUPPORTED_STEPS.get(stype, {})
         params = {}
         for k, v in step["params"].items():
@@ -302,6 +316,8 @@ def run_flow(task_id):
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
+    if center_titles:
+        center_table_figure_paragraphs(os.path.join(job_dir, "result.docx"))
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -317,13 +333,19 @@ def execute_flow(task_id, flow_name):
         abort(404)
     with open(flow_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    if isinstance(data, dict) and "steps" in data:
-        workflow = data["steps"]
+    if isinstance(data, dict):
+        workflow = data.get("steps", [])
+        center_titles = data.get("center_titles", True) or any(
+            isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
+        )
     else:
         workflow = data
+        center_titles = True
     runtime_steps = []
     for step in workflow:
         stype = step.get("type")
+        if stype not in SUPPORTED_STEPS:
+            continue
         schema = SUPPORTED_STEPS.get(stype, {})
         params = {}
         for k, v in step.get("params", {}).items():
@@ -337,6 +359,8 @@ def execute_flow(task_id, flow_name):
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
+    if center_titles:
+        center_table_figure_paragraphs(os.path.join(job_dir, "result.docx"))
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 

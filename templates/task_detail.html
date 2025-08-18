@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="h4 mb-3">{{ task.name }}</h1>
+<h1 class="h4 mb-1">{{ task.name }}</h1>
+{% if task.description %}
+<p class="text-muted mb-3">{{ task.description }}</p>
+{% else %}
+<div class="mb-3"></div>
+{% endif %}
 
 {% macro render_tables(node, path="") %}
   {% if node.files %}

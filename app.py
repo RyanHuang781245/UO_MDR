@@ -85,15 +85,17 @@ def tasks():
         if os.path.isdir(tdir):
             meta_path = os.path.join(tdir, "meta.json")
             name = tid
+            description = ""
             created = None
             if os.path.exists(meta_path):
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
                     name = meta.get("name", tid)
+                    description = meta.get("description", "")
                     created = meta.get("created")
             if not created:
                 created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
-            task_list.append({"id": tid, "name": name, "created": created})
+            task_list.append({"id": tid, "name": name, "description": description, "created": created})
     task_list.sort(key=lambda x: x["created"], reverse=True)
     return render_template("tasks.html", tasks=task_list)
 
@@ -104,6 +106,7 @@ def create_task():
     if not f or not f.filename or not allowed_file(f.filename, kinds=("zip",)):
         return "請上傳 ZIP 檔", 400
     task_name = request.form.get("task_name", "").strip() or "未命名任務"
+    task_desc = request.form.get("task_desc", "").strip()
     if task_name_exists(task_name):
         return "任務名稱已存在", 400
     tid = str(uuid.uuid4())[:8]
@@ -115,7 +118,16 @@ def create_task():
     with zipfile.ZipFile(zpath, "r") as zf:
         zf.extractall(files_dir)
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
-        json.dump({"name": task_name, "created": datetime.utcnow().strftime("%Y-%m-%d %H:%M")}, meta, ensure_ascii=False, indent=2)
+        json.dump(
+            {
+                "name": task_name,
+                "description": task_desc,
+                "created": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            },
+            meta,
+            ensure_ascii=False,
+            indent=2,
+        )
     return redirect(url_for("task_detail", task_id=tid))
 
 
@@ -159,11 +171,18 @@ def task_detail(task_id):
         abort(404)
     meta_path = os.path.join(tdir, "meta.json")
     name = task_id
+    description = ""
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
-            name = json.load(f).get("name", task_id)
+            meta = json.load(f)
+            name = meta.get("name", task_id)
+            description = meta.get("description", "")
     tree = build_file_tree(files_dir)
-    return render_template("task_detail.html", task={"id": task_id, "name": name}, files_tree=tree)
+    return render_template(
+        "task_detail.html",
+        task={"id": task_id, "name": name, "description": description},
+        files_tree=tree,
+    )
 
 def gather_available_files(files_dir):
     mapping = {"docx": [], "pdf": [], "zip": []}

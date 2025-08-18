@@ -107,6 +107,11 @@ function addStep(typeKey, preset={}){
     if (k === "target_section") label = "章節編號（例如 6.12.1）";
     if (k === "target_chapter_section") label = "章節編號（例如 6.12.1）";
     if (k === "target_title_section") label = "章節標題（完整比對）";
+    if (k === "input_file") label = "輸入檔案";
+    if (k === "target_title") label = "擷取標題內容";
+    if (k === "text") label = "輸入文字";
+    if (k === "align") label = "對齊方式";
+    if (k === "bold") label = "粗體";
 
     const val = preset[k] || "";
     if (accept === "text"){

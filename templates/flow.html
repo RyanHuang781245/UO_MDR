@@ -2,7 +2,7 @@
 {% block content %}
 <h1 class="h3 mb-3">定義流程</h1>
 
-<form action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
+<form id="flow_form" action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
   <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
   <div id="steps" class="vstack gap-3"></div>
 
@@ -84,10 +84,33 @@ const TASK_ID = '{{ task.id }}';
 const SUPPORTED_STEPS = {{ steps|tojson }};
 const AVAILABLE_FILES = {{ files|tojson }};
 const PRESET_FLOW = {{ preset|tojson }};
+let isInitialising = true;
+let isDirty = false;
+function markDirty(){
+  if (!isInitialising) isDirty = true;
+}
+window.addEventListener('beforeunload', function(e){
+  if (!isDirty) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+const flowForm = document.getElementById('flow_form');
+flowForm.addEventListener('submit', (e) => {
+  const action = e.submitter?.value;
+  if (action === 'save' && !flowForm.elements['flow_name'].value.trim()) {
+    e.preventDefault();
+    alert('請輸入流程名稱');
+    return;
+  }
+  isDirty = false;
+});
+flowForm.addEventListener('input', markDirty);
+flowForm.addEventListener('change', markDirty);
 function genId(){ return (Date.now().toString(36) + Math.random().toString(36).slice(2,7)); }
 function updateOrder(){
   const ids = Array.from(document.querySelectorAll("#steps .card")).map(el => el.dataset.sid);
   document.getElementById("ordered_ids").value = ids.join(",");
+  markDirty();
 }
 function addStep(typeKey, preset={}, refSid=null, position='end'){
   const spec = SUPPORTED_STEPS[typeKey];
@@ -261,6 +284,7 @@ if (PRESET_FLOW){
     addStep(st.type, st.params);
   }
 }
+isInitialising = false;
 </script>
 {% endblock %}
 

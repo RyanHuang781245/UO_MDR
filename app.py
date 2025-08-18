@@ -122,7 +122,7 @@ def create_task():
             {
                 "name": task_name,
                 "description": task_desc,
-                "created": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+                "created" : datetime.now().strftime("%Y-%m-%d %H:%M"),
             },
             meta,
             ensure_ascii=False,
@@ -157,7 +157,7 @@ def rename_task(task_id):
             meta = json.load(f)
     meta["name"] = new_name
     if "created" not in meta:
-        meta["created"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        meta["created"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     return redirect(url_for("tasks"))
@@ -271,7 +271,7 @@ def run_flow(task_id):
         if not flow_name:
             return "缺少流程名稱", 400
         path = os.path.join(flow_dir, f"{flow_name}.json")
-        created = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        created = datetime.now().strftime("%Y-%m-%d %H:%M")
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:

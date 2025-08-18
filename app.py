@@ -220,7 +220,7 @@ def flow_builder(task_id):
                 pass
             flows.append({"name": os.path.splitext(fn)[0], "created": created})
     preset = None
-    center_titles = False
+    center_titles = True
     loaded_name = request.args.get("flow")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
@@ -229,14 +229,12 @@ def flow_builder(task_id):
                 data = json.load(f)
             if isinstance(data, dict):
                 steps_data = data.get("steps", [])
-                center_titles = data.get("center_titles", False) or any(
+                center_titles = data.get("center_titles", True) or any(
                     isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
                 )
             else:
                 steps_data = data
-                center_titles = any(
-                    isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
-                )
+                center_titles = True
             preset = [
                 s for s in steps_data
                 if isinstance(s, dict) and s.get("type") in SUPPORTED_STEPS
@@ -337,14 +335,12 @@ def execute_flow(task_id, flow_name):
         data = json.load(f)
     if isinstance(data, dict):
         workflow = data.get("steps", [])
-        center_titles = data.get("center_titles", False) or any(
+        center_titles = data.get("center_titles", True) or any(
             isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
         )
     else:
         workflow = data
-        center_titles = any(
-            isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
-        )
+        center_titles = True
     runtime_steps = []
     for step in workflow:
         stype = step.get("type")

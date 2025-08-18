@@ -84,16 +84,31 @@ function updateOrder(){
   const ids = Array.from(document.querySelectorAll("#steps .card")).map(el => el.dataset.sid);
   document.getElementById("ordered_ids").value = ids.join(",");
 }
-function addStep(typeKey, preset={}){
+function addStep(typeKey, preset={}, refSid=null, position='end'){
   const spec = SUPPORTED_STEPS[typeKey];
   const sid = genId();
   const card = document.createElement("div");
   card.className = "card";
   card.dataset.sid = sid;
+
+  let menuBefore = '', menuAfter = '';
+  for (const [k, m] of Object.entries(SUPPORTED_STEPS)){
+    menuBefore += `<li><a class="dropdown-item" href="#" onclick="addStep('${k}', {}, '${sid}', 'before'); return false;">${m.label}</a></li>`;
+    menuAfter  += `<li><a class="dropdown-item" href="#" onclick="addStep('${k}', {}, '${sid}', 'after'); return false;">${m.label}</a></li>`;
+  }
+
   let body = `<div class="card-body">
     <div class="d-flex justify-content-between align-items-center">
       <h2 class="h5 mb-0">${spec.label}</h2>
       <div class="btn-group">
+        <div class="btn-group">
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
+          <ul class="dropdown-menu">${menuBefore}</ul>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
+          <ul class="dropdown-menu">${menuAfter}</ul>
+        </div>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
@@ -186,7 +201,21 @@ function addStep(typeKey, preset={}){
 
   body += `</div></div>`;
   card.innerHTML = body;
-  document.getElementById("steps").appendChild(card);
+  const container = document.getElementById("steps");
+  if (refSid){
+    const ref = document.querySelector(`.card[data-sid="${refSid}"]`);
+    if (ref){
+      if (position === 'before'){
+        container.insertBefore(card, ref);
+      } else {
+        container.insertBefore(card, ref.nextSibling);
+      }
+    } else {
+      container.appendChild(card);
+    }
+  } else {
+    container.appendChild(card);
+  }
   updateOrder();
 }
 function removeStep(sid){

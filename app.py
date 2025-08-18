@@ -305,6 +305,41 @@ def run_flow(task_id):
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
+@app.post("/tasks/<task_id>/flows/execute/<flow_name>")
+def execute_flow(task_id, flow_name):
+    """Execute a previously saved flow."""
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        abort(404)
+    flow_path = os.path.join(tdir, "flows", f"{flow_name}.json")
+    if not os.path.exists(flow_path):
+        abort(404)
+    with open(flow_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict) and "steps" in data:
+        workflow = data["steps"]
+    else:
+        workflow = data
+    runtime_steps = []
+    for step in workflow:
+        stype = step.get("type")
+        schema = SUPPORTED_STEPS.get(stype, {})
+        params = {}
+        for k, v in step.get("params", {}).items():
+            accept = schema.get("accepts", {}).get(k, "text")
+            if accept.startswith("file") and v:
+                params[k] = os.path.join(files_dir, v)
+            else:
+                params[k] = v
+        runtime_steps.append({"type": stype, "params": params})
+    job_id = str(uuid.uuid4())[:8]
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    run_workflow(runtime_steps, workdir=job_dir)
+    return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
+
+
 @app.post("/tasks/<task_id>/flows/delete/<flow_name>")
 def delete_flow(task_id, flow_name):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)

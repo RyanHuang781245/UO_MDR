@@ -23,7 +23,7 @@
 </form>
 
 <h2 class="h5">現有任務</h2>
-<table class="table table-striped">
+<table class="table table-striped text-center">
   <thead>
     <tr>
       <th class="text-center">名稱</th>
@@ -38,7 +38,7 @@
       <td><a href="{{ url_for('task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
       <td>{{ t.description }}</td>
       <td>{{ t.created }}</td>
-      <td class="text-end">
+      <td>
         <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameTask('{{ t.id }}', '{{ t.name }}')">重新命名</button>
         <form action="{{ url_for('delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
           <button class="btn btn-sm btn-outline-danger">刪除</button>

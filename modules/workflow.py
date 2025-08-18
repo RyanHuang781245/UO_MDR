@@ -8,8 +8,7 @@ from .Edit_Word import insert_text, insert_numbered_heading, insert_roman_headin
 from .Extract_AllFile_to_FinalWord import (
     extract_pdf_chapter_to_table,
     extract_word_all_content,
-    extract_word_chapter,
-    center_table_figure_paragraphs
+    extract_word_chapter
 )
 
 SUPPORTED_STEPS = {
@@ -47,11 +46,6 @@ SUPPORTED_STEPS = {
         "label": "插入項目符號標題",
         "inputs": ["text", "font_size"],
         "accepts": {"text":"text","font_size":"float"}
-    },
-    "center_table_figure_paragraphs": {
-        "label": "置中 Table/Figure 標題段落",
-        "inputs": ["input_file"],
-        "accepts": {"input_file": "file:docx"}
     }
 }
 
@@ -98,16 +92,6 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     output_doc=output_doc,
                     section=section
                 )
-
-            elif stype == "center_table_figure_paragraphs":
-                infile = params["input_file"]
-                center_table_figure_paragraphs(infile)
-                d = Document(); d.LoadFromFile(infile)
-                for si in range(d.Sections.Count):
-                    s2 = d.Sections.get_Item(si)
-                    for j in range(s2.ChildObjects.Count):
-                        section.ChildObjects.Add(s2.ChildObjects.get_Item(j).Clone())
-                d.Close()
 
             elif stype == "insert_text":
                 insert_text(section,

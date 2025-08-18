@@ -41,7 +41,7 @@
   </thead>
   <tbody>
   {% for f in flows %}
-    <tr>
+    <tr{% if loaded_name == f.name %} class="table-primary"{% endif %}>
       <td>{{ f.name }}</td>
       <td>{{ f.created }}</td>
       <td>

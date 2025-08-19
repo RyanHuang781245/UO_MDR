@@ -8,7 +8,8 @@ from .Edit_Word import insert_text, insert_numbered_heading, insert_roman_headin
 from .Extract_AllFile_to_FinalWord import (
     extract_pdf_chapter_to_table,
     extract_word_all_content,
-    extract_word_chapter
+    extract_word_chapter,
+    renumber_tables_figures
 )
 
 SUPPORTED_STEPS = {
@@ -134,6 +135,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
             log[-1]["status"] = "error"
             log[-1]["error"] = str(e)
 
+    renumber_tables_figures(output_doc)
     out_docx = os.path.join(workdir, "result.docx")
     output_doc.SaveToFile(out_docx, FileFormat.Docx)
     output_doc.Close()

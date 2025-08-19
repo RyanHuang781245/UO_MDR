@@ -5,6 +5,9 @@
 <div class="vstack gap-2">
   <a class="btn btn-primary" href="{{ docx_path }}">下載結果 DOCX</a>
   <a class="btn btn-outline-secondary" href="{{ log_path }}">下載流程 Log</a>
+  {% for t in translation_links %}
+  <a class="btn btn-outline-primary" href="{{ t.url }}">下載翻譯 {{ t.name }}</a>
+  {% endfor %}
   {% if back_link %}
   <a class="btn btn-secondary" href="{{ back_link }}">返回流程</a>
   {% endif %}

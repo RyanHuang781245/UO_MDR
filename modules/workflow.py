@@ -10,6 +10,7 @@ from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
     extract_word_chapter
 )
+from .translate_with_bedrock import translate_file as bedrock_translate_file
 
 SUPPORTED_STEPS = {
     "extract_pdf_chapter_to_table": {
@@ -26,6 +27,11 @@ SUPPORTED_STEPS = {
         "label": "擷取 Word 指定章節/標題",
         "inputs": ["input_file", "target_chapter_section", "target_title", "target_title_section"],
         "accepts": {"input_file": "file:docx", "target_chapter_section": "text", "target_title": "bool", "target_title_section": "text"}
+    },
+    "translate_to_english": {
+        "label": "翻譯文件至英文",
+        "inputs": ["input_file", "model_id"],
+        "accepts": {"input_file": "file:docx", "model_id": "text"}
     },
     "insert_text": {
         "label": "插入純文字段落",
@@ -92,6 +98,16 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     output_doc=output_doc,
                     section=section
                 )
+
+            elif stype == "translate_to_english":
+                infile = params["input_file"]
+                model_id = params.get("model_id")
+                out_md = os.path.join(
+                    workdir,
+                    os.path.splitext(os.path.basename(infile))[0] + "_translated.md",
+                )
+                bedrock_translate_file(infile, out_md, model_id=model_id)
+                log[-1]["output_md"] = out_md
 
             elif stype == "insert_text":
                 insert_text(section,

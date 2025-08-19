@@ -15,6 +15,7 @@ from flask import (
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
 from modules.Extract_AllFile_to_FinalWord import center_table_figure_paragraphs
+from modules.translate_with_bedrock import translate_file
 
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
@@ -425,7 +426,32 @@ def task_result(task_id, job_id):
         job_id=job_id,
         docx_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),
         log_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="log"),
+        translate_path=url_for("task_translate", task_id=task_id, job_id=job_id),
         back_link=url_for("flow_builder", task_id=task_id),
+    )
+
+
+@app.get("/tasks/<task_id>/translate/<job_id>")
+def task_translate(task_id, job_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    src = os.path.join(job_dir, "result.docx")
+    if not os.path.exists(src):
+        abort(404)
+    out_docx = os.path.join(job_dir, "translated.docx")
+    if not os.path.exists(out_docx):
+        tmp_md = os.path.join(job_dir, "translated.md")
+        translate_file(src, tmp_md)
+        import docx
+        doc = docx.Document()
+        with open(tmp_md, "r", encoding="utf-8") as f:
+            for line in f.read().splitlines():
+                doc.add_paragraph(line)
+        doc.save(out_docx)
+    return send_file(
+        out_docx,
+        as_attachment=True,
+        download_name=f"translated_{job_id}.docx",
     )
 
 

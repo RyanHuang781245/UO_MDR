@@ -97,7 +97,7 @@ window.addEventListener('beforeunload', function(e){
 const flowForm = document.getElementById('flow_form');
 flowForm.addEventListener('submit', (e) => {
   const action = e.submitter?.value;
-  if (action === 'save' && !flowForm.elements['flow_name'].value.trim()) {
+  if ((action === 'save' || action === 'run') && !flowForm.elements['flow_name'].value.trim()) {
     e.preventDefault();
     alert('請輸入流程名稱');
     return;

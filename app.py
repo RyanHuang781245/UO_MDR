@@ -420,28 +420,11 @@ def task_result(task_id, job_id):
     docx_path = os.path.join(job_dir, "result.docx")
     if not os.path.exists(docx_path):
         return "Job not found or failed.", 404
-    translations = []
-    log_json = os.path.join(job_dir, "log.json")
-    if os.path.exists(log_json):
-        try:
-            with open(log_json, "r", encoding="utf-8") as f:
-                steps = json.load(f)
-            for st in steps:
-                if st.get("type") == "translate_to_english" and st.get("output_md"):
-                    fname = os.path.basename(st["output_md"])
-                    if os.path.exists(os.path.join(job_dir, fname)):
-                        translations.append({
-                            "name": fname,
-                            "url": url_for("task_download", task_id=task_id, job_id=job_id, kind=fname),
-                        })
-        except Exception:
-            pass
     return render_template(
         "run.html",
         job_id=job_id,
         docx_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),
         log_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="log"),
-        translation_links=translations,
         back_link=url_for("flow_builder", task_id=task_id),
     )
 
@@ -462,10 +445,6 @@ def task_download(task_id, job_id, kind):
             as_attachment=True,
             download_name=f"log_{job_id}.json",
         )
-    else:
-        file_path = os.path.join(job_dir, kind)
-        if os.path.isfile(file_path):
-            return send_file(file_path, as_attachment=True, download_name=kind)
     abort(404)
 
 

@@ -14,10 +14,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
-from modules.Extract_AllFile_to_FinalWord import (
-    center_table_figure_paragraphs,
-    renumber_table_figure_titles,
-)
+from modules.Extract_AllFile_to_FinalWord import center_table_figure_paragraphs
 
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
@@ -319,7 +316,6 @@ def run_flow(task_id):
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
-    renumber_table_figure_titles(os.path.join(job_dir, "result.docx"))
     if center_titles:
         center_table_figure_paragraphs(os.path.join(job_dir, "result.docx"))
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
@@ -363,7 +359,6 @@ def execute_flow(task_id, flow_name):
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
-    renumber_table_figure_titles(os.path.join(job_dir, "result.docx"))
     if center_titles:
         center_table_figure_paragraphs(os.path.join(job_dir, "result.docx"))
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))

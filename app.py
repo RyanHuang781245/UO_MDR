@@ -428,7 +428,103 @@ def task_result(task_id, job_id):
         log_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="log"),
         translate_path=url_for("task_translate", task_id=task_id, job_id=job_id),
         back_link=url_for("flow_builder", task_id=task_id),
+        compare_path=url_for("task_compare", task_id=task_id, job_id=job_id),
     )
+
+
+@app.get("/tasks/<task_id>/compare/<job_id>")
+def task_compare(task_id, job_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    docx_path = os.path.join(job_dir, "result.docx")
+    log_path = os.path.join(job_dir, "log.json")
+    if not os.path.exists(docx_path) or not os.path.exists(log_path):
+        abort(404)
+
+    with open(log_path, "r", encoding="utf-8") as f:
+        log = json.load(f)
+
+    headings = []
+    mapping = {}
+    current = None
+    for entry in log:
+        if entry.get("type") == "insert_roman_heading":
+            current = entry.get("params", {}).get("text", "")
+            headings.append(current)
+            mapping[current] = []
+        elif current:
+            for v in entry.get("params", {}).values():
+                if isinstance(v, str) and os.path.isfile(v):
+                    mapping[current].append(v)
+
+    import docx
+    doc = docx.Document(docx_path)
+    paras = [p.text.strip() for p in doc.paragraphs]
+    sections = []
+    search_start = 0
+    for idx, title in enumerate(headings):
+        start_idx = search_start
+        for i in range(search_start, len(paras)):
+            if paras[i] == title:
+                start_idx = i
+                break
+        if idx + 1 < len(headings):
+            next_title = headings[idx + 1]
+            end_idx = len(paras)
+            for j in range(start_idx + 1, len(paras)):
+                if paras[j] == next_title:
+                    end_idx = j
+                    break
+        else:
+            end_idx = len(paras)
+        content = [t for t in paras[start_idx + 1:end_idx] if t]
+        sections.append({"title": title, "content": content, "sources": mapping.get(title, [])})
+        search_start = end_idx
+
+    def to_roman(num: int) -> str:
+        vals = [
+            (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+            (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+            (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+        ]
+        res = ""
+        for v, s in vals:
+            res += s * (num // v)
+            num %= v
+        return res
+
+    def read_file(path: str) -> str:
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext == ".docx":
+                d = docx.Document(path)
+                return "\n".join(p.text for p in d.paragraphs)
+            if ext == ".pdf":
+                import fitz
+                pdf = fitz.open(path)
+                text = "\n".join(page.get_text() for page in pdf)
+                pdf.close()
+                return text
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+        except Exception as e:
+            return f"(無法讀取: {e})"
+
+    for i, sec in enumerate(sections, start=1):
+        sec["roman"] = to_roman(i)
+        unique_sources = []
+        seen = set()
+        for src in sec["sources"]:
+            if src in seen:
+                continue
+            seen.add(src)
+            unique_sources.append({
+                "name": os.path.basename(src),
+                "text": read_file(src),
+            })
+        sec["sources"] = unique_sources
+
+    return render_template("compare.html", sections=sections)
 
 
 @app.get("/tasks/<task_id>/translate/<job_id>")

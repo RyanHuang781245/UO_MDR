@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+  <div class="col-6" id="output-panel">
+    {% for sec in sections %}
+    <div class="mb-4">
+      <h5><a href="#" class="heading" data-index="{{ loop.index0 }}">{{ sec.roman }}. {{ sec.title }}</a></h5>
+      {% for item in sec.content %}
+      {% if item.type == 'paragraph' %}
+      <p>{{ item.text }}</p>
+      {% elif item.type == 'image' %}
+      <img src="{{ item.data }}" class="img-fluid d-block mx-auto my-2" />
+      {% elif item.type == 'table' %}
+      <table class="table table-bordered">
+        {% for row in item.rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="col-6" id="source-panel">
+    <p>請選擇左邊章節以查看來源內容</p>
+  </div>
+</div>
+<script>
+const sections = {{ sections|tojson }};
+function escapeHtml(str){
+  return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+for(const el of document.querySelectorAll('.heading')){
+  el.addEventListener('click', function(e){
+    e.preventDefault();
+    const idx = this.dataset.index;
+    const sec = sections[idx];
+    const srcDiv = document.getElementById('source-panel');
+    let html = '';
+    if(sec.sources.length === 0){
+      html = '<p>無來源檔案</p>';
+    } else {
+      for(const s of sec.sources){
+        html += '<h6>'+escapeHtml(s.name)+'</h6>';
+        html += '<pre class="border p-2">'+escapeHtml(s.text)+'</pre>';
+      }
+    }
+    srcDiv.innerHTML = html;
+  });
+}
+</script>
+{% endblock %}

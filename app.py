@@ -440,7 +440,6 @@ def task_result(task_id, job_id):
         # calling it without arguments raises a TypeError, so pass the
         # function itself to convert images to inline data URIs
         html = mammoth.convert_to_html(f, convert_image=mammoth.images.inline).value
-
     # Mark Roman numeral headings
     heading_re = re.compile(r'<p>(\s*(?P<num>[IVXLCDM]+)\.[^<]*)</p>')
 

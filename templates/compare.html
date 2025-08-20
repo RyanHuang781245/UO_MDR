@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h4 mb-3">來源比對</h1>
+<div class="row g-3">
+  <div class="col-md-8">
+    <iframe src="{{ html_url }}" style="width:100%; height:80vh;" class="border"></iframe>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label">選擇章節</label>
+    <select id="chapterSelect" class="form-select mb-2">
+      {% for ch in chapters %}
+      <option value="{{ ch }}">{{ ch }}</option>
+      {% endfor %}
+    </select>
+    <ul id="sourceList" class="list-group"></ul>
+    <div class="mt-3">
+      <a class="btn btn-secondary" href="{{ back_link }}">返回結果</a>
+    </div>
+  </div>
+</div>
+<script>
+const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
+function updateSources(ch){
+  const list = document.getElementById('sourceList');
+  list.innerHTML = '';
+  (CHAPTER_SOURCES[ch] || []).forEach(src => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item';
+    li.textContent = src;
+    list.appendChild(li);
+  });
+}
+const select = document.getElementById('chapterSelect');
+select.addEventListener('change', () => updateSources(select.value));
+if (select.value){ updateSources(select.value); }
+</script>
+{% endblock %}

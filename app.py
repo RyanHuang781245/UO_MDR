@@ -510,9 +510,11 @@ def task_compare(task_id, job_id):
 
     chapters = list(chapter_sources.keys())
     html_url = url_for("task_view_file", task_id=task_id, job_id=job_id, filename=html_name)
+    base_url = url_for("task_view_file", task_id=task_id, job_id=job_id, filename="")
     return render_template(
         "compare.html",
         html_url=html_url,
+        base_url=base_url,
         chapters=chapters,
         chapter_sources=chapter_sources,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),

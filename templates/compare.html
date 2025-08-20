@@ -3,7 +3,7 @@
 <h1 class="h4 mb-3">來源比對</h1>
 <div class="row g-3">
   <div class="col-md-8">
-    <iframe src="{{ html_url }}" style="width:100%; height:80vh;" class="border"></iframe>
+    <iframe id="docFrame" style="width:100%; height:80vh;" class="border"></iframe>
   </div>
   <div class="col-md-4">
     <label class="form-label">選擇章節</label>
@@ -20,6 +20,12 @@
 </div>
 <script>
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
+const HTML_URL = {{ html_url|tojson }};
+const BASE_URL = {{ base_url|tojson }};
+const FRAME = document.getElementById('docFrame');
+fetch(HTML_URL).then(r => r.text()).then(html => {
+  FRAME.srcdoc = `<base href="${BASE_URL}">` + html;
+});
 function updateSources(ch){
   const list = document.getElementById('sourceList');
   list.innerHTML = '';

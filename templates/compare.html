@@ -30,9 +30,10 @@ iframe.addEventListener('load', () => {
   const doc = iframe.contentDocument;
   const headings = doc.querySelectorAll('h1,h2,h3,h4,h5,h6,p');
   headings.forEach(h => {
-    const text = h.textContent.trim();
+    const text = h.textContent.replace(/\u00A0/g, ' ').trim();
     Object.keys(CHAPTER_SOURCES).forEach(ch => {
-      if (text === ch || text.startsWith(ch + ' ') || text.startsWith(ch + '.')) {
+      const regex = new RegExp(`^${ch}\\b\\W*`);
+      if (regex.test(text)) {
         h.style.cursor = 'pointer';
         h.addEventListener('click', () => updateSources(ch));
       }

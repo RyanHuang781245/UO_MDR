@@ -13,6 +13,16 @@
     </div>
   </div>
 </div>
+<style>
+.clickable-heading {
+  text-decoration: underline;
+  color: #0d6efd;
+  cursor: pointer;
+}
+.clickable-heading:hover {
+  color: #0a58ca;
+}
+</style>
 <script>
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 function updateSources(ch){
@@ -25,6 +35,10 @@ function updateSources(ch){
     list.appendChild(li);
   });
 }
+const firstChapter = Object.keys(CHAPTER_SOURCES)[0];
+if (firstChapter) {
+  updateSources(firstChapter);
+}
 const iframe = document.querySelector('iframe');
 iframe.addEventListener('load', () => {
   const doc = iframe.contentDocument;
@@ -34,7 +48,8 @@ iframe.addEventListener('load', () => {
     Object.keys(CHAPTER_SOURCES).forEach(ch => {
       const regex = new RegExp(`^${ch}\\b\\W*`);
       if (regex.test(text)) {
-        h.style.cursor = 'pointer';
+        h.classList.add('clickable-heading');
+        h.setAttribute('title', '點擊以檢視來源');
         h.addEventListener('click', () => updateSources(ch));
       }
     });

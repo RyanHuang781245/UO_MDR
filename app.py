@@ -421,9 +421,74 @@ def task_result(task_id, job_id):
     docx_path = os.path.join(job_dir, "result.docx")
     if not os.path.exists(docx_path):
         return "Job not found or failed.", 404
+    # Load log for source mapping
+    log_file = os.path.join(job_dir, "log.json")
+    log_data = {"steps": [], "sections": []}
+    if os.path.exists(log_file):
+        with open(log_file, "r", encoding="utf-8") as f:
+            try:
+                log_data = json.load(f)
+            except Exception:
+                pass
+    steps = log_data.get("steps", log_data if isinstance(log_data, list) else [])
+
+    # Convert docx to HTML with inline images
+    import mammoth, re
+
+    with open(docx_path, "rb") as f:
+        # mammoth.images.inline is already a callable used by convert_to_html;
+        # calling it without arguments raises a TypeError, so pass the
+        # function itself to convert images to inline data URIs
+        html = mammoth.convert_to_html(f, convert_image=mammoth.images.inline).value
+
+    # Mark Roman numeral headings
+    heading_re = re.compile(r'<p>(\s*(?P<num>[IVXLCDM]+)\.[^<]*)</p>')
+
+    def repl(m):
+        num = m.group("num")
+        return f'<p class="doc-heading" data-section="{num}">{m.group(1)}</p>'
+
+    html = heading_re.sub(repl, html)
+
+    # Build mapping from section to source info
+    def boolish(v: str) -> bool:
+        return str(v).lower() in ["1", "true", "yes", "y", "on"]
+
+    sources = {}
+    for step in steps:
+        section = step.get("section")
+        if not section:
+            continue
+        stype = step.get("type")
+        params = step.get("params", {})
+        if stype == "extract_pdf_chapter_to_table":
+            pdf_dir = os.path.join(job_dir, f"pdfs_extracted_{step.get('step')}")
+            files = []
+            if os.path.isdir(pdf_dir):
+                files = sorted([fn for fn in os.listdir(pdf_dir) if fn.lower().endswith(".pdf")])
+            info = {"kind": "pdf", "files": files}
+        elif stype == "extract_word_chapter":
+            info = {
+                "kind": "word_chapter",
+                "file": os.path.basename(params.get("input_file", "")),
+                "chapter": params.get("target_chapter_section", ""),
+            }
+            if boolish(params.get("target_title", "false")):
+                info["title"] = params.get("target_title_section", "")
+        elif stype == "extract_word_all_content":
+            info = {
+                "kind": "word_all",
+                "file": os.path.basename(params.get("input_file", "")),
+            }
+        else:
+            continue
+        sources.setdefault(section, []).append(info)
+
     return render_template(
         "run.html",
         job_id=job_id,
+        content_html=html,
+        sources=sources,
         docx_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),
         log_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="log"),
         translate_path=url_for("task_translate", task_id=task_id, job_id=job_id),

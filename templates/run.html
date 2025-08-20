@@ -2,13 +2,45 @@
 {% block content %}
 <h1 class="h4">流程已完成</h1>
 <p class="mb-3">Job ID: <code>{{ job_id }}</code></p>
-<div class="vstack gap-2">
+<div class="mb-3 d-flex flex-wrap gap-2">
   <a class="btn btn-primary" href="{{ docx_path }}">下載結果 DOCX</a>
   <a class="btn btn-primary" href="{{ translate_path }}">下載翻譯 DOCX</a>
   <a class="btn btn-outline-secondary" href="{{ log_path }}">下載流程 Log</a>
   {% if back_link %}
   <a class="btn btn-secondary" href="{{ back_link }}">返回流程</a>
   {% endif %}
-  <a class="btn btn-link" href="{{ url_for('tasks') }}">回首頁</a>
 </div>
+<div class="row">
+  <div class="col-md-6 border-end" id="doc-content">
+    {{ content_html|safe }}
+  </div>
+  <div class="col-md-6" id="source-panel">
+    <p class="text-muted">請點選左側章節以檢視來源</p>
+  </div>
+</div>
+<script>
+const sources = {{ sources|tojson }};
+document.querySelectorAll('#doc-content .doc-heading').forEach(el => {
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', () => {
+    const key = el.dataset.section;
+    const panel = document.getElementById('source-panel');
+    panel.innerHTML = '';
+    (sources[key] || []).forEach(item => {
+      const div = document.createElement('div');
+      if (item.kind === 'pdf') {
+        div.innerHTML = '<h5>PDF 檔案</h5><ul>' + item.files.map(function(f){return '<li>' + f + '</li>';}).join('') + '</ul>';
+      } else if (item.kind === 'word_chapter') {
+        div.innerHTML = '<p>檔案: ' + item.file + '</p><p>章節: ' + item.chapter + '</p>' + (item.title ? '<p>標題: ' + item.title + '</p>' : '');
+      } else if (item.kind === 'word_all') {
+        div.innerHTML = '<p>檔案: ' + item.file + '</p>';
+      }
+      panel.appendChild(div);
+    });
+    if (panel.innerHTML === '') {
+      panel.innerHTML = '<p class="text-muted">無來源資料</p>';
+    }
+  });
+});
+</script>
 {% endblock %}

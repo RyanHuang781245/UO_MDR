@@ -633,8 +633,7 @@ def task_compare(task_id, job_id):
         sec["roman"] = to_roman(i)
 
     return render_template("compare.html", sections=sections)
-
-
+  
 @app.get("/tasks/<task_id>/translate/<job_id>")
 def task_translate(task_id, job_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)

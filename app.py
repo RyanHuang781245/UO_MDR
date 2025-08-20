@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 import zipfile
+import re
 from datetime import datetime
 from flask import (
     Flask,
@@ -10,6 +11,7 @@ from flask import (
     redirect,
     url_for,
     send_file,
+    send_from_directory,
     abort,
 )
 from werkzeug.utils import secure_filename
@@ -427,6 +429,7 @@ def task_result(task_id, job_id):
         docx_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),
         log_path=url_for("task_download", task_id=task_id, job_id=job_id, kind="log"),
         translate_path=url_for("task_translate", task_id=task_id, job_id=job_id),
+        compare_path=url_for("task_compare", task_id=task_id, job_id=job_id),
         back_link=url_for("flow_builder", task_id=task_id),
     )
 
@@ -453,6 +456,81 @@ def task_translate(task_id, job_id):
         as_attachment=True,
         download_name=f"translated_{job_id}.docx",
     )
+
+
+@app.get("/tasks/<task_id>/compare/<job_id>")
+def task_compare(task_id, job_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    docx_path = os.path.join(job_dir, "result.docx")
+    log_path = os.path.join(job_dir, "log.json")
+    if not os.path.exists(docx_path) or not os.path.exists(log_path):
+        abort(404)
+
+    html_name = "result.html"
+    html_path = os.path.join(job_dir, html_name)
+    if not os.path.exists(html_path):
+        from spire.doc import Document, FileFormat
+        doc = Document()
+        doc.LoadFromFile(docx_path)
+        doc.SaveToFile(html_path, FileFormat.Html)
+        doc.Close()
+
+    chapter_sources = {}
+    current = None
+    with open(log_path, "r", encoding="utf-8") as f:
+        entries = json.load(f)
+    for entry in entries:
+        stype = entry.get("type")
+        params = entry.get("params", {})
+        if stype == "insert_roman_heading":
+            text = params.get("text", "").strip()
+            m = re.match(r"([IVXLCDM]+)", text)
+            current = m.group(1) if m else None
+            if current:
+                chapter_sources.setdefault(current, [])
+        elif stype == "extract_pdf_chapter_to_table":
+            zip_path = params.get("pdf_zip", "")
+            pdfs = []
+            if zip_path and os.path.exists(zip_path):
+                import zipfile
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    pdfs = [os.path.basename(n) for n in zf.namelist() if not n.endswith("/")]
+            chapter_sources.setdefault(current or "未分類", []).extend(pdfs)
+        elif stype == "extract_word_chapter":
+            infile = os.path.basename(params.get("input_file", ""))
+            sec = params.get("target_chapter_section", "")
+            use_title = str(params.get("target_title", "")).lower() in ["1", "true", "yes", "on"]
+            title = params.get("target_title_section", "") if use_title else ""
+            info = infile
+            if sec:
+                info += f" 章節 {sec}"
+            if title:
+                info += f" 標題 {title}"
+            chapter_sources.setdefault(current or "未分類", []).append(info)
+        elif stype == "extract_word_all_content":
+            infile = os.path.basename(params.get("input_file", ""))
+            chapter_sources.setdefault(current or "未分類", []).append(infile)
+
+    html_url = url_for("task_view_file", task_id=task_id, job_id=job_id, filename=html_name)
+    base_url = url_for("task_view_file", task_id=task_id, job_id=job_id, filename="")
+    return render_template(
+        "compare.html",
+        html_url=html_url,
+        base_url=base_url,
+        chapter_sources=chapter_sources,
+        back_link=url_for("task_result", task_id=task_id, job_id=job_id),
+    )
+
+
+@app.get("/tasks/<task_id>/view/<job_id>/<path:filename>")
+def task_view_file(task_id, job_id, filename):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    file_path = os.path.join(job_dir, filename)
+    if not os.path.isfile(file_path):
+        abort(404)
+    return send_from_directory(job_dir, filename)
 
 
 @app.get("/tasks/<task_id>/download/<job_id>/<kind>")

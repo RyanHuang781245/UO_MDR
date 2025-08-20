@@ -5,8 +5,18 @@
     {% for sec in sections %}
     <div class="mb-4">
       <h5><a href="#" class="heading" data-index="{{ loop.index0 }}">{{ sec.roman }}. {{ sec.title }}</a></h5>
-      {% for p in sec.content %}
-      <p>{{ p }}</p>
+      {% for item in sec.content %}
+      {% if item.type == 'paragraph' %}
+      <p>{{ item.text }}</p>
+      {% elif item.type == 'image' %}
+      <img src="{{ item.data }}" class="img-fluid d-block mx-auto my-2" />
+      {% elif item.type == 'table' %}
+      <table class="table table-bordered">
+        {% for row in item.rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </table>
+      {% endif %}
       {% endfor %}
     </div>
     {% endfor %}

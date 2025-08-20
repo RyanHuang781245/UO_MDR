@@ -445,41 +445,174 @@ def task_compare(task_id, job_id):
         log = json.load(f)
 
     headings = []
-    mapping = {}
+    sources_map = {}
     current = None
-    for entry in log:
-        if entry.get("type") == "insert_roman_heading":
-            current = entry.get("params", {}).get("text", "")
-            headings.append(current)
-            mapping[current] = []
-        elif current:
-            for v in entry.get("params", {}).values():
-                if isinstance(v, str) and os.path.isfile(v):
-                    mapping[current].append(v)
 
+    # Helpers to read specific snippets from source files
     import docx
-    doc = docx.Document(docx_path)
-    paras = [p.text.strip() for p in doc.paragraphs]
-    sections = []
-    search_start = 0
-    for idx, title in enumerate(headings):
-        start_idx = search_start
-        for i in range(search_start, len(paras)):
-            if paras[i] == title:
-                start_idx = i
+    import re
+    import base64
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.text.paragraph import Paragraph
+    from docx.table import Table
+    from docx.oxml.ns import qn
+
+    def read_docx_text(path: str) -> str:
+        d = docx.Document(path)
+        return "\n".join(p.text for p in d.paragraphs if p.text.strip())
+
+    def extract_word_chapter_text(path: str, target: str, use_title: bool, title_section: str) -> str:
+        pattern = re.compile(rf"^\s*{re.escape(title_section if use_title else target)}(\s|$)", re.IGNORECASE)
+        stop_prefix = target.rsplit('.', 1)[0]
+        stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+        doc = docx.Document(path)
+        capture = False
+        lines = []
+        for p in doc.paragraphs:
+            txt = p.text.strip()
+            if not txt:
+                continue
+            if pattern.match(txt):
+                capture = True
+            elif capture and stop_pattern.match(txt):
                 break
-        if idx + 1 < len(headings):
-            next_title = headings[idx + 1]
-            end_idx = len(paras)
-            for j in range(start_idx + 1, len(paras)):
-                if paras[j] == next_title:
-                    end_idx = j
+            if capture:
+                lines.append(txt)
+        return "\n".join(lines)
+
+    def extract_pdf_snippets(folder: str, target: str) -> dict:
+        import fitz
+        results = {}
+        upper_ratio = 0.1
+        lower_ratio = 0.9
+        stop_pattern = re.compile(
+            r"^\s*(?:\d+\.\d+\.\d+|\d+\.\d+|[A-Z]\.|圖\s*\d+|Fig\.?\s*\d+|Figure\s+\d+)",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        section_pattern = re.compile(rf"^\s*\d*\.?\s*{re.escape(target)}:?", re.IGNORECASE | re.MULTILINE)
+        english_pattern = re.compile(r'^[\x00-\x7F]+$')
+        for filename in os.listdir(folder):
+            if not filename.lower().endswith('.pdf'):
+                continue
+            pdf_path = os.path.join(folder, filename)
+            doc_pdf = fitz.open(pdf_path)
+            all_text = []
+            for page in doc_pdf:
+                width, height = page.rect.width, page.rect.height
+                capture_rect = fitz.Rect(0, height * upper_ratio, width, height * lower_ratio)
+                blocks = page.get_text("blocks", clip=capture_rect)
+                all_text.extend([b[4].strip() for b in blocks if b[4].strip()])
+            doc_pdf.close()
+            full_text = "\n".join(all_text)
+            capture_mode = False
+            section_lines = []
+            for line in full_text.splitlines():
+                if section_pattern.match(line):
+                    capture_mode = True
+                    if english_pattern.match(line):
+                        section_lines.append(line)
+                elif capture_mode and stop_pattern.match(line):
                     break
-        else:
-            end_idx = len(paras)
-        content = [t for t in paras[start_idx + 1:end_idx] if t]
-        sections.append({"title": title, "content": content, "sources": mapping.get(title, [])})
-        search_start = end_idx
+                elif capture_mode and english_pattern.match(line):
+                    section_lines.append(line)
+            extracted_text = " ".join(section_lines).strip()
+            if extracted_text:
+                match = re.search(r"(UOC|United)", extracted_text, re.IGNORECASE)
+                if match:
+                    extracted_text = extracted_text[:match.end()]
+                if not extracted_text.endswith('.'):
+                    extracted_text += '.'
+            else:
+                extracted_text = "（未找到英文內容）"
+            results[filename] = extracted_text
+        return results
+
+    # Build mapping of headings to their source snippets
+    for entry in log:
+        etype = entry.get("type")
+        params = entry.get("params", {})
+        if etype == "insert_roman_heading":
+            current = params.get("text", "")
+            headings.append(current)
+            sources_map[current] = []
+        elif current:
+            if etype == "extract_pdf_chapter_to_table":
+                folder = os.path.join(job_dir, "pdfs_extracted")
+                target = params.get("target_section", "")
+                snippets = extract_pdf_snippets(folder, target)
+                for name, text in snippets.items():
+                    sources_map[current].append({"name": name, "text": text})
+            elif etype == "extract_word_all_content":
+                src = params.get("input_file")
+                if src:
+                    sources_map[current].append({
+                        "name": os.path.basename(src),
+                        "text": read_docx_text(src),
+                    })
+            elif etype == "extract_word_chapter":
+                src = params.get("input_file")
+                if src:
+                    snippet = extract_word_chapter_text(
+                        src,
+                        params.get("target_chapter_section", ""),
+                        bool(params.get("target_title")),
+                        params.get("target_title_section", ""),
+                    )
+                    sources_map[current].append({
+                        "name": os.path.basename(src),
+                        "text": snippet,
+                    })
+            else:
+                for v in params.values():
+                    if isinstance(v, str) and os.path.isfile(v):
+                        sources_map[current].append({
+                            "name": os.path.basename(v),
+                            "text": read_docx_text(v),
+                        })
+
+    # Parse output document to collect paragraphs, images, and tables per section
+    doc = docx.Document(docx_path)
+    sections = []
+    current_title = None
+    content = []
+
+    def flush_section():
+        if current_title is not None:
+            sections.append({
+                "title": current_title,
+                "content": content[:],
+                "sources": sources_map.get(current_title, []),
+            })
+
+    for block in doc.element.body.iterchildren():
+        if isinstance(block, CT_P):
+            p = Paragraph(block, doc)
+            txt = p.text.strip()
+            if txt in headings:
+                flush_section()
+                current_title = txt
+                content = []
+                continue
+            # extract images inside paragraph
+            has_image = False
+            for r in p.runs:
+                for blip in r.element.xpath('.//a:blip'):
+                    rid = blip.attrib.get(qn('r:embed'))
+                    part = doc.part.related_parts[rid]
+                    b64 = base64.b64encode(part.blob).decode('ascii')
+                    content.append({"type": "image", "data": f"data:image/png;base64,{b64}"})
+                    has_image = True
+            if txt:
+                content.append({"type": "paragraph", "text": txt})
+        elif isinstance(block, CT_Tbl):
+            tbl = Table(block, doc)
+            rows = []
+            for row in tbl.rows:
+                rows.append([cell.text.strip() for cell in row.cells])
+            content.append({"type": "table", "rows": rows})
+
+    flush_section()
 
     def to_roman(num: int) -> str:
         vals = [
@@ -493,39 +626,10 @@ def task_compare(task_id, job_id):
             num %= v
         return res
 
-    def read_file(path: str) -> str:
-        ext = os.path.splitext(path)[1].lower()
-        try:
-            if ext == ".docx":
-                d = docx.Document(path)
-                return "\n".join(p.text for p in d.paragraphs)
-            if ext == ".pdf":
-                import fitz
-                pdf = fitz.open(path)
-                text = "\n".join(page.get_text() for page in pdf)
-                pdf.close()
-                return text
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read()
-        except Exception as e:
-            return f"(無法讀取: {e})"
-
     for i, sec in enumerate(sections, start=1):
         sec["roman"] = to_roman(i)
-        unique_sources = []
-        seen = set()
-        for src in sec["sources"]:
-            if src in seen:
-                continue
-            seen.add(src)
-            unique_sources.append({
-                "name": os.path.basename(src),
-                "text": read_file(src),
-            })
-        sec["sources"] = unique_sources
 
     return render_template("compare.html", sections=sections)
-
 
 @app.get("/tasks/<task_id>/translate/<job_id>")
 def task_translate(task_id, job_id):

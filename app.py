@@ -484,7 +484,7 @@ def task_compare(task_id, job_id):
         params = entry.get("params", {})
         if stype == "insert_roman_heading":
             current = params.get("text", "")
-            chapter_sources.setdefault(current, [])
+            chapter_sources.setdefault(current or "未分類", [])
         elif stype == "extract_pdf_chapter_to_table":
             zip_path = params.get("pdf_zip", "")
             pdfs = []

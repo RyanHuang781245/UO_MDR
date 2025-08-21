@@ -15,24 +15,55 @@
 <script>
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
-function updateSources(ch){
+const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
+const CHAPTER_SET = new Set(CHAPTERS);
+let highlighted = [];
+
+function clearHighlights() {
+  highlighted.forEach(el => {
+    el.style.backgroundColor = '';
+  });
+  highlighted = [];
+}
+
+function updateSources(ch, element) {
+  clearHighlights();
   const list = document.getElementById('sourceList');
   list.innerHTML = '';
-  let sources = [];
+  let sequence = [];
   if (Array.isArray(ch)) {
-    sources = [...new Set(ch)];
+    sequence = ch.slice();
   } else if (ch === null) {
     const all = Object.values(CHAPTER_SOURCES).flat();
-    sources = [...new Set(all)];
+    sequence = all.slice();
   } else {
-    sources = CHAPTER_SOURCES[ch] || [];
+    sequence = CHAPTER_SOURCES[ch] || [];
   }
-  sources.forEach(src => {
+  if (!sequence.length) return;
+  const isPdfGroup = sequence.every(src => src.toLowerCase().endsWith('.pdf'));
+  const uniqueSources = [...new Set(sequence)];
+  const colorMap = {};
+  uniqueSources.forEach((src, idx) => {
+    const color = isPdfGroup ? COLORS[0] : COLORS[idx % COLORS.length];
+    colorMap[src] = color;
     const li = document.createElement('li');
     li.className = 'list-group-item';
     li.textContent = src;
+    li.style.backgroundColor = color;
     list.appendChild(li);
   });
+  if (element) {
+    let node = element.nextElementSibling;
+    let idx = 0;
+    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
+      const src = idx < sequence.length ? sequence[idx] : sequence[sequence.length - 1];
+      const color = isPdfGroup ? colorMap[uniqueSources[0]] : colorMap[src];
+      node.style.backgroundColor = color;
+      highlighted.push(node);
+      node = node.nextElementSibling;
+      idx++;
+    }
+  }
 }
 
 const iframe = document.getElementById('htmlFrame');
@@ -46,7 +77,7 @@ iframe.addEventListener('load', () => {
       found = true;
       elements.forEach(el => {
         el.style.cursor = 'pointer';
-        el.addEventListener('click', () => updateSources(ch));
+        el.addEventListener('click', () => updateSources(ch, el));
       });
     } else {
       unhandled = unhandled.concat(CHAPTER_SOURCES[ch] || []);

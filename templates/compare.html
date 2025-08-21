@@ -40,8 +40,9 @@ function updateSources(ch, element) {
     sources = CHAPTER_SOURCES[ch] || [];
   }
   const colorMap = {};
+  const isPdfGroup = sources.length && sources.every(src => src.toLowerCase().endsWith('.pdf'));
   sources.forEach((src, idx) => {
-    const color = COLORS[idx % COLORS.length];
+    const color = isPdfGroup ? COLORS[0] : COLORS[idx % COLORS.length];
     colorMap[src] = color;
     const li = document.createElement('li');
     li.className = 'list-group-item';
@@ -53,7 +54,7 @@ function updateSources(ch, element) {
     let node = element.nextElementSibling;
     let idx = 0;
     while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const src = sources[idx % sources.length];
+      const src = isPdfGroup ? sources[0] : sources[idx % sources.length];
       const color = colorMap[src];
       node.style.backgroundColor = color;
       highlighted.push(node);

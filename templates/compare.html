@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1 class="h4 mb-3">來源比對</h1>
-<div class="row g-3">
+<div class="row g-3 position-relative">
   <div class="col-md-8">
     <iframe id="htmlFrame" src="{{ html_url }}" style="width:100%; height:80vh;" class="border"></iframe>
   </div>
@@ -11,7 +11,13 @@
       <a class="btn btn-secondary" href="{{ back_link }}">返回結果</a>
     </div>
   </div>
+  <svg id="connectorSvg" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></svg>
 </div>
+<style>
+.compare-paragraph { border: 2px solid red; }
+.compare-paragraph.active { background-color: rgba(255,0,0,0.1); }
+#connectorSvg line { stroke: red; stroke-width: 2; }
+</style>
 <script>
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
@@ -35,6 +41,38 @@ function updateSources(ch){
   });
 }
 
+let selected = null;
+
+function drawLines(el){
+  const svg = document.getElementById('connectorSvg');
+  svg.innerHTML = '';
+  if (!el) return;
+  const iframeRect = iframe.getBoundingClientRect();
+  const rect = el.getBoundingClientRect();
+  const x1 = iframeRect.left + rect.right;
+  const y1 = iframeRect.top + rect.top + rect.height / 2;
+  const listItems = Array.from(document.getElementById('sourceList').children);
+  listItems.forEach(item => {
+    const liRect = item.getBoundingClientRect();
+    const x2 = liRect.left;
+    const y2 = liRect.top + liRect.height / 2;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1);
+    line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+    svg.appendChild(line);
+  });
+}
+
+function handleClick(ch, el){
+  updateSources(ch);
+  if (selected) selected.classList.remove('active');
+  selected = el;
+  selected.classList.add('active');
+  drawLines(el);
+}
+
 const iframe = document.getElementById('htmlFrame');
 iframe.addEventListener('load', () => {
   const doc = iframe.contentDocument || iframe.contentWindow.document;
@@ -45,8 +83,9 @@ iframe.addEventListener('load', () => {
     if (elements.length) {
       found = true;
       elements.forEach(el => {
+        el.classList.add('compare-paragraph');
         el.style.cursor = 'pointer';
-        el.addEventListener('click', () => updateSources(ch));
+        el.addEventListener('click', () => handleClick(ch, el));
       });
     } else {
       unhandled = unhandled.concat(CHAPTER_SOURCES[ch] || []);

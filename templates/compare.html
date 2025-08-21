@@ -69,10 +69,10 @@ function updateSources(ch, element) {
     let node = element.nextElementSibling;
     let idx = 0;
     const markers = sequence.map(src => {
-      const sec = src.match(/章節\s*([\d\.]+)/);
-      if (sec) return {type: 'section', value: sec[1]};
       const title = src.match(/標題\s*(.+)/);
-      return title ? {type: 'title', value: title[1]} : null;
+      if (title) return {type: 'title', value: title[1]};
+      const sec = src.match(/章節\s*([\d\.]+)/);
+      return sec ? {type: 'section', value: sec[1]} : null;
     });
     const findNextMarkerIdx = from => {
       for (let i = from + 1; i < markers.length; i++) {

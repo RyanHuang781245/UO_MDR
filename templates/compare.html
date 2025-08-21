@@ -40,11 +40,23 @@ function updateSources(ch, element) {
     sequence = CHAPTER_SOURCES[ch] || [];
   }
   if (!sequence.length) return;
-  const isPdfGroup = sequence.every(src => src.toLowerCase().endsWith('.pdf'));
+
   const uniqueSources = [...new Set(sequence)];
   const colorMap = {};
-  uniqueSources.forEach((src, idx) => {
-    const color = isPdfGroup ? COLORS[0] : COLORS[idx % COLORS.length];
+  let colorIdx = 0;
+  let pdfColor = null;
+  uniqueSources.forEach(src => {
+    let color;
+    if (src.toLowerCase().endsWith('.pdf')) {
+      if (!pdfColor) {
+        pdfColor = COLORS[colorIdx % COLORS.length];
+        colorIdx++;
+      }
+      color = pdfColor;
+    } else {
+      color = COLORS[colorIdx % COLORS.length];
+      colorIdx++;
+    }
     colorMap[src] = color;
     const li = document.createElement('li');
     li.className = 'list-group-item';
@@ -52,16 +64,33 @@ function updateSources(ch, element) {
     li.style.backgroundColor = color;
     list.appendChild(li);
   });
+
   if (element) {
     let node = element.nextElementSibling;
     let idx = 0;
+    const sections = sequence.map(src => {
+      const m = src.match(/章節\s*([\d\.]+)/);
+      return m ? m[1] : null;
+    });
+    const findNextSectionIdx = from => {
+      for (let i = from + 1; i < sections.length; i++) {
+        if (sections[i]) return i;
+      }
+      return -1;
+    };
+    let nextIdx = findNextSectionIdx(0);
+    let nextSection = nextIdx !== -1 ? sections[nextIdx] : null;
     while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const src = idx < sequence.length ? sequence[idx] : sequence[sequence.length - 1];
-      const color = isPdfGroup ? colorMap[uniqueSources[0]] : colorMap[src];
-      node.style.backgroundColor = color;
+      const text = node.textContent.trim();
+      if (nextSection && text.startsWith(nextSection)) {
+        idx = nextIdx;
+        nextIdx = findNextSectionIdx(idx);
+        nextSection = nextIdx !== -1 ? sections[nextIdx] : null;
+      }
+      const src = sequence[idx] || sequence[sequence.length - 1];
+      node.style.backgroundColor = colorMap[src];
       highlighted.push(node);
       node = node.nextElementSibling;
-      idx++;
     }
   }
 }

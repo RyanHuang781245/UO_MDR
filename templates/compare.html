@@ -68,28 +68,38 @@ function updateSources(ch, element) {
   if (element) {
     let node = element.nextElementSibling;
     let idx = 0;
-    const sections = sequence.map(src => {
-      const m = src.match(/章節\s*([\d\.]+)/);
-      return m ? m[1] : null;
+    const markers = sequence.map(src => {
+      const sec = src.match(/章節\s*([\d\.]+)/);
+      if (sec) return {type: 'section', value: sec[1]};
+      const title = src.match(/標題\s*(.+)/);
+      return title ? {type: 'title', value: title[1]} : null;
     });
-    const findNextSectionIdx = from => {
-      for (let i = from + 1; i < sections.length; i++) {
-        if (sections[i]) return i;
+    const findNextMarkerIdx = from => {
+      for (let i = from + 1; i < markers.length; i++) {
+        if (markers[i]) return i;
       }
       return -1;
     };
-    let nextIdx = findNextSectionIdx(0);
-    let nextSection = nextIdx !== -1 ? sections[nextIdx] : null;
+    let nextIdx = findNextMarkerIdx(0);
+    let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
     while (node && !CHAPTER_SET.has(node.textContent.trim())) {
       const text = node.textContent.trim();
-      if (nextSection && text.startsWith(nextSection)) {
+      if (nextMarker && highlighted.length && (
+          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
+          (nextMarker.type === 'title' && text.includes(nextMarker.value))
+        )) {
         idx = nextIdx;
-        nextIdx = findNextSectionIdx(idx);
-        nextSection = nextIdx !== -1 ? sections[nextIdx] : null;
+        nextIdx = findNextMarkerIdx(idx);
+        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
       const src = sequence[idx] || sequence[sequence.length - 1];
       node.style.backgroundColor = colorMap[src];
       highlighted.push(node);
+      if (markers[idx] && markers[idx].type === 'title') {
+        idx = nextIdx;
+        nextIdx = findNextMarkerIdx(idx);
+        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
+      }
       node = node.nextElementSibling;
     }
   }

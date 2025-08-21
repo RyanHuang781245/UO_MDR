@@ -30,18 +30,20 @@ function updateSources(ch, element) {
   clearHighlights();
   const list = document.getElementById('sourceList');
   list.innerHTML = '';
-  let sources = [];
+  let sequence = [];
   if (Array.isArray(ch)) {
-    sources = [...new Set(ch)];
+    sequence = ch.slice();
   } else if (ch === null) {
     const all = Object.values(CHAPTER_SOURCES).flat();
-    sources = [...new Set(all)];
+    sequence = all.slice();
   } else {
-    sources = CHAPTER_SOURCES[ch] || [];
+    sequence = CHAPTER_SOURCES[ch] || [];
   }
+  if (!sequence.length) return;
+  const isPdfGroup = sequence.every(src => src.toLowerCase().endsWith('.pdf'));
+  const uniqueSources = [...new Set(sequence)];
   const colorMap = {};
-  const isPdfGroup = sources.length && sources.every(src => src.toLowerCase().endsWith('.pdf'));
-  sources.forEach((src, idx) => {
+  uniqueSources.forEach((src, idx) => {
     const color = isPdfGroup ? COLORS[0] : COLORS[idx % COLORS.length];
     colorMap[src] = color;
     const li = document.createElement('li');
@@ -50,12 +52,12 @@ function updateSources(ch, element) {
     li.style.backgroundColor = color;
     list.appendChild(li);
   });
-  if (element && sources.length) {
+  if (element) {
     let node = element.nextElementSibling;
     let idx = 0;
     while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const src = isPdfGroup ? sources[0] : sources[idx % sources.length];
-      const color = colorMap[src];
+      const src = idx < sequence.length ? sequence[idx] : sequence[sequence.length - 1];
+      const color = isPdfGroup ? colorMap[uniqueSources[0]] : colorMap[src];
       node.style.backgroundColor = color;
       highlighted.push(node);
       node = node.nextElementSibling;

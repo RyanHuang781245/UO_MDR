@@ -16,6 +16,7 @@
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
+const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
 
 function clearHighlights() {
@@ -51,7 +52,7 @@ function updateSources(ch, element) {
   if (element && sources.length) {
     let node = element.nextElementSibling;
     let idx = 0;
-    while (node && !/^H[1-6]$/.test(node.tagName)) {
+    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
       const src = sources[idx % sources.length];
       const color = colorMap[src];
       node.style.backgroundColor = color;

@@ -563,10 +563,11 @@ def task_compare(task_id, job_id):
 def task_view_file(task_id, job_id, filename):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
-    file_path = os.path.join(job_dir, filename)
+    safe_filename = filename.replace("\\", "/")
+    file_path = os.path.join(job_dir, safe_filename)
     if not os.path.isfile(file_path):
         abort(404)
-    return send_from_directory(job_dir, filename)
+    return send_from_directory(job_dir, safe_filename)
 
 
 @app.get("/tasks/<task_id>/download/<job_id>/<kind>")

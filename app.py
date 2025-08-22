@@ -475,6 +475,7 @@ def task_compare(task_id, job_id):
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
 
+    files_dir = os.path.join(tdir, "files")
     chapter_sources = {}
     current = None
     with open(log_path, "r", encoding="utf-8") as f:
@@ -501,7 +502,9 @@ def task_compare(task_id, job_id):
                 )
                 chapter_sources.setdefault(current or "未分類", []).append({"name": pdf, "url": url})
         elif stype == "extract_word_chapter":
-            infile = os.path.basename(params.get("input_file", ""))
+            input_path = params.get("input_file", "")
+            rel_path = os.path.relpath(input_path, files_dir) if input_path else ""
+            infile = os.path.basename(input_path)
             sec = params.get("target_chapter_section", "")
             use_title = str(params.get("target_title", "")).lower() in ["1", "true", "yes", "on"]
             title = params.get("target_title_section", "") if use_title else ""
@@ -510,11 +513,13 @@ def task_compare(task_id, job_id):
                 info += f" 章節 {sec}"
             if title:
                 info += f" 標題 {title}"
-            url = url_for("task_view_source", task_id=task_id, filename=infile)
+            url = url_for("task_view_source", task_id=task_id, filename=rel_path)
             chapter_sources.setdefault(current or "未分類", []).append({"name": info, "url": url})
         elif stype == "extract_word_all_content":
-            infile = os.path.basename(params.get("input_file", ""))
-            url = url_for("task_view_source", task_id=task_id, filename=infile)
+            input_path = params.get("input_file", "")
+            rel_path = os.path.relpath(input_path, files_dir) if input_path else ""
+            infile = os.path.basename(input_path)
+            url = url_for("task_view_source", task_id=task_id, filename=rel_path)
             chapter_sources.setdefault(current or "未分類", []).append({"name": infile, "url": url})
 
     chapters = list(chapter_sources.keys())

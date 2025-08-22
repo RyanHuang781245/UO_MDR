@@ -551,6 +551,7 @@ def task_view_source(task_id, filename):
         return send_from_directory(os.path.dirname(view_path), os.path.basename(view_path))
 
     file_path = os.path.join(files_dir, filename)
+
     ext = os.path.splitext(filename)[1].lower()
 
     if ext == ".docx":

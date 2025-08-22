@@ -475,6 +475,7 @@ def task_compare(task_id, job_id):
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
 
+    files_dir = os.path.join(tdir, "files")
     chapter_sources = {}
     current = None
     with open(log_path, "r", encoding="utf-8") as f:
@@ -492,9 +493,18 @@ def task_compare(task_id, job_id):
                 import zipfile
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     pdfs = [os.path.basename(n) for n in zf.namelist() if not n.endswith("/")]
-            chapter_sources.setdefault(current or "未分類", []).extend(pdfs)
+            for pdf in pdfs:
+                url = url_for(
+                    "task_view_file",
+                    task_id=task_id,
+                    job_id=job_id,
+                    filename=f"pdfs_extracted/{pdf}",
+                )
+                chapter_sources.setdefault(current or "未分類", []).append({"name": pdf, "url": url})
         elif stype == "extract_word_chapter":
-            infile = os.path.basename(params.get("input_file", ""))
+            input_path = params.get("input_file", "")
+            rel_path = os.path.relpath(input_path, files_dir) if input_path else ""
+            infile = os.path.basename(input_path)
             sec = params.get("target_chapter_section", "")
             use_title = str(params.get("target_title", "")).lower() in ["1", "true", "yes", "on"]
             title = params.get("target_title_section", "") if use_title else ""
@@ -503,10 +513,14 @@ def task_compare(task_id, job_id):
                 info += f" 章節 {sec}"
             if title:
                 info += f" 標題 {title}"
-            chapter_sources.setdefault(current or "未分類", []).append(info)
+            url = url_for("task_view_source", task_id=task_id, filename=rel_path)
+            chapter_sources.setdefault(current or "未分類", []).append({"name": info, "url": url})
         elif stype == "extract_word_all_content":
-            infile = os.path.basename(params.get("input_file", ""))
-            chapter_sources.setdefault(current or "未分類", []).append(infile)
+            input_path = params.get("input_file", "")
+            rel_path = os.path.relpath(input_path, files_dir) if input_path else ""
+            infile = os.path.basename(input_path)
+            url = url_for("task_view_source", task_id=task_id, filename=rel_path)
+            chapter_sources.setdefault(current or "未分類", []).append({"name": infile, "url": url})
 
     chapters = list(chapter_sources.keys())
     html_url = url_for("task_view_file", task_id=task_id, job_id=job_id, filename=html_name)
@@ -516,7 +530,41 @@ def task_compare(task_id, job_id):
         chapters=chapters,
         chapter_sources=chapter_sources,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
+        task_id=task_id,
+        job_id=job_id,
     )
+
+
+@app.get("/tasks/<task_id>/source/<path:filename>")
+def task_view_source(task_id, filename):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    view_root = os.path.join(files_dir, "_view")
+
+    # Serve pre-generated preview resources if they exist
+    view_path = os.path.join(view_root, filename)
+    if os.path.isfile(view_path):
+        return send_from_directory(os.path.dirname(view_path), os.path.basename(view_path))
+
+    file_path = os.path.join(files_dir, filename)
+    if not os.path.isfile(file_path):
+        abort(404)
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == ".docx":
+        base, _ = os.path.splitext(filename)
+        html_rel = f"{base}.html"
+        html_path = os.path.join(view_root, html_rel)
+        os.makedirs(os.path.dirname(html_path), exist_ok=True)
+        if not os.path.exists(html_path):
+            from spire.doc import Document, FileFormat
+            doc = Document()
+            doc.LoadFromFile(file_path)
+            doc.SaveToFile(html_path, FileFormat.Html)
+            doc.Close()
+        return send_from_directory(os.path.dirname(html_path), os.path.basename(html_path))
+
+    return send_from_directory(files_dir, filename)
 
 
 @app.get("/tasks/<task_id>/view/<job_id>/<path:filename>")

@@ -537,6 +537,7 @@ def task_view_source(task_id, filename):
     file_path = os.path.join(files_dir, filename)
     if not os.path.isfile(file_path):
         abort(404)
+
     ext = os.path.splitext(filename)[1].lower()
     if ext == ".docx":
         view_root = os.path.join(files_dir, "_view")

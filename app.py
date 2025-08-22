@@ -537,6 +537,21 @@ def task_view_source(task_id, filename):
     file_path = os.path.join(files_dir, filename)
     if not os.path.isfile(file_path):
         abort(404)
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == ".docx":
+        view_root = os.path.join(files_dir, "_view")
+        base, _ = os.path.splitext(filename)
+        html_rel = f"{base}.html"
+        html_path = os.path.join(view_root, html_rel)
+        os.makedirs(os.path.dirname(html_path), exist_ok=True)
+        if not os.path.exists(html_path):
+            from spire.doc import Document, FileFormat
+            doc = Document()
+            doc.LoadFromFile(file_path)
+            doc.SaveToFile(html_path, FileFormat.Html)
+            doc.Close()
+        return send_from_directory(os.path.dirname(html_path), os.path.basename(html_path))
     return send_from_directory(files_dir, filename)
 
 

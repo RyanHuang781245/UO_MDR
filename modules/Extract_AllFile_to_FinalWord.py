@@ -210,6 +210,11 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                 paragraph_text = paragraph_text.strip()
                 if section_pattern.match(paragraph_text):
                     capture_mode = True
+                    marker_para = section.AddParagraph()
+                    marker_run = marker_para.AppendText(paragraph_text)
+                    marker_run.CharacterFormat.TextColor = Color.White
+                    marker_para.Format.BeforeSpacing = 0
+                    marker_para.Format.AfterSpacing = 0
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False

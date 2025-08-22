@@ -91,6 +91,15 @@ function updateSources(ch, element) {
         idx = nextIdx;
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
+        node = node.nextElementSibling;
+        continue;
+      }
+      if (!highlighted.length && markers[idx] && (
+          (markers[idx].type === 'section' && text.startsWith(markers[idx].value)) ||
+          (markers[idx].type === 'title' && text.includes(markers[idx].value))
+        )) {
+        node = node.nextElementSibling;
+        continue;
       }
       const src = sequence[idx] || sequence[sequence.length - 1];
       node.style.backgroundColor = colorMap[src];

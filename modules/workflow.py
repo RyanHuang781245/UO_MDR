@@ -56,6 +56,8 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
     log = []
     output_doc = Document()
     section = output_doc.AddSection()
+    bookmark_map: Dict[str, str] = {}
+    counter = [1]
 
     for idx, step in enumerate(steps, start=1):
         stype = step.get("type")
@@ -76,21 +78,30 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
 
             elif stype == "extract_word_all_content":
                 infile = params["input_file"]
-                extract_word_all_content(infile, output_image_path=os.path.join(workdir,"images"), output_doc=output_doc, section=section)
+                extract_word_all_content(
+                    infile,
+                    output_image_path=os.path.join(workdir, "images"),
+                    output_doc=output_doc,
+                    section=section,
+                    bookmark_map=bookmark_map,
+                    counter=counter,
+                )
 
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
-                tsec = params.get("target_chapter_section","")
-                use_title = boolish(params.get("target_title","false"))
-                title_text = params.get("target_title_section","")
+                tsec = params.get("target_chapter_section", "")
+                use_title = boolish(params.get("target_title", "false"))
+                title_text = params.get("target_title_section", "")
                 extract_word_chapter(
                     infile,
                     tsec,
                     target_title=use_title,
                     target_title_section=title_text,
-                    output_image_path=os.path.join(workdir,"images"),
+                    output_image_path=os.path.join(workdir, "images"),
                     output_doc=output_doc,
-                    section=section
+                    section=section,
+                    bookmark_map=bookmark_map,
+                    counter=counter,
                 )
 
             elif stype == "insert_text":
@@ -143,4 +154,15 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
         import json
         json.dump(log, f, ensure_ascii=False, indent=2)
 
-    return {"result_docx": out_docx, "log": out_log, "log_json": log}
+    bookmark_file = os.path.join(workdir, "bookmarks.json")
+    with open(bookmark_file, "w", encoding="utf-8") as f:
+        import json
+        json.dump(bookmark_map, f, ensure_ascii=False, indent=2)
+
+    return {
+        "result_docx": out_docx,
+        "log": out_log,
+        "log_json": log,
+        "bookmarks": bookmark_file,
+        "bookmark_map": bookmark_map,
+    }

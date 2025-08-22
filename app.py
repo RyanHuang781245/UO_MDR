@@ -475,6 +475,12 @@ def task_compare(task_id, job_id):
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
 
+    bookmark_path = os.path.join(job_dir, "bookmarks.json")
+    bookmark_titles = {}
+    if os.path.exists(bookmark_path):
+        with open(bookmark_path, "r", encoding="utf-8") as bf:
+            bookmark_titles = json.load(bf)
+
     chapter_sources = {}
     current = None
     with open(log_path, "r", encoding="utf-8") as f:
@@ -515,6 +521,7 @@ def task_compare(task_id, job_id):
         html_url=html_url,
         chapters=chapters,
         chapter_sources=chapter_sources,
+        bookmark_titles=bookmark_titles,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
     )
 

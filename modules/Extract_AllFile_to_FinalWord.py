@@ -89,7 +89,14 @@ def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, outp
     print(f"已將PDF章節 {target_section} 擷取至表格")
 
 
-def extract_word_all_content(input_file: str, output_image_path: str = "word_all_images", output_doc=None, section=None):
+def extract_word_all_content(
+    input_file: str,
+    output_image_path: str = "word_all_images",
+    output_doc=None,
+    section=None,
+    bookmark_map=None,
+    counter=None,
+):
     if not os.path.exists(output_image_path):
         os.makedirs(output_image_path)
 
@@ -106,6 +113,8 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
     nodes = queue.Queue()
     nodes.put(input_doc)
     image_count = [1]
+    first_para = True
+    chapter_title = os.path.basename(input_file)
 
     def add_table_to_section(sec, table):
         try:
@@ -135,6 +144,13 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
                         image_count[0] += 1
                 if paragraph_text.strip():
                     para = section.AddParagraph()
+                    if first_para and bookmark_map is not None and counter is not None:
+                        bid = f"CH_{counter[0]}"
+                        para.AppendBookmarkStart(bid)
+                        para.AppendBookmarkEnd(bid)
+                        bookmark_map[bid] = chapter_title
+                        counter[0] += 1
+                        first_para = False
                     for part in re.split(r'(\[Image:.+?\])', paragraph_text):
                         if part.startswith("[Image:"):
                             img_name = part[7:-1].strip()
@@ -155,7 +171,17 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
     print(f"已將所有內容擷取")
 
 
-def extract_word_chapter(input_file: str, target_chapter_section: str, target_title=False, target_title_section="", output_image_path="images", output_doc=None, section=None):
+def extract_word_chapter(
+    input_file: str,
+    target_chapter_section: str,
+    target_title=False,
+    target_title_section="",
+    output_image_path="images",
+    output_doc=None,
+    section=None,
+    bookmark_map=None,
+    counter=None,
+):
     if not os.path.exists(output_image_path):
         os.makedirs(output_image_path)
 
@@ -180,6 +206,8 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
     nodes.put(input_doc)
     image_count = [1]
     capture_mode = False
+    bookmark_added = False
+    chapter_title = target_title_section if target_title and target_title_section else target_chapter_section
 
     def add_table_to_section(sec, table):
         try:
@@ -200,7 +228,11 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                     sub = child.ChildObjects.get_Item(j)
                     if sub.DocumentObjectType == DocumentObjectType.TextRange:
                         paragraph_text += sub.Text
-                    elif sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture) and capture_mode:
+                    elif (
+                        sub.DocumentObjectType == DocumentObjectType.Picture
+                        and isinstance(sub, DocPicture)
+                        and capture_mode
+                    ):
                         file_name = f"Image-{image_count[0]}.png"
                         img_path = os.path.join(output_image_path, file_name)
                         with open(img_path, 'wb') as img:
@@ -210,11 +242,19 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                 paragraph_text = paragraph_text.strip()
                 if section_pattern.match(paragraph_text):
                     capture_mode = True
+                    chapter_title = paragraph_text
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False
                 if capture_mode and paragraph_text:
                     para = section.AddParagraph()
+                    if not bookmark_added and bookmark_map is not None and counter is not None:
+                        bid = f"CH_{counter[0]}"
+                        para.AppendBookmarkStart(bid)
+                        para.AppendBookmarkEnd(bid)
+                        bookmark_map[bid] = chapter_title
+                        counter[0] += 1
+                        bookmark_added = True
                     for part in re.split(r'(\[Image:.+?\])', paragraph_text):
                         if part.startswith("[Image:"):
                             img_name = part[7:-1].strip()

@@ -534,8 +534,27 @@ def task_download(task_id, job_id, kind):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
     if kind == "docx":
+        result_docx = os.path.join(job_dir, "result.docx")
+        log_path = os.path.join(job_dir, "log.json")
+        stripped_docx = os.path.join(job_dir, "result_no_headings.docx")
+
+        if not os.path.exists(stripped_docx):
+            chapters = []
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    entries = json.load(f)
+                for entry in entries:
+                    if entry.get("type") == "insert_roman_heading":
+                        chapters.append(entry.get("params", {}).get("text", "").strip())
+            import docx
+            doc = docx.Document(result_docx)
+            for p in list(doc.paragraphs):
+                if p.text.strip() in chapters:
+                    p._element.getparent().remove(p._element)
+            doc.save(stripped_docx)
+
         return send_file(
-            os.path.join(job_dir, "result.docx"),
+            stripped_docx,
             as_attachment=True,
             download_name=f"result_{job_id}.docx",
         )

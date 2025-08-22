@@ -538,20 +538,23 @@ def task_download(task_id, job_id, kind):
         log_path = os.path.join(job_dir, "log.json")
         stripped_docx = os.path.join(job_dir, "result_no_headings.docx")
 
-        if not os.path.exists(stripped_docx):
-            chapters = []
-            if os.path.exists(log_path):
-                with open(log_path, "r", encoding="utf-8") as f:
-                    entries = json.load(f)
-                for entry in entries:
-                    if entry.get("type") == "insert_roman_heading":
-                        chapters.append(entry.get("params", {}).get("text", "").strip())
-            import docx
-            doc = docx.Document(result_docx)
-            for p in list(doc.paragraphs):
-                if p.text.strip() in chapters:
-                    p._element.getparent().remove(p._element)
-            doc.save(stripped_docx)
+        chapters = []
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8") as f:
+                entries = json.load(f)
+            for entry in entries:
+                if entry.get("type") == "insert_roman_heading":
+                    text = entry.get("params", {}).get("text", "").strip()
+                    if text:
+                        chapters.append(text)
+
+        import docx
+        doc = docx.Document(result_docx)
+        for p in list(doc.paragraphs):
+            txt = p.text.strip()
+            if txt in chapters or p.style.name.lower().startswith("heading"):
+                p._element.getparent().remove(p._element)
+        doc.save(stripped_docx)
 
         return send_file(
             stripped_docx,

@@ -15,9 +15,14 @@
 <script>
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
+const SOURCE_URLS = {{ source_urls|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
+
+function openWindow(url) {
+  window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+}
 
 function clearHighlights() {
   highlighted.forEach(el => {
@@ -62,6 +67,11 @@ function updateSources(ch, element) {
     li.className = 'list-group-item';
     li.textContent = src;
     li.style.backgroundColor = color;
+    const url = SOURCE_URLS[src];
+    if (url) {
+      li.style.cursor = 'pointer';
+      li.addEventListener('click', () => openWindow(url));
+    }
     list.appendChild(li);
   });
 

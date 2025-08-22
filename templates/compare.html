@@ -32,14 +32,8 @@ const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
 
-function openModal(url, title) {
-  const modalEl = document.getElementById('sourceModal');
-  const modalTitle = modalEl.querySelector('.modal-title');
-  const modalBody = modalEl.querySelector('.modal-body');
-  modalTitle.textContent = title;
-  modalBody.innerHTML = `<iframe src="${url}" style="width:100%; height:70vh;" class="border-0 w-100"></iframe>`;
-  const modal = new bootstrap.Modal(modalEl);
-  modal.show();
+function openWindow(url) {
+  window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
 }
 
 function clearHighlights() {
@@ -88,7 +82,7 @@ function updateSources(ch, element) {
     const url = SOURCE_URLS[src];
     if (url) {
       li.style.cursor = 'pointer';
-      li.addEventListener('click', () => openModal(url, src));
+      li.addEventListener('click', () => openWindow(url));
     }
     list.appendChild(li);
   });

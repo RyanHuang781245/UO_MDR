@@ -473,6 +473,7 @@ def task_compare(task_id, job_id):
     if not os.path.exists(html_path):
         doc = Document()
         doc.LoadFromFile(docx_path)
+        doc.HtmlExportOptions.ImageEmbedded = True
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
 
@@ -520,6 +521,7 @@ def task_compare(task_id, job_id):
                 html_path_src = os.path.join(job_dir, html_rel)
                 doc = Document()
                 doc.LoadFromFile(infile)
+                doc.HtmlExportOptions.ImageEmbedded = True
                 doc.SaveToFile(html_path_src, FileFormat.Html)
                 doc.Close()
                 converted_docx[base] = html_rel
@@ -539,6 +541,7 @@ def task_compare(task_id, job_id):
                 html_path_src = os.path.join(job_dir, html_rel)
                 doc = Document()
                 doc.LoadFromFile(infile)
+                doc.HtmlExportOptions.ImageEmbedded = True
                 doc.SaveToFile(html_path_src, FileFormat.Html)
                 doc.Close()
                 converted_docx[base] = html_rel

@@ -563,7 +563,6 @@ def task_view_source(task_id, filename):
             doc.SaveToFile(html_path, FileFormat.Html)
             doc.Close()
         return send_from_directory(os.path.dirname(html_path), os.path.basename(html_path))
-
     return send_from_directory(files_dir, filename)
 
 

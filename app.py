@@ -559,7 +559,30 @@ def task_compare(task_id, job_id):
         chapter_sources=chapter_sources,
         source_urls=source_urls,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
+        save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),
     )
+
+
+@app.post("/tasks/<task_id>/compare/<job_id>/save")
+def task_compare_save(task_id, job_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    html_content = request.form.get("html")
+    if not html_content:
+        data = request.get_json(silent=True) or {}
+        html_content = data.get("html", "")
+    if not html_content:
+        return "缺少內容", 400
+    html_path = os.path.join(job_dir, "result.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    from spire.doc import Document, FileFormat
+
+    doc = Document()
+    doc.LoadFromFile(html_path, FileFormat.Html)
+    doc.SaveToFile(os.path.join(job_dir, "result.docx"), FileFormat.Docx)
+    doc.Close()
+    return "OK"
 
 
 @app.get("/tasks/<task_id>/view/<job_id>/<path:filename>")

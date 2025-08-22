@@ -39,6 +39,7 @@ function updateSources(ch, element) {
   } else {
     sequence = CHAPTER_SOURCES[ch] || [];
   }
+  sequence = sequence.filter(src => !/標題\s*/.test(src));
   if (!sequence.length) return;
 
   const uniqueSources = [...new Set(sequence)];
@@ -69,8 +70,6 @@ function updateSources(ch, element) {
     let node = element.nextElementSibling;
     let idx = 0;
     const markers = sequence.map(src => {
-      const title = src.match(/標題\s*(.+)/);
-      if (title) return {type: 'title', value: title[1]};
       const sec = src.match(/章節\s*([\d\.]+)/);
       return sec ? {type: 'section', value: sec[1]} : null;
     });
@@ -84,10 +83,8 @@ function updateSources(ch, element) {
     let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
     while (node && !CHAPTER_SET.has(node.textContent.trim())) {
       const text = node.textContent.trim();
-      if (nextMarker && highlighted.length && (
-          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
-          (nextMarker.type === 'title' && text.includes(nextMarker.value))
-        )) {
+      if (nextMarker && highlighted.length &&
+          nextMarker.type === 'section' && text.startsWith(nextMarker.value)) {
         idx = nextIdx;
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
@@ -95,11 +92,6 @@ function updateSources(ch, element) {
       const src = sequence[idx] || sequence[sequence.length - 1];
       node.style.backgroundColor = colorMap[src];
       highlighted.push(node);
-      if (markers[idx] && markers[idx].type === 'title') {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-      }
       node = node.nextElementSibling;
     }
   }

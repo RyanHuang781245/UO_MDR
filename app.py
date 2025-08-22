@@ -513,13 +513,17 @@ def task_compare(task_id, job_id):
                 info += f" 章節 {sec}"
             if title:
                 info += f" 標題 {title}"
-            url = url_for("task_view_source", task_id=task_id, filename=rel_path)
+            base, _ = os.path.splitext(rel_path)
+            html_rel = f"{base}.html"
+            url = url_for("task_view_source", task_id=task_id, filename=html_rel)
             chapter_sources.setdefault(current or "未分類", []).append({"name": info, "url": url})
         elif stype == "extract_word_all_content":
             input_path = params.get("input_file", "")
             rel_path = os.path.relpath(input_path, files_dir) if input_path else ""
             infile = os.path.basename(input_path)
-            url = url_for("task_view_source", task_id=task_id, filename=rel_path)
+            base, _ = os.path.splitext(rel_path)
+            html_rel = f"{base}.html"
+            url = url_for("task_view_source", task_id=task_id, filename=html_rel)
             chapter_sources.setdefault(current or "未分類", []).append({"name": infile, "url": url})
 
     chapters = list(chapter_sources.keys())
@@ -541,29 +545,37 @@ def task_view_source(task_id, filename):
     files_dir = os.path.join(tdir, "files")
     view_root = os.path.join(files_dir, "_view")
 
-    # Serve pre-generated preview resources if they exist
+    # Serve any pre-generated preview or asset under _view
     view_path = os.path.join(view_root, filename)
     if os.path.isfile(view_path):
         return send_from_directory(os.path.dirname(view_path), os.path.basename(view_path))
 
     file_path = os.path.join(files_dir, filename)
-    if not os.path.isfile(file_path):
-        abort(404)
 
     ext = os.path.splitext(filename)[1].lower()
+
     if ext == ".docx":
         base, _ = os.path.splitext(filename)
         html_rel = f"{base}.html"
-        html_path = os.path.join(view_root, html_rel)
-        os.makedirs(os.path.dirname(html_path), exist_ok=True)
-        if not os.path.exists(html_path):
+        return redirect(url_for("task_view_source", task_id=task_id, filename=html_rel))
+
+    if ext == ".html":
+        if not os.path.exists(view_path):
+            src_docx = os.path.join(files_dir, f"{os.path.splitext(filename)[0]}.docx")
+            if not os.path.isfile(src_docx):
+                abort(404)
+            os.makedirs(os.path.dirname(view_path), exist_ok=True)
             from spire.doc import Document, FileFormat
             doc = Document()
-            doc.LoadFromFile(file_path)
-            doc.SaveToFile(html_path, FileFormat.Html)
+            doc.LoadFromFile(src_docx)
+            doc.SaveToFile(view_path, FileFormat.Html)
             doc.Close()
-        return send_from_directory(os.path.dirname(html_path), os.path.basename(html_path))
-    return send_from_directory(files_dir, filename)
+        return send_from_directory(os.path.dirname(view_path), os.path.basename(view_path))
+
+    if os.path.isfile(file_path):
+        return send_from_directory(files_dir, filename)
+
+    abort(404)
 
 
 @app.get("/tasks/<task_id>/view/<job_id>/<path:filename>")

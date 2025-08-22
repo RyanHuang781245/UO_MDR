@@ -539,13 +539,19 @@ def task_compare(task_id, job_id):
 def task_view_source(task_id, filename):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     files_dir = os.path.join(tdir, "files")
+    view_root = os.path.join(files_dir, "_view")
+
+    # Serve pre-generated preview resources if they exist
+    view_path = os.path.join(view_root, filename)
+    if os.path.isfile(view_path):
+        return send_from_directory(os.path.dirname(view_path), os.path.basename(view_path))
+
     file_path = os.path.join(files_dir, filename)
     if not os.path.isfile(file_path):
         abort(404)
 
     ext = os.path.splitext(filename)[1].lower()
     if ext == ".docx":
-        view_root = os.path.join(files_dir, "_view")
         base, _ = os.path.splitext(filename)
         html_rel = f"{base}.html"
         html_path = os.path.join(view_root, html_rel)

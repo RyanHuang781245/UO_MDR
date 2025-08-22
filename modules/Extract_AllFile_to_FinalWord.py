@@ -121,7 +121,7 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
             if isinstance(child, Paragraph):
                 if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
                     continue
-                paragraph_text = child.ListText + " " if child.ListText else ""
+                paragraph_text = ""
                 for j in range(child.ChildObjects.Count):
                     sub = child.ChildObjects.get_Item(j)
                     if sub.DocumentObjectType == DocumentObjectType.TextRange:
@@ -135,6 +135,10 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
                         image_count[0] += 1
                 if paragraph_text.strip():
                     para = section.AddParagraph()
+                    if child.ListFormat.ListType != ListType.NoList:
+                        para.ListFormat.ListType = child.ListFormat.ListType
+                        para.ListFormat.ListLevelNumber = child.ListFormat.ListLevelNumber
+                        para.ListFormat.ContinueListNumbering()
                     for part in re.split(r'(\[Image:.+?\])', paragraph_text):
                         if part.startswith("[Image:"):
                             img_name = part[7:-1].strip()
@@ -195,10 +199,12 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
             if isinstance(child, Paragraph):
                 if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
                     continue
-                paragraph_text = child.ListText + " " if child.ListText else ""
+                raw_text = child.ListText + " " if child.ListText else ""
+                paragraph_text = ""
                 for j in range(child.ChildObjects.Count):
                     sub = child.ChildObjects.get_Item(j)
                     if sub.DocumentObjectType == DocumentObjectType.TextRange:
+                        raw_text += sub.Text
                         paragraph_text += sub.Text
                     elif sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture) and capture_mode:
                         file_name = f"Image-{image_count[0]}.png"
@@ -207,14 +213,19 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                             img.write(sub.ImageBytes)
                         paragraph_text += f"[Image: {file_name}]"
                         image_count[0] += 1
+                raw_text = raw_text.strip()
                 paragraph_text = paragraph_text.strip()
-                if section_pattern.match(paragraph_text):
+                if section_pattern.match(raw_text):
                     capture_mode = True
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False
                 if capture_mode and paragraph_text:
                     para = section.AddParagraph()
+                    if child.ListFormat.ListType != ListType.NoList:
+                        para.ListFormat.ListType = child.ListFormat.ListType
+                        para.ListFormat.ListLevelNumber = child.ListFormat.ListLevelNumber
+                        para.ListFormat.ContinueListNumbering()
                     for part in re.split(r'(\[Image:.+?\])', paragraph_text):
                         if part.startswith("[Image:"):
                             img_name = part[7:-1].strip()

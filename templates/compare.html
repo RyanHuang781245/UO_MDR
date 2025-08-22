@@ -19,6 +19,8 @@ const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
 
+const normalize = text => text.replace(/^\s*[\dIVXLC\.]+\s*/i, '').trim();
+
 function clearHighlights() {
   highlighted.forEach(el => {
     el.style.backgroundColor = '';
@@ -82,10 +84,11 @@ function updateSources(ch, element) {
     };
     let nextIdx = findNextMarkerIdx(0);
     let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const text = node.textContent.trim();
+    while (node && !CHAPTER_SET.has(normalize(node.textContent))) {
+      const raw = node.textContent.trim();
+      const text = normalize(raw);
       if (nextMarker && highlighted.length && (
-          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
+          (nextMarker.type === 'section' && raw.startsWith(nextMarker.value)) ||
           (nextMarker.type === 'title' && text.includes(nextMarker.value))
         )) {
         idx = nextIdx;
@@ -111,7 +114,7 @@ iframe.addEventListener('load', () => {
   let found = false;
   let unhandled = [];
   CHAPTERS.forEach(ch => {
-    const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => el.textContent.trim() === ch);
+    const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => normalize(el.textContent) === ch);
     if (elements.length) {
       found = true;
       elements.forEach(el => {

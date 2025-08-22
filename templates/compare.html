@@ -18,6 +18,7 @@ const CHAPTERS = {{ chapters|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
+let captured = [];
 
 function clearHighlights() {
   highlighted.forEach(el => {
@@ -26,7 +27,7 @@ function clearHighlights() {
   highlighted = [];
 }
 
-function updateSources(ch, element) {
+function updateSources(ch) {
   clearHighlights();
   const list = document.getElementById('sourceList');
   list.innerHTML = '';
@@ -65,8 +66,8 @@ function updateSources(ch, element) {
     list.appendChild(li);
   });
 
-  if (element) {
-    let node = element.nextElementSibling;
+  if (typeof ch === 'string') {
+    const blocks = captured.filter(([sec]) => sec === ch).map(([,node]) => node);
     let idx = 0;
     const markers = sequence.map(src => {
       const title = src.match(/標題\s*(.+)/);
@@ -82,7 +83,7 @@ function updateSources(ch, element) {
     };
     let nextIdx = findNextMarkerIdx(0);
     let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
+    blocks.forEach(node => {
       const text = node.textContent.trim();
       if (nextMarker && highlighted.length && (
           (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
@@ -100,31 +101,36 @@ function updateSources(ch, element) {
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
-      node = node.nextElementSibling;
-    }
+    });
   }
 }
 
 const iframe = document.getElementById('htmlFrame');
 iframe.addEventListener('load', () => {
   const doc = iframe.contentDocument || iframe.contentWindow.document;
-  let found = false;
+  captured = [];
+  const foundChapters = new Set();
+  let current_section = null;
+  Array.from(doc.body.children).forEach(node => {
+    const text = node.textContent.trim();
+    if (CHAPTER_SET.has(text)) {
+      current_section = text;
+      foundChapters.add(text);
+      node.style.cursor = 'pointer';
+      node.addEventListener('click', () => updateSources(text));
+    } else {
+      captured.push([current_section, node]);
+    }
+  });
   let unhandled = [];
   CHAPTERS.forEach(ch => {
-    const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => el.textContent.trim() === ch);
-    if (elements.length) {
-      found = true;
-      elements.forEach(el => {
-        el.style.cursor = 'pointer';
-        el.addEventListener('click', () => updateSources(ch, el));
-      });
-    } else {
+    if (!foundChapters.has(ch)) {
       unhandled = unhandled.concat(CHAPTER_SOURCES[ch] || []);
     }
   });
   if (unhandled.length) {
     updateSources(unhandled);
-  } else if (!found) {
+  } else if (!foundChapters.size) {
     updateSources(null);
   }
 });

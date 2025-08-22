@@ -12,12 +12,35 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="sourceModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">來源檔案預覽</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0"></div>
+    </div>
+  </div>
+</div>
 <script>
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
+const SOURCE_URLS = {{ source_urls|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
+
+function openModal(url, title) {
+  const modalEl = document.getElementById('sourceModal');
+  const modalTitle = modalEl.querySelector('.modal-title');
+  const modalBody = modalEl.querySelector('.modal-body');
+  modalTitle.textContent = title;
+  modalBody.innerHTML = `<iframe src="${url}" style="width:100%; height:70vh;" class="border-0 w-100"></iframe>`;
+  const modal = new bootstrap.Modal(modalEl);
+  modal.show();
+}
 
 function clearHighlights() {
   highlighted.forEach(el => {
@@ -62,6 +85,11 @@ function updateSources(ch, element) {
     li.className = 'list-group-item';
     li.textContent = src;
     li.style.backgroundColor = color;
+    const url = SOURCE_URLS[src];
+    if (url) {
+      li.style.cursor = 'pointer';
+      li.addEventListener('click', () => openModal(url, src));
+    }
     list.appendChild(li);
   });
 

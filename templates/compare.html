@@ -41,37 +41,46 @@ function updateSources(ch, element) {
   }
   if (!sequence.length) return;
 
-  const uniqueSources = [...new Set(sequence)];
   const colorMap = {};
   let colorIdx = 0;
   let pdfColor = null;
-  uniqueSources.forEach(src => {
-    let color;
-    if (src.toLowerCase().endsWith('.pdf')) {
-      if (!pdfColor) {
-        pdfColor = COLORS[colorIdx % COLORS.length];
+  sequence.forEach(src => {
+    if (!colorMap[src.url]) {
+      let color;
+      if (src.name.toLowerCase().endsWith('.pdf')) {
+        if (!pdfColor) {
+          pdfColor = COLORS[colorIdx % COLORS.length];
+          colorIdx++;
+        }
+        color = pdfColor;
+      } else {
+        color = COLORS[colorIdx % COLORS.length];
         colorIdx++;
       }
-      color = pdfColor;
-    } else {
-      color = COLORS[colorIdx % COLORS.length];
-      colorIdx++;
+      colorMap[src.url] = color;
+      const li = document.createElement('li');
+      li.className = 'list-group-item';
+      li.style.backgroundColor = color;
+      const a = document.createElement('a');
+      a.textContent = src.name;
+      a.href = src.url;
+      a.style.display = 'block';
+      a.addEventListener('click', ev => {
+        ev.preventDefault();
+        window.open(src.url, '_blank', 'noopener,noreferrer,width=1000,height=800,scrollbars=yes');
+      });
+      li.appendChild(a);
+      list.appendChild(li);
     }
-    colorMap[src] = color;
-    const li = document.createElement('li');
-    li.className = 'list-group-item';
-    li.textContent = src;
-    li.style.backgroundColor = color;
-    list.appendChild(li);
   });
 
   if (element) {
     let node = element.nextElementSibling;
     let idx = 0;
     const markers = sequence.map(src => {
-      const title = src.match(/標題\s*(.+)/);
+      const title = src.name.match(/標題\s*(.+)/);
       if (title) return {type: 'title', value: title[1]};
-      const sec = src.match(/章節\s*([\d\.]+)/);
+      const sec = src.name.match(/章節\s*([\d\.]+)/);
       return sec ? {type: 'section', value: sec[1]} : null;
     });
     const findNextMarkerIdx = from => {
@@ -92,8 +101,8 @@ function updateSources(ch, element) {
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
-      const src = sequence[idx] || sequence[sequence.length - 1];
-      node.style.backgroundColor = colorMap[src];
+      const srcItem = sequence[idx] || sequence[sequence.length - 1];
+      node.style.backgroundColor = colorMap[srcItem.url];
       highlighted.push(node);
       if (markers[idx] && markers[idx].type === 'title') {
         idx = nextIdx;

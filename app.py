@@ -560,6 +560,7 @@ def task_compare(task_id, job_id):
         source_urls=source_urls,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
         save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),
+        download_url=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),
     )
 
 

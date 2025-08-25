@@ -124,11 +124,11 @@ def translate_file(input_path: str, output_path: str, model_id: Optional[str] = 
     text = load_text(input_path)
 
     # 簡單的「文件導引」包裹，讓模型知道整體任務
-    header = (
-        "# Translated Document (to English)\n\n"
-        f"> Source file: `{os.path.basename(input_path)}`\n\n"
-        "---\n\n"
-    )
+    # header = (
+    #     "# Translated Document (to English)\n\n"
+    #     f"> Source file: `{os.path.basename(input_path)}`\n\n"
+    #     "---\n\n"
+    # )
 
     chunks = chunk_text(text)
     if not chunks:
@@ -141,9 +141,11 @@ def translate_file(input_path: str, output_path: str, model_id: Optional[str] = 
         # 在段首加入章節提示，提升上下文銜接（可視需要移除）
         ck_prompt = f"[Part {i}/{len(chunks)}]\n{ck}"
         translated = translate_chunk(brt, model_id, ck_prompt)
-        outputs.append(f"<!-- Part {i}/{len(chunks)} -->\n{translated}\n")
+        # outputs.append(f"<!-- Part {i}/{len(chunks)} -->\n{translated}\n")
+        outputs.append(translated)
 
-    final_text = header + "\n\n".join(outputs)
+    # final_text = header + "\n\n".join(outputs)
+    final_text = "\n\n".join(outputs)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(final_text)
     return output_path

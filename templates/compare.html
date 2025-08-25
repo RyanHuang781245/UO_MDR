@@ -7,10 +7,14 @@
   </div>
   <div class="col-md-4">
     <ul id="sourceList" class="list-group"></ul>
-    <div class="mt-3 d-flex gap-2">
-      <button id="modeBtn" class="btn btn-outline-secondary" type="button">編輯模式</button>
-      <button id="saveBtn" class="btn btn-primary" type="button">保存</button>
-      <a class="btn btn-secondary" href="{{ back_link }}">返回結果</a>
+    <div class="mt-3">
+      <div class="d-flex gap-2 align-items-center">
+        <button id="modeBtn" class="btn btn-outline-secondary" type="button">編輯模式</button>
+        <button id="saveBtn" class="btn btn-primary" type="button">保存</button>
+        <button id="downloadBtn" class="btn btn-success" type="button">下載</button>
+        <a class="btn btn-secondary ms-auto" href="{{ back_link }}">返回結果</a>
+      </div>
+      <span id="saveStatus" class="d-block mt-2">已保存</span>
     </div>
   </div>
 </div>
@@ -131,9 +135,20 @@ function updateSources(ch, element) {
 
 const iframe = document.getElementById('htmlFrame');
 let doc;
+let isSaved = true;
+const statusEl = document.getElementById('saveStatus');
+function setSaved(saved) {
+  isSaved = saved;
+  statusEl.textContent = saved ? '已保存' : '未保存';
+  statusEl.classList.toggle('text-success', saved);
+  statusEl.classList.toggle('text-danger', !saved);
+}
+setSaved(true);
+
 iframe.addEventListener('load', () => {
   doc = iframe.contentDocument || iframe.contentWindow.document;
   doc.designMode = 'off';
+  doc.addEventListener('input', () => setSaved(false));
   let found = false;
   let unhandled = [];
   CHAPTERS.forEach(ch => {
@@ -166,19 +181,32 @@ document.getElementById('modeBtn').addEventListener('click', () => {
   }
 });
 
-document.getElementById('saveBtn').addEventListener('click', () => {
+function saveHtml() {
   const html = (iframe.contentDocument || iframe.contentWindow.document).documentElement.outerHTML;
-  fetch('{{ save_url }}', {
+  return fetch('{{ save_url }}', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({html})
-  }).then(r => {
+  });
+}
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  saveHtml().then(r => {
     if (r.ok) {
+      setSaved(true);
       alert('已保存');
     } else {
       alert('保存失敗');
     }
   });
+});
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  if (!isSaved) {
+    alert('請先保存才可下載');
+    return;
+  }
+  window.location = '{{ download_url }}';
 });
 </script>
 {% endblock %}

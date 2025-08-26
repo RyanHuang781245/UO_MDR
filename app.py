@@ -268,6 +268,7 @@ def flow_builder(task_id):
                 if isinstance(s, dict) and s.get("type") in SUPPORTED_STEPS
             ]
     avail = gather_available_files(files_dir)
+    tree = build_file_tree(files_dir)
     return render_template(
         "flow.html",
         task={"id": task_id},
@@ -277,6 +278,7 @@ def flow_builder(task_id):
         preset=preset,
         loaded_name=loaded_name,
         center_titles=center_titles,
+        files_tree=tree,
     )
 
 

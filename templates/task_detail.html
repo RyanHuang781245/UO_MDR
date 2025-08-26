@@ -23,6 +23,17 @@
   {% endfor %}
 {% endmacro %}
 
+<form action="{{ url_for('upload_task_file', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="card card-body mb-4">
+  <div class="row g-3">
+    <div class="col-md-9">
+      <input class="form-control" type="file" name="task_file" required>
+    </div>
+    <div class="col-md-3 d-grid">
+      <button class="btn btn-primary" type="submit">新增檔案</button>
+    </div>
+  </div>
+</form>
+
 <h2 class="h6">檔案結構</h2>
 {{ render_tables(files_tree) }}
 

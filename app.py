@@ -187,6 +187,32 @@ def task_detail(task_id):
         files_tree=tree,
     )
 
+
+@app.post("/tasks/<task_id>/files")
+def upload_task_file(task_id):
+    """Upload additional files to an existing task."""
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        abort(404)
+
+    f = request.files.get("task_file")
+    if not f or not f.filename or not allowed_file(f.filename):
+        return "請上傳 DOCX、PDF 或 ZIP 檔", 400
+
+    filename = secure_filename(f.filename)
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == ".zip":
+        tmp_path = os.path.join(files_dir, filename)
+        f.save(tmp_path)
+        with zipfile.ZipFile(tmp_path, "r") as zf:
+            zf.extractall(files_dir)
+        os.remove(tmp_path)
+    else:
+        f.save(os.path.join(files_dir, filename))
+
+    return redirect(url_for("task_detail", task_id=task_id))
+
 def gather_available_files(files_dir):
     mapping = {"docx": [], "pdf": [], "zip": []}
     for rel in list_files(files_dir):

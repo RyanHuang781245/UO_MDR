@@ -262,12 +262,15 @@ def center_table_figure_paragraphs(input_file: str) -> bool:
                 paragraph_text = paragraph_text.strip()
                 if pattern.match(paragraph_text):
                     child.Format.HorizontalAlignment = HorizontalAlignment.Center
+            elif isinstance(child, Table):
+                child.AutoFit(AutoFitBehaviorType.AutoFitToWindow)
+                nodes.put(child)
             elif isinstance(child, ICompositeObject):
                 nodes.put(child)
 
     try:
         doc.SaveToFile(input_file, FileFormat.Docx)
-        print(f"{input_file}，以將表格標題或圖片標題置中")
+        print(f"{input_file}，以將表格標題或圖片標題置中並調整表格寬度")
         return True
     except Exception as e:
         print(f"錯誤：保存文件 {input_file} 時出錯: {str(e)}")

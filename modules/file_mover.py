@@ -4,7 +4,7 @@ from typing import Iterable, List
 
 
 def move_files(source: str, destination: str, keywords: Iterable[str]) -> List[str]:
-    """Move files whose names contain any of the given keywords.
+    """Move files whose names contain all of the given keywords.
 
     Parameters
     ----------
@@ -29,7 +29,8 @@ def move_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
 
     for root, _dirs, files in os.walk(source):
         for name in files:
-            if any(k in name.lower() for k in keywords_lower):
+            name_lower = name.lower()
+            if all(k in name_lower for k in keywords_lower):
                 src_path = os.path.join(root, name)
                 dest_path = os.path.join(destination, name)
                 base, ext = os.path.splitext(name)
@@ -45,12 +46,14 @@ def move_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Move files whose names contain keywords")
+    parser = argparse.ArgumentParser(
+        description="Move files whose names contain all given keywords"
+    )
     parser.add_argument("source", help="Directory to search")
     parser.add_argument("destination", help="Directory to move files to")
     parser.add_argument(
         "keywords",
-        help="Comma-separated keywords to match against filenames",
+        help="Comma-separated keywords that must all appear in the filename",
     )
     args = parser.parse_args()
 

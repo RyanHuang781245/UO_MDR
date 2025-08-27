@@ -4,7 +4,7 @@
 {% if message %}
 <div class="alert alert-info">{{ message }}</div>
 {% endif %}
-<form method="post" class="vstack gap-3">
+<form method="post" class="vstack gap-3" action="{{ url_for('move_files_view', task_id=task_id) }}">
   <div>
     <label class="form-label">來源資料夾</label>
     <select class="form-select" name="source_dir" required>
@@ -25,6 +25,9 @@
     <label class="form-label">關鍵字（以逗號分隔）</label>
     <input class="form-control" name="keywords" placeholder="例如：EO,Gamma" required>
   </div>
-  <button class="btn btn-primary" type="submit">移動</button>
+  <div class="d-flex gap-2">
+    <button class="btn btn-primary" type="submit">移動</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('task_detail', task_id=task_id) }}">返回任務</a>
+  </div>
 </form>
 {% endblock %}

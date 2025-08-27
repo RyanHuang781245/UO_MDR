@@ -90,11 +90,13 @@ def task_name_exists(name, exclude_id=None):
             return True
     return False
 
-
-@app.route("/move-files", methods=["GET", "POST"])
-def move_files_view():
-    base = app.config["TASK_FOLDER"]
+@app.route("/tasks/<task_id>/move-files", methods=["GET", "POST"])
+def move_files_view(task_id):
+    base = os.path.join(app.config["TASK_FOLDER"], task_id, "files")
+    if not os.path.isdir(base):
+        abort(404)
     dirs = list_dirs(base)
+    dirs.insert(0, ".")
     message = ""
     if request.method == "POST":
         source_rel = request.form.get("source_dir", "").strip()
@@ -111,7 +113,8 @@ def move_files_view():
                 message = f"已移動 {len(moved)} 個檔案"
             except Exception as e:
                 message = str(e)
-    return render_template("move_files.html", dirs=dirs, message=message)
+                
+    return render_template("move_files.html", dirs=dirs, message=message, task_id=task_id)
 
 
 @app.get("/")

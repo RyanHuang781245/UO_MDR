@@ -646,8 +646,11 @@ def task_compare_save(task_id, job_id):
 
     doc = Document()
     doc.LoadFromFile(html_path, FileFormat.Html)
-    doc.SaveToFile(os.path.join(job_dir, "result.docx"), FileFormat.Docx)
+    output_docx = os.path.join(job_dir, "result.docx")
+    doc.SaveToFile(output_docx, FileFormat.Docx)
     doc.Close()
+    # Re-apply centering for table and figure captions after editing
+    center_table_figure_paragraphs(output_docx)
     return "OK"
 
 

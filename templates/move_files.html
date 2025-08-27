@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">移動檔案</h1>
+{% if message %}
+<div class="alert alert-info">{{ message }}</div>
+{% endif %}
+<form method="post" class="vstack gap-3" action="{{ url_for('task_move_files_page', task_id=task_id) }}">
+  <input type="hidden" name="action" value="move">
+  <div>
+    <label class="form-label">來源資料夾</label>
+    <select class="form-select" name="source_dir" required>
+      <option value="" disabled selected>選擇資料夾</option>
+      {% for d in dirs %}
+      <option value="{{ d }}">{{ d }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label">目的資料夾</label>
+    <input class="form-control" name="dest_dir" list="dirlist" placeholder="輸入或選擇目的資料夾" required>
+    <datalist id="dirlist">
+      {% for d in dirs %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+    </datalist>
+  </div>
+  <div>
+    <label class="form-label">關鍵字（檔名需同時包含所有關鍵字，以逗號分隔）</label>
+    <input class="form-control" name="keywords" placeholder="例如：Shipping simulation test,EO" required>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-primary" type="submit">移動</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('task_detail', task_id=task_id) }}">返回任務</a>
+  </div>
+</form>
+
+<hr class="my-4">
+
+<form method="post" class="vstack gap-2" action="{{ url_for('task_move_files_page', task_id=task_id) }}">
+  <input type="hidden" name="action" value="create_dir">
+  <label class="form-label">新增資料夾</label>
+  <div class="input-group">
+    <input class="form-control" name="new_dir" placeholder="例如：新資料夾" required>
+    <button class="btn btn-outline-secondary" type="submit">建立</button>
+  </div>
+</form>
+{% endblock %}

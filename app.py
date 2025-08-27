@@ -15,7 +15,10 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
-from modules.Extract_AllFile_to_FinalWord import center_table_figure_paragraphs
+from modules.Extract_AllFile_to_FinalWord import (
+    center_table_figure_paragraphs,
+    apply_basic_style,
+)
 from modules.translate_with_bedrock import translate_file
 from modules.file_mover import move_files
 
@@ -427,8 +430,10 @@ def run_flow(task_id):
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
+    result_path = os.path.join(job_dir, "result.docx")
     if center_titles:
-        center_table_figure_paragraphs(os.path.join(job_dir, "result.docx"))
+        center_table_figure_paragraphs(result_path)
+    apply_basic_style(result_path)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -470,8 +475,10 @@ def execute_flow(task_id, flow_name):
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
+    result_path = os.path.join(job_dir, "result.docx")
     if center_titles:
-        center_table_figure_paragraphs(os.path.join(job_dir, "result.docx"))
+        center_table_figure_paragraphs(result_path)
+    apply_basic_style(result_path)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -692,6 +699,7 @@ def task_compare_save(task_id, job_id):
     doc.LoadFromFile(html_path, FileFormat.Html)
     doc.SaveToFile(os.path.join(job_dir, "result.docx"), FileFormat.Docx)
     doc.Close()
+    apply_basic_style(os.path.join(job_dir, "result.docx"))
     return "OK"
 
 

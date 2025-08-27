@@ -48,8 +48,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Move files whose names contain keywords")
     parser.add_argument("source", help="Directory to search")
     parser.add_argument("destination", help="Directory to move files to")
-    parser.add_argument("keywords", nargs="+", help="Keywords to match against filenames")
+    parser.add_argument(
+        "keywords",
+        help="Comma-separated keywords to match against filenames",
+    )
     args = parser.parse_args()
 
-    results = move_files(args.source, args.destination, args.keywords)
+    keywords = [k.strip() for k in args.keywords.split(",") if k.strip()]
+    results = move_files(args.source, args.destination, keywords)
     print(f"Moved {len(results)} file(s).")

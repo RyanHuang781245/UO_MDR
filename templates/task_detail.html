@@ -39,7 +39,7 @@
 
 <div class="d-flex gap-2">
   <a class="btn btn-primary" href="{{ url_for('flow_builder', task_id=task.id) }}">管理流程</a>
-  <a class="btn btn-outline-primary" href="{{ url_for('move_files_view', task_id=task.id) }}">移動檔案</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('task_move_files', task_id=task.id) }}">移動檔案</a>
   <a class="btn btn-outline-secondary" href="{{ url_for('tasks') }}">回首頁</a>
 </div>
 {% endblock %}

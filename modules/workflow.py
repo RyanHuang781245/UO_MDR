@@ -121,7 +121,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 insert_bulleted_heading(section,
                                         params.get("text",""),
                                         level=0,
-                                        bullet_char='•',
+                                        bullet_char='·',
                                         bold=True,
                                         font_size=float(params.get("font_size",14)))
 

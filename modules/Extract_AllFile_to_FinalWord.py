@@ -133,8 +133,9 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
                             img.write(sub.ImageBytes)
                         paragraph_text += f"[Image: {file_name}]"
                         image_count[0] += 1
+
+                para = section.AddParagraph()
                 if paragraph_text.strip():
-                    para = section.AddParagraph()
                     for part in re.split(r'(\[Image:.+?\])', paragraph_text):
                         if part.startswith("[Image:"):
                             img_name = part[7:-1].strip()
@@ -212,17 +213,18 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                     capture_mode = True
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False
-                if capture_mode and paragraph_text:
+                if capture_mode:
                     para = section.AddParagraph()
-                    for part in re.split(r'(\[Image:.+?\])', paragraph_text):
-                        if part.startswith("[Image:"):
-                            img_name = part[7:-1].strip()
-                            img_path = os.path.join(output_image_path, img_name)
-                            if os.path.isfile(img_path):
-                                para.AppendPicture(img_path)
-                                para.Format.HorizontalAlignment = HorizontalAlignment.Center
-                        else:
-                            para.AppendText(part)
+                    if paragraph_text:
+                        for part in re.split(r'(\[Image:.+?\])', paragraph_text):
+                            if part.startswith("[Image:"):
+                                img_name = part[7:-1].strip()
+                                img_path = os.path.join(output_image_path, img_name)
+                                if os.path.isfile(img_path):
+                                    para.AppendPicture(img_path)
+                                    para.Format.HorizontalAlignment = HorizontalAlignment.Center
+                            else:
+                                para.AppendText(part)
             elif isinstance(child, Table) and capture_mode:
                 add_table_to_section(section, child)
             elif isinstance(child, ICompositeObject):

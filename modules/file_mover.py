@@ -4,7 +4,11 @@ from typing import Iterable, List
 
 
 def move_files(source: str, destination: str, keywords: Iterable[str]) -> List[str]:
-    """Move files whose names contain any of the given keywords.
+    """Move files whose names match the provided keyword groups.
+
+    Comma-separated keywords represent groups that must all match (AND logic).
+    Within each group, alternatives can be separated by ``|`` to indicate that
+    any of them may satisfy the group (OR logic). Matching is case-insensitive.
 
     Parameters
     ----------
@@ -13,7 +17,8 @@ def move_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
     destination: str
         Directory where matched files will be moved.
     keywords: Iterable[str]
-        Keywords to look for in filenames. Matching is case-insensitive.
+        Comma-separated keyword groups. Each group may contain "|" separated
+        alternatives.
 
     Returns
     -------
@@ -25,11 +30,18 @@ def move_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
 
     os.makedirs(destination, exist_ok=True)
     moved_files: List[str] = []
-    keywords_lower = [k.lower() for k in keywords]
+    # Preprocess keywords: each item can contain alternatives separated by '|'.
+    keyword_groups = [
+        [alt.strip().lower() for alt in k.split("|") if alt.strip()]
+        for k in keywords
+    ]
 
     for root, _dirs, files in os.walk(source):
         for name in files:
-            if any(k in name.lower() for k in keywords_lower):
+            lower_name = name.lower()
+            # A file is matched only if it satisfies all groups. Each group is
+            # considered matched when at least one alternative is present.
+            if all(any(alt in lower_name for alt in group) for group in keyword_groups):
                 src_path = os.path.join(root, name)
                 dest_path = os.path.join(destination, name)
                 base, ext = os.path.splitext(name)
@@ -50,7 +62,10 @@ if __name__ == "__main__":
     parser.add_argument("destination", help="Directory to move files to")
     parser.add_argument(
         "keywords",
-        help="Comma-separated keywords to match against filenames",
+        help=(
+            "Comma-separated keyword groups; use '|' within a group to provide "
+            "alternatives"
+        ),
     )
     args = parser.parse_args()
 

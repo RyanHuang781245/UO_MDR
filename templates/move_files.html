@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">移動檔案</h1>
+{% if message %}
+<div class="alert alert-info">{{ message }}</div>
+{% endif %}
+<form method="post" class="vstack gap-3">
+  <div>
+    <label class="form-label">來源資料夾</label>
+    <select class="form-select" name="source_dir" required>
+      <option value="" disabled selected>選擇資料夾</option>
+      {% for d in dirs %}
+      <option value="{{ d }}">{{ d }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label">目的資料夾</label>
+    <input class="form-control" name="dest_dir" list="dirlist" placeholder="輸入或選擇目的資料夾" required>
+    <datalist id="dirlist">
+      {% for d in dirs %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+    </datalist>
+  </div>
+  <div>
+    <label class="form-label">關鍵字（以逗號分隔）</label>
+    <input class="form-control" name="keywords" placeholder="例如：EO,Gamma" required>
+  </div>
+  <button class="btn btn-primary" type="submit">移動</button>
+</form>
+{% endblock %}

@@ -3,8 +3,19 @@ import re
 import queue
 import fitz  # PyMuPDF
 from docx import Document as DocxDocument
+from docx.shared import Pt
+from docx.enum.text import WD_LINE_SPACING
+from docx.oxml.ns import qn
 from spire.doc import *
 from spire.doc.common import *
+
+
+def set_run_font_eastasia(run, eastasia_name: str):
+    """補設定東亞字型，避免中文顯示為預設字型。"""
+    if eastasia_name:
+        rPr = run._element.get_or_add_rPr()
+        rFonts = rPr.get_or_add_rFonts()
+        rFonts.set(qn("w:eastAsia"), eastasia_name)
 
 
 def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, output_doc=None, section=None):
@@ -282,3 +293,44 @@ def center_table_figure_paragraphs(input_file: str) -> bool:
         return False
     finally:
         doc.Close()
+
+
+def _iter_paragraphs(parent):
+    """Yield paragraphs in parent recursively, including those in tables."""
+    if hasattr(parent, "paragraphs"):
+        for p in parent.paragraphs:
+            yield p
+    if hasattr(parent, "tables"):
+        for table in parent.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    yield from _iter_paragraphs(cell)
+
+
+def apply_basic_style(
+    input_file: str,
+    western_font: str = "Times New Roman",
+    east_asian_font: str = "新細明體",
+    font_size: int = 12,
+    line_spacing: float = 2.0,
+    space_before: int = 6,
+    space_after: int = 6,
+) -> bool:
+    """為整份文件套用基本字型與行距設定。"""
+    try:
+        doc = DocxDocument(input_file)
+        for para in _iter_paragraphs(doc):
+            pf = para.paragraph_format
+            pf.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+            pf.line_spacing = line_spacing
+            pf.space_before = Pt(space_before)
+            pf.space_after = Pt(space_after)
+            for run in para.runs:
+                run.font.name = western_font
+                set_run_font_eastasia(run, east_asian_font)
+                run.font.size = Pt(font_size)
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：套用樣式至 {input_file} 時出錯: {str(e)}")
+        return False

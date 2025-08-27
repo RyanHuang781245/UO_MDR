@@ -17,6 +17,7 @@ from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
 from modules.Extract_AllFile_to_FinalWord import center_table_figure_paragraphs
 from modules.translate_with_bedrock import translate_file
+from modules.file_mover import move_files
 
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
@@ -63,6 +64,16 @@ def build_file_tree(base_dir):
     return tree
 
 
+def list_dirs(base_dir):
+    dirs = []
+    for root, dirnames, _ in os.walk(base_dir):
+        rel_root = os.path.relpath(root, base_dir)
+        for d in dirnames:
+            path = os.path.normpath(os.path.join(rel_root, d))
+            dirs.append(path)
+    return sorted(dirs)
+
+
 def task_name_exists(name, exclude_id=None):
     for tid in os.listdir(app.config["TASK_FOLDER"]):
         if exclude_id and tid == exclude_id:
@@ -78,6 +89,32 @@ def task_name_exists(name, exclude_id=None):
         if tname == name:
             return True
     return False
+
+
+@app.route("/tasks/<task_id>/move-files", methods=["GET", "POST"])
+def move_files_view(task_id):
+    base = os.path.join(app.config["TASK_FOLDER"], task_id, "files")
+    if not os.path.isdir(base):
+        abort(404)
+    dirs = list_dirs(base)
+    dirs.insert(0, ".")
+    message = ""
+    if request.method == "POST":
+        source_rel = request.form.get("source_dir", "").strip()
+        dest_rel = request.form.get("dest_dir", "").strip()
+        keywords_raw = request.form.get("keywords", "")
+        keywords = [k.strip() for k in keywords_raw.split(",") if k.strip()]
+        if not source_rel or not dest_rel or not keywords:
+            message = "請完整輸入資料"
+        else:
+            src = os.path.join(base, source_rel)
+            dest = os.path.join(base, dest_rel)
+            try:
+                moved = move_files(src, dest, keywords)
+                message = f"已移動 {len(moved)} 個檔案"
+            except Exception as e:
+                message = str(e)
+    return render_template("move_files.html", dirs=dirs, message=message, task_id=task_id)
 
 
 @app.get("/")

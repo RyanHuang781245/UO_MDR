@@ -13,7 +13,9 @@
           法規系統
           <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="ms-2" style="height:24px;">
         </a>
-        <a class="btn btn-outline-primary" href="{{ url_for('tasks') }}">回首頁</a>
+        <div class="btn-group">
+          <a class="btn btn-outline-primary" href="{{ url_for('tasks') }}">回首頁</a>
+        </div>
       </div>
     </nav>
     <main class="container my-4">

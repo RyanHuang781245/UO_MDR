@@ -90,6 +90,76 @@ def task_name_exists(name, exclude_id=None):
             return True
     return False
 
+@app.route("/tasks/<task_id>/move-files", methods=["GET", "POST"])
+def move_files_view(task_id):
+    base = os.path.join(app.config["TASK_FOLDER"], task_id, "files")
+    if not os.path.isdir(base):
+        abort(404)
+    dirs = list_dirs(base)
+    dirs.insert(0, ".")
+    message = ""
+    if request.method == "POST":
+        source_rel = request.form.get("source_dir", "").strip()
+        dest_rel = request.form.get("dest_dir", "").strip()
+        keywords_raw = request.form.get("keywords", "")
+        keywords = [k.strip() for k in keywords_raw.split(",") if k.strip()]
+        if not source_rel or not dest_rel or not keywords:
+            message = "請完整輸入資料"
+        else:
+            src = os.path.join(base, source_rel)
+            dest = os.path.join(base, dest_rel)
+            try:
+                moved = move_files(src, dest, keywords)
+                message = f"已移動 {len(moved)} 個檔案"
+            except Exception as e:
+                message = str(e)
+                
+    return render_template("move_files.html", dirs=dirs, message=message, task_id=task_id)
+
+
+@app.route("/tasks/<task_id>/move-files", methods=["GET", "POST"], endpoint="task_move_files")
+def task_move_files(task_id):
+    base = os.path.join(app.config["TASK_FOLDER"], task_id, "files")
+    if not os.path.isdir(base):
+        abort(404)
+
+    def _safe_path(rel: str) -> str:
+        norm = os.path.normpath(rel)
+        if not rel or os.path.isabs(norm) or norm.startswith(".."):
+            raise ValueError("資料夾名稱不合法")
+        return os.path.join(base, norm)
+
+    message = ""
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "create_dir":
+            new_rel = request.form.get("new_dir", "").strip()
+            try:
+                os.makedirs(_safe_path(new_rel), exist_ok=True)
+                message = f"已建立資料夾 {os.path.normpath(new_rel)}"
+            except ValueError:
+                message = "資料夾名稱不合法"
+        else:
+            source_rel = request.form.get("source_dir", "").strip()
+            dest_rel = request.form.get("dest_dir", "").strip()
+            keywords_raw = request.form.get("keywords", "")
+            keywords = [k.strip() for k in keywords_raw.split(",") if k.strip()]
+            if not source_rel or not dest_rel or not keywords:
+                message = "請完整輸入資料"
+            else:
+                try:
+                    src = _safe_path(source_rel)
+                    dest = _safe_path(dest_rel)
+                    moved = move_files(src, dest, keywords)
+                    message = f"已移動 {len(moved)} 個檔案"
+                except ValueError:
+                    message = "資料夾名稱不合法"
+                except Exception as e:
+                    message = str(e)
+    dirs = list_dirs(base)
+    dirs.insert(0, ".")
+    return render_template("move_files.html", dirs=dirs, message=message, task_id=task_id)
+
 
 @app.route("/tasks/<task_id>/move-files", methods=["GET", "POST"], endpoint="task_move_files")
 def task_move_files(task_id):

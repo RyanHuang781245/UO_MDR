@@ -64,7 +64,7 @@ function updateSources(ch, element) {
   }
   if (!sequence.length) return;
 
-  const uniqueSources = [...new Set(sequence)];
+  const uniqueSources = [...new Set(sequence.map(it => it.src))];
   const colorMap = {};
   let colorIdx = 0;
   let pdfColor = null;
@@ -93,43 +93,19 @@ function updateSources(ch, element) {
     list.appendChild(li);
   });
 
-  if (element) {
-    let node = element.nextElementSibling;
-    let idx = 0;
-    const markers = sequence.map(src => {
-      const title = src.match(/標題\s*(.+)/);
-      if (title) return {type: 'title', value: title[1]};
-      const sec = src.match(/章節\s*([\d\.]+)/);
-      return sec ? {type: 'section', value: sec[1]} : null;
+  if (doc) {
+    const markers = Array.from(doc.querySelectorAll('span[data-src]'));
+    sequence.forEach(item => {
+      const startMarker = markers[item.start];
+      const endMarker = item.end != null ? markers[item.end] : null;
+      if (!startMarker) return;
+      let node = startMarker.nextElementSibling;
+      while (node && node !== endMarker) {
+        node.style.backgroundColor = colorMap[item.src];
+        highlighted.push(node);
+        node = node.nextElementSibling;
+      }
     });
-    const findNextMarkerIdx = from => {
-      for (let i = from + 1; i < markers.length; i++) {
-        if (markers[i]) return i;
-      }
-      return -1;
-    };
-    let nextIdx = findNextMarkerIdx(0);
-    let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const text = node.textContent.trim();
-      if (nextMarker && highlighted.length && (
-          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
-          (nextMarker.type === 'title' && text.includes(nextMarker.value))
-        )) {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-      }
-      const src = sequence[idx] || sequence[sequence.length - 1];
-      node.style.backgroundColor = colorMap[src];
-      highlighted.push(node);
-      if (markers[idx] && markers[idx].type === 'title') {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-      }
-      node = node.nextElementSibling;
-    }
   }
 }
 

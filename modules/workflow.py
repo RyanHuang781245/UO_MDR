@@ -148,7 +148,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str) -> Dict[str, Any]:
                     doc.Close()
                     converted_docx[base] = html_rel
                 if base in converted_docx:
-                    source_urls[info] = converted_docx[base]
+                    source_urls[base] = converted_docx[base]
 
             elif stype == "insert_text":
                 insert_text(

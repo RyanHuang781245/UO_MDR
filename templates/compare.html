@@ -31,11 +31,11 @@
   </div>
 </div>
 <script>
-const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
-const CHAPTERS = {{ chapters|tojson }};
-const SOURCE_URLS = {{ source_urls|tojson }};
+let CHAPTER_SOURCES = {};
+let CHAPTERS = [];
+let SOURCE_URLS = {};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
-const CHAPTER_SET = new Set(CHAPTERS);
+const CHAPTER_SET = new Set();
 let highlighted = [];
 
 function openWindow(url) {
@@ -64,7 +64,8 @@ function updateSources(ch, element) {
   }
   if (!sequence.length) return;
 
-  const uniqueSources = [...new Set(sequence)];
+  const files = sequence.map(src => src.split(/\s+(?:章節|標題)/)[0]);
+  const uniqueSources = [...new Set(files)];
   const colorMap = {};
   let colorIdx = 0;
   let pdfColor = null;
@@ -120,7 +121,7 @@ function updateSources(ch, element) {
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
-      const src = sequence[idx] || sequence[sequence.length - 1];
+      const src = files[idx] || files[files.length - 1];
       node.style.backgroundColor = colorMap[src];
       highlighted.push(node);
       if (markers[idx] && markers[idx].type === 'title') {
@@ -149,6 +150,19 @@ iframe.addEventListener('load', () => {
   doc = iframe.contentDocument || iframe.contentWindow.document;
   doc.designMode = 'off';
   doc.addEventListener('input', () => setSaved(false));
+  const dataEl = doc.getElementById('source-data');
+  if (dataEl) {
+    try {
+      const data = JSON.parse(dataEl.textContent || '{}');
+      CHAPTER_SOURCES = data.chapter_sources || {};
+      SOURCE_URLS = data.source_urls || {};
+    } catch (e) {
+      console.error('Failed to parse source-data', e);
+    }
+  }
+  CHAPTERS = Object.keys(CHAPTER_SOURCES);
+  CHAPTER_SET.clear();
+  CHAPTERS.forEach(ch => CHAPTER_SET.add(ch));
   let found = false;
   let unhandled = [];
   CHAPTERS.forEach(ch => {

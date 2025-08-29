@@ -34,7 +34,7 @@
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
-const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
+const COLOR_MAP = {{ colors|tojson }};
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
 
@@ -65,26 +65,13 @@ function updateSources(ch, element) {
   if (!sequence.length) return;
 
   const uniqueSources = [...new Set(sequence)];
-  const colorMap = {};
-  let colorIdx = 0;
-  let pdfColor = null;
+  const colorMap = COLOR_MAP;
   uniqueSources.forEach(src => {
-    let color;
-    if (src.toLowerCase().endsWith('.pdf')) {
-      if (!pdfColor) {
-        pdfColor = COLORS[colorIdx % COLORS.length];
-        colorIdx++;
-      }
-      color = pdfColor;
-    } else {
-      color = COLORS[colorIdx % COLORS.length];
-      colorIdx++;
-    }
-    colorMap[src] = color;
+    const color = colorMap[src] || '';
     const li = document.createElement('li');
     li.className = 'list-group-item';
     li.textContent = src;
-    li.style.backgroundColor = color;
+    if (color) li.style.backgroundColor = color;
     const url = SOURCE_URLS[src];
     if (url) {
       li.style.cursor = 'pointer';
@@ -121,7 +108,8 @@ function updateSources(ch, element) {
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
       const src = sequence[idx] || sequence[sequence.length - 1];
-      node.style.backgroundColor = colorMap[src];
+      const color = colorMap[src] || '';
+      node.style.backgroundColor = color;
       highlighted.push(node);
       if (markers[idx] && markers[idx].type === 'title') {
         idx = nextIdx;

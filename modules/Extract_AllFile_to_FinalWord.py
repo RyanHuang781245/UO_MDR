@@ -92,7 +92,11 @@ def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, outp
 
         table_filename = filename.split(' ')[0]
         cell1.AddParagraph().AppendText(table_filename)
+        start_para = cell2.AddParagraph()
+        start_para.AppendText(f"[[SOURCE:{filename}]]")
         cell2.AddParagraph().AppendText(extracted_text)
+        end_para = cell2.AddParagraph()
+        end_para.AppendText("[[/SOURCE]]")
         table.Rows.Add(new_row)
 
     if is_standalone:
@@ -113,6 +117,8 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
         is_standalone = True
     else:
         is_standalone = False
+    start_para = section.AddParagraph()
+    start_para.AppendText(f"[[SOURCE:{os.path.basename(input_file)}]]")
 
     nodes = queue.Queue()
     nodes.put(input_doc)
@@ -170,6 +176,8 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
                 if doc_type in (DocumentObjectType.Header, DocumentObjectType.Footer):
                     continue
                 nodes.put(child)
+    end_para = section.AddParagraph()
+    end_para.AppendText("[[/SOURCE]]")
 
     if is_standalone:
         output_doc.SaveToFile("word_all_result.docx", FileFormat.Docx)
@@ -197,6 +205,8 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
         is_standalone = True
     else:
         is_standalone = False
+    start_para = section.AddParagraph()
+    start_para.AppendText(f"[[SOURCE:{os.path.basename(input_file)}]]")
 
     nodes = queue.Queue()
     nodes.put(input_doc)
@@ -254,6 +264,8 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                 add_table_to_section(section, child)
             elif isinstance(child, ICompositeObject):
                 nodes.put(child)
+    end_para = section.AddParagraph()
+    end_para.AppendText("[[/SOURCE]]")
 
     if is_standalone:
         output_doc.SaveToFile("word_chapter_result.docx", FileFormat.Docx)

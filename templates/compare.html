@@ -35,7 +35,6 @@ const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
-const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
 
 function openWindow(url) {
@@ -49,7 +48,7 @@ function clearHighlights() {
   highlighted = [];
 }
 
-function updateSources(ch, element) {
+function updateSources(ch) {
   clearHighlights();
   const list = document.getElementById('sourceList');
   list.innerHTML = '';
@@ -57,21 +56,13 @@ function updateSources(ch, element) {
   if (Array.isArray(ch)) {
     sequence = ch.slice();
   } else if (ch === null) {
-    const all = Object.values(CHAPTER_SOURCES).flat();
-    sequence = all.slice();
+    sequence = Object.values(CHAPTER_SOURCES).flat();
   } else {
     sequence = CHAPTER_SOURCES[ch] || [];
   }
   if (!sequence.length) return;
 
-  const entries = sequence.map(src => {
-    const title = src.match(/標題\s*(.+)/);
-    if (title) return {source: src, marker: {type: 'title', value: title[1]}};
-    const sec = src.match(/章節\s*([\d\.]+)/);
-    return {source: src, marker: sec ? {type: 'section', value: sec[1]} : null};
-  });
-
-  const uniqueSources = [...new Set(entries.map(e => e.source))];
+  const uniqueSources = [...new Set(sequence)];
   const colorMap = {};
   let colorIdx = 0;
   let pdfColor = null;
@@ -100,26 +91,17 @@ function updateSources(ch, element) {
     list.appendChild(li);
   });
 
-  if (element) {
-    let node = element.nextElementSibling;
-    let idx = 0;
-    while (node && idx < entries.length && !CHAPTER_SET.has(node.textContent.trim())) {
-      const {source, marker} = entries[idx];
-      node.style.backgroundColor = colorMap[source];
+  const nodes = doc.body.querySelectorAll('[data-source]');
+  nodes.forEach(node => {
+    const src = node.getAttribute('data-source');
+    const color = colorMap[src];
+    if (color) {
+      node.style.backgroundColor = color;
       highlighted.push(node);
-
-      const nextNode = node.nextElementSibling;
-      if (!nextNode) break;
-      const nextText = nextNode.textContent.trim();
-      if (!marker || !(
-          (marker.type === 'section' && nextText.startsWith(marker.value)) ||
-          (marker.type === 'title' && nextText.includes(marker.value))
-        )) {
-        idx++;
-      }
-      node = nextNode;
+    } else {
+      node.style.backgroundColor = '';
     }
-  }
+  });
 }
 
 const iframe = document.getElementById('htmlFrame');
@@ -146,7 +128,7 @@ iframe.addEventListener('load', () => {
       found = true;
       elements.forEach(el => {
         el.style.cursor = 'pointer';
-        el.addEventListener('click', () => updateSources(ch, el));
+        el.addEventListener('click', () => updateSources(ch));
       });
     } else {
       unhandled = unhandled.concat(CHAPTER_SOURCES[ch] || []);

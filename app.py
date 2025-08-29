@@ -578,8 +578,8 @@ def task_compare(task_id, job_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
     docx_path = os.path.join(job_dir, "result.docx")
-    log_path = os.path.join(job_dir, "log.json")
-    if not os.path.exists(docx_path) or not os.path.exists(log_path):
+    sources_path = os.path.join(job_dir, "sources.json")
+    if not os.path.exists(docx_path) or not os.path.exists(sources_path):
         abort(404)
 
     from spire.doc import Document, FileFormat
@@ -593,87 +593,36 @@ def task_compare(task_id, job_id):
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
 
-    chapter_sources = {}
-    source_urls = {}
-    converted_docx = {}
-    current = None
-    with open(log_path, "r", encoding="utf-8") as f:
-        entries = json.load(f)
-    for entry in entries:
-        stype = entry.get("type")
-        params = entry.get("params", {})
-        if stype == "insert_roman_heading":
-            current = params.get("text", "")
-            chapter_sources.setdefault(current, [])
-        elif stype == "extract_pdf_chapter_to_table":
-            pdf_dir = os.path.join(job_dir, "pdfs_extracted")
-            pdfs = []
-            if os.path.isdir(pdf_dir):
-                for fn in sorted(os.listdir(pdf_dir)):
-                    if fn.lower().endswith(".pdf"):
-                        pdfs.append(fn)
-                        rel = os.path.join("pdfs_extracted", fn)
-                        source_urls[fn] = url_for(
-                            "task_view_file", task_id=task_id, job_id=job_id, filename=rel
-                        )
-            chapter_sources.setdefault(current or "未分類", []).extend(pdfs)
-        elif stype == "extract_word_chapter":
-            infile = params.get("input_file", "")
-            base = os.path.basename(infile)
-            sec = params.get("target_chapter_section", "")
-            use_title = str(params.get("target_title", "")).lower() in ["1", "true", "yes", "on"]
-            title = params.get("target_title_section", "") if use_title else ""
-            info = base
-            if sec:
-                info += f" 章節 {sec}"
-            if title:
-                info += f" 標題 {title}"
-            chapter_sources.setdefault(current or "未分類", []).append(info)
-            if base not in converted_docx and infile and os.path.exists(infile):
-                preview_dir = os.path.join(job_dir, "source_html")
-                os.makedirs(preview_dir, exist_ok=True)
-                html_name_src = f"{os.path.splitext(base)[0]}.html"
-                html_rel = os.path.join("source_html", html_name_src)
-                html_path_src = os.path.join(job_dir, html_rel)
-                doc = Document()
-                doc.LoadFromFile(infile)
-                doc.HtmlExportOptions.ImageEmbedded = True
-                doc.SaveToFile(html_path_src, FileFormat.Html)
-                doc.Close()
-                converted_docx[base] = html_rel
-            if base in converted_docx:
-                source_urls[info] = url_for(
-                    "task_view_file", task_id=task_id, job_id=job_id, filename=converted_docx[base]
-                )
-        elif stype == "extract_word_all_content":
-            infile = params.get("input_file", "")
-            base = os.path.basename(infile)
-            chapter_sources.setdefault(current or "未分類", []).append(base)
-            if base not in converted_docx and infile and os.path.exists(infile):
-                preview_dir = os.path.join(job_dir, "source_html")
-                os.makedirs(preview_dir, exist_ok=True)
-                html_name_src = f"{os.path.splitext(base)[0]}.html"
-                html_rel = os.path.join("source_html", html_name_src)
-                html_path_src = os.path.join(job_dir, html_rel)
-                doc = Document()
-                doc.LoadFromFile(infile)
-                doc.HtmlExportOptions.ImageEmbedded = True
-                doc.SaveToFile(html_path_src, FileFormat.Html)
-                doc.Close()
-                converted_docx[base] = html_rel
-            if base in converted_docx:
-                source_urls[base] = url_for(
-                    "task_view_file", task_id=task_id, job_id=job_id, filename=converted_docx[base]
-                )
+    # Embed source information into the HTML if not already present
+    with open(sources_path, "r", encoding="utf-8") as f:
+        sources = json.load(f)
+    # convert relative paths to accessible URLs
+    urls = {}
+    for k, v in sources.get("source_urls", {}).items():
+        urls[k] = url_for(
+            "task_view_file", task_id=task_id, job_id=job_id, filename=v
+        )
+    sources["source_urls"] = urls
 
-    chapters = list(chapter_sources.keys())
+    with open(html_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    if "id=\"source-data\"" not in html_content:
+        script = (
+            '<script id="source-data" type="application/json">'
+            + json.dumps(sources, ensure_ascii=False)
+            + "</script>"
+        )
+        if "</body>" in html_content:
+            html_content = html_content.replace("</body>", script + "</body>")
+        else:
+            html_content += script
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
     html_url = url_for("task_view_file", task_id=task_id, job_id=job_id, filename=html_name)
     return render_template(
         "compare.html",
         html_url=html_url,
-        chapters=chapters,
-        chapter_sources=chapter_sources,
-        source_urls=source_urls,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
         save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),
         download_url=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),

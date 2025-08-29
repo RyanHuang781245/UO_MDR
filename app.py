@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 import zipfile
+import re
 from datetime import datetime
 from flask import (
     Flask,
@@ -592,6 +593,20 @@ def task_compare(task_id, job_id):
         doc.HtmlExportOptions.ImageEmbedded = True
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
+
+    with open(html_path, "r", encoding="utf-8") as f:
+        html_data = f.read()
+    pattern = re.compile(
+        r"<p[^>]*>\s*<span[^>]*>\s*\[\[SOURCE:(.*?)\]\]\s*</span>\s*</p>(.*?)<p[^>]*>\s*<span[^>]*>\s*\[\[/SOURCE\]\]\s*</span>\s*</p>",
+        re.DOTALL,
+    )
+    html_data = re.sub(
+        pattern,
+        lambda m: f'<span data-source="{m.group(1)}">{m.group(2)}</span>',
+        html_data,
+    )
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_data)
 
     chapter_sources = {}
     source_urls = {}

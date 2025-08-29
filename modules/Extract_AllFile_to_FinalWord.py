@@ -161,7 +161,14 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
                             para.AppendText(part)
             elif isinstance(child, Table):
                 add_table_to_section(section, child)
+            elif isinstance(child, Section):
+                # Avoid traversing headers and footers by enqueueing only the body
+                nodes.put(child.Body)
             elif isinstance(child, ICompositeObject):
+                # Skip explicit Header and Footer objects
+                doc_type = getattr(child, "DocumentObjectType", None)
+                if doc_type in (DocumentObjectType.Header, DocumentObjectType.Footer):
+                    continue
                 nodes.put(child)
 
     if is_standalone:

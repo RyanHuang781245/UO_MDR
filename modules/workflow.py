@@ -52,10 +52,21 @@ SUPPORTED_STEPS = {
 def boolish(v:str)->bool:
     return str(v).lower() in ["1","true","yes","y","on"]
 
-def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
-    log = []
+def run_workflow(steps: List[Dict[str, Any]], workdir: str) -> Dict[str, Any]:
+    """Execute workflow steps and record source information.
+
+    During execution this collects chapter/source mappings so later
+    stages can embed them directly into the result HTML without parsing
+    the log or output files."""
+
+    log: List[Dict[str, Any]] = []
     output_doc = Document()
     section = output_doc.AddSection()
+
+    chapter_sources: Dict[str, List[str]] = {}
+    source_urls: Dict[str, str] = {}
+    converted_docx: Dict[str, str] = {}
+    current_chapter = None
 
     for idx, step in enumerate(steps, start=1):
         stype = step.get("type")
@@ -72,58 +83,114 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 os.makedirs(extract_dir, exist_ok=True)
                 with zipfile.ZipFile(zip_path, 'r') as zf:
                     zf.extractall(extract_dir)
+                pdfs = [fn for fn in sorted(os.listdir(extract_dir)) if fn.lower().endswith('.pdf')]
+                for fn in pdfs:
+                    source_urls[fn] = os.path.join("pdfs_extracted", fn)
+                chapter_sources.setdefault(current_chapter or "未分類", []).extend(pdfs)
                 extract_pdf_chapter_to_table(extract_dir, target, output_doc=output_doc, section=section)
 
             elif stype == "extract_word_all_content":
                 infile = params["input_file"]
-                extract_word_all_content(infile, output_image_path=os.path.join(workdir,"images"), output_doc=output_doc, section=section)
+                extract_word_all_content(
+                    infile,
+                    output_image_path=os.path.join(workdir, "images"),
+                    output_doc=output_doc,
+                    section=section,
+                )
+                base = os.path.basename(infile)
+                chapter_sources.setdefault(current_chapter or "未分類", []).append(base)
+                if base not in converted_docx and infile and os.path.exists(infile):
+                    preview_dir = os.path.join(workdir, "source_html")
+                    os.makedirs(preview_dir, exist_ok=True)
+                    html_name_src = f"{os.path.splitext(base)[0]}.html"
+                    html_rel = os.path.join("source_html", html_name_src)
+                    html_path_src = os.path.join(workdir, html_rel)
+                    doc = Document()
+                    doc.LoadFromFile(infile)
+                    doc.HtmlExportOptions.ImageEmbedded = True
+                    doc.SaveToFile(html_path_src, FileFormat.Html)
+                    doc.Close()
+                    converted_docx[base] = html_rel
+                if base in converted_docx:
+                    source_urls[base] = converted_docx[base]
 
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
-                tsec = params.get("target_chapter_section","")
-                use_title = boolish(params.get("target_title","false"))
-                title_text = params.get("target_title_section","")
+                tsec = params.get("target_chapter_section", "")
+                use_title = boolish(params.get("target_title", "false"))
+                title_text = params.get("target_title_section", "")
                 extract_word_chapter(
                     infile,
                     tsec,
                     target_title=use_title,
                     target_title_section=title_text,
-                    output_image_path=os.path.join(workdir,"images"),
+                    output_image_path=os.path.join(workdir, "images"),
                     output_doc=output_doc,
-                    section=section
+                    section=section,
                 )
+                base = os.path.basename(infile)
+                info = base
+                if tsec:
+                    info += f" 章節 {tsec}"
+                if use_title and title_text:
+                    info += f" 標題 {title_text}"
+                chapter_sources.setdefault(current_chapter or "未分類", []).append(info)
+                if base not in converted_docx and infile and os.path.exists(infile):
+                    preview_dir = os.path.join(workdir, "source_html")
+                    os.makedirs(preview_dir, exist_ok=True)
+                    html_name_src = f"{os.path.splitext(base)[0]}.html"
+                    html_rel = os.path.join("source_html", html_name_src)
+                    html_path_src = os.path.join(workdir, html_rel)
+                    doc = Document()
+                    doc.LoadFromFile(infile)
+                    doc.HtmlExportOptions.ImageEmbedded = True
+                    doc.SaveToFile(html_path_src, FileFormat.Html)
+                    doc.Close()
+                    converted_docx[base] = html_rel
+                if base in converted_docx:
+                    source_urls[base] = converted_docx[base]
 
             elif stype == "insert_text":
-                insert_text(section,
-                            params.get("text",""),
-                            align=params.get("align","left"),
-                            bold=boolish(params.get("bold","false")),
-                            font_size=float(params.get("font_size",12)),
-                            before_space=float(params.get("before_space",0)),
-                            after_space=float(params.get("after_space",6)),
-                            page_break_before=boolish(params.get("page_break_before","false")))
+                insert_text(
+                    section,
+                    params.get("text", ""),
+                    align=params.get("align", "left"),
+                    bold=boolish(params.get("bold", "false")),
+                    font_size=float(params.get("font_size", 12)),
+                    before_space=float(params.get("before_space", 0)),
+                    after_space=float(params.get("after_space", 6)),
+                    page_break_before=boolish(params.get("page_break_before", "false")),
+                )
 
             elif stype == "insert_numbered_heading":
-                insert_numbered_heading(section,
-                                        params.get("text",""),
-                                        level=int(params.get("level",0)),
-                                        bold=boolish(params.get("bold","true")),
-                                        font_size=float(params.get("font_size",14)))
+                insert_numbered_heading(
+                    section,
+                    params.get("text", ""),
+                    level=int(params.get("level", 0)),
+                    bold=boolish(params.get("bold", "true")),
+                    font_size=float(params.get("font_size", 14)),
+                )
 
             elif stype == "insert_roman_heading":
-                insert_roman_heading(section,
-                                     params.get("text",""),
-                                     level=int(params.get("level",0)),
-                                     bold=boolish(params.get("bold","true")),
-                                     font_size=float(params.get("font_size",14)))
+                current_chapter = params.get("text", "")
+                chapter_sources.setdefault(current_chapter, [])
+                insert_roman_heading(
+                    section,
+                    current_chapter,
+                    level=int(params.get("level", 0)),
+                    bold=boolish(params.get("bold", "true")),
+                    font_size=float(params.get("font_size", 14)),
+                )
 
             elif stype == "insert_bulleted_heading":
-                insert_bulleted_heading(section,
-                                        params.get("text",""),
-                                        level=0,
-                                        bullet_char='·',
-                                        bold=True,
-                                        font_size=float(params.get("font_size",14)))
+                insert_bulleted_heading(
+                    section,
+                    params.get("text", ""),
+                    level=0,
+                    bullet_char='·',
+                    bold=True,
+                    font_size=float(params.get("font_size", 14)),
+                )
 
             else:
                 raise RuntimeError(f"Unknown step type: {stype}")
@@ -143,4 +210,9 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
         import json
         json.dump(log, f, ensure_ascii=False, indent=2)
 
-    return {"result_docx": out_docx, "log": out_log, "log_json": log}
+    sources_path = os.path.join(workdir, "sources.json")
+    with open(sources_path, "w", encoding="utf-8") as f:
+        import json
+        json.dump({"chapter_sources": chapter_sources, "source_urls": source_urls}, f, ensure_ascii=False, indent=2)
+
+    return {"result_docx": out_docx, "log": out_log, "log_json": log, "sources": sources_path}

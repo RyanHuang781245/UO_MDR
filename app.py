@@ -429,8 +429,12 @@ def run_flow(task_id):
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
-    run_workflow(runtime_steps, workdir=job_dir)
-    result_path = os.path.join(job_dir, "result.docx")
+    wf_result = run_workflow(runtime_steps, workdir=job_dir)
+    result_path = wf_result.get("result_docx")
+    html_content = wf_result.get("result_html", "")
+    if html_content:
+        with open(os.path.join(job_dir, "result.html"), "w", encoding="utf-8") as f:
+            f.write(html_content)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     apply_basic_style(result_path)
@@ -474,8 +478,12 @@ def execute_flow(task_id, flow_name):
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
-    run_workflow(runtime_steps, workdir=job_dir)
-    result_path = os.path.join(job_dir, "result.docx")
+    wf_result = run_workflow(runtime_steps, workdir=job_dir)
+    result_path = wf_result.get("result_docx")
+    html_content = wf_result.get("result_html", "")
+    if html_content:
+        with open(os.path.join(job_dir, "result.html"), "w", encoding="utf-8") as f:
+            f.write(html_content)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     apply_basic_style(result_path)
@@ -577,24 +585,17 @@ def task_translate(task_id, job_id):
 def task_compare(task_id, job_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
-    docx_path = os.path.join(job_dir, "result.docx")
+    html_name = "result.html"
+    html_path = os.path.join(job_dir, html_name)
     log_path = os.path.join(job_dir, "log.json")
-    if not os.path.exists(docx_path) or not os.path.exists(log_path):
+    if not os.path.exists(html_path) or not os.path.exists(log_path):
         abort(404)
 
     from spire.doc import Document, FileFormat
 
-    html_name = "result.html"
-    html_path = os.path.join(job_dir, html_name)
-    if not os.path.exists(html_path):
-        doc = Document()
-        doc.LoadFromFile(docx_path)
-        doc.HtmlExportOptions.ImageEmbedded = True
-        doc.SaveToFile(html_path, FileFormat.Html)
-        doc.Close()
-
     chapter_sources = {}
     source_urls = {}
+    colors = {}
     converted_docx = {}
     current = None
     with open(log_path, "r", encoding="utf-8") as f:
@@ -602,6 +603,7 @@ def task_compare(task_id, job_id):
     for entry in entries:
         stype = entry.get("type")
         params = entry.get("params", {})
+        color = entry.get("color")
         if stype == "insert_roman_heading":
             current = params.get("text", "")
             chapter_sources.setdefault(current, [])
@@ -617,6 +619,9 @@ def task_compare(task_id, job_id):
                             "task_view_file", task_id=task_id, job_id=job_id, filename=rel
                         )
             chapter_sources.setdefault(current or "未分類", []).extend(pdfs)
+            if color:
+                for fn in pdfs:
+                    colors[fn] = color
         elif stype == "extract_word_chapter":
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
@@ -629,6 +634,8 @@ def task_compare(task_id, job_id):
             if title:
                 info += f" 標題 {title}"
             chapter_sources.setdefault(current or "未分類", []).append(info)
+            if color:
+                colors[info] = color
             if base not in converted_docx and infile and os.path.exists(infile):
                 preview_dir = os.path.join(job_dir, "source_html")
                 os.makedirs(preview_dir, exist_ok=True)
@@ -649,6 +656,8 @@ def task_compare(task_id, job_id):
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
             chapter_sources.setdefault(current or "未分類", []).append(base)
+            if color:
+                colors[base] = color
             if base not in converted_docx and infile and os.path.exists(infile):
                 preview_dir = os.path.join(job_dir, "source_html")
                 os.makedirs(preview_dir, exist_ok=True)
@@ -674,6 +683,7 @@ def task_compare(task_id, job_id):
         chapters=chapters,
         chapter_sources=chapter_sources,
         source_urls=source_urls,
+        colors=colors,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
         save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),
         download_url=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),

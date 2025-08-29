@@ -14,38 +14,38 @@ from .Extract_AllFile_to_FinalWord import (
 SUPPORTED_STEPS = {
     "extract_pdf_chapter_to_table": {
         "label": "擷取 PDF 章節至表格（上傳 ZIP）",
-        "inputs": ["pdf_zip", "target_section"],
-        "accepts": {"pdf_zip": "file:zip", "target_section": "text"}
+        "inputs": ["pdf_zip", "target_section", "color"],
+        "accepts": {"pdf_zip": "file:zip", "target_section": "text", "color": "color"}
     },
     "extract_word_all_content": {
         "label": "擷取 Word 全部內容",
-        "inputs": ["input_file"],
-        "accepts": {"input_file": "file:docx"}
+        "inputs": ["input_file", "color"],
+        "accepts": {"input_file": "file:docx", "color": "color"}
     },
     "extract_word_chapter": {
         "label": "擷取 Word 指定章節/標題",
-        "inputs": ["input_file", "target_chapter_section", "target_title", "target_title_section"],
-        "accepts": {"input_file": "file:docx", "target_chapter_section": "text", "target_title": "bool", "target_title_section": "text"}
+        "inputs": ["input_file", "target_chapter_section", "target_title", "target_title_section", "color"],
+        "accepts": {"input_file": "file:docx", "target_chapter_section": "text", "target_title": "bool", "target_title_section": "text", "color": "color"}
     },
     "insert_text": {
         "label": "插入純文字段落",
-        "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before"],
-        "accepts": {"text":"text","align":"align","bold":"bool","font_size":"float","before_space":"float","after_space":"float","page_break_before":"bool"}
+        "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before", "color"],
+        "accepts": {"text":"text","align":"align","bold":"bool","font_size":"float","before_space":"float","after_space":"float","page_break_before":"bool","color":"color"}
     },
     "insert_numbered_heading": {
         "label": "插入阿拉伯數字標題",
-        "inputs": ["text", "level", "bold", "font_size"],
-        "accepts": {"text":"text","level":"int","bold":"bool","font_size":"float"}
+        "inputs": ["text", "level", "bold", "font_size", "color"],
+        "accepts": {"text":"text","level":"int","bold":"bool","font_size":"float","color":"color"}
     },
     "insert_roman_heading": {
         "label": "插入羅馬數字標題",
-        "inputs": ["text", "level", "bold", "font_size"],
-        "accepts": {"text":"text","level":"int","bold":"bool","font_size":"float"}
+        "inputs": ["text", "level", "bold", "font_size", "color"],
+        "accepts": {"text":"text","level":"int","bold":"bool","font_size":"float","color":"color"}
     },
     "insert_bulleted_heading": {
         "label": "插入項目符號標題",
-        "inputs": ["text", "font_size"],
-        "accepts": {"text":"text","font_size":"float"}
+        "inputs": ["text", "font_size", "color"],
+        "accepts": {"text":"text","font_size":"float","color":"color"}
     }
 }
 
@@ -60,7 +60,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
     for idx, step in enumerate(steps, start=1):
         stype = step.get("type")
         params = step.get("params", {})
-        log.append({"step": idx, "type": stype, "params": params})
+        log.append({"step": idx, "type": stype, "params": params, "color": params.get("color")})
         try:
             if stype == "extract_pdf_chapter_to_table":
                 import zipfile
@@ -136,6 +136,11 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
 
     out_docx = os.path.join(workdir, "result.docx")
     output_doc.SaveToFile(out_docx, FileFormat.Docx)
+    output_doc.HtmlExportOptions.ImageEmbedded = True
+    output_doc.HtmlExportOptions.CssStyleSheetType = CssStyleSheetType.Internal
+    stream = Stream()
+    output_doc.SaveToStream(stream, FileFormat.Html)
+    html_content = stream.ToArray().decode("utf-8")
     output_doc.Close()
 
     out_log = os.path.join(workdir, "log.json")
@@ -143,4 +148,4 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
         import json
         json.dump(log, f, ensure_ascii=False, indent=2)
 
-    return {"result_docx": out_docx, "log": out_log, "log_json": log}
+    return {"result_docx": out_docx, "result_html": html_content, "log": out_log, "log_json": log}

@@ -64,7 +64,14 @@ function updateSources(ch, element) {
   }
   if (!sequence.length) return;
 
-  const uniqueSources = [...new Set(sequence)];
+  const entries = sequence.map(src => {
+    const title = src.match(/標題\s*(.+)/);
+    if (title) return {source: src, marker: {type: 'title', value: title[1]}};
+    const sec = src.match(/章節\s*([\d\.]+)/);
+    return {source: src, marker: sec ? {type: 'section', value: sec[1]} : null};
+  });
+
+  const uniqueSources = [...new Set(entries.map(e => e.source))];
   const colorMap = {};
   let colorIdx = 0;
   let pdfColor = null;
@@ -96,39 +103,21 @@ function updateSources(ch, element) {
   if (element) {
     let node = element.nextElementSibling;
     let idx = 0;
-    const markers = sequence.map(src => {
-      const title = src.match(/標題\s*(.+)/);
-      if (title) return {type: 'title', value: title[1]};
-      const sec = src.match(/章節\s*([\d\.]+)/);
-      return sec ? {type: 'section', value: sec[1]} : null;
-    });
-    const findNextMarkerIdx = from => {
-      for (let i = from + 1; i < markers.length; i++) {
-        if (markers[i]) return i;
-      }
-      return -1;
-    };
-    let nextIdx = findNextMarkerIdx(0);
-    let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const text = node.textContent.trim();
-      if (nextMarker && highlighted.length && (
-          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
-          (nextMarker.type === 'title' && text.includes(nextMarker.value))
-        )) {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-      }
-      const src = sequence[idx] || sequence[sequence.length - 1];
-      node.style.backgroundColor = colorMap[src];
+    while (node && idx < entries.length && !CHAPTER_SET.has(node.textContent.trim())) {
+      const {source, marker} = entries[idx];
+      node.style.backgroundColor = colorMap[source];
       highlighted.push(node);
-      if (markers[idx] && markers[idx].type === 'title') {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
+
+      const nextNode = node.nextElementSibling;
+      if (!nextNode) break;
+      const nextText = nextNode.textContent.trim();
+      if (!marker || !(
+          (marker.type === 'section' && nextText.startsWith(marker.value)) ||
+          (marker.type === 'title' && nextText.includes(marker.value))
+        )) {
+        idx++;
       }
-      node = node.nextElementSibling;
+      node = nextNode;
     }
   }
 }

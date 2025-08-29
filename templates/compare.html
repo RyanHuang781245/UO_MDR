@@ -49,20 +49,20 @@ function clearHighlights() {
   highlighted = [];
 }
 
-function updateSources(ch, element) {
+function updateSources(ch) {
   clearHighlights();
   const list = document.getElementById('sourceList');
   list.innerHTML = '';
-  let sequence = [];
+  let segments = [];
   if (Array.isArray(ch)) {
-    sequence = ch.slice();
+    segments = ch.slice();
   } else if (ch === null) {
     const all = Object.values(CHAPTER_SOURCES).flat();
-    sequence = all.slice();
+    segments = all.slice();
   } else {
-    sequence = CHAPTER_SOURCES[ch] || [];
+    segments = CHAPTER_SOURCES[ch] || [];
   }
-  if (!sequence.length) return;
+  if (!segments.length) return;
 
   const uniqueSources = [...new Set(sequence.map(it => it.src))];
   const colorMap = {};
@@ -133,7 +133,7 @@ iframe.addEventListener('load', () => {
       found = true;
       elements.forEach(el => {
         el.style.cursor = 'pointer';
-        el.addEventListener('click', () => updateSources(ch, el));
+        el.addEventListener('click', () => updateSources(ch));
       });
     } else {
       unhandled = unhandled.concat(CHAPTER_SOURCES[ch] || []);

@@ -31,12 +31,13 @@
   </div>
 </div>
 <script>
-const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
-const CHAPTERS = {{ chapters|tojson }};
-const SOURCE_URLS = {{ source_urls|tojson }};
+let CHAPTER_SOURCES = {};
+let CHAPTERS = [];
+let SOURCE_URLS = {};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
-const CHAPTER_SET = new Set(CHAPTERS);
+const CHAPTER_SET = new Set();
 let highlighted = [];
+let SOURCE_COLOR_MAP = {};
 
 function openWindow(url) {
   window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
@@ -64,28 +65,15 @@ function updateSources(ch, element) {
   }
   if (!sequence.length) return;
 
-  const uniqueSources = [...new Set(sequence)];
-  const colorMap = {};
-  let colorIdx = 0;
-  let pdfColor = null;
-  uniqueSources.forEach(src => {
-    let color;
-    if (src.toLowerCase().endsWith('.pdf')) {
-      if (!pdfColor) {
-        pdfColor = COLORS[colorIdx % COLORS.length];
-        colorIdx++;
-      }
-      color = pdfColor;
-    } else {
-      color = COLORS[colorIdx % COLORS.length];
-      colorIdx++;
-    }
-    colorMap[src] = color;
+  const uniqueEntries = [...new Set(sequence)];
+  uniqueEntries.forEach(entry => {
     const li = document.createElement('li');
     li.className = 'list-group-item';
-    li.textContent = src;
+    li.textContent = entry;
+    const color = SOURCE_COLOR_MAP[entry];
     li.style.backgroundColor = color;
-    const url = SOURCE_URLS[src];
+    const base = entry.split(/\s+(?:章節|標題)/)[0];
+    const url = SOURCE_URLS[base];
     if (url) {
       li.style.cursor = 'pointer';
       li.addEventListener('click', () => openWindow(url));
@@ -120,8 +108,8 @@ function updateSources(ch, element) {
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
-      const src = sequence[idx] || sequence[sequence.length - 1];
-      node.style.backgroundColor = colorMap[src];
+      const srcEntry = sequence[idx] || sequence[sequence.length - 1];
+      node.style.backgroundColor = SOURCE_COLOR_MAP[srcEntry];
       highlighted.push(node);
       if (markers[idx] && markers[idx].type === 'title') {
         idx = nextIdx;
@@ -149,6 +137,30 @@ iframe.addEventListener('load', () => {
   doc = iframe.contentDocument || iframe.contentWindow.document;
   doc.designMode = 'off';
   doc.addEventListener('input', () => setSaved(false));
+  const dataEl = doc.getElementById('source-data');
+  if (dataEl) {
+    try {
+      const data = JSON.parse(dataEl.textContent || '{}');
+      CHAPTER_SOURCES = data.chapter_sources || {};
+      SOURCE_URLS = data.source_urls || {};
+    } catch (e) {
+      console.error('Failed to parse source-data', e);
+    }
+  }
+  CHAPTERS = Object.keys(CHAPTER_SOURCES);
+  CHAPTER_SET.clear();
+  CHAPTERS.forEach(ch => CHAPTER_SET.add(ch));
+
+  const allSources = Object.values(CHAPTER_SOURCES).flat();
+  const uniqueEntries = [...new Set(allSources)];
+  let colorIdx = 0;
+  uniqueEntries.forEach(entry => {
+    const color = COLORS[colorIdx % COLORS.length];
+    colorIdx++;
+    // Use the full entry string as the key so chapters from the
+    // same file receive distinct colors.
+    SOURCE_COLOR_MAP[entry] = color;
+  });
   let found = false;
   let unhandled = [];
   CHAPTERS.forEach(ch => {

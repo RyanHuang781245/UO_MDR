@@ -312,7 +312,7 @@ def apply_basic_style(
     western_font: str = "Times New Roman",
     east_asian_font: str = "新細明體",
     font_size: int = 12,
-    line_spacing: float = 2.0,
+    line_spacing: float = 1.5,
     space_before: int = 6,
     space_after: int = 6,
 ) -> bool:

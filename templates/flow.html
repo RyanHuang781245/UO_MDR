@@ -187,6 +187,9 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
     if (k === "text") label = "輸入文字";
     if (k === "align") label = "對齊方式";
     if (k === "bold") label = "粗體";
+    if (k === "source_dir") label = "來源資料夾";
+    if (k === "dest_dir") label = "目的資料夾";
+    if (k === "keywords") label = "關鍵字（逗號分隔）";
 
     const val = preset[k] || "";
     if (accept === "text"){

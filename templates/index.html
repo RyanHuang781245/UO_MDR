@@ -62,6 +62,9 @@ function addStep(typeKey){
     if (k === "target_section") label = "章節編號（例如 6.12.1）";
     if (k === "target_chapter_section") label = "章節編號（例如 6.12.1）";
     if (k === "target_title_section") label = "章節標題（完整比對）";
+    if (k === "source_dir") label = "來源資料夾";
+    if (k === "dest_dir") label = "目的資料夾";
+    if (k === "keywords") label = "關鍵字（逗號分隔）";
 
     if (accept === "text"){
       body += `<div class="col-md-6"><label class="form-label">${label}</label>
@@ -114,8 +117,14 @@ function addStep(typeKey){
                  <input class="form-control" type="number" step="any" name="step_${sid}_${k}" placeholder="${label}"></div>`;
       }
     } else if (accept.startsWith("file")){
-      body += `<div class="col-md-6"><label class="form-label">${label}</label>
-               <input class="form-control" type="file" name="step_${sid}_${k}"></div>`;
+      const ext = accept.split(":")[1];
+      if (ext === "dir") {
+        body += `<div class="col-md-6"><label class="form-label">${label}</label>
+                 <input class="form-control" name="step_${sid}_${k}" placeholder="${label}"></div>`;
+      } else {
+        body += `<div class="col-md-6"><label class="form-label">${label}</label>
+                 <input class="form-control" type="file" name="step_${sid}_${k}"></div>`;
+      }
     } else if (k === "align"){
       body += `<div class="col-md-3"><label class="form-label">對齊</label>
                <select class="form-select" name="step_${sid}_align">

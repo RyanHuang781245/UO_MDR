@@ -435,6 +435,7 @@ def run_flow(task_id):
     result_path = os.path.join(job_dir, "result.docx")
     if center_titles:
         center_table_figure_paragraphs(result_path)
+    remove_hidden_runs(result_path)
     apply_basic_style(result_path)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
@@ -480,6 +481,7 @@ def execute_flow(task_id, flow_name):
     result_path = os.path.join(job_dir, "result.docx")
     if center_titles:
         center_table_figure_paragraphs(result_path)
+    remove_hidden_runs(result_path)
     apply_basic_style(result_path)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 

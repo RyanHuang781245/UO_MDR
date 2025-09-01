@@ -693,13 +693,20 @@ def task_compare_save(task_id, job_id):
         html_content = data.get("html", "")
     if not html_content:
         return "缺少內容", 400
+    # Remove any hidden elements marked via CSS display:none to strip chapter titles
     html_content = re.sub(
-        r'<span[^>]*style="[^"]*display\s*:\s*none[^"]*"[^>]*>.*?</span>',
+        r'<(\w+)[^>]*style="[^"]*display\s*:\s*none[^"]*"[^>]*>.*?</\1>',
         '',
         html_content,
         flags=re.IGNORECASE | re.DOTALL,
     )
-    html_content = re.sub(r'<p[^>]*>\s*</p>', '', html_content, flags=re.IGNORECASE)
+    # Drop empty paragraphs that may remain after removing hidden markers
+    html_content = re.sub(
+        r'<p[^>]*>(?:\s|&nbsp;|&#160;)*</p>',
+        '',
+        html_content,
+        flags=re.IGNORECASE,
+    )
     html_path = os.path.join(job_dir, "result.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html_content)

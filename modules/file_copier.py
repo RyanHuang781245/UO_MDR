@@ -1,9 +1,17 @@
 import os
 import shutil
-from typing import Iterable, List
+from typing import Iterable, List, Callable, Optional
 
 
-def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[str]:
+OverwritePrompt = Callable[[str], bool]
+
+
+def copy_files(
+    source: str,
+    destination: str,
+    keywords: Iterable[str],
+    overwrite_prompt: Optional[OverwritePrompt] = None,
+) -> List[str]:
     """Copy files whose names contain all provided keywords.
 
     Keywords are matched case-insensitively. A file is copied only when its
@@ -17,6 +25,12 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
         Directory where matched files will be copied.
     keywords: Iterable[str]
         Keywords that must all be present in the filename.
+
+    overwrite_prompt: Callable[[str], bool] | None, optional
+        A callback used when a conflicting filename is found in the destination
+        directory.  It receives the destination path and should return ``True``
+        to allow overwriting the existing file.  When not provided, the user is
+        prompted via ``input``.  Returning ``False`` skips copying that file.
 
     Returns
     -------
@@ -36,11 +50,17 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
             if all(k in lower_name for k in lowered_keywords):
                 src_path = os.path.join(root, name)
                 dest_path = os.path.join(destination, name)
-                base, ext = os.path.splitext(name)
-                count = 1
-                while os.path.exists(dest_path):
-                    dest_path = os.path.join(destination, f"{base}_{count}{ext}")
-                    count += 1
+                if os.path.exists(dest_path):
+                    should_overwrite: bool
+                    if overwrite_prompt is not None:
+                        should_overwrite = overwrite_prompt(dest_path)
+                    else:
+                        ans = input(
+                            f"File '{dest_path}' exists. Overwrite? [y/N]: "
+                        ).strip().lower()
+                        should_overwrite = ans in {"y", "yes"}
+                    if not should_overwrite:
+                        continue
                 shutil.copy2(src_path, dest_path)
                 copied_files.append(dest_path)
     return copied_files

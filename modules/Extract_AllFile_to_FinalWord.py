@@ -385,7 +385,6 @@ def apply_basic_style(
                         set_run_font_eastasia(run, east_asian_font)
                         run.font.size = Pt(font_size)
                     continue
-
                 if text in {"•", "·", "▪", "◦", "‧"}:
                     continue
 

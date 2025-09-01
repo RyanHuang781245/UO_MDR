@@ -518,6 +518,14 @@ def task_result(task_id, job_id):
     docx_path = os.path.join(job_dir, "result.docx")
     if not os.path.exists(docx_path):
         return "Job not found or failed.", 404
+    log_json_path = os.path.join(job_dir, "log.json")
+    log_entries = []
+    overall_status = "ok"
+    if os.path.exists(log_json_path):
+        with open(log_json_path, "r", encoding="utf-8") as f:
+            log_entries = json.load(f)
+        if any(e.get("status") == "error" for e in log_entries):
+            overall_status = "error"
     return render_template(
         "run.html",
         job_id=job_id,
@@ -526,6 +534,8 @@ def task_result(task_id, job_id):
         translate_path=url_for("task_translate", task_id=task_id, job_id=job_id),
         compare_path=url_for("task_compare", task_id=task_id, job_id=job_id),
         back_link=url_for("flow_builder", task_id=task_id),
+        log_entries=log_entries,
+        overall_status=overall_status,
     )
 
 

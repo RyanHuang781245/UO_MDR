@@ -318,6 +318,11 @@ def _iter_paragraphs(parent):
                     yield from _iter_paragraphs(cell)
 
 def remove_hidden_runs(input_file: str) -> bool:
+    """Remove runs marked as hidden and drop empty paragraphs without losing images.
+
+    Paragraphs that reside inside tables are skipped to avoid tampering with
+    their list numbering or layout.
+    """
     try:
         doc = DocxDocument(input_file)
         for para in list(_iter_paragraphs(doc)):
@@ -361,6 +366,11 @@ def apply_basic_style(
             pf.space_before = Pt(space_before)
             pf.space_after = Pt(space_after)
             for run in para.runs:
+                # Skip symbol fonts (e.g., bullets) to avoid replacing them with blank squares
+                if run.font.name and run.font.name.lower() in {"symbol", "wingdings"}:
+                    continue
+                if run.text.strip() in {"•", "·", "▪", "◦", "‧"}:
+                    continue
                 run.font.name = western_font
                 set_run_font_eastasia(run, east_asian_font)
                 run.font.size = Pt(font_size)

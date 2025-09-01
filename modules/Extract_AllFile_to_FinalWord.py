@@ -369,16 +369,21 @@ def apply_basic_style(
                 text = run.text.strip()
                 font_name = run.font.name.lower() if run.font.name else ""
 
-                # Replace Symbol/Wingdings middle dots with a standard bullet and default fonts
-                if text == "·" and font_name in {"symbol", "wingdings"}:
-                    run.text = run.text.replace("·", "•")
-                    run.font.name = western_font
-                    set_run_font_eastasia(run, east_asian_font)
-                    run.font.size = Pt(font_size)
-                    continue
-
-                # Skip other symbol fonts (e.g., bullets) to avoid replacing them with blank squares
+                # Handle bullets typed with Symbol/Wingdings fonts
+                sym = run._element.find(qn("w:sym"))
                 if font_name in {"symbol", "wingdings"}:
+                    bullet_like = (
+                        sym is not None
+                        or text in {"·", "•", ""}
+                        or (text and any(ord(ch) >= 0xF000 for ch in text))
+                    )
+                    if bullet_like:
+                        if sym is not None:
+                            run._element.remove(sym)
+                        run.text = "•"
+                        run.font.name = western_font
+                        set_run_font_eastasia(run, east_asian_font)
+                        run.font.size = Pt(font_size)
                     continue
                 if text in {"•", "·", "▪", "◦", "‧"}:
                     continue

@@ -7,7 +7,8 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
     """Copy files whose names contain all provided keywords.
 
     Keywords are matched case-insensitively. A file is copied only when its
-    name contains *all* of the specified keywords.
+    name contains *all* of the specified keywords. If a file with the same
+    name already exists in the destination directory, it will be overwritten.
 
     Parameters
     ----------
@@ -36,11 +37,6 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
             if all(k in lower_name for k in lowered_keywords):
                 src_path = os.path.join(root, name)
                 dest_path = os.path.join(destination, name)
-                base, ext = os.path.splitext(name)
-                count = 1
-                while os.path.exists(dest_path):
-                    dest_path = os.path.join(destination, f"{base}_{count}{ext}")
-                    count += 1
                 shutil.copy2(src_path, dest_path)
                 copied_files.append(dest_path)
     return copied_files

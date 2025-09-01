@@ -573,6 +573,28 @@ def task_translate(task_id, job_id):
     )
 
 
+def build_chapter_segments(entries):
+    chapter_segments = {}
+    current = None
+    for entry in entries:
+        stype = entry.get("type")
+        params = entry.get("params", {})
+        if stype == "insert_roman_heading":
+            current = params.get("text", "")
+            chapter_segments.setdefault(current, [])
+        elif stype == "extract_word_chapter":
+            infile = params.get("input_file", "")
+            base = os.path.basename(infile)
+            for t in entry.get("titles", []):
+                chapter_segments.setdefault(current or "未分類", []).append({
+                    "index": t.get("index", 0),
+                    "source": base,
+                })
+    for segs in chapter_segments.values():
+        segs.sort(key=lambda x: x["index"])
+    return chapter_segments
+
+
 @app.get("/tasks/<task_id>/compare/<job_id>")
 def task_compare(task_id, job_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
@@ -666,6 +688,7 @@ def task_compare(task_id, job_id):
                     "task_view_file", task_id=task_id, job_id=job_id, filename=converted_docx[base]
                 )
 
+    chapter_segments = build_chapter_segments(entries)
     chapters = list(chapter_sources.keys())
     html_url = url_for("task_view_file", task_id=task_id, job_id=job_id, filename=html_name)
     return render_template(
@@ -673,6 +696,7 @@ def task_compare(task_id, job_id):
         html_url=html_url,
         chapters=chapters,
         chapter_sources=chapter_sources,
+        chapter_segments=chapter_segments,
         source_urls=source_urls,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
         save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),

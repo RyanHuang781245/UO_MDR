@@ -2,14 +2,54 @@
 {% block content %}
 <h1 class="h4">流程已完成</h1>
 <p class="mb-3">Job ID: <code>{{ job_id }}</code></p>
+{% if overall_status == 'error' %}
+<div class="alert alert-danger">處理失敗</div>
+{% else %}
+<div class="alert alert-success">處理成功</div>
+{% endif %}
 <div class="vstack gap-2">
   <a class="btn btn-primary" href="{{ docx_path }}">下載結果 DOCX</a>
   <a class="btn btn-primary" href="{{ translate_path }}">下載翻譯 DOCX</a>
-  <a class="btn btn-outline-secondary" href="{{ log_path }}">下載流程 Log</a>
+  <div class="hstack gap-2">
+    <a class="btn btn-outline-secondary" href="{{ log_path }}">下載流程 Log</a>
+    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#logModal">查看流程 Log</button>
+  </div>
   <a class="btn btn-outline-primary" href="{{ compare_path }}">來源比對/編輯</a>
   {% if back_link %}
   <a class="btn btn-secondary" href="{{ back_link }}">返回流程</a>
   {% endif %}
   <a class="btn btn-link" href="{{ url_for('tasks') }}">回首頁</a>
 </div>
+
+<div class="modal fade" id="logModal" tabindex="-1" aria-labelledby="logModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="logModalLabel">流程 Log</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="list-group">
+        {% for entry in log_entries %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>步驟 {{ entry.step }} - {{ entry.type }}</span>
+            {% if entry.status == 'ok' %}
+            <span class="badge bg-success">成功</span>
+            {% else %}
+            <span class="badge bg-danger">失敗</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var modal = new bootstrap.Modal(document.getElementById('logModal'));
+  modal.show();
+});
+</script>
 {% endblock %}

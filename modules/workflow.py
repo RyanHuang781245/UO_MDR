@@ -3,6 +3,7 @@ import os
 from typing import List, Dict, Any
 from spire.doc import *
 from spire.doc.common import *
+import pypandoc
 
 from .Edit_Word import insert_text, insert_numbered_heading, insert_roman_heading, insert_bulleted_heading
 from .Extract_AllFile_to_FinalWord import (
@@ -135,8 +136,11 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
             log[-1]["error"] = str(e)
 
     out_docx = os.path.join(workdir, "result.docx")
-    output_doc.SaveToFile(out_docx, FileFormat.Docx)
+    tmp_html = os.path.join(workdir, "result.html")
+    output_doc.SaveToFile(tmp_html, FileFormat.Html)
     output_doc.Close()
+    pypandoc.convert_file(tmp_html, "docx", outputfile=out_docx)
+    os.remove(tmp_html)
 
     out_log = os.path.join(workdir, "log.json")
     with open(out_log, "w", encoding="utf-8") as f:

@@ -8,6 +8,7 @@ from docx.enum.text import WD_LINE_SPACING
 from docx.oxml.ns import qn
 from spire.doc import *
 from spire.doc.common import *
+import pypandoc
 
 
 def set_run_font_eastasia(run, eastasia_name: str):
@@ -96,7 +97,10 @@ def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, outp
         table.Rows.Add(new_row)
 
     if is_standalone:
-        output_doc.save("pdf_chapter_table.docx")
+        temp_docx = "pdf_chapter_table_temp.docx"
+        output_doc.save(temp_docx)
+        pypandoc.convert_file(temp_docx, "docx", outputfile="pdf_chapter_table.docx")
+        os.remove(temp_docx)
     print(f"已將PDF章節 {target_section} 擷取至表格")
 
 
@@ -172,7 +176,10 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
                 nodes.put(child)
 
     if is_standalone:
-        output_doc.SaveToFile("word_all_result.docx", FileFormat.Docx)
+        temp_html = "word_all_result.html"
+        output_doc.SaveToFile(temp_html, FileFormat.Html)
+        pypandoc.convert_file(temp_html, "docx", outputfile="word_all_result.docx")
+        os.remove(temp_html)
     input_doc.Close()
     print(f"已將所有內容擷取")
 
@@ -235,6 +242,9 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                 paragraph_text = paragraph_text.strip()
                 if section_pattern.match(paragraph_text):
                     capture_mode = True
+                    marker_para = section.AddParagraph()
+                    marker_run = marker_para.AppendText(paragraph_text)
+                    marker_run.CharacterFormat.Hidden = True
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False
@@ -256,7 +266,10 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                 nodes.put(child)
 
     if is_standalone:
-        output_doc.SaveToFile("word_chapter_result.docx", FileFormat.Docx)
+        temp_html = "word_chapter_result.html"
+        output_doc.SaveToFile(temp_html, FileFormat.Html)
+        pypandoc.convert_file(temp_html, "docx", outputfile="word_chapter_result.docx")
+        os.remove(temp_html)
     input_doc.Close()
     print(f"以將章節 {target_chapter_section} 擷取")
 
@@ -304,7 +317,7 @@ def center_table_figure_paragraphs(input_file: str) -> bool:
 
 
 def _iter_paragraphs(parent):
-    """Yield paragraphs in parent recursively, including those in tables."""
+    """Yield paragraphs in parent recursively, including those in tables.""" 
     if hasattr(parent, "paragraphs"):
         for p in parent.paragraphs:
             yield p
@@ -313,6 +326,35 @@ def _iter_paragraphs(parent):
             for row in table.rows:
                 for cell in row.cells:
                     yield from _iter_paragraphs(cell)
+
+def remove_hidden_runs(input_file: str) -> bool:
+    """Remove runs marked as hidden and drop empty paragraphs without losing images.
+
+    Paragraphs that reside inside tables are skipped to avoid tampering with
+    their list numbering or layout.
+    """
+    try:
+        doc = DocxDocument(input_file)
+        for para in list(_iter_paragraphs(doc)):
+            # Skip paragraphs inside tables so their numbering remains intact
+            if para._element.xpath('ancestor::w:tbl', namespaces=para._element.nsmap):
+                continue
+            to_remove = [run for run in para.runs if run.font.hidden]
+            for run in to_remove:
+                para._element.remove(run._element)
+            has_image = bool(
+                para._element.xpath(
+                    './/w:drawing | .//w:pict', namespaces=para._element.nsmap
+                )
+            )
+            if not para.text.strip() and not has_image:
+                p = para._element
+                p.getparent().remove(p)
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：移除隱藏文字 {input_file} 時出錯: {str(e)}")
+        return False
 
 
 def apply_basic_style(
@@ -334,6 +376,11 @@ def apply_basic_style(
             pf.space_before = Pt(space_before)
             pf.space_after = Pt(space_after)
             for run in para.runs:
+                # Skip symbol fonts (e.g., bullets) to avoid replacing them with blank squares
+                if run.font.name and run.font.name.lower() in {"symbol", "wingdings"}:
+                    continue
+                if run.text.strip() in {"•", "·", "▪", "◦", "‧"}:
+                    continue
                 run.font.name = western_font
                 set_run_font_eastasia(run, east_asian_font)
                 run.font.size = Pt(font_size)

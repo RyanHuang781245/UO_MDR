@@ -10,7 +10,7 @@ from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
     extract_word_chapter
 )
-from .file_mover import move_files
+from .file_copier import copy_files
 
 SUPPORTED_STEPS = {
     "extract_pdf_chapter_to_table": {
@@ -48,8 +48,8 @@ SUPPORTED_STEPS = {
         "inputs": ["text", "font_size"],
         "accepts": {"text":"text","font_size":"float"}
     },
-    "move_files": {
-        "label": "移動檔案",
+    "copy_files": {
+        "label": "複製檔案",
         "inputs": ["source_dir", "dest_dir", "keywords"],
         "accepts": {
             "source_dir": "file:dir",
@@ -135,14 +135,14 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                                         bold=True,
                                         font_size=float(params.get("font_size",14)))
 
-            elif stype == "move_files":
+            elif stype == "copy_files":
                 keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
-                moved = move_files(
+                copied = copy_files(
                     params.get("source_dir", ""),
                     params.get("dest_dir", ""),
                     keywords,
                 )
-                log[-1]["moved_files"] = moved
+                log[-1]["copied_files"] = copied
 
             else:
                 raise RuntimeError(f"Unknown step type: {stype}")

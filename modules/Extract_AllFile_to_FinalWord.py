@@ -318,11 +318,6 @@ def _iter_paragraphs(parent):
                     yield from _iter_paragraphs(cell)
 
 def remove_hidden_runs(input_file: str) -> bool:
-    """Remove runs marked as hidden and drop empty paragraphs without losing images.
-
-    Paragraphs that reside inside tables are skipped to avoid tampering with
-    their list numbering or layout.
-    """
     try:
         doc = DocxDocument(input_file)
         for para in list(_iter_paragraphs(doc)):

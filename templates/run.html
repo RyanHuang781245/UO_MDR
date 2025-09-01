@@ -10,9 +10,9 @@
 <div class="vstack gap-2">
   <a class="btn btn-primary" href="{{ docx_path }}">下載結果 DOCX</a>
   <a class="btn btn-primary" href="{{ translate_path }}">下載翻譯 DOCX</a>
-  <div class="hstack gap-2">
-    <a class="btn btn-outline-secondary" href="{{ log_path }}">下載流程 Log</a>
-    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#logModal">查看流程 Log</button>
+  <div class="hstack gap-2 w-100">
+    <a class="btn btn-outline-secondary flex-fill" href="{{ log_path }}">下載流程 Log</a>
+    <button class="btn btn-outline-primary flex-fill" data-bs-toggle="modal" data-bs-target="#logModal">查看流程 Log</button>
   </div>
   <a class="btn btn-outline-primary" href="{{ compare_path }}">來源比對/編輯</a>
   {% if back_link %}

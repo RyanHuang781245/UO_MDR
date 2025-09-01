@@ -235,6 +235,9 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                 paragraph_text = paragraph_text.strip()
                 if section_pattern.match(paragraph_text):
                     capture_mode = True
+                    marker_para = section.AddParagraph()
+                    marker_run = marker_para.AppendText(paragraph_text)
+                    marker_run.CharacterFormat.Hidden = True
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False
@@ -304,7 +307,7 @@ def center_table_figure_paragraphs(input_file: str) -> bool:
 
 
 def _iter_paragraphs(parent):
-    """Yield paragraphs in parent recursively, including those in tables."""
+    """Yield paragraphs in parent recursively, including those in tables.""" 
     if hasattr(parent, "paragraphs"):
         for p in parent.paragraphs:
             yield p
@@ -313,6 +316,35 @@ def _iter_paragraphs(parent):
             for row in table.rows:
                 for cell in row.cells:
                     yield from _iter_paragraphs(cell)
+
+def remove_hidden_runs(input_file: str) -> bool:
+    """Remove runs marked as hidden and drop empty paragraphs without losing images.
+
+    Paragraphs that reside inside tables are skipped to avoid tampering with
+    their list numbering or layout.
+    """
+    try:
+        doc = DocxDocument(input_file)
+        for para in list(_iter_paragraphs(doc)):
+            # Skip paragraphs inside tables so their numbering remains intact
+            if para._element.xpath('ancestor::w:tbl', namespaces=para._element.nsmap):
+                continue
+            to_remove = [run for run in para.runs if run.font.hidden]
+            for run in to_remove:
+                para._element.remove(run._element)
+            has_image = bool(
+                para._element.xpath(
+                    './/w:drawing | .//w:pict', namespaces=para._element.nsmap
+                )
+            )
+            if not para.text.strip() and not has_image:
+                p = para._element
+                p.getparent().remove(p)
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：移除隱藏文字 {input_file} 時出錯: {str(e)}")
+        return False
 
 
 def apply_basic_style(
@@ -334,6 +366,11 @@ def apply_basic_style(
             pf.space_before = Pt(space_before)
             pf.space_after = Pt(space_after)
             for run in para.runs:
+                # Skip symbol fonts (e.g., bullets) to avoid replacing them with blank squares
+                if run.font.name and run.font.name.lower() in {"symbol", "wingdings"}:
+                    continue
+                if run.text.strip() in {"•", "·", "▪", "◦", "‧"}:
+                    continue
                 run.font.name = western_font
                 set_run_font_eastasia(run, east_asian_font)
                 run.font.size = Pt(font_size)

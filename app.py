@@ -709,6 +709,16 @@ def task_compare_save(task_id, job_id):
         html_content,
         flags=re.IGNORECASE,
     )
+    # Convert paragraphs starting with bullet-like characters into
+    # proper HTML lists so that Word can recognize them.
+    bullet_pattern = re.compile(
+        r'<p[^>]*>\s*(?:<span[^>]*>)?\s*(?:&#8226;|&#9679;|&bull;|&middot;|•|·|◦)\s*(?:</span>)?\s*(.*?)</p>',
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    def _bullet_repl(match):
+        text = match.group(1).strip()
+        return f'<ul style="list-style-type:disc;"><li>{text}</li></ul>'
+    html_content = bullet_pattern.sub(_bullet_repl, html_content)
     html_path = os.path.join(job_dir, "result.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html_content)

@@ -307,7 +307,7 @@ def center_table_figure_paragraphs(input_file: str) -> bool:
 
 
 def _iter_paragraphs(parent):
-    """Yield paragraphs in parent recursively, including those in tables."""
+    """Yield paragraphs in parent recursively, including those in tables.""" 
     if hasattr(parent, "paragraphs"):
         for p in parent.paragraphs:
             yield p
@@ -316,6 +316,23 @@ def _iter_paragraphs(parent):
             for row in table.rows:
                 for cell in row.cells:
                     yield from _iter_paragraphs(cell)
+
+def remove_hidden_runs(input_file: str) -> bool:
+    """Remove runs marked as hidden and drop empty paragraphs."""
+    try:
+        doc = DocxDocument(input_file)
+        for para in list(_iter_paragraphs(doc)):
+            to_remove = [run for run in para.runs if run.font.hidden]
+            for run in to_remove:
+                para._element.remove(run._element)
+            if not para.text.strip():
+                p = para._element
+                p.getparent().remove(p)
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：移除隱藏文字 {input_file} 時出錯: {str(e)}")
+        return False
 
 
 def apply_basic_style(

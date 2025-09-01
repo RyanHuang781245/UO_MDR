@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 import zipfile
+import re
 from datetime import datetime
 from flask import (
     Flask,
@@ -18,6 +19,7 @@ from modules.workflow import SUPPORTED_STEPS, run_workflow
 from modules.Extract_AllFile_to_FinalWord import (
     center_table_figure_paragraphs,
     apply_basic_style,
+    remove_hidden_runs,
 )
 from modules.translate_with_bedrock import translate_file
 from modules.file_mover import move_files
@@ -592,6 +594,7 @@ def task_compare(task_id, job_id):
         doc.HtmlExportOptions.ImageEmbedded = True
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
+        remove_hidden_runs(docx_path)
 
     chapter_sources = {}
     source_urls = {}
@@ -690,6 +693,13 @@ def task_compare_save(task_id, job_id):
         html_content = data.get("html", "")
     if not html_content:
         return "缺少內容", 400
+    html_content = re.sub(
+        r'<span[^>]*style="[^"]*display\s*:\s*none[^"]*"[^>]*>.*?</span>',
+        '',
+        html_content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    html_content = re.sub(r'<p[^>]*>\s*</p>', '', html_content, flags=re.IGNORECASE)
     html_path = os.path.join(job_dir, "result.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html_content)
@@ -699,7 +709,9 @@ def task_compare_save(task_id, job_id):
     doc.LoadFromFile(html_path, FileFormat.Html)
     doc.SaveToFile(os.path.join(job_dir, "result.docx"), FileFormat.Docx)
     doc.Close()
-    apply_basic_style(os.path.join(job_dir, "result.docx"))
+    result_docx = os.path.join(job_dir, "result.docx")
+    remove_hidden_runs(result_docx)
+    apply_basic_style(result_docx)
     return "OK"
 
 

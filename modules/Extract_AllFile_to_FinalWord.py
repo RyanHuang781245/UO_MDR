@@ -327,7 +327,7 @@ def remove_hidden_runs(input_file: str) -> bool:
                 para._element.remove(run._element)
             has_image = bool(
                 para._element.xpath(
-                    './/w:drawing | .//w:pict', namespaces=para._element.nsmap
+                    './/w:drawing | .//w:pict'
                 )
             )
             if not para.text.strip() and not has_image:

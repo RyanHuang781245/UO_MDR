@@ -202,6 +202,8 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
     nodes.put(input_doc)
     image_count = [1]
     capture_mode = False
+    chapter_titles = []
+    para_index = section.Paragraphs.Count if section else 0
 
     def add_table_to_section(sec, table):
         try:
@@ -235,6 +237,7 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                 paragraph_text = paragraph_text.strip()
                 if section_pattern.match(paragraph_text):
                     capture_mode = True
+                    chapter_titles.append({"title": paragraph_text, "index": para_index})
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False
@@ -250,6 +253,7 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                                     para.Format.HorizontalAlignment = HorizontalAlignment.Center
                             else:
                                 para.AppendText(part)
+                    para_index += 1
             elif isinstance(child, Table) and capture_mode:
                 add_table_to_section(section, child)
             elif isinstance(child, ICompositeObject):
@@ -259,6 +263,7 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
         output_doc.SaveToFile("word_chapter_result.docx", FileFormat.Docx)
     input_doc.Close()
     print(f"以將章節 {target_chapter_section} 擷取")
+    return chapter_titles
 
 def center_table_figure_paragraphs(input_file: str) -> bool:
     pattern = re.compile(r'^\s*(Table|Figure)\s+', re.IGNORECASE)

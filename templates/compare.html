@@ -34,6 +34,7 @@
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
+const CHAPTER_SEGMENTS = {{ chapter_segments|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
@@ -93,42 +94,18 @@ function updateSources(ch, element) {
     list.appendChild(li);
   });
 
-  if (element) {
-    let node = element.nextElementSibling;
-    let idx = 0;
-    const markers = sequence.map(src => {
-      const title = src.match(/標題\s*(.+)/);
-      if (title) return {type: 'title', value: title[1]};
-      const sec = src.match(/章節\s*([\d\.]+)/);
-      return sec ? {type: 'section', value: sec[1]} : null;
-    });
-    const findNextMarkerIdx = from => {
-      for (let i = from + 1; i < markers.length; i++) {
-        if (markers[i]) return i;
+  const segments = CHAPTER_SEGMENTS[ch] || [];
+  if (segments.length) {
+    const paras = Array.from(doc.body.children);
+    for (let i = 0; i < segments.length; i++) {
+      const start = segments[i].index;
+      const end = i + 1 < segments.length ? segments[i + 1].index : paras.length;
+      const src = segments[i].source;
+      for (let j = start; j < end; j++) {
+        if (!paras[j]) break;
+        paras[j].style.backgroundColor = colorMap[src];
+        highlighted.push(paras[j]);
       }
-      return -1;
-    };
-    let nextIdx = findNextMarkerIdx(0);
-    let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const text = node.textContent.trim();
-      if (nextMarker && highlighted.length && (
-          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
-          (nextMarker.type === 'title' && text.includes(nextMarker.value))
-        )) {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-      }
-      const src = sequence[idx] || sequence[sequence.length - 1];
-      node.style.backgroundColor = colorMap[src];
-      highlighted.push(node);
-      if (markers[idx] && markers[idx].type === 'title') {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-      }
-      node = node.nextElementSibling;
     }
   }
 }

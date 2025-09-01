@@ -366,11 +366,23 @@ def apply_basic_style(
             pf.space_before = Pt(space_before)
             pf.space_after = Pt(space_after)
             for run in para.runs:
-                # Skip symbol fonts (e.g., bullets) to avoid replacing them with blank squares
-                if run.font.name and run.font.name.lower() in {"symbol", "wingdings"}:
+                text = run.text.strip()
+                font_name = run.font.name.lower() if run.font.name else ""
+
+                # Replace Symbol/Wingdings middle dots with a standard bullet and default fonts
+                if text == "·" and font_name in {"symbol", "wingdings"}:
+                    run.text = run.text.replace("·", "•")
+                    run.font.name = western_font
+                    set_run_font_eastasia(run, east_asian_font)
+                    run.font.size = Pt(font_size)
                     continue
-                if run.text.strip() in {"•", "·", "▪", "◦", "‧"}:
+
+                # Skip other symbol fonts (e.g., bullets) to avoid replacing them with blank squares
+                if font_name in {"symbol", "wingdings"}:
                     continue
+                if text in {"•", "·", "▪", "◦", "‧"}:
+                    continue
+
                 run.font.name = western_font
                 set_run_font_eastasia(run, east_asian_font)
                 run.font.size = Pt(font_size)

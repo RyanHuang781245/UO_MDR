@@ -579,19 +579,10 @@ def task_compare(task_id, job_id):
     job_dir = os.path.join(tdir, "jobs", job_id)
     docx_path = os.path.join(job_dir, "result.docx")
     log_path = os.path.join(job_dir, "log.json")
-    if not os.path.exists(docx_path) or not os.path.exists(log_path):
-        abort(404)
-
-    from spire.doc import Document, FileFormat
-
     html_name = "result.html"
     html_path = os.path.join(job_dir, html_name)
-    if not os.path.exists(html_path):
-        doc = Document()
-        doc.LoadFromFile(docx_path)
-        doc.HtmlExportOptions.ImageEmbedded = True
-        doc.SaveToFile(html_path, FileFormat.Html)
-        doc.Close()
+    if not (os.path.exists(docx_path) and os.path.exists(log_path) and os.path.exists(html_path)):
+        abort(404)
 
     chapter_sources = {}
     source_urls = {}

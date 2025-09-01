@@ -300,7 +300,7 @@ def upload_task_file(task_id):
     return redirect(url_for("task_detail", task_id=task_id))
 
 def gather_available_files(files_dir):
-    mapping = {"docx": [], "pdf": [], "zip": []}
+    mapping = {"docx": [], "pdf": [], "zip": [], "dir": []}
     for rel in list_files(files_dir):
         ext = os.path.splitext(rel)[1].lower()
         if ext == ".docx":
@@ -309,6 +309,7 @@ def gather_available_files(files_dir):
             mapping["pdf"].append(rel)
         elif ext == ".zip":
             mapping["zip"].append(rel)
+    mapping["dir"] = list_dirs(files_dir)
     return mapping
 
 

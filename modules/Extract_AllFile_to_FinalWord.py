@@ -318,14 +318,19 @@ def _iter_paragraphs(parent):
                     yield from _iter_paragraphs(cell)
 
 def remove_hidden_runs(input_file: str) -> bool:
-    """Remove runs marked as hidden and drop empty paragraphs."""
+    """Remove runs marked as hidden and drop empty paragraphs without losing images."""
     try:
         doc = DocxDocument(input_file)
         for para in list(_iter_paragraphs(doc)):
             to_remove = [run for run in para.runs if run.font.hidden]
             for run in to_remove:
                 para._element.remove(run._element)
-            if not para.text.strip():
+            has_image = bool(
+                para._element.xpath(
+                    './/w:drawing | .//w:pict', namespaces=para._element.nsmap
+                )
+            )
+            if not para.text.strip() and not has_image:
                 p = para._element
                 p.getparent().remove(p)
         doc.save(input_file)

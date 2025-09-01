@@ -21,6 +21,7 @@ from modules.Extract_AllFile_to_FinalWord import (
 )
 from modules.translate_with_bedrock import translate_file
 from modules.file_mover import move_files
+from spire.doc import Document as SpireDocument, FileFormat
 
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
@@ -579,19 +580,10 @@ def task_compare(task_id, job_id):
     job_dir = os.path.join(tdir, "jobs", job_id)
     docx_path = os.path.join(job_dir, "result.docx")
     log_path = os.path.join(job_dir, "log.json")
-    if not os.path.exists(docx_path) or not os.path.exists(log_path):
-        abort(404)
-
-    from spire.doc import Document, FileFormat
-
     html_name = "result.html"
     html_path = os.path.join(job_dir, html_name)
-    if not os.path.exists(html_path):
-        doc = Document()
-        doc.LoadFromFile(docx_path)
-        doc.HtmlExportOptions.ImageEmbedded = True
-        doc.SaveToFile(html_path, FileFormat.Html)
-        doc.Close()
+    if not (os.path.exists(docx_path) and os.path.exists(log_path) and os.path.exists(html_path)):
+        abort(404)
 
     chapter_sources = {}
     source_urls = {}
@@ -635,7 +627,7 @@ def task_compare(task_id, job_id):
                 html_name_src = f"{os.path.splitext(base)[0]}.html"
                 html_rel = os.path.join("source_html", html_name_src)
                 html_path_src = os.path.join(job_dir, html_rel)
-                doc = Document()
+                doc = SpireDocument()
                 doc.LoadFromFile(infile)
                 doc.HtmlExportOptions.ImageEmbedded = True
                 doc.SaveToFile(html_path_src, FileFormat.Html)
@@ -655,7 +647,7 @@ def task_compare(task_id, job_id):
                 html_name_src = f"{os.path.splitext(base)[0]}.html"
                 html_rel = os.path.join("source_html", html_name_src)
                 html_path_src = os.path.join(job_dir, html_rel)
-                doc = Document()
+                doc = SpireDocument()
                 doc.LoadFromFile(infile)
                 doc.HtmlExportOptions.ImageEmbedded = True
                 doc.SaveToFile(html_path_src, FileFormat.Html)
@@ -693,9 +685,7 @@ def task_compare_save(task_id, job_id):
     html_path = os.path.join(job_dir, "result.html")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html_content)
-    from spire.doc import Document, FileFormat
-
-    doc = Document()
+    doc = SpireDocument()
     doc.LoadFromFile(html_path, FileFormat.Html)
     doc.SaveToFile(os.path.join(job_dir, "result.docx"), FileFormat.Docx)
     doc.Close()

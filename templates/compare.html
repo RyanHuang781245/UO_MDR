@@ -120,18 +120,13 @@ function updateSources(ch, element) {
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
-      const src = sequence[idx] || sequence[sequence.length - 1];
-      node.style.backgroundColor = colorMap[src];
-      highlighted.push(node);
-      if (markers[idx] && markers[idx].type === 'title') {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
+        const src = sequence[idx] || sequence[sequence.length - 1];
+        node.style.backgroundColor = colorMap[src];
+        highlighted.push(node);
+        node = node.nextElementSibling;
       }
-      node = node.nextElementSibling;
     }
   }
-}
 
 const iframe = document.getElementById('htmlFrame');
 let doc;

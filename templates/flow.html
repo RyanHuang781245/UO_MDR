@@ -244,16 +244,13 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
       }
     } else if (accept.startsWith("file")){
       const ext = accept.split(":")[1];
-      if (ext === "dir") {
-        const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}"></option>`).join("");
-        body += `<div class="col-md-6"><label class="form-label">${label}</label>
-                 <input class="form-control" name="step_${sid}_${k}" list="list_${sid}_${k}" value="${val}" placeholder="${label}">
-                 <datalist id="list_${sid}_${k}">${options}</datalist></div>`;
-      } else {
-        const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
-        body += `<div class="col-md-6"><label class="form-label">${label}</label>
-                 <select class="form-select" name="step_${sid}_${k}">${options}</select></div>`;
-      }
+      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
+      const placeholder = ext === "dir" ? "選擇資料夾" : "選擇檔案";
+      const selected = val ? "" : "selected";
+      body += `<div class="col-md-6"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_${k}" required>
+                 <option value="" disabled ${selected}>${placeholder}</option>${options}
+               </select></div>`;
     } else if (k === "align"){
       body += `<div class="col-md-3"><label class="form-label">對齊</label>
                <select class="form-select" name="step_${sid}_align">

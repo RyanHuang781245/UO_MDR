@@ -282,7 +282,9 @@ def gather_available_files(files_dir):
             mapping["pdf"].append(rel)
         elif ext == ".zip":
             mapping["zip"].append(rel)
-    mapping["dir"] = list_dirs(files_dir)
+    dirs = list_dirs(files_dir)
+    dirs.insert(0, ".")
+    mapping["dir"] = dirs
     return mapping
 
 

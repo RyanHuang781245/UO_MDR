@@ -17,10 +17,12 @@
   </div>
   <div>
     <label class="form-label">目的資料夾</label>
-    <input class="form-control" name="dest_dir" list="dirlist" placeholder="輸入或選擇目的資料夾" required>
-    <datalist id="dirlist">
-      {% for d in dirs %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
-    </datalist>
+    <select class="form-select" name="dest_dir" required>
+      <option value="" disabled selected>選擇資料夾</option>
+      {% for d in dirs %}
+      <option value="{{ d }}">{{ d }}</option>
+      {% endfor %}
+    </select>
   </div>
   <div>
     <label class="form-label">關鍵字（以逗號分隔；同組內以 | 表示或）</label>

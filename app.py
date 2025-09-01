@@ -128,7 +128,9 @@ def task_copy_files(task_id):
                 try:
                     src = _safe_path(source_rel)
                     dest = _safe_path(dest_rel)
-                    copied = copy_files(src, dest, keywords)
+                    copied = copy_files(
+                        src, dest, keywords, confirm_overwrite=False
+                    )
                     message = f"已複製 {len(copied)} 個檔案"
                 except ValueError:
                     message = "資料夾名稱不合法"

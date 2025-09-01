@@ -3,7 +3,13 @@ import shutil
 from typing import Iterable, List
 
 
-def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[str]:
+def copy_files(
+    source: str,
+    destination: str,
+    keywords: Iterable[str],
+    *,
+    confirm_overwrite: bool = True,
+) -> List[str]:
     """Copy files whose names contain all provided keywords.
 
     Keywords are matched case-insensitively. A file is copied only when its
@@ -17,6 +23,10 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
         Directory where matched files will be copied.
     keywords: Iterable[str]
         Keywords that must all be present in the filename.
+    confirm_overwrite: bool, default True
+        When ``True``, the user will be prompted before overwriting an existing
+        file in the destination. When ``False``, conflicting filenames are
+        automatically renamed with a numeric suffix.
 
     Returns
     -------
@@ -36,11 +46,21 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
             if all(k in lower_name for k in lowered_keywords):
                 src_path = os.path.join(root, name)
                 dest_path = os.path.join(destination, name)
-                base, ext = os.path.splitext(name)
-                count = 1
-                while os.path.exists(dest_path):
-                    dest_path = os.path.join(destination, f"{base}_{count}{ext}")
-                    count += 1
+                if os.path.exists(dest_path):
+                    if confirm_overwrite:
+                        ans = input(
+                            f"File '{name}' already exists in destination. Overwrite? [y/N]: "
+                        ).strip().lower()
+                        if ans not in {"y", "yes"}:
+                            continue
+                    else:
+                        base, ext = os.path.splitext(name)
+                        count = 1
+                        new_dest = dest_path
+                        while os.path.exists(new_dest):
+                            new_dest = os.path.join(destination, f"{base}_{count}{ext}")
+                            count += 1
+                        dest_path = new_dest
                 shutil.copy2(src_path, dest_path)
                 copied_files.append(dest_path)
     return copied_files

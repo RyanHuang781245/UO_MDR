@@ -141,6 +141,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     params.get("source_dir", ""),
                     params.get("dest_dir", ""),
                     keywords,
+                    confirm_overwrite=False,
                 )
                 log[-1]["copied_files"] = copied
 

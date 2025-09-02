@@ -367,3 +367,58 @@ def apply_basic_style(
     except Exception as e:
         print(f"錯誤：套用樣式至 {input_file} 時出錯: {str(e)}")
         return False
+
+
+def renumber_figures_tables(input_file: str) -> bool:
+    """Renumber figure and table captions and update in-text references."""
+    try:
+        doc = DocxDocument(input_file)
+        caption_pattern = re.compile(r"^(Figure|Table)\s+(\d+)(.*)", re.IGNORECASE)
+        ref_pattern = re.compile(r"\b(Figure|Table)\s+(\d+)\b", re.IGNORECASE)
+
+        figure_map = {}
+        table_map = {}
+        fig_counter = 1
+        table_counter = 1
+
+        # First pass: renumber captions and build mapping
+        for para in _iter_paragraphs(doc):
+            text = para.text.strip()
+            match = caption_pattern.match(text)
+            if not match:
+                continue
+            label, old_num, rest = match.groups()
+            old_num = int(old_num)
+            if label.lower() == "figure":
+                figure_map[old_num] = fig_counter
+                new_text = f"Figure {fig_counter}{rest}"
+                fig_counter += 1
+            else:
+                table_map[old_num] = table_counter
+                new_text = f"Table {table_counter}{rest}"
+                table_counter += 1
+            para.text = new_text
+
+        def _replace_refs(text: str) -> str:
+            def repl(m):
+                label = m.group(1)
+                num = int(m.group(2))
+                if label.lower() == "figure" and num in figure_map:
+                    return f"{label} {figure_map[num]}"
+                if label.lower() == "table" and num in table_map:
+                    return f"{label} {table_map[num]}"
+                return m.group(0)
+
+            return ref_pattern.sub(repl, text)
+
+        # Second pass: update references throughout document
+        for para in _iter_paragraphs(doc):
+            new_text = _replace_refs(para.text)
+            if new_text != para.text:
+                para.text = new_text
+
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：重新編號 {input_file} 時出錯: {str(e)}")
+        return False

@@ -340,6 +340,59 @@ def remove_hidden_runs(input_file: str) -> bool:
         return False
 
 
+def renumber_figures_tables(input_file: str) -> bool:
+    """Renumber figure and table captions and update references in the document."""
+    try:
+        doc = DocxDocument(input_file)
+
+        fig_caption = re.compile(r"^\s*(Figure|Fig\.?|圖)\s*(\d+)", re.IGNORECASE)
+        table_caption = re.compile(r"^\s*(Table|表)\s*(\d+)", re.IGNORECASE)
+        fig_ref = re.compile(r"\b(Figure|Fig\.?|圖)\s*(\d+)\b", re.IGNORECASE)
+        table_ref = re.compile(r"\b(Table|表)\s*(\d+)\b", re.IGNORECASE)
+
+        fig_map = {}
+        table_map = {}
+        fig_idx = 1
+        table_idx = 1
+        caption_paras = set()
+
+        for para in _iter_paragraphs(doc):
+            text = para.text.strip()
+            m_fig = fig_caption.match(text)
+            m_table = table_caption.match(text)
+            if m_fig:
+                old = int(m_fig.group(2))
+                fig_map[old] = fig_idx
+                para.text = fig_caption.sub(lambda m: f"{m.group(1)} {fig_idx}", para.text, count=1)
+                caption_paras.add(id(para))
+                fig_idx += 1
+            elif m_table:
+                old = int(m_table.group(2))
+                table_map[old] = table_idx
+                para.text = table_caption.sub(lambda m: f"{m.group(1)} {table_idx}", para.text, count=1)
+                caption_paras.add(id(para))
+                table_idx += 1
+
+        for para in _iter_paragraphs(doc):
+            if id(para) in caption_paras:
+                continue
+            for run in para.runs:
+                run.text = fig_ref.sub(
+                    lambda m: f"{m.group(1)} {fig_map.get(int(m.group(2)), m.group(2))}",
+                    run.text,
+                )
+                run.text = table_ref.sub(
+                    lambda m: f"{m.group(1)} {table_map.get(int(m.group(2)), m.group(2))}",
+                    run.text,
+                )
+
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：重新編號 {input_file} 時出錯: {str(e)}")
+        return False
+
+
 def apply_basic_style(
     input_file: str,
     western_font: str = "Times New Roman",

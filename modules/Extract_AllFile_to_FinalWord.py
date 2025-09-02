@@ -306,6 +306,58 @@ def center_table_figure_paragraphs(input_file: str) -> bool:
         doc.Close()
 
 
+def renumber_figures_tables(input_file: str) -> bool:
+    """Renumber figure and table captions and update in-text references."""
+    caption_pattern = re.compile(r"^(Figure|Table)\s+(\d+)(.*)", re.IGNORECASE)
+    ref_pattern = re.compile(r"(Figure|Table)\s+(\d+)", re.IGNORECASE)
+    try:
+        doc = DocxDocument(input_file)
+        figure_map = {}
+        table_map = {}
+        fig_counter = 1
+        tbl_counter = 1
+
+        # First pass: renumber captions and build mapping
+        for para in _iter_paragraphs(doc):
+            text = para.text.strip()
+            m = caption_pattern.match(text)
+            if m:
+                kind, old_num_str, rest = m.groups()
+                old_num = int(old_num_str)
+                if kind.lower() == "figure":
+                    figure_map[old_num] = fig_counter
+                    new_num = fig_counter
+                    fig_counter += 1
+                else:
+                    table_map[old_num] = tbl_counter
+                    new_num = tbl_counter
+                    tbl_counter += 1
+
+                # Replace only the numeric portion while preserving formatting
+                for run in para.runs:
+                    idx = run.text.find(old_num_str)
+                    if idx != -1:
+                        run.text = run.text[:idx] + str(new_num) + run.text[idx + len(old_num_str):]
+                        break
+
+        # Second pass: update references using the mapping
+        def repl(match):
+            kind, num_str = match.groups()
+            num = int(num_str)
+            mapping = figure_map if kind.lower() == "figure" else table_map
+            return f"{kind} {mapping.get(num, num)}"
+
+        for para in _iter_paragraphs(doc):
+            for run in para.runs:
+                run.text = ref_pattern.sub(repl, run.text)
+
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：編號處理 {input_file} 時出錯: {str(e)}")
+        return False
+
+
 def _iter_paragraphs(parent):
     """Yield paragraphs in parent recursively, including those in tables.""" 
     if hasattr(parent, "paragraphs"):

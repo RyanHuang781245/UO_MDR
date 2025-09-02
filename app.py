@@ -18,6 +18,7 @@ from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
 from modules.Extract_AllFile_to_FinalWord import (
     center_table_figure_paragraphs,
+    renumber_figures_tables,
     apply_basic_style,
     remove_hidden_runs,
 )
@@ -417,6 +418,7 @@ def run_flow(task_id):
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
     result_path = os.path.join(job_dir, "result.docx")
+    renumber_figures_tables(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)
@@ -463,6 +465,7 @@ def execute_flow(task_id, flow_name):
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
     result_path = os.path.join(job_dir, "result.docx")
+    renumber_figures_tables(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)

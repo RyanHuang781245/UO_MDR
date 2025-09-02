@@ -9,7 +9,6 @@ from xml.etree import ElementTree as ET
 
 def renumber_figures_tables(docx_path: str) -> None:
     """Renumber figure and table captions and update references in-place.
-
     This implementation edits the ``document.xml`` part directly rather than
     loading the document through :mod:`python-docx`.  Doing so avoids the loss of
     images that can occur when saving a document with unsupported drawing types.
@@ -93,4 +92,3 @@ def renumber_figures_tables(docx_path: str) -> None:
 
     with open(docx_path, "wb") as f:
         f.write(buffer.getvalue())
-

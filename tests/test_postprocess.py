@@ -1,10 +1,7 @@
 import os
 from zipfile import ZipFile
-
 from docx import Document
-
 from modules.postprocess import renumber_figures_tables
-
 
 def test_renumber_figures_tables(tmp_path):
     doc_path = tmp_path / "sample.docx"

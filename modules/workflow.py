@@ -61,6 +61,15 @@ SUPPORTED_STEPS = {
             "dest_dir": "file:dir",
             "keywords": "text"
         }
+    },
+    "renumber_figures_tables": {
+        "label": "重新編號圖表並更新參照",
+        "inputs": ["numbering_scope", "figure_start", "table_start"],
+        "accepts": {
+            "numbering_scope": "text",
+            "figure_start": "int",
+            "table_start": "int",
+        }
     }
 }
 
@@ -148,6 +157,14 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     keywords,
                 )
                 log[-1]["copied_files"] = copied
+
+            elif stype == "renumber_figures_tables":
+                renumber_figures_tables(
+                    output_doc,
+                    numbering_scope=params.get("numbering_scope", "global"),
+                    figure_start=int(params.get("figure_start", 1)),
+                    table_start=int(params.get("table_start", 1)),
+                )
 
             else:
                 raise RuntimeError(f"Unknown step type: {stype}")

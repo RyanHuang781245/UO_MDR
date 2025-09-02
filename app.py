@@ -20,6 +20,7 @@ from modules.Extract_AllFile_to_FinalWord import (
     center_table_figure_paragraphs,
     apply_basic_style,
     remove_hidden_runs,
+    renumber_figures_tables,
 )
 from modules.translate_with_bedrock import translate_file
 from modules.file_copier import copy_files
@@ -420,6 +421,7 @@ def run_flow(task_id):
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)
+    renumber_figures_tables(result_path)
     apply_basic_style(result_path)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
@@ -466,6 +468,7 @@ def execute_flow(task_id, flow_name):
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)
+    renumber_figures_tables(result_path)
     apply_basic_style(result_path)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
@@ -591,6 +594,7 @@ def task_compare(task_id, job_id):
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
         remove_hidden_runs(docx_path)
+        renumber_figures_tables(docx_path)
 
     chapter_sources = {}
     source_urls = {}
@@ -714,6 +718,7 @@ def task_compare_save(task_id, job_id):
     doc.Close()
     result_docx = os.path.join(job_dir, "result.docx")
     remove_hidden_runs(result_docx)
+    renumber_figures_tables(result_docx)
     apply_basic_style(result_docx)
     return "OK"
 

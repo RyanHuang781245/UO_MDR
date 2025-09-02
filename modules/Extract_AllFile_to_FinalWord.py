@@ -340,6 +340,93 @@ def remove_hidden_runs(input_file: str) -> bool:
         return False
 
 
+def renumber_figures_tables(input_file: str) -> bool:
+    """Renumber figure and table captions and update references in the document.
+
+    The previous implementation overwrote entire paragraph text which removed any
+    images anchored to the same paragraph.  It also relied on the original
+    numbering which could be duplicated when combining multiple documents.  This
+    version updates only the text runs that contain captions or references and
+    tracks duplicate numbers so that references are renumbered in their order of
+    appearance.
+    """
+
+    try:
+        doc = DocxDocument(input_file)
+
+        fig_caption = re.compile(r"^\s*(Figure|Fig\.?|圖)\s*(\d+)", re.IGNORECASE)
+        table_caption = re.compile(r"^\s*(Table|表)\s*(\d+)", re.IGNORECASE)
+        fig_ref = re.compile(r"\b(Figure|Fig\.?|圖)\s*(\d+)\b", re.IGNORECASE)
+        table_ref = re.compile(r"\b(Table|表)\s*(\d+)\b", re.IGNORECASE)
+
+        fig_map: dict[int, list[int]] = {}
+        table_map: dict[int, list[int]] = {}
+        fig_idx = 1
+        table_idx = 1
+        caption_paras = set()
+
+        # First pass: update caption numbers and record mapping of old numbers to
+        # the sequence in which they appeared.
+        for para in _iter_paragraphs(doc):
+            text = para.text.strip()
+            m_fig = fig_caption.match(text)
+            m_table = table_caption.match(text)
+            if m_fig or m_table:
+                for run in para.runs:
+                    run_text = run.text
+                    if m_fig and fig_caption.match(run_text):
+                        old = int(fig_caption.match(run_text).group(2))
+                        fig_map.setdefault(old, []).append(fig_idx)
+                        run.text = fig_caption.sub(
+                            lambda m: f"{m.group(1)} {fig_idx}", run_text, count=1
+                        )
+                        caption_paras.add(id(para))
+                        fig_idx += 1
+                        break
+                    elif m_table and table_caption.match(run_text):
+                        old = int(table_caption.match(run_text).group(2))
+                        table_map.setdefault(old, []).append(table_idx)
+                        run.text = table_caption.sub(
+                            lambda m: f"{m.group(1)} {table_idx}", run_text, count=1
+                        )
+                        caption_paras.add(id(para))
+                        table_idx += 1
+                        break
+
+        # Second pass: update in-text references respecting duplicated numbers.
+        fig_ref_count: dict[int, int] = {}
+        table_ref_count: dict[int, int] = {}
+
+        def _replace_fig(m):
+            old = int(m.group(2))
+            idx = fig_ref_count.get(old, 0)
+            fig_ref_count[old] = idx + 1
+            new_list = fig_map.get(old)
+            new_num = new_list[idx] if new_list and idx < len(new_list) else old
+            return f"{m.group(1)} {new_num}"
+
+        def _replace_table(m):
+            old = int(m.group(2))
+            idx = table_ref_count.get(old, 0)
+            table_ref_count[old] = idx + 1
+            new_list = table_map.get(old)
+            new_num = new_list[idx] if new_list and idx < len(new_list) else old
+            return f"{m.group(1)} {new_num}"
+
+        for para in _iter_paragraphs(doc):
+            if id(para) in caption_paras:
+                continue
+            for run in para.runs:
+                run.text = fig_ref.sub(_replace_fig, run.text)
+                run.text = table_ref.sub(_replace_table, run.text)
+
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：重新編號 {input_file} 時出錯: {str(e)}")
+        return False
+
+
 def apply_basic_style(
     input_file: str,
     western_font: str = "Times New Roman",

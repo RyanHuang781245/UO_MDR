@@ -132,6 +132,14 @@ flowForm.addEventListener('submit', (e) => {
     alert('請輸入流程名稱');
     return;
   }
+  if (action === 'run') {
+    const hasCopy = Array.from(flowForm.querySelectorAll('input[name$="_type"]'))
+      .some(el => el.value === 'copy_files');
+    if (hasCopy && !confirm('此流程包含複製檔案步驟，確定要執行嗎？')) {
+      e.preventDefault();
+      return;
+    }
+  }
   isDirty = false;
 });
 flowForm.addEventListener('input', markDirty);

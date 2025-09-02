@@ -4,7 +4,13 @@ from typing import List, Dict, Any
 from spire.doc import *
 from spire.doc.common import *
 
-from .Edit_Word import insert_text, insert_numbered_heading, insert_roman_heading, insert_bulleted_heading
+from .Edit_Word import (
+    insert_text,
+    insert_numbered_heading,
+    insert_roman_heading,
+    insert_bulleted_heading,
+    renumber_figures_tables,
+)
 from .Extract_AllFile_to_FinalWord import (
     extract_pdf_chapter_to_table,
     extract_word_all_content,
@@ -55,6 +61,15 @@ SUPPORTED_STEPS = {
             "source_dir": "file:dir",
             "dest_dir": "file:dir",
             "keywords": "text"
+        }
+    },
+    "renumber_figures_tables": {
+        "label": "重新編號圖表並更新參照",
+        "inputs": ["numbering_scope", "figure_start", "table_start"],
+        "accepts": {
+            "numbering_scope": "text",
+            "figure_start": "int",
+            "table_start": "int",
         }
     }
 }
@@ -143,6 +158,14 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     keywords,
                 )
                 log[-1]["copied_files"] = copied
+
+            elif stype == "renumber_figures_tables":
+                renumber_figures_tables(
+                    output_doc,
+                    numbering_scope=params.get("numbering_scope", "global"),
+                    figure_start=int(params.get("figure_start", 1)),
+                    table_start=int(params.get("table_start", 1)),
+                )
 
             else:
                 raise RuntimeError(f"Unknown step type: {stype}")

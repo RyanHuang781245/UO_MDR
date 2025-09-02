@@ -80,7 +80,7 @@
       <td>{{ f.name }}</td>
       <td>{{ f.created }}</td>
       <td>
-        <form action="{{ url_for('execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline">
+        <form action="{{ url_for('execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('此流程包含複製檔案步驟，確定要執行嗎？');"{% endif %}>
           <button class="btn btn-sm btn-outline-success">執行</button>
         </form>
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flow_builder', task_id=task.id, flow=f.name) }}">編輯</a>
@@ -131,6 +131,14 @@ flowForm.addEventListener('submit', (e) => {
     e.preventDefault();
     alert('請輸入流程名稱');
     return;
+  }
+  if (action === 'run') {
+    const hasCopy = Array.from(flowForm.querySelectorAll('input[name$="_type"]'))
+      .some(el => el.value === 'copy_files');
+    if (hasCopy && !confirm('此流程包含複製檔案步驟，確定要執行嗎？')) {
+      e.preventDefault();
+      return;
+    }
   }
   isDirty = false;
 });

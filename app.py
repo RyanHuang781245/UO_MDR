@@ -301,14 +301,22 @@ def flow_builder(task_id):
         if fn.endswith(".json"):
             path = os.path.join(flow_dir, fn)
             created = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+            has_copy = False
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, dict):
+                    steps_data = data.get("steps", [])
                     created = data.get("created", created)
+                else:
+                    steps_data = data
+                has_copy = any(
+                    isinstance(s, dict) and s.get("type") == "copy_files"
+                    for s in steps_data
+                )
             except Exception:
                 pass
-            flows.append({"name": os.path.splitext(fn)[0], "created": created})
+            flows.append({"name": os.path.splitext(fn)[0], "created": created, "has_copy": has_copy})
     preset = None
     center_titles = True
     loaded_name = request.args.get("flow")

@@ -157,6 +157,10 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
     output_doc.SaveToFile(out_docx, FileFormat.Docx)
     output_doc.Close()
 
+    # Post-process the generated document to ensure figure/table numbering
+    from .postprocess import renumber_figures_tables
+    renumber_figures_tables(out_docx)
+
     out_log = os.path.join(workdir, "log.json")
     with open(out_log, "w", encoding="utf-8") as f:
         import json

@@ -170,8 +170,17 @@ def renumber_figures_tables(
         Starting index for table numbering, by default 1.
     """
 
-    caption_regex = re.compile(r"^(Figure|Fig\.?|Table|Tab\.?)\s*(\d+)", re.IGNORECASE)
-    ref_regex = re.compile(r"\b(Figure|Fig\.?|Table|Tab\.?)\s*(\d+)\b", re.IGNORECASE)
+    prefix_pattern = r"(Figure|Fig\.?|圖|图|Table|Tab\.?|表)"
+    number_pattern = r"\d+(?:-\d+)*"
+    # Allow common English and Chinese prefixes and digits with optional hyphen (e.g. 1-1)
+    caption_regex = re.compile(
+        rf"^{prefix_pattern}([\s\u00A0]*)({number_pattern})",
+        re.IGNORECASE,
+    )
+    ref_regex = re.compile(
+        rf"(?<!\w){prefix_pattern}([\s\u00A0]*)({number_pattern})",
+        re.IGNORECASE,
+    )
 
     figure_map = {}
     table_map = {}
@@ -196,7 +205,7 @@ def renumber_figures_tables(
 
             m = caption_regex.match(para_text.strip())
             if m:
-                prefix, old_num = m.group(1), m.group(2)
+                prefix, sep, old_num = m.group(1), m.group(2), m.group(3)
                 if prefix.lower().startswith("f"):
                     new_num = f"{sec_idx + 1}-{fig_counter}" if numbering_scope.lower() == "per-section" else str(fig_counter)
                     figure_map[old_num] = new_num
@@ -207,16 +216,16 @@ def renumber_figures_tables(
                     tab_counter += 1
 
             def repl(match: re.Match) -> str:
-                prefix, old = match.group(1), match.group(2)
+                prefix, sep, old = match.group(1), match.group(2), match.group(3)
                 lower = prefix.lower()
                 if lower.startswith("f"):
                     new = figure_map.get(old)
                     if new:
-                        return f"{prefix} {new}"
+                        return f"{prefix}{sep}{new}"
                 else:
                     new = table_map.get(old)
                     if new:
-                        return f"{prefix} {new}"
+                        return f"{prefix}{sep}{new}"
                 return match.group(0)
 
             # Replace text in each run

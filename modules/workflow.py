@@ -4,7 +4,13 @@ from typing import List, Dict, Any
 from spire.doc import *
 from spire.doc.common import *
 
-from .Edit_Word import insert_text, insert_numbered_heading, insert_roman_heading, insert_bulleted_heading
+from .Edit_Word import (
+    insert_text,
+    insert_numbered_heading,
+    insert_roman_heading,
+    insert_bulleted_heading,
+    renumber_figures_tables,
+)
 from .Extract_AllFile_to_FinalWord import (
     extract_pdf_chapter_to_table,
     extract_word_all_content,
@@ -152,6 +158,12 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
         except Exception as e:
             log[-1]["status"] = "error"
             log[-1]["error"] = str(e)
+
+    # Renumber figures and tables after all steps are completed
+    try:
+        renumber_figures_tables(output_doc)
+    except Exception:
+        pass
 
     out_docx = os.path.join(workdir, "result.docx")
     output_doc.SaveToFile(out_docx, FileFormat.Docx)

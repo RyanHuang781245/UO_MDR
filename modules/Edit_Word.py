@@ -1,5 +1,6 @@
 from spire.doc import *
 from spire.doc.common import *
+import re
 
 # ------------------------------------------------------------
 # Helpers: text insertion + numbered headings (Arabic & Roman)
@@ -145,3 +146,114 @@ def insert_bulleted_heading(section: Section, text: str, level: int = 0,
     p.ListFormat.ContinueListNumbering()
     p.Format.HorizontalAlignment = HorizontalAlignment.Left
     return p
+
+
+def renumber_figures_tables(
+    doc: Document,
+    *,
+    scope: str = "global",
+    figure_prefixes: tuple = ("Figure", "Fig."),
+    table_prefixes: tuple = ("Table", "Tab."),
+    start_fig: int = 1,
+    start_table: int = 1,
+) -> None:
+    """Renumber figure and table captions and update cross references.
+
+    Parameters
+    ----------
+    doc : Document
+        Target Word document from Spire.Doc.
+    scope : str
+        "global" or "per-section" numbering. Global numbering by default.
+    figure_prefixes : tuple
+        Recognized prefixes for figure captions/references.
+    table_prefixes : tuple
+        Recognized prefixes for table captions/references.
+    start_fig : int
+        Starting number for figures.
+    start_table : int
+        Starting number for tables.
+    """
+
+    fig_caption_re = re.compile(
+        r"^(?P<prefix>(?:" + "|".join(re.escape(p) for p in figure_prefixes) + r"))\s*(?P<num>\d+)(?P<rest>.*)",
+        re.IGNORECASE,
+    )
+    tbl_caption_re = re.compile(
+        r"^(?P<prefix>(?:" + "|".join(re.escape(p) for p in table_prefixes) + r"))\s*(?P<num>\d+)(?P<rest>.*)",
+        re.IGNORECASE,
+    )
+
+    figure_map = {}
+    table_map = {}
+
+    def iter_paragraphs(section: Section):
+        body = section.Body
+        for i in range(body.ChildObjects.Count):
+            para = body.ChildObjects.get_Item(i)
+            if isinstance(para, Paragraph):
+                yield para
+
+    def replace_caption(para: Paragraph, prefix: str, old: str, new: str):
+        try:
+            para.Replace(f"{prefix} {old}", f"{prefix} {new}", False, False)
+        except Exception:
+            # Fallback: rebuild paragraph text if Replace isn't supported
+            while para.ChildObjects.Count > 0:
+                para.ChildObjects.RemoveAt(0)
+            para.AppendText(f"{prefix} {new}")
+
+    fig_idx = start_fig
+    tbl_idx = start_table
+
+    sections = [doc.Sections.get_Item(i) for i in range(doc.Sections.Count)]
+
+    for s_idx, section in enumerate(sections, start=1):
+        for para in iter_paragraphs(section):
+            text = para.Text.strip()
+            m = fig_caption_re.match(text)
+            if m:
+                old = m.group("num")
+                figure_map[int(old)] = fig_idx
+                replace_caption(para, m.group("prefix"), old, str(fig_idx) + m.group("rest"))
+                fig_idx += 1
+                continue
+            m = tbl_caption_re.match(text)
+            if m:
+                old = m.group("num")
+                table_map[int(old)] = tbl_idx
+                replace_caption(para, m.group("prefix"), old, str(tbl_idx) + m.group("rest"))
+                tbl_idx += 1
+        if scope == "per-section":
+            fig_idx = start_fig
+            tbl_idx = start_table
+
+    # Update references throughout the document
+    for old, new in figure_map.items():
+        for p in figure_prefixes:
+            try:
+                doc.Replace(f"{p} {old}", f"{p} {new}", False, False)
+            except Exception:
+                pass
+
+    for old, new in table_map.items():
+        for p in table_prefixes:
+            try:
+                doc.Replace(f"{p} {old}", f"{p} {new}", False, False)
+            except Exception:
+                pass
+
+    # Try refreshing generated lists and fields
+    try:
+        doc.UpdateTableOfContents()
+    except Exception:
+        pass
+    try:
+        doc.UpdateTableOfFigures()
+    except Exception:
+        pass
+
+    try:
+        doc.IsUpdateFields = True
+    except Exception:
+        pass

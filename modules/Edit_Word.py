@@ -1,5 +1,6 @@
 from spire.doc import *
 from spire.doc.common import *
+import re
 
 # ------------------------------------------------------------
 # Helpers: text insertion + numbered headings (Arabic & Roman)
@@ -145,3 +146,101 @@ def insert_bulleted_heading(section: Section, text: str, level: int = 0,
     p.ListFormat.ContinueListNumbering()
     p.Format.HorizontalAlignment = HorizontalAlignment.Left
     return p
+
+
+def renumber_figures_tables(
+    doc: Document,
+    *,
+    numbering_scope: str = "global",
+    figure_start: int = 1,
+    table_start: int = 1,
+) -> None:
+    """Renumber figures and tables and update cross-references.
+
+    Parameters
+    ----------
+    doc : Document
+        The Spire.Doc document to operate on.
+    numbering_scope : str, optional
+        "global" for one continuous sequence across the document or
+        "per-section" to reset numbering for each top-level section.
+    figure_start : int, optional
+        Starting index for figure numbering, by default 1.
+    table_start : int, optional
+        Starting index for table numbering, by default 1.
+    """
+
+    caption_regex = re.compile(r"^(Figure|Fig\.?|Table|Tab\.?)\s*(\d+)", re.IGNORECASE)
+    ref_regex = re.compile(r"\b(Figure|Fig\.?|Table|Tab\.?)\s*(\d+)\b", re.IGNORECASE)
+
+    figure_map = {}
+    table_map = {}
+
+    for sec_idx in range(doc.Sections.Count):
+        section = doc.Sections.get_Item(sec_idx)
+        fig_counter = figure_start
+        tab_counter = table_start
+        if numbering_scope.lower() == "global" and sec_idx > 0:
+            fig_counter = figure_map.get("__next__", figure_start)
+            tab_counter = table_map.get("__next__", table_start)
+
+        for p_idx in range(section.Paragraphs.Count):
+            para = section.Paragraphs.get_Item(p_idx)
+
+            # Build paragraph text for caption detection
+            para_text = "".join(
+                para.ChildObjects.get_Item(i).Text
+                for i in range(para.ChildObjects.Count)
+                if isinstance(para.ChildObjects.get_Item(i), TextRange)
+            )
+
+            m = caption_regex.match(para_text.strip())
+            if m:
+                prefix, old_num = m.group(1), m.group(2)
+                if prefix.lower().startswith("f"):
+                    new_num = f"{sec_idx + 1}-{fig_counter}" if numbering_scope.lower() == "per-section" else str(fig_counter)
+                    figure_map[old_num] = new_num
+                    fig_counter += 1
+                else:
+                    new_num = f"{sec_idx + 1}-{tab_counter}" if numbering_scope.lower() == "per-section" else str(tab_counter)
+                    table_map[old_num] = new_num
+                    tab_counter += 1
+
+            def repl(match: re.Match) -> str:
+                prefix, old = match.group(1), match.group(2)
+                lower = prefix.lower()
+                if lower.startswith("f"):
+                    new = figure_map.get(old)
+                    if new:
+                        return f"{prefix} {new}"
+                else:
+                    new = table_map.get(old)
+                    if new:
+                        return f"{prefix} {new}"
+                return match.group(0)
+
+            # Replace text in each run
+            for r_idx in range(para.ChildObjects.Count):
+                child = para.ChildObjects.get_Item(r_idx)
+                if isinstance(child, TextRange):
+                    new_text = ref_regex.sub(repl, child.Text)
+                    if new_text != child.Text:
+                        child.Text = new_text
+
+        if numbering_scope.lower() == "global":
+            figure_map["__next__"] = fig_counter
+            table_map["__next__"] = tab_counter
+
+    # Update any generated tables/lists if available
+    try:
+        doc.UpdateTableOfContents()
+    except Exception:
+        pass
+    try:
+        doc.UpdateTableOfFigures()
+    except Exception:
+        pass
+    try:
+        doc.UpdateTableOfTables()
+    except Exception:
+        pass

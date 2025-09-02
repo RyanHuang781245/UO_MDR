@@ -350,7 +350,6 @@ def renumber_figures_tables(input_file: str) -> bool:
     tracks duplicate numbers so that references are renumbered in their order of
     appearance.
     """
-
     try:
         doc = DocxDocument(input_file)
 

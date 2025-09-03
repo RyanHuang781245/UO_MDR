@@ -157,6 +157,16 @@ def renumber_figures_tables(
 ) -> None:
     """Renumber figures and tables and update cross-references.
 
+    The procedure performs three passes to avoid losing the original
+    numbering information:
+
+    1. Scan the document to build mappings from existing figure/table
+       numbers to their new values without modifying text.
+    2. Apply those mappings to caption paragraphs to renumber figures and
+       tables.
+    3. Revisit every paragraph to replace all cross-references using the
+       completed maps.
+
     Parameters
     ----------
     doc : Document
@@ -231,30 +241,54 @@ def renumber_figures_tables(
                 table_map[old_num] = new_num
 
     # -----------------------------------
-    # Pass 2: replace all references, captions included
+    # Pass 2: update caption numbers only
     # -----------------------------------
     for sec_idx in range(doc.Sections.Count):
         section = doc.Sections.get_Item(sec_idx)
         for p_idx in range(section.Paragraphs.Count):
             para = section.Paragraphs.get_Item(p_idx)
 
-            def repl(match: re.Match) -> str:
+            def cap_repl(match: re.Match) -> str:
                 prefix, sep, old = match.group(1), match.group(2), match.group(3)
                 lower = prefix.lower()
                 if lower.startswith("f"):
                     new = figure_map.get(old)
-                    if new:
-                        return f"{prefix}{sep}{new}"
                 else:
                     new = table_map.get(old)
-                    if new:
-                        return f"{prefix}{sep}{new}"
+                if new:
+                    return f"{prefix}{sep}{new}"
                 return match.group(0)
 
             for r_idx in range(para.ChildObjects.Count):
                 child = para.ChildObjects.get_Item(r_idx)
                 if isinstance(child, TextRange):
-                    new_text = ref_regex.sub(repl, child.Text)
+                    new_text = caption_regex.sub(cap_repl, child.Text)
+                    if new_text != child.Text:
+                        child.Text = new_text
+                        break  # caption updated; no need to check further runs
+
+    # -----------------------------------
+    # Pass 3: replace all in-text references
+    # -----------------------------------
+    def ref_repl(match: re.Match) -> str:
+        prefix, sep, old = match.group(1), match.group(2), match.group(3)
+        lower = prefix.lower()
+        if lower.startswith("f"):
+            new = figure_map.get(old)
+        else:
+            new = table_map.get(old)
+        if new:
+            return f"{prefix}{sep}{new}"
+        return match.group(0)
+
+    for sec_idx in range(doc.Sections.Count):
+        section = doc.Sections.get_Item(sec_idx)
+        for p_idx in range(section.Paragraphs.Count):
+            para = section.Paragraphs.get_Item(p_idx)
+            for r_idx in range(para.ChildObjects.Count):
+                child = para.ChildObjects.get_Item(r_idx)
+                if isinstance(child, TextRange):
+                    new_text = ref_regex.sub(ref_repl, child.Text)
                     if new_text != child.Text:
                         child.Text = new_text
 

@@ -185,13 +185,19 @@ def renumber_figures_tables(
     figure_map = {}
     table_map = {}
 
+    numbering_scope = numbering_scope.lower()
+
+    # -------------------------------------------------------
+    # Pass 1: renumber captions and build mapping dictionaries
+    # -------------------------------------------------------
+    fig_counter_global = figure_start
+    tab_counter_global = table_start
+    caption_locations = set()
+
     for sec_idx in range(doc.Sections.Count):
         section = doc.Sections.get_Item(sec_idx)
         fig_counter = figure_start
         tab_counter = table_start
-        if numbering_scope.lower() == "global" and sec_idx > 0:
-            fig_counter = figure_map.get("__next__", figure_start)
-            tab_counter = table_map.get("__next__", table_start)
 
         for p_idx in range(section.Paragraphs.Count):
             para = section.Paragraphs.get_Item(p_idx)
@@ -204,16 +210,52 @@ def renumber_figures_tables(
             )
 
             m = caption_regex.match(para_text.strip())
-            if m:
-                prefix, sep, old_num = m.group(1), m.group(2), m.group(3)
-                if prefix.lower().startswith("f"):
-                    new_num = f"{sec_idx + 1}-{fig_counter}" if numbering_scope.lower() == "per-section" else str(fig_counter)
-                    figure_map[old_num] = new_num
+            if not m:
+                continue
+
+            prefix, sep, old_num = m.group(1), m.group(2), m.group(3)
+            lower = prefix.lower()
+            if lower.startswith("f"):
+                if numbering_scope == "per-section":
+                    new_num = f"{sec_idx + 1}-{fig_counter}"
                     fig_counter += 1
-                else:
-                    new_num = f"{sec_idx + 1}-{tab_counter}" if numbering_scope.lower() == "per-section" else str(tab_counter)
-                    table_map[old_num] = new_num
+                else:  # global
+                    new_num = str(fig_counter_global)
+                    fig_counter_global += 1
+                figure_map[old_num] = new_num
+            else:
+                if numbering_scope == "per-section":
+                    new_num = f"{sec_idx + 1}-{tab_counter}"
                     tab_counter += 1
+                else:
+                    new_num = str(tab_counter_global)
+                    tab_counter_global += 1
+                table_map[old_num] = new_num
+
+            # Replace caption text with new numbering
+            pattern = re.compile(
+                rf"{re.escape(prefix)}{re.escape(sep)}{re.escape(old_num)}",
+                re.IGNORECASE,
+            )
+            for r_idx in range(para.ChildObjects.Count):
+                child = para.ChildObjects.get_Item(r_idx)
+                if isinstance(child, TextRange):
+                    new_text = pattern.sub(f"{prefix}{sep}{new_num}", child.Text, count=1)
+                    if new_text != child.Text:
+                        child.Text = new_text
+                        break
+
+            caption_locations.add((sec_idx, p_idx))
+
+    # -----------------------------------
+    # Pass 2: replace references in body text
+    # -----------------------------------
+    for sec_idx in range(doc.Sections.Count):
+        section = doc.Sections.get_Item(sec_idx)
+        for p_idx in range(section.Paragraphs.Count):
+            if (sec_idx, p_idx) in caption_locations:
+                continue
+            para = section.Paragraphs.get_Item(p_idx)
 
             def repl(match: re.Match) -> str:
                 prefix, sep, old = match.group(1), match.group(2), match.group(3)
@@ -228,17 +270,12 @@ def renumber_figures_tables(
                         return f"{prefix}{sep}{new}"
                 return match.group(0)
 
-            # Replace text in each run
             for r_idx in range(para.ChildObjects.Count):
                 child = para.ChildObjects.get_Item(r_idx)
                 if isinstance(child, TextRange):
                     new_text = ref_regex.sub(repl, child.Text)
                     if new_text != child.Text:
                         child.Text = new_text
-
-        if numbering_scope.lower() == "global":
-            figure_map["__next__"] = fig_counter
-            table_map["__next__"] = tab_counter
 
     # Update any generated tables/lists if available
     try:

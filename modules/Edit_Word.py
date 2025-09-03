@@ -206,6 +206,7 @@ def renumber_figures_tables(
                 for i in range(para.ChildObjects.Count)
                 if isinstance(para.ChildObjects.get_Item(i), TextRange)
             )
+
             m = caption_regex.match(para_text.strip())
             if not m:
                 continue

@@ -4,7 +4,12 @@ from typing import List, Dict, Any
 from spire.doc import *
 from spire.doc.common import *
 
-from .Edit_Word import insert_text, insert_numbered_heading, insert_roman_heading, insert_bulleted_heading
+from .Edit_Word import (
+    insert_text,
+    insert_numbered_heading,
+    insert_roman_heading,
+    insert_bulleted_heading,
+)
 from .Extract_AllFile_to_FinalWord import (
     extract_pdf_chapter_to_table,
     extract_word_all_content,

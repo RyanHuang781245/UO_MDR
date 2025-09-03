@@ -21,6 +21,7 @@ from modules.Extract_AllFile_to_FinalWord import (
     apply_basic_style,
     remove_hidden_runs,
 )
+from modules.Edit_Word import renumber_figures_tables_file
 from modules.translate_with_bedrock import translate_file
 from modules.file_copier import copy_files
 
@@ -417,6 +418,7 @@ def run_flow(task_id):
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
     result_path = os.path.join(job_dir, "result.docx")
+    renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)
@@ -463,6 +465,7 @@ def execute_flow(task_id, flow_name):
     os.makedirs(job_dir, exist_ok=True)
     run_workflow(runtime_steps, workdir=job_dir)
     result_path = os.path.join(job_dir, "result.docx")
+    renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)

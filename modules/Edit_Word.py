@@ -177,68 +177,81 @@ def renumber_figures_tables(
         rf"^{prefix_pattern}([\s\u00A0]*)({number_pattern})",
         re.IGNORECASE,
     )
+    # Only guard against preceding ASCII letters so Chinese text can still match
     ref_regex = re.compile(
-        rf"(?<!\w){prefix_pattern}([\s\u00A0]*)({number_pattern})",
+        rf"(?<![A-Za-z]){prefix_pattern}([\s\u00A0]*)({number_pattern})",
         re.IGNORECASE,
     )
 
     figure_map = {}
     table_map = {}
 
+    # -------- Pass 1: build mapping of old numbers -> new numbers --------
+    fig_counter = figure_start
+    tab_counter = table_start
     for sec_idx in range(doc.Sections.Count):
         section = doc.Sections.get_Item(sec_idx)
-        fig_counter = figure_start
-        tab_counter = table_start
-        if numbering_scope.lower() == "global" and sec_idx > 0:
-            fig_counter = figure_map.get("__next__", figure_start)
-            tab_counter = table_map.get("__next__", table_start)
+        if numbering_scope.lower() == "per-section" and sec_idx > 0:
+            fig_counter = figure_start
+            tab_counter = table_start
 
         for p_idx in range(section.Paragraphs.Count):
             para = section.Paragraphs.get_Item(p_idx)
-
-            # Build paragraph text for caption detection
             para_text = "".join(
                 para.ChildObjects.get_Item(i).Text
                 for i in range(para.ChildObjects.Count)
                 if isinstance(para.ChildObjects.get_Item(i), TextRange)
             )
+            text_stripped = para_text.strip()
+            m = caption_regex.match(text_stripped)
+            if not m:
+                continue
+            style_name = (para.StyleName or "").lower().replace(" ", "")
+            if (
+                "tableoffigures" in style_name
+                or "tableoftables" in style_name
+                or "tableofcontents" in style_name
+            ):
+                # Skip list/table-of entries and generated tables of contents
+                continue
+            prefix, sep, old_num = m.group(1), m.group(2), m.group(3)
+            if prefix.lower().startswith("f"):
+                new_num = (
+                    f"{sec_idx + 1}-{fig_counter}" if numbering_scope.lower() == "per-section" else str(fig_counter)
+                )
+                figure_map[old_num] = new_num
+                fig_counter += 1
+            else:
+                new_num = (
+                    f"{sec_idx + 1}-{tab_counter}" if numbering_scope.lower() == "per-section" else str(tab_counter)
+                )
+                table_map[old_num] = new_num
+                tab_counter += 1
 
-            m = caption_regex.match(para_text.strip())
-            if m:
-                prefix, sep, old_num = m.group(1), m.group(2), m.group(3)
-                if prefix.lower().startswith("f"):
-                    new_num = f"{sec_idx + 1}-{fig_counter}" if numbering_scope.lower() == "per-section" else str(fig_counter)
-                    figure_map[old_num] = new_num
-                    fig_counter += 1
-                else:
-                    new_num = f"{sec_idx + 1}-{tab_counter}" if numbering_scope.lower() == "per-section" else str(tab_counter)
-                    table_map[old_num] = new_num
-                    tab_counter += 1
+    # -------- Pass 2: replace captions and in-text references --------
+    def repl(match: re.Match) -> str:
+        prefix, sep, old = match.group(1), match.group(2), match.group(3)
+        lower = prefix.lower()
+        if lower.startswith("f"):
+            new = figure_map.get(old)
+            if new:
+                return f"{prefix}{sep}{new}"
+        else:
+            new = table_map.get(old)
+            if new:
+                return f"{prefix}{sep}{new}"
+        return match.group(0)
 
-            def repl(match: re.Match) -> str:
-                prefix, sep, old = match.group(1), match.group(2), match.group(3)
-                lower = prefix.lower()
-                if lower.startswith("f"):
-                    new = figure_map.get(old)
-                    if new:
-                        return f"{prefix}{sep}{new}"
-                else:
-                    new = table_map.get(old)
-                    if new:
-                        return f"{prefix}{sep}{new}"
-                return match.group(0)
-
-            # Replace text in each run
+    for sec_idx in range(doc.Sections.Count):
+        section = doc.Sections.get_Item(sec_idx)
+        for p_idx in range(section.Paragraphs.Count):
+            para = section.Paragraphs.get_Item(p_idx)
             for r_idx in range(para.ChildObjects.Count):
                 child = para.ChildObjects.get_Item(r_idx)
                 if isinstance(child, TextRange):
                     new_text = ref_regex.sub(repl, child.Text)
                     if new_text != child.Text:
                         child.Text = new_text
-
-        if numbering_scope.lower() == "global":
-            figure_map["__next__"] = fig_counter
-            table_map["__next__"] = tab_counter
 
     # Update any generated tables/lists if available
     try:

@@ -187,12 +187,11 @@ def renumber_figures_tables(
 
     numbering_scope = numbering_scope.lower()
 
-    # -------------------------------------------------------
-    # Pass 1: renumber captions and build mapping dictionaries
-    # -------------------------------------------------------
+    # -------------------------------------
+    # Pass 1: build caption mapping only
+    # -------------------------------------
     fig_counter_global = figure_start
     tab_counter_global = table_start
-    caption_locations = set()
 
     for sec_idx in range(doc.Sections.Count):
         section = doc.Sections.get_Item(sec_idx)
@@ -202,7 +201,6 @@ def renumber_figures_tables(
         for p_idx in range(section.Paragraphs.Count):
             para = section.Paragraphs.get_Item(p_idx)
 
-            # Build paragraph text for caption detection
             para_text = "".join(
                 para.ChildObjects.get_Item(i).Text
                 for i in range(para.ChildObjects.Count)
@@ -219,7 +217,7 @@ def renumber_figures_tables(
                 if numbering_scope == "per-section":
                     new_num = f"{sec_idx + 1}-{fig_counter}"
                     fig_counter += 1
-                else:  # global
+                else:
                     new_num = str(fig_counter_global)
                     fig_counter_global += 1
                 figure_map[old_num] = new_num
@@ -232,30 +230,12 @@ def renumber_figures_tables(
                     tab_counter_global += 1
                 table_map[old_num] = new_num
 
-            # Replace caption text with new numbering
-            pattern = re.compile(
-                rf"{re.escape(prefix)}{re.escape(sep)}{re.escape(old_num)}",
-                re.IGNORECASE,
-            )
-            for r_idx in range(para.ChildObjects.Count):
-                child = para.ChildObjects.get_Item(r_idx)
-                if isinstance(child, TextRange):
-                    new_text = pattern.sub(f"{prefix}{sep}{new_num}", child.Text, count=1)
-                    if new_text != child.Text:
-                        child.Text = new_text
-                        break
-
-            caption_locations.add((sec_idx, p_idx))
-
     # -----------------------------------
-    # Pass 2: replace references in body text
+    # Pass 2: replace all references, captions included
     # -----------------------------------
     for sec_idx in range(doc.Sections.Count):
         section = doc.Sections.get_Item(sec_idx)
         for p_idx in range(section.Paragraphs.Count):
-            if (sec_idx, p_idx) in caption_locations:
-                continue
-
             para = section.Paragraphs.get_Item(p_idx)
 
             def repl(match: re.Match) -> str:

@@ -204,6 +204,14 @@ def renumber_figures_tables(
     fig_counter_global = figure_start
     tab_counter_global = table_start
 
+    numbering_scope = numbering_scope.lower()
+
+    # -------------------------------------
+    # Pass 1: build caption mapping only
+    # -------------------------------------
+    fig_counter_global = figure_start
+    tab_counter_global = table_start
+
     for sec_idx in range(doc.Sections.Count):
         section = doc.Sections.get_Item(sec_idx)
         fig_counter = figure_start
@@ -288,6 +296,7 @@ def renumber_figures_tables(
                     new_text = ref_regex.sub(ref_repl, new_text)
                     if new_text != child.Text:
                         child.Text = new_text
+                        break  # caption updated; no need to check further runs
 
     # Update any generated tables/lists if available
     try:

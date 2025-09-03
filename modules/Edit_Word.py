@@ -1,6 +1,7 @@
 from spire.doc import *
 from spire.doc.common import *
 import re
+from collections import deque
 
 # ------------------------------------------------------------
 # Helpers: text insertion + numbered headings (Arabic & Roman)
@@ -183,10 +184,10 @@ def renumber_figures_tables(
         re.IGNORECASE,
     )
 
-    figure_map = {}
-    table_map = {}
+    figure_map: dict[str, deque] = {}
+    table_map: dict[str, deque] = {}
 
-    # -------- Pass 1: build mapping of old numbers -> new numbers --------
+    # -------- Pass 1: build mapping of old numbers -> deque of new numbers --------
     fig_counter = figure_start
     tab_counter = table_start
     for sec_idx in range(doc.Sections.Count):
@@ -219,37 +220,79 @@ def renumber_figures_tables(
                 new_num = (
                     f"{sec_idx + 1}-{fig_counter}" if numbering_scope.lower() == "per-section" else str(fig_counter)
                 )
-                figure_map[old_num] = new_num
+                figure_map.setdefault(old_num, deque()).append(new_num)
                 fig_counter += 1
             else:
                 new_num = (
                     f"{sec_idx + 1}-{tab_counter}" if numbering_scope.lower() == "per-section" else str(tab_counter)
                 )
-                table_map[old_num] = new_num
+                table_map.setdefault(old_num, deque()).append(new_num)
                 tab_counter += 1
 
-    # -------- Pass 2: replace captions and in-text references --------
-    def repl(match: re.Match) -> str:
+    used_fig: dict[str, list[str]] = {k: [] for k in figure_map}
+    used_tab: dict[str, list[str]] = {k: [] for k in table_map}
+
+    def _caption_repl(match: re.Match) -> str:
         prefix, sep, old = match.group(1), match.group(2), match.group(3)
         lower = prefix.lower()
         if lower.startswith("f"):
-            new = figure_map.get(old)
-            if new:
+            dq = figure_map.get(old)
+            if dq:
+                new = dq.popleft()
+                used_fig.setdefault(old, []).append(new)
                 return f"{prefix}{sep}{new}"
         else:
-            new = table_map.get(old)
-            if new:
+            dq = table_map.get(old)
+            if dq:
+                new = dq.popleft()
+                used_tab.setdefault(old, []).append(new)
                 return f"{prefix}{sep}{new}"
         return match.group(0)
 
+    def _ref_repl(match: re.Match) -> str:
+        prefix, sep, old = match.group(1), match.group(2), match.group(3)
+        lower = prefix.lower()
+        if lower.startswith("f"):
+            if used_fig.get(old):
+                new = used_fig[old][-1]
+                return f"{prefix}{sep}{new}"
+            dq = figure_map.get(old)
+            if dq:
+                return f"{prefix}{sep}{dq[0]}"
+        else:
+            if used_tab.get(old):
+                new = used_tab[old][-1]
+                return f"{prefix}{sep}{new}"
+            dq = table_map.get(old)
+            if dq:
+                return f"{prefix}{sep}{dq[0]}"
+        return match.group(0)
+
+    # -------- Pass 2: replace captions and in-text references --------
     for sec_idx in range(doc.Sections.Count):
         section = doc.Sections.get_Item(sec_idx)
         for p_idx in range(section.Paragraphs.Count):
             para = section.Paragraphs.get_Item(p_idx)
+            para_text = "".join(
+                para.ChildObjects.get_Item(i).Text
+                for i in range(para.ChildObjects.Count)
+                if isinstance(para.ChildObjects.get_Item(i), TextRange)
+            )
+            text_stripped = para_text.strip()
+            m_caption = caption_regex.match(text_stripped)
+            style_name = (para.StyleName or "").lower().replace(" ", "")
+            is_caption = bool(m_caption) and not (
+                "tableoffigures" in style_name
+                or "tableoftables" in style_name
+                or "tableofcontents" in style_name
+            )
             for r_idx in range(para.ChildObjects.Count):
                 child = para.ChildObjects.get_Item(r_idx)
                 if isinstance(child, TextRange):
-                    new_text = ref_regex.sub(repl, child.Text)
+                    if is_caption:
+                        new_text = ref_regex.sub(_caption_repl, child.Text)
+                    else:
+                        new_text = ref_regex.sub(_ref_repl, child.Text)
                     if new_text != child.Text:
                         child.Text = new_text
 

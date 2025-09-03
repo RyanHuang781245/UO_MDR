@@ -255,6 +255,7 @@ def renumber_figures_tables(
         for p_idx in range(section.Paragraphs.Count):
             if (sec_idx, p_idx) in caption_locations:
                 continue
+
             para = section.Paragraphs.get_Item(p_idx)
 
             def repl(match: re.Match) -> str:

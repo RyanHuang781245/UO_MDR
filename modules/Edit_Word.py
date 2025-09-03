@@ -157,6 +157,16 @@ def renumber_figures_tables(
 ) -> None:
     """Renumber figures and tables and update cross-references.
 
+    The procedure performs three passes to avoid losing the original
+    numbering information:
+
+    1. Scan the document to build mappings from existing figure/table
+       numbers to their new values without modifying text.
+    2. Apply those mappings to caption paragraphs to renumber figures and
+       tables.
+    3. Revisit every paragraph to replace all cross-references using the
+       completed maps.
+
     Parameters
     ----------
     doc : Document
@@ -185,18 +195,22 @@ def renumber_figures_tables(
     figure_map = {}
     table_map = {}
 
+    numbering_scope = numbering_scope.lower()
+
+    # -------------------------------------
+    # Pass 1: build caption mapping only
+    # -------------------------------------
+    fig_counter_global = figure_start
+    tab_counter_global = table_start
+
     for sec_idx in range(doc.Sections.Count):
         section = doc.Sections.get_Item(sec_idx)
         fig_counter = figure_start
         tab_counter = table_start
-        if numbering_scope.lower() == "global" and sec_idx > 0:
-            fig_counter = figure_map.get("__next__", figure_start)
-            tab_counter = table_map.get("__next__", table_start)
 
         for p_idx in range(section.Paragraphs.Count):
             para = section.Paragraphs.get_Item(p_idx)
 
-            # Build paragraph text for caption detection
             para_text = "".join(
                 para.ChildObjects.get_Item(i).Text
                 for i in range(para.ChildObjects.Count)
@@ -204,41 +218,79 @@ def renumber_figures_tables(
             )
 
             m = caption_regex.match(para_text.strip())
-            if m:
-                prefix, sep, old_num = m.group(1), m.group(2), m.group(3)
-                if prefix.lower().startswith("f"):
-                    new_num = f"{sec_idx + 1}-{fig_counter}" if numbering_scope.lower() == "per-section" else str(fig_counter)
-                    figure_map[old_num] = new_num
+            if not m:
+                continue
+
+            prefix, sep, old_num = m.group(1), m.group(2), m.group(3)
+            lower = prefix.lower()
+            if lower.startswith("f"):
+                if numbering_scope == "per-section":
+                    new_num = f"{sec_idx + 1}-{fig_counter}"
                     fig_counter += 1
                 else:
-                    new_num = f"{sec_idx + 1}-{tab_counter}" if numbering_scope.lower() == "per-section" else str(tab_counter)
-                    table_map[old_num] = new_num
+                    new_num = str(fig_counter_global)
+                    fig_counter_global += 1
+                figure_map[old_num] = new_num
+            else:
+                if numbering_scope == "per-section":
+                    new_num = f"{sec_idx + 1}-{tab_counter}"
                     tab_counter += 1
+                else:
+                    new_num = str(tab_counter_global)
+                    tab_counter_global += 1
+                table_map[old_num] = new_num
 
-            def repl(match: re.Match) -> str:
+    # -----------------------------------
+    # Pass 2: update caption numbers only
+    # -----------------------------------
+    for sec_idx in range(doc.Sections.Count):
+        section = doc.Sections.get_Item(sec_idx)
+        for p_idx in range(section.Paragraphs.Count):
+            para = section.Paragraphs.get_Item(p_idx)
+
+            def cap_repl(match: re.Match) -> str:
                 prefix, sep, old = match.group(1), match.group(2), match.group(3)
                 lower = prefix.lower()
                 if lower.startswith("f"):
                     new = figure_map.get(old)
-                    if new:
-                        return f"{prefix}{sep}{new}"
                 else:
                     new = table_map.get(old)
-                    if new:
-                        return f"{prefix}{sep}{new}"
+                if new:
+                    return f"{prefix}{sep}{new}"
                 return match.group(0)
 
-            # Replace text in each run
             for r_idx in range(para.ChildObjects.Count):
                 child = para.ChildObjects.get_Item(r_idx)
                 if isinstance(child, TextRange):
-                    new_text = ref_regex.sub(repl, child.Text)
+                    new_text = caption_regex.sub(cap_repl, child.Text)
                     if new_text != child.Text:
                         child.Text = new_text
+                        break  # caption updated; no need to check further runs
 
-        if numbering_scope.lower() == "global":
-            figure_map["__next__"] = fig_counter
-            table_map["__next__"] = tab_counter
+    # -----------------------------------
+    # Pass 3: replace all in-text references
+    # -----------------------------------
+    def ref_repl(match: re.Match) -> str:
+        prefix, sep, old = match.group(1), match.group(2), match.group(3)
+        lower = prefix.lower()
+        if lower.startswith("f"):
+            new = figure_map.get(old)
+        else:
+            new = table_map.get(old)
+        if new:
+            return f"{prefix}{sep}{new}"
+        return match.group(0)
+
+    for sec_idx in range(doc.Sections.Count):
+        section = doc.Sections.get_Item(sec_idx)
+        for p_idx in range(section.Paragraphs.Count):
+            para = section.Paragraphs.get_Item(p_idx)
+            for r_idx in range(para.ChildObjects.Count):
+                child = para.ChildObjects.get_Item(r_idx)
+                if isinstance(child, TextRange):
+                    new_text = ref_regex.sub(ref_repl, child.Text)
+                    if new_text != child.Text:
+                        child.Text = new_text
 
     # Update any generated tables/lists if available
     try:

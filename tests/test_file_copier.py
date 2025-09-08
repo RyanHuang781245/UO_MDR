@@ -42,3 +42,21 @@ def test_copy_files_multiple_keywords(tmp_path):
     assert dest.joinpath("Shipping simulation test EO report.txt").exists()
     assert not dest.joinpath("Shipping simulation test only.txt").exists()
     assert len(copied) == 1
+
+
+def test_copy_files_destination_inside_source(tmp_path):
+    src = tmp_path / "root"
+    dest = src / "dest"
+    src.mkdir()
+    dest.mkdir()
+
+    (src / "report.txt").write_text("data")
+
+    copied = copy_files(str(src), str(dest), ["report"])
+
+    dest_file = dest / "report.txt"
+    assert dest_file.exists()
+    assert dest_file.read_text() == "data"
+    assert copied == [str(dest_file)]
+    # Ensure only the copied file exists in destination
+    assert len(list(dest.iterdir())) == 1

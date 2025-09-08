@@ -32,13 +32,24 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
     os.makedirs(destination, exist_ok=True)
     copied_files: List[str] = []
     lowered_keywords = [k.strip().lower() for k in keywords if k.strip()]
+    dest_abs = os.path.abspath(destination)
 
-    for root, _dirs, files in os.walk(source):
+    for root, dirs, files in os.walk(source):
+        # Avoid walking into the destination directory to prevent copying files
+        # onto themselves when the destination lives inside the source.
+        dirs[:] = [
+            d for d in dirs if os.path.abspath(os.path.join(root, d)) != dest_abs
+        ]
+
         for name in files:
             lower_name = name.lower()
             if all(k in lower_name for k in lowered_keywords):
                 src_path = os.path.join(root, name)
                 dest_path = os.path.join(destination, name)
+                # Skip copying when the source and destination resolve to the
+                # same file (e.g., destination inside source and already visited)
+                if os.path.abspath(src_path) == os.path.abspath(dest_path):
+                    continue
                 shutil.copy2(src_path, dest_path)
                 copied_files.append(dest_path)
     return copied_files

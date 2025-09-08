@@ -69,7 +69,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     wb = load_workbook(mapping_path)
     ws = wb.active
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=3, values_only=True):
         raw_out, raw_title, raw_input, raw_instruction = row[:4]
         out_name = str(raw_out).strip() if raw_out else ""
         title = str(raw_title).strip() if raw_title else ""

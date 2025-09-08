@@ -1,6 +1,7 @@
 import os
 import pytest
 from spire.doc import Document, FileFormat, HorizontalAlignment
+from docx import Document as DocxDocument
 
 from modules.mapping_processor import process_mapping_excel
 
@@ -43,3 +44,11 @@ def test_process_mapping_centers_and_renumbers(tmp_path):
     assert "Table 1" in tab.Text
     assert tab.Format.HorizontalAlignment == HorizontalAlignment.Center
     out.Close()
+
+    # verify basic style applied (font and line spacing)
+    docx_doc = DocxDocument(out_path)
+    p = docx_doc.paragraphs[0]
+    assert p.paragraph_format.line_spacing == pytest.approx(1.5)
+    run = p.runs[0]
+    assert run.font.name == "Times New Roman"
+    assert run.font.size.pt == pytest.approx(12)

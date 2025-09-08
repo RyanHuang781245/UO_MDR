@@ -24,6 +24,7 @@ from modules.Extract_AllFile_to_FinalWord import (
 from modules.Edit_Word import renumber_figures_tables_file
 from modules.translate_with_bedrock import translate_file
 from modules.file_copier import copy_files
+from modules.mapping_parser import parse_mapping_file
 
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
@@ -520,6 +521,51 @@ def import_flow(task_id):
     path = os.path.join(flow_dir, f"{name}.json")
     f.save(path)
     return redirect(url_for("flow_builder", task_id=task_id))
+
+
+@app.post("/tasks/<task_id>/mapping")
+def run_mapping(task_id):
+    """Run workflow defined by an uploaded mapping_file.xlsx."""
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        abort(404)
+    f = request.files.get("mapping_file")
+    if not f or not f.filename:
+        return "請上傳 mapping_file.xlsx", 400
+    job_id = str(uuid.uuid4())[:8]
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    map_path = os.path.join(job_dir, secure_filename(f.filename))
+    f.save(map_path)
+    docs, copies = parse_mapping_file(map_path, files_dir)
+    outputs = []
+    for name, steps in docs.items():
+        sub_dir = os.path.join(job_dir, name)
+        os.makedirs(sub_dir, exist_ok=True)
+        run_workflow(steps, workdir=sub_dir)
+        src = os.path.join(sub_dir, "result.docx")
+        dst = os.path.join(sub_dir, f"{name}.docx")
+        if os.path.exists(src):
+            os.rename(src, dst)
+            renumber_figures_tables_file(dst)
+            center_table_figure_paragraphs(dst)
+            remove_hidden_runs(dst)
+            apply_basic_style(dst)
+            outputs.append(os.path.relpath(dst, job_dir))
+    for op in copies:
+        copy_files(op["source"], op["dest"], op["keywords"])
+    return {"job_id": job_id, "documents": outputs}
+
+
+@app.get("/tasks/<task_id>/mapping", endpoint="mapping_page")
+def mapping_page(task_id):
+    """Render upload page for mapping_file.xlsx."""
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        abort(404)
+    return render_template("mapping.html", task_id=task_id)
 
 
 @app.get("/tasks/<task_id>/result/<job_id>")

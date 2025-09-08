@@ -24,8 +24,8 @@ def test_process_mapping_centers_and_renumbers(tmp_path):
     # Build mapping file
     wb = Workbook()
     ws = wb.active
-    ws.append(["A", "B", "C", "D"])
-    ws.append(["OutDoc", "", "src.docx", "all"])
+    ws.append(["A", "B", "C", "D", "E"])
+    ws.append(["OutDoc", "", "", "src.docx", "all"])
     mapping_path = tmp_path / "map.xlsx"
     wb.save(mapping_path)
 
@@ -67,8 +67,8 @@ def test_process_mapping_strips_chapter_numbers(tmp_path):
 
     wb = Workbook()
     ws = wb.active
-    ws.append(["A", "B", "C", "D"])
-    ws.append(["Out", "6.4.2 Heading", "src.docx", "6.4.2"])
+    ws.append(["A", "B", "C", "D", "E"])
+    ws.append(["Out", "6.4.2 Heading", "", "src.docx", "6.4.2"])
     mapping_path = tmp_path / "map.xlsx"
     wb.save(mapping_path)
 
@@ -83,7 +83,9 @@ def test_process_mapping_strips_chapter_numbers(tmp_path):
 
 def test_process_mapping_folder_input(tmp_path):
     # Create a folder containing a single document
-    subdir = tmp_path / "Folder"
+    parent = tmp_path / "Parent"
+    parent.mkdir()
+    subdir = parent / "Folder"
     subdir.mkdir()
     doc = Document()
     sec = doc.AddSection()
@@ -95,8 +97,8 @@ def test_process_mapping_folder_input(tmp_path):
     # Mapping file specifies the folder instead of the file name
     wb = Workbook()
     ws = wb.active
-    ws.append(["A", "B", "C", "D"])
-    ws.append(["Out", "Title", "Folder", "all"])
+    ws.append(["A", "B", "C", "D", "E"])
+    ws.append(["Out", "Title", "Parent", "Folder", "all"])
     mapping = tmp_path / "map.xlsx"
     wb.save(mapping)
 
@@ -117,8 +119,8 @@ def test_process_mapping_copy_from_folder(tmp_path):
 
     wb = Workbook()
     ws = wb.active
-    ws.append(["A", "B", "C", "D"])
-    ws.append(["Dest", "", "sub", "match, EO"])
+    ws.append(["A", "B", "C", "D", "E"])
+    ws.append(["Dest", "", "sub", "", "match, EO"])
     mapping = root / "map.xlsx"
     wb.save(mapping)
 

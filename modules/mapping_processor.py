@@ -79,20 +79,29 @@ def insert_title(section, title: str):
     if not title:
         return None
 
+    # Strip leading chapter numbers like "6.4.2" from the title
+    title = re.sub(r"^[0-9]+(?:\.[0-9]+)*\s*", "", title)
+
     roman_match = re.match(r"^[IVXLCDM]+\.\s*(.*)", title)
     if roman_match:
         text = roman_match.group(1).strip() or title
-        return insert_roman_heading(section, text, level=0, bold=True, font_size=12)
+        return insert_roman_heading(section, text, level=0, bold=True, font_size=14)
 
     if title.startswith("⚫"):
         text = title.lstrip("⚫").strip()
-        return insert_bulleted_heading(section, text, level=0, bullet_char='·', bold=True, font_size=12)
+        return insert_bulleted_heading(section, text, level=0, bold=True, font_size=14)
 
-    return insert_text(section, title, align="left", bold=True, font_size=12)
+    return insert_numbered_heading(section, title, level=0, bold=True, font_size=14)
 
 def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: str) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
 
+    The spreadsheet must provide columns:
+        A: output Word document name
+        B: heading title to insert
+        C: folder containing the source file
+        D: source file name (if no extension, treated as a subfolder)
+        E: extraction instruction or file-copy keywords
     Returns a dict with keys:
         logs: list of messages
         outputs: list of generated docx paths
@@ -109,40 +118,44 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     wb = load_workbook(mapping_path)
     ws = wb.active
 
-    for row in ws.iter_rows(min_row=3, values_only=True):
-        raw_out, raw_title, raw_input, raw_instruction = row[:4]
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        raw_out, raw_title, raw_folder, raw_input, raw_instruction = row[:5]
         out_name = str(raw_out).strip() if raw_out else ""
         title = str(raw_title).strip() if raw_title else ""
+        folder = str(raw_folder).strip() if raw_folder else ""
         input_name = str(raw_input).strip() if raw_input else ""
         instruction = str(raw_instruction).strip() if raw_instruction else ""
         if not instruction:
             continue
 
-        # Step 2: 確認欄位D需擷取內容
+        base_dir = task_files_dir
+        if folder:
+            found_dir = _find_directory(task_files_dir, folder)
+            if not found_dir:
+                logs.append(f"{out_name or '未命名'}: 找不到資料夾 {folder}")
+                continue
+            base_dir = found_dir
+
         is_all = instruction.lower() == "all"
         chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
 
         if is_all or chapter_match:
-            # Step 1: 確認欄位C輸入檔案名稱
             if not input_name:
                 logs.append(f"{out_name or '未命名'}: 未提供輸入檔案名稱")
                 continue
-            infile = _resolve_input_file(task_files_dir, input_name)
+            infile = _resolve_input_file(base_dir, input_name)
             if not infile:
                 logs.append(f"{out_name or '未命名'}: 找不到檔案 {input_name}")
                 continue
 
-            # Step 3: 確認欄位A輸出檔案名稱
             doc, section = docs.get(out_name, (None, None))
             if doc is None:
                 doc = Document()
                 section = doc.AddSection()
                 docs[out_name] = (doc, section)
 
-            # Step 4: 確認欄位B需寫入文件的標題
             insert_title(section, title)
 
-            # Step 5: 建構文件流程
             if is_all:
                 extract_word_all_content(infile, output_doc=doc, section=section)
                 logs.append(f"擷取 {input_name} 全部內容")
@@ -168,24 +181,21 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                     )
                     logs.append(f"擷取 {input_name} 章節 {chapter}")
         else:
-            # copy files by keywords
             dest = os.path.join(task_files_dir, out_name or "output")
             if title:
                 dest = os.path.join(dest, title)
-            # Determine search root. If input_name refers to a directory, search within it;
-            # otherwise search the entire task_files_dir.
-            search_root = task_files_dir
+
+            search_root = base_dir
             if input_name:
                 if "." in os.path.basename(input_name):
-                    found = _resolve_input_file(task_files_dir, input_name)
+                    found = _resolve_input_file(base_dir, input_name)
                     if found:
                         search_root = os.path.dirname(found)
                 else:
-                    dir_path = _find_directory(task_files_dir, input_name)
+                    dir_path = _find_directory(base_dir, input_name)
                     if dir_path:
                         search_root = dir_path
-            # Allow multiple keywords separated by commas (e.g. "Shipping simulation test, EO")
-            # and ensure that matched files contain *all* keywords.
+
             keywords = [
                 k.strip()
                 for k in re.split(r"[,，]+", instruction)

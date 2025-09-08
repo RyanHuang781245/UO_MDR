@@ -20,3 +20,13 @@ def test_copy_files_overwrite(tmp_path):
     file_path.write_text("second")
     copy_files(str(src), str(dest), ["example"])
     assert dest_file.read_text() == "second"
+
+
+def test_copy_files_handles_destination_inside_source(tmp_path):
+    src = tmp_path / "files"
+    src.mkdir()
+    (src / "example.txt").write_text("hello", encoding="utf-8")
+    dest = src / "dest"
+    copied = copy_files(str(src), str(dest), ["example"])
+    assert copied == [str(dest / "example.txt")]
+    assert (dest / "example.txt").read_text(encoding="utf-8") == "hello"

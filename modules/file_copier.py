@@ -31,12 +31,26 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
     copied_files: List[str] = []
     lowered_keywords = [k.strip().lower() for k in keywords if k.strip()]
 
-    for root, _dirs, files in os.walk(source):
+    abs_dest = os.path.abspath(destination)
+    for root, dirs, files in os.walk(source):
+        # Skip walking into the destination directory to avoid copying files
+        # that were already copied and to prevent SameFileError when source and
+        # destination paths are identical.
+        abs_root = os.path.abspath(root)
+        if os.path.commonpath([abs_root, abs_dest]) == abs_root:
+            rel_dest = os.path.relpath(abs_dest, abs_root)
+            top_level = rel_dest.split(os.sep)[0]
+            if top_level in dirs:
+                dirs.remove(top_level)
+
         for name in files:
             lower_name = name.lower()
             if all(k in lower_name for k in lowered_keywords):
                 src_path = os.path.join(root, name)
                 dest_path = os.path.join(destination, name)
+                # Skip copying if source and destination refer to the same file
+                if os.path.abspath(src_path) == os.path.abspath(dest_path):
+                    continue
                 shutil.copy2(src_path, dest_path)
                 copied_files.append(dest_path)
     return copied_files

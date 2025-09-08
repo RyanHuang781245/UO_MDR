@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple
 from spire.doc import Document, FileFormat
 
 from .Edit_Word import (
-    insert_numbered_heading,
+    renumber_figures_tables_file,
     insert_text,
     insert_roman_heading,
     insert_bulleted_heading,

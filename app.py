@@ -24,6 +24,7 @@ from modules.Extract_AllFile_to_FinalWord import (
 from modules.Edit_Word import renumber_figures_tables_file
 from modules.translate_with_bedrock import translate_file
 from modules.file_copier import copy_files
+from modules.mapping_parser import parse_mapping_file
 
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
@@ -271,6 +272,55 @@ def upload_task_file(task_id):
     else:
         f.save(os.path.join(files_dir, filename))
 
+    return redirect(url_for("task_detail", task_id=task_id))
+
+
+@app.post("/tasks/<task_id>/mapping")
+def upload_mapping(task_id):
+    """Upload a mapping Excel file and execute described operations."""
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        abort(404)
+
+    f = request.files.get("mapping_file")
+    if not f or not f.filename.lower().endswith(".xlsx"):
+        return "請上傳 XLSX 檔", 400
+
+    mapping_path = os.path.join(files_dir, secure_filename(f.filename))
+    f.save(mapping_path)
+
+    workflows, copy_jobs = parse_mapping_file(mapping_path, files_dir)
+
+    # Execute copy jobs first
+    for job in copy_jobs:
+        copy_files(job["source"], job["dest"], job["keywords"])
+
+    last_job_id = None
+    for _doc_name, steps in workflows.items():
+        if not steps:
+            continue
+        runtime_steps = []
+        for step in steps:
+            stype = step["type"]
+            params = step["params"].copy()
+            if stype in ("extract_word_all_content", "extract_word_chapter"):
+                params["input_file"] = os.path.join(files_dir, params["input_file"])
+            runtime_steps.append({"type": stype, "params": params})
+
+        job_id = str(uuid.uuid4())[:8]
+        last_job_id = job_id
+        job_dir = os.path.join(tdir, "jobs", job_id)
+        os.makedirs(job_dir, exist_ok=True)
+        run_workflow(runtime_steps, workdir=job_dir)
+        result_path = os.path.join(job_dir, "result.docx")
+        renumber_figures_tables_file(result_path)
+        center_table_figure_paragraphs(result_path)
+        remove_hidden_runs(result_path)
+        apply_basic_style(result_path)
+
+    if last_job_id:
+        return redirect(url_for("task_result", task_id=task_id, job_id=last_job_id))
     return redirect(url_for("task_detail", task_id=task_id))
 
 def gather_available_files(files_dir):

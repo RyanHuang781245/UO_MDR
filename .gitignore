@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 output/
 tasks/
+word_all_images/
+images/
+mapping_file.xlsx

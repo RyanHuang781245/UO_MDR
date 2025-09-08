@@ -13,6 +13,7 @@ from .Edit_Word import (
 from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
     extract_word_chapter,
+    center_table_figure_paragraphs,
 )
 from .file_copier import copy_files
 
@@ -153,7 +154,9 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         out_path = os.path.join(output_dir, f"{name}.docx")
         doc.SaveToFile(out_path, FileFormat.Docx)
         doc.Close()
+        renumber_figures_tables_file(out_path)
+        center_table_figure_paragraphs(out_path)
         outputs.append(out_path)
-        logs.append(f"產生文件 {out_path}")
+        logs.append(f"產生文件 {out_path} (已重新編號並置中標題)")
 
     return {"logs": logs, "outputs": outputs}

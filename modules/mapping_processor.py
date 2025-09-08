@@ -4,7 +4,11 @@ from typing import Dict, List, Tuple
 
 from spire.doc import Document, FileFormat
 
-from .Edit_Word import insert_numbered_heading
+from .Edit_Word import (
+    insert_numbered_heading,
+    insert_roman_heading,
+    insert_bulleted_heading,
+)
 from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
     extract_word_chapter,
@@ -20,6 +24,30 @@ def _find_file(base: str, filename: str) -> str | None:
             if fn.lower() == target:
                 return os.path.join(root, fn)
     return None
+
+
+def insert_title(section, title: str):
+    """Insert *title* into *section* with appropriate heading style.
+
+    - Titles beginning with Roman numerals (e.g. ``"I."``, ``"II."``) use
+      :func:`insert_roman_heading`.
+    - Titles beginning with a ``"⚫"`` bullet use :func:`insert_bulleted_heading`.
+    - All other titles use :func:`insert_numbered_heading`.
+    """
+
+    if not title:
+        return None
+
+    roman_match = re.match(r"^[IVXLCDM]+\.\s*(.*)", title)
+    if roman_match:
+        text = roman_match.group(1).strip() or title
+        return insert_roman_heading(section, text, level=0, bold=True, font_size=14)
+
+    if title.startswith("⚫"):
+        text = title.lstrip("⚫").strip()
+        return insert_bulleted_heading(section, text, level=0, bold=True, font_size=14)
+
+    return insert_numbered_heading(section, title, level=0, bold=True, font_size=14)
 
 
 def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: str) -> Dict[str, List[str]]:
@@ -72,8 +100,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                 docs[out_name] = (doc, section)
 
             # Step 4: 確認欄位B需寫入文件的標題
-            if title:
-                insert_numbered_heading(section, title, level=0, bold=True, font_size=14)
+            insert_title(section, title)
 
             # Step 5: 建構文件流程
             if is_all:

@@ -5,10 +5,10 @@ from typing import Dict, List, Tuple
 from spire.doc import Document, FileFormat
 
 from .Edit_Word import (
-    insert_numbered_heading,
+    renumber_figures_tables_file,
+    insert_text,
     insert_roman_heading,
     insert_bulleted_heading,
-    renumber_figures_tables_file,
 )
 from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
@@ -93,7 +93,6 @@ def insert_title(section, title: str):
 
     return insert_numbered_heading(section, title, level=0, bold=True, font_size=14)
 
-
 def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: str) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
 
@@ -103,7 +102,6 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         C: folder containing the source file
         D: source file name (if no extension, treated as a subfolder)
         E: extraction instruction or file-copy keywords
-
     Returns a dict with keys:
         logs: list of messages
         outputs: list of generated docx paths

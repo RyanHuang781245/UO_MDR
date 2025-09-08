@@ -140,6 +140,42 @@ def task_copy_files(task_id):
     return render_template("copy_files.html", dirs=dirs, message=message, task_id=task_id)
 
 
+@app.route("/tasks/<task_id>/mapping", methods=["GET", "POST"], endpoint="task_mapping")
+def task_mapping(task_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    if not os.path.isdir(tdir):
+        abort(404)
+    files_dir = os.path.join(tdir, "files")
+    out_dir = os.path.join(app.config["OUTPUT_FOLDER"], task_id)
+    messages = []
+    outputs = []
+    if request.method == "POST":
+        f = request.files.get("mapping_file")
+        if not f or not f.filename:
+            messages.append("請選擇檔案")
+        else:
+            path = os.path.join(tdir, secure_filename(f.filename))
+            f.save(path)
+            try:
+                from modules.mapping_processor import process_mapping_excel
+                result = process_mapping_excel(path, files_dir, out_dir)
+                messages = result["logs"]
+                outputs = result["outputs"]
+            except Exception as e:
+                messages = [str(e)]
+    rel_outputs = [os.path.basename(p) for p in outputs]
+    return render_template("mapping.html", task_id=task_id, messages=messages, outputs=rel_outputs)
+
+
+@app.get("/tasks/<task_id>/output/<filename>")
+def task_download_output(task_id, filename):
+    out_dir = os.path.join(app.config["OUTPUT_FOLDER"], task_id)
+    file_path = os.path.join(out_dir, filename)
+    if not os.path.isfile(file_path):
+        abort(404)
+    return send_from_directory(out_dir, filename, as_attachment=True)
+
+
 @app.get("/")
 def tasks():
     task_list = []

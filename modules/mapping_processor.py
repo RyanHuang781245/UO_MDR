@@ -30,6 +30,43 @@ def _find_file(base: str, filename: str) -> str | None:
     return None
 
 
+def _find_directory(base: str, path: str) -> str | None:
+    """Locate a directory relative to *base* ignoring case."""
+    parts = [p for p in os.path.normpath(path).split(os.sep) if p]
+    current = base
+    for part in parts:
+        match = None
+        for name in os.listdir(current):
+            candidate = os.path.join(current, name)
+            if os.path.isdir(candidate) and name.lower() == part.lower():
+                match = candidate
+                break
+        if match is None:
+            return None
+        current = match
+    return current
+
+
+def _resolve_input_file(base: str, name: str) -> str | None:
+    """Resolve *name* to a file path.
+
+    If *name* includes an extension, it is treated as a filename and searched
+    within *base*. If it has no extension, it is treated as a directory and the
+    first document file inside that directory is returned.
+    """
+
+    if "." in os.path.basename(name):
+        return _find_file(base, name)
+
+    dir_path = _find_directory(base, name)
+    if not dir_path:
+        return None
+    for fn in os.listdir(dir_path):
+        if fn.lower().endswith((".docx", ".doc")):
+            return os.path.join(dir_path, fn)
+    return None
+
+
 def insert_title(section, title: str):
     """Insert *title* into *section* with appropriate heading style.
 
@@ -90,7 +127,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
             if not input_name:
                 logs.append(f"{out_name or '未命名'}: 未提供輸入檔案名稱")
                 continue
-            infile = _find_file(task_files_dir, input_name)
+            infile = _resolve_input_file(task_files_dir, input_name)
             if not infile:
                 logs.append(f"{out_name or '未命名'}: 找不到檔案 {input_name}")
                 continue
@@ -135,6 +172,18 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
             dest = os.path.join(task_files_dir, out_name or "output")
             if title:
                 dest = os.path.join(dest, title)
+            # Determine search root. If input_name refers to a directory, search within it;
+            # otherwise search the entire task_files_dir.
+            search_root = task_files_dir
+            if input_name:
+                if "." in os.path.basename(input_name):
+                    found = _resolve_input_file(task_files_dir, input_name)
+                    if found:
+                        search_root = os.path.dirname(found)
+                else:
+                    dir_path = _find_directory(task_files_dir, input_name)
+                    if dir_path:
+                        search_root = dir_path
             # Allow multiple keywords separated by commas (e.g. "Shipping simulation test, EO")
             # and ensure that matched files contain *all* keywords.
             keywords = [
@@ -143,7 +192,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                 if k.strip()
             ]
             try:
-                copied = copy_files(task_files_dir, dest, keywords)
+                copied = copy_files(search_root, dest, keywords)
                 kw_display = ", ".join(keywords)
                 logs.append(
                     f"複製 {len(copied)} 個檔案至 {os.path.relpath(dest, task_files_dir)} (關鍵字: {kw_display})"

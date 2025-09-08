@@ -79,3 +79,52 @@ def test_process_mapping_strips_chapter_numbers(tmp_path):
     text = "\n".join(p.text for p in docx_doc.paragraphs)
     assert "6.4.2" not in text
     assert "Heading" in text
+
+
+def test_process_mapping_folder_input(tmp_path):
+    # Create a folder containing a single document
+    subdir = tmp_path / "Folder"
+    subdir.mkdir()
+    doc = Document()
+    sec = doc.AddSection()
+    sec.AddParagraph().AppendText("content")
+    src = subdir / "inner.docx"
+    doc.SaveToFile(str(src), FileFormat.Docx)
+    doc.Close()
+
+    # Mapping file specifies the folder instead of the file name
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["A", "B", "C", "D"])
+    ws.append(["Out", "Title", "Folder", "all"])
+    mapping = tmp_path / "map.xlsx"
+    wb.save(mapping)
+
+    out_dir = tmp_path / "out"
+    process_mapping_excel(str(mapping), str(tmp_path), str(out_dir))
+    assert (out_dir / "Out.docx").exists()
+
+
+def test_process_mapping_copy_from_folder(tmp_path):
+    # Source directories
+    root = tmp_path
+    sub = root / "sub"
+    other = root / "other"
+    sub.mkdir()
+    other.mkdir()
+    (sub / "match EO.txt").write_text("data")
+    (other / "match EO.txt").write_text("should not copy")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["A", "B", "C", "D"])
+    ws.append(["Dest", "", "sub", "match, EO"])
+    mapping = root / "map.xlsx"
+    wb.save(mapping)
+
+    out_dir = root / "out"
+    process_mapping_excel(str(mapping), str(root), str(out_dir))
+    dest_dir = root / "Dest"
+    assert dest_dir.joinpath("match EO.txt").exists()
+    # ensure only file from specified folder is copied
+    assert len(list(dest_dir.glob("*.txt"))) == 1

@@ -13,9 +13,11 @@ from .file_copier import copy_files
 
 
 def _find_file(base: str, filename: str) -> str | None:
+    """Search *base* recursively for *filename* ignoring case."""
+    target = filename.lower()
     for root, _dirs, files in os.walk(base):
         for fn in files:
-            if fn == filename:
+            if fn.lower() == target:
                 return os.path.join(root, fn)
     return None
 
@@ -40,30 +42,40 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     ws = wb.active
 
     for row in ws.iter_rows(min_row=2, values_only=True):
-        out_name, title, input_name, instruction = row[:4]
+        raw_out, raw_title, raw_input, raw_instruction = row[:4]
+        out_name = str(raw_out).strip() if raw_out else ""
+        title = str(raw_title).strip() if raw_title else ""
+        input_name = str(raw_input).strip() if raw_input else ""
+        instruction = str(raw_instruction).strip() if raw_instruction else ""
         if not instruction:
             continue
-        instruction = str(instruction).strip()
 
-        # Determine operation type
+        # Step 2: 確認欄位D需擷取內容
         is_all = instruction.lower() == "all"
         chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
+
         if is_all or chapter_match:
-            # extraction from document
+            # Step 1: 確認欄位C輸入檔案名稱
             if not input_name:
-                logs.append(f"{out_name}: 未提供輸入檔案名稱")
+                logs.append(f"{out_name or '未命名'}: 未提供輸入檔案名稱")
                 continue
-            infile = _find_file(task_files_dir, str(input_name))
+            infile = _find_file(task_files_dir, input_name)
             if not infile:
-                logs.append(f"{out_name}: 找不到檔案 {input_name}")
+                logs.append(f"{out_name or '未命名'}: 找不到檔案 {input_name}")
                 continue
+
+            # Step 3: 確認欄位A輸出檔案名稱
             doc, section = docs.get(out_name, (None, None))
             if doc is None:
                 doc = Document()
                 section = doc.AddSection()
                 docs[out_name] = (doc, section)
+
+            # Step 4: 確認欄位B需寫入文件的標題
             if title:
-                insert_numbered_heading(section, str(title), level=0, bold=True, font_size=14)
+                insert_numbered_heading(section, title, level=0, bold=True, font_size=14)
+
+            # Step 5: 建構文件流程
             if is_all:
                 extract_word_all_content(infile, output_doc=doc, section=section)
                 logs.append(f"擷取 {input_name} 全部內容")
@@ -90,13 +102,15 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                     logs.append(f"擷取 {input_name} 章節 {chapter}")
         else:
             # copy files by keywords
-            dest = os.path.join(task_files_dir, str(out_name or "output"))
+            dest = os.path.join(task_files_dir, out_name or "output")
             if title:
-                dest = os.path.join(dest, str(title))
+                dest = os.path.join(dest, title)
             keywords = [k.strip() for k in instruction.split(",") if k.strip()]
             try:
                 copied = copy_files(task_files_dir, dest, keywords)
-                logs.append(f"複製 {len(copied)} 個檔案至 {os.path.relpath(dest, task_files_dir)}")
+                logs.append(
+                    f"複製 {len(copied)} 個檔案至 {os.path.relpath(dest, task_files_dir)}"
+                )
             except Exception as e:
                 logs.append(f"複製檔案失敗: {e}")
 

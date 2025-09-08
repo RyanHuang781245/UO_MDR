@@ -85,13 +85,13 @@ def insert_title(section, title: str):
     roman_match = re.match(r"^[IVXLCDM]+\.\s*(.*)", title)
     if roman_match:
         text = roman_match.group(1).strip() or title
-        return insert_roman_heading(section, text, level=0, bold=True, font_size=14)
+        return insert_roman_heading(section, text, level=0, bold=True, font_size=12)
 
     if title.startswith("⚫"):
         text = title.lstrip("⚫").strip()
-        return insert_bulleted_heading(section, text, level=0, bold=True, font_size=14)
+        return insert_bulleted_heading(section, text, level=0, bullet_char='·', bold=True, font_size=12)
 
-    return insert_numbered_heading(section, title, level=0, bold=True, font_size=14)
+    return insert_text(section, title, align="left", bold=True, font_size=12)
 
 def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: str) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
@@ -118,7 +118,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     wb = load_workbook(mapping_path)
     ws = wb.active
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=3, values_only=True):
         raw_out, raw_title, raw_folder, raw_input, raw_instruction = row[:5]
         out_name = str(raw_out).strip() if raw_out else ""
         title = str(raw_title).strip() if raw_title else ""
@@ -220,6 +220,6 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         center_table_figure_paragraphs(out_path)
         apply_basic_style(out_path)
         outputs.append(out_path)
-        logs.append(f"產生文件 {out_path} (已重新編號、置中標題並套用基本樣式)")
+        logs.append(f"產生文件 {out_path}")
 
     return {"logs": logs, "outputs": outputs}

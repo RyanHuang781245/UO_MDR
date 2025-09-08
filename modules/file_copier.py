@@ -17,7 +17,9 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
     destination: str
         Directory where matched files will be copied.
     keywords: Iterable[str]
-        Keywords that must all be present in the filename.
+        Keywords that must all be present in the filename. For example,
+        passing ["Shipping simulation test", "EO"] will match only files whose
+        names contain both phrases.
 
     Returns
     -------

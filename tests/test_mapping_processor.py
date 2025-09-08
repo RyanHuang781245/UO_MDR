@@ -52,3 +52,30 @@ def test_process_mapping_centers_and_renumbers(tmp_path):
     run = p.runs[0]
     assert run.font.name == "Times New Roman"
     assert run.font.size.pt == pytest.approx(12)
+
+
+def test_process_mapping_strips_chapter_numbers(tmp_path):
+    doc = Document()
+    sec = doc.AddSection()
+    p1 = sec.AddParagraph()
+    p1.AppendText("6.4.2 Heading")
+    p2 = sec.AddParagraph()
+    p2.AppendText("Body")
+    src_path = tmp_path / "src.docx"
+    doc.SaveToFile(str(src_path), FileFormat.Docx)
+    doc.Close()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["A", "B", "C", "D"])
+    ws.append(["Out", "6.4.2 Heading", "src.docx", "6.4.2"])
+    mapping_path = tmp_path / "map.xlsx"
+    wb.save(mapping_path)
+
+    out_dir = tmp_path / "out"
+    process_mapping_excel(str(mapping_path), str(tmp_path), str(out_dir))
+    out_path = os.path.join(out_dir, "Out.docx")
+    docx_doc = DocxDocument(out_path)
+    text = "\n".join(p.text for p in docx_doc.paragraphs)
+    assert "6.4.2" not in text
+    assert "Heading" in text

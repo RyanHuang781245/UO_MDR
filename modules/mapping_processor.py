@@ -15,6 +15,7 @@ from .Extract_AllFile_to_FinalWord import (
     extract_word_chapter,
     center_table_figure_paragraphs,
     apply_basic_style,
+    remove_hidden_runs,
 )
 from .file_copier import copy_files
 
@@ -155,6 +156,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         out_path = os.path.join(output_dir, f"{name}.docx")
         doc.SaveToFile(out_path, FileFormat.Docx)
         doc.Close()
+        remove_hidden_runs(out_path)
         renumber_figures_tables_file(out_path)
         center_table_figure_paragraphs(out_path)
         apply_basic_style(out_path)

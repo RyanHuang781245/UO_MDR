@@ -25,3 +25,12 @@ def test_insert_title_bullet():
     sec = doc.AddSection()
     p = insert_title(sec, "⚫ Item")
     assert _style_name(p) == "bulletHeading"
+
+
+def test_insert_title_strips_chapter_number():
+    doc = Document()
+    sec = doc.AddSection()
+    p = insert_title(sec, "6.4.2 Heading")
+    assert _style_name(p) == "outlineHeading"
+    assert "6.4.2" not in p.Text
+    assert p.Text.strip() == "Heading"

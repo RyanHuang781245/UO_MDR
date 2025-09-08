@@ -20,3 +20,25 @@ def test_copy_files_overwrite(tmp_path):
     file_path.write_text("second")
     copy_files(str(src), str(dest), ["example"])
     assert dest_file.read_text() == "second"
+
+
+def test_copy_files_multiple_keywords(tmp_path):
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    dest.mkdir()
+
+    # File that matches both keywords
+    (src / "Shipping simulation test EO report.txt").write_text("data")
+    # File that matches only one keyword and should not be copied
+    (src / "Shipping simulation test only.txt").write_text("data")
+
+    copied = copy_files(
+        str(src),
+        str(dest),
+        ["Shipping simulation test", "EO"],
+    )
+
+    assert dest.joinpath("Shipping simulation test EO report.txt").exists()
+    assert not dest.joinpath("Shipping simulation test only.txt").exists()
+    assert len(copied) == 1

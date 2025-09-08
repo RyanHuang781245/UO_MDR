@@ -105,11 +105,18 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
             dest = os.path.join(task_files_dir, out_name or "output")
             if title:
                 dest = os.path.join(dest, title)
-            keywords = [k.strip() for k in instruction.split(",") if k.strip()]
+            # Allow multiple keywords separated by commas (e.g. "Shipping simulation test, EO")
+            # and ensure that matched files contain *all* keywords.
+            keywords = [
+                k.strip()
+                for k in re.split(r"[,，]+", instruction)
+                if k.strip()
+            ]
             try:
                 copied = copy_files(task_files_dir, dest, keywords)
+                kw_display = ", ".join(keywords)
                 logs.append(
-                    f"複製 {len(copied)} 個檔案至 {os.path.relpath(dest, task_files_dir)}"
+                    f"複製 {len(copied)} 個檔案至 {os.path.relpath(dest, task_files_dir)} (關鍵字: {kw_display})"
                 )
             except Exception as e:
                 logs.append(f"複製檔案失敗: {e}")

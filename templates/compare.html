@@ -11,6 +11,7 @@
       <div class="d-flex gap-2">
         <button id="modeBtn" class="btn btn-outline-secondary" type="button">編輯模式</button>
         <button id="saveBtn" class="btn btn-primary" type="button">保存</button>
+        <button id="versionsBtn" class="btn btn-outline-secondary" type="button">版本歷程</button>
         <button id="downloadBtn" class="btn btn-success" type="button">下載</button>
         <a class="btn btn-secondary" href="{{ back_link }}">返回結果</a>
       </div>
@@ -30,12 +31,30 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="versionsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">版本歷程</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul id="versionList" class="list-group"></ul>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
+const VERSIONS_URL = '{{ versions_url }}';
+const REVERT_URL_BASE = '{{ revert_url_base }}';
+const VERSION_DOWNLOAD_BASE = '{{ version_download_base }}';
+const HTML_URL = '{{ html_url }}';
 let highlighted = [];
 
 function openWindow(url) {
@@ -202,6 +221,45 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
     return;
   }
   window.location = '{{ download_url }}';
+});
+
+document.getElementById('versionsBtn').addEventListener('click', () => {
+  fetch(VERSIONS_URL).then(r => r.json()).then(list => {
+    const ul = document.getElementById('versionList');
+    ul.innerHTML = '';
+    list.slice().reverse().forEach(v => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      const span = document.createElement('span');
+      span.textContent = `版本 ${v.version} - ${v.saved_at}${v.note ? ' - ' + v.note : ''}`;
+      const btns = document.createElement('div');
+      const dl = document.createElement('a');
+      dl.className = 'btn btn-sm btn-outline-success me-2';
+      dl.textContent = '下載';
+      dl.href = VERSION_DOWNLOAD_BASE.replace('result_0', `result_${v.version}`);
+      btns.appendChild(dl);
+      const rv = document.createElement('button');
+      rv.className = 'btn btn-sm btn-outline-primary';
+      rv.textContent = '復原';
+      rv.addEventListener('click', () => {
+        fetch(REVERT_URL_BASE.replace(/0$/, v.version), {method:'POST'}).then(rr => {
+          if (rr.ok) {
+            iframe.src = HTML_URL + '?t=' + Date.now();
+            setSaved(true);
+            bootstrap.Modal.getInstance(document.getElementById('versionsModal')).hide();
+            alert('已復原');
+          } else {
+            alert('復原失敗');
+          }
+        });
+      });
+      btns.appendChild(rv);
+      li.appendChild(span);
+      li.appendChild(btns);
+      ul.appendChild(li);
+    });
+    new bootstrap.Modal(document.getElementById('versionsModal')).show();
+  });
 });
 </script>
 {% endblock %}

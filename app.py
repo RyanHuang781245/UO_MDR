@@ -3,6 +3,7 @@ import uuid
 import json
 import zipfile
 import re
+import shutil
 from datetime import datetime
 from flask import (
     Flask,
@@ -13,6 +14,7 @@ from flask import (
     send_file,
     send_from_directory,
     abort,
+    jsonify,
 )
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
@@ -36,6 +38,8 @@ os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
+
+MAX_VERSIONS = 20
 
 
 def allowed_file(filename, kinds=("docx", "pdf", "zip")):
@@ -95,6 +99,39 @@ def task_name_exists(name, exclude_id=None):
         if tname == name:
             return True
     return False
+
+
+def save_version(job_dir: str, note: str = "") -> None:
+    """Backup current result files into versions directory with metadata."""
+    versions_dir = os.path.join(job_dir, "versions")
+    os.makedirs(versions_dir, exist_ok=True)
+    meta_path = os.path.join(versions_dir, "metadata.json")
+    metadata = []
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+    version = metadata[-1]["version"] + 1 if metadata else 1
+    html_src = os.path.join(job_dir, "result.html")
+    docx_src = os.path.join(job_dir, "result.docx")
+    if os.path.exists(html_src):
+        shutil.copy2(html_src, os.path.join(versions_dir, f"result_{version}.html"))
+    if os.path.exists(docx_src):
+        shutil.copy2(docx_src, os.path.join(versions_dir, f"result_{version}.docx"))
+    metadata.append(
+        {
+            "version": version,
+            "saved_at": datetime.now().isoformat(timespec="seconds"),
+            "note": note,
+        }
+    )
+    while len(metadata) > MAX_VERSIONS:
+        old = metadata.pop(0)
+        for ext in ("html", "docx"):
+            old_path = os.path.join(versions_dir, f"result_{old['version']}.{ext}")
+            if os.path.exists(old_path):
+                os.remove(old_path)
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
 
 @app.route("/tasks/<task_id>/copy-files", methods=["GET", "POST"], endpoint="task_copy_files")
 def task_copy_files(task_id):
@@ -715,6 +752,14 @@ def task_compare(task_id, job_id):
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
         save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),
         download_url=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),
+        versions_url=url_for("task_compare_versions", task_id=task_id, job_id=job_id),
+        revert_url_base=url_for("task_compare_revert", task_id=task_id, job_id=job_id, version=0),
+        version_download_base=url_for(
+            "task_view_file",
+            task_id=task_id,
+            job_id=job_id,
+            filename="versions/result_0.docx",
+        ),
     )
 
 
@@ -722,12 +767,12 @@ def task_compare(task_id, job_id):
 def task_compare_save(task_id, job_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
-    html_content = request.form.get("html")
-    if not html_content:
-        data = request.get_json(silent=True) or {}
-        html_content = data.get("html", "")
+    data = request.get_json(silent=True) or {}
+    html_content = request.form.get("html") or data.get("html", "")
+    note = request.form.get("note") or data.get("note", "")
     if not html_content:
         return "缺少內容", 400
+    save_version(job_dir, note or "")
     # Remove any hidden elements marked via CSS display:none to strip chapter titles
     html_content = re.sub(
         r'<(\w+)[^>]*style="[^"]*display\s*:\s*none[^"]*"[^>]*>.*?</\1>',
@@ -754,6 +799,33 @@ def task_compare_save(task_id, job_id):
     result_docx = os.path.join(job_dir, "result.docx")
     remove_hidden_runs(result_docx)
     apply_basic_style(result_docx)
+    return "OK"
+
+
+@app.get("/tasks/<task_id>/compare/<job_id>/versions")
+def task_compare_versions(task_id, job_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    versions_dir = os.path.join(tdir, "jobs", job_id, "versions")
+    meta_path = os.path.join(versions_dir, "metadata.json")
+    if not os.path.exists(meta_path):
+        return jsonify([])
+    with open(meta_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return jsonify(data)
+
+
+@app.post("/tasks/<task_id>/compare/<job_id>/revert/<int:version>")
+def task_compare_revert(task_id, job_id, version):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    versions_dir = os.path.join(job_dir, "versions")
+    html_src = os.path.join(versions_dir, f"result_{version}.html")
+    docx_src = os.path.join(versions_dir, f"result_{version}.docx")
+    if not os.path.exists(html_src) or not os.path.exists(docx_src):
+        abort(404)
+    save_version(job_dir, f"revert to {version}")
+    shutil.copy2(html_src, os.path.join(job_dir, "result.html"))
+    shutil.copy2(docx_src, os.path.join(job_dir, "result.docx"))
     return "OK"
 
 

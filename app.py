@@ -752,7 +752,9 @@ def task_compare(task_id, job_id):
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
         save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),
         download_url=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),
-        versions_url=url_for("task_compare_versions", task_id=task_id, job_id=job_id),
+        versions_url=url_for(
+            "task_compare_version_list", task_id=task_id, job_id=job_id
+        ),
         revert_url_base=url_for("task_compare_revert", task_id=task_id, job_id=job_id, version=0),
         version_download_base=url_for(
             "task_view_file",
@@ -804,34 +806,7 @@ def task_compare_save(task_id, job_id):
 
 
 @app.get("/tasks/<task_id>/compare/<job_id>/versions")
-def task_compare_versions(task_id, job_id):
-    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
-    versions_dir = os.path.join(tdir, "jobs", job_id, "versions")
-    meta_path = os.path.join(versions_dir, "metadata.json")
-    if not os.path.exists(meta_path):
-        return jsonify([])
-    with open(meta_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return jsonify(data)
-
-
-@app.post("/tasks/<task_id>/compare/<job_id>/revert/<int:version>")
-def task_compare_revert(task_id, job_id, version):
-    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
-    job_dir = os.path.join(tdir, "jobs", job_id)
-    versions_dir = os.path.join(job_dir, "versions")
-    html_src = os.path.join(versions_dir, f"result_{version}.html")
-    docx_src = os.path.join(versions_dir, f"result_{version}.docx")
-    if not os.path.exists(html_src) or not os.path.exists(docx_src):
-        abort(404)
-    save_version(job_dir, f"revert to {version}")
-    shutil.copy2(html_src, os.path.join(job_dir, "result.html"))
-    shutil.copy2(docx_src, os.path.join(job_dir, "result.docx"))
-    return "OK"
-
-
-@app.get("/tasks/<task_id>/compare/<job_id>/versions")
-def task_compare_versions(task_id, job_id):
+def task_compare_version_list(task_id, job_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     versions_dir = os.path.join(tdir, "jobs", job_id, "versions")
     meta_path = os.path.join(versions_dir, "metadata.json")

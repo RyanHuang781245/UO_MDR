@@ -166,7 +166,8 @@ iframe.addEventListener('load', () => {
   let found = false;
   let unhandled = [];
   CHAPTERS.forEach(ch => {
-    const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => el.textContent.trim() === ch);
+    const normalizedCh = ch.replace(/\s+/g, '');
+    const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => el.textContent.replace(/\s+/g, '') === normalizedCh);
     if (elements.length) {
       found = true;
       elements.forEach(el => {

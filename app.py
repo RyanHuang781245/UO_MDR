@@ -837,7 +837,11 @@ def task_view_file(task_id, job_id, filename):
     file_path = os.path.join(job_dir, safe_filename)
     if not os.path.isfile(file_path):
         abort(404)
-    return send_from_directory(job_dir, safe_filename)
+    resp = send_from_directory(job_dir, safe_filename)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.get("/tasks/<task_id>/download/<job_id>/<kind>")
@@ -845,17 +849,25 @@ def task_download(task_id, job_id, kind):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
     if kind == "docx":
-        return send_file(
+        resp = send_file(
             os.path.join(job_dir, "result.docx"),
             as_attachment=True,
             download_name=f"result_{job_id}.docx",
         )
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     elif kind == "log":
-        return send_file(
+        resp = send_file(
             os.path.join(job_dir, "log.json"),
             as_attachment=True,
             download_name=f"log_{job_id}.json",
         )
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     abort(404)
 
 

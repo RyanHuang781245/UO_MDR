@@ -158,7 +158,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
 
             if is_all:
                 extract_word_all_content(infile, output_doc=doc, section=section)
-                logs.append(f"擷取 {input_name} 全部內容")
+                logs.append(f"擷取 {input_name} (全部內容)")
             else:
                 chapter = chapter_match.group(1)
                 if "," in instruction:
@@ -171,7 +171,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                         output_doc=doc,
                         section=section,
                     )
-                    logs.append(f"擷取 {input_name} 章節 {chapter} 標題 {after.strip()}")
+                    logs.append(f"擷取 {input_name} (章節: {chapter} 標題: {after.strip()})")
                 else:
                     extract_word_chapter(
                         infile,
@@ -179,7 +179,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                         output_doc=doc,
                         section=section,
                     )
-                    logs.append(f"擷取 {input_name} 章節 {chapter}")
+                    logs.append(f"擷取 {input_name} (章節: {chapter})")
         else:
             dest = os.path.join(task_files_dir, out_name or "output")
             if title:
@@ -220,6 +220,6 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         center_table_figure_paragraphs(out_path)
         apply_basic_style(out_path)
         outputs.append(out_path)
-        logs.append(f"產生文件 {out_path}")
+        # logs.append(f"產生文件 {out_path}")
 
     return {"logs": logs, "outputs": outputs}

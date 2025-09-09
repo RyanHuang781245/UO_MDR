@@ -3,7 +3,9 @@ import uuid
 import json
 import zipfile
 import re
+import shutil
 from datetime import datetime
+from typing import Dict, List
 from flask import (
     Flask,
     render_template,
@@ -147,8 +149,8 @@ def task_mapping(task_id):
         abort(404)
     files_dir = os.path.join(tdir, "files")
     out_dir = os.path.join(app.config["OUTPUT_FOLDER"], task_id)
-    messages = []
-    outputs = []
+    messages: List[str] = []
+    outputs_info: List[Dict[str, str]] = []
     if request.method == "POST":
         f = request.files.get("mapping_file")
         if not f or not f.filename:
@@ -158,13 +160,21 @@ def task_mapping(task_id):
             f.save(path)
             try:
                 from modules.mapping_processor import process_mapping_excel
+
                 result = process_mapping_excel(path, files_dir, out_dir)
                 messages = result["logs"]
-                outputs = result["outputs"]
+                step_logs = result.get("step_logs", {})
+                for out_path in result["outputs"]:
+                    job_id = uuid.uuid4().hex[:8]
+                    job_dir = os.path.join(tdir, "jobs", job_id)
+                    os.makedirs(job_dir, exist_ok=True)
+                    shutil.copy(out_path, os.path.join(job_dir, "result.docx"))
+                    with open(os.path.join(job_dir, "log.json"), "w", encoding="utf-8") as fjson:
+                        json.dump(step_logs.get(out_path, []), fjson, ensure_ascii=False, indent=2)
+                    outputs_info.append({"name": os.path.basename(out_path), "job_id": job_id})
             except Exception as e:
                 messages = [str(e)]
-    rel_outputs = [os.path.basename(p) for p in outputs]
-    return render_template("mapping.html", task_id=task_id, messages=messages, outputs=rel_outputs)
+    return render_template("mapping.html", task_id=task_id, messages=messages, outputs=outputs_info)
 
 
 @app.get("/tasks/<task_id>/output/<filename>")

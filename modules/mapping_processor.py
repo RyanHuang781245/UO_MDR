@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from spire.doc import Document, FileFormat
 
@@ -9,6 +9,7 @@ from .Edit_Word import (
     insert_text,
     insert_roman_heading,
     insert_bulleted_heading,
+    insert_numbered_heading,
 )
 from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
@@ -91,7 +92,7 @@ def insert_title(section, title: str):
         text = title.lstrip("⚫").strip()
         return insert_bulleted_heading(section, text, level=0, bullet_char='·', bold=True, font_size=12)
 
-    return insert_text(section, title, align="left", bold=True, font_size=12)
+    return insert_numbered_heading(section, title, level=0, bold=True, font_size=12)
 
 def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: str) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
@@ -107,7 +108,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         outputs: list of generated docx paths
     """
     logs: List[str] = []
-    docs: Dict[str, Tuple[Document, any]] = {}
+    docs: Dict[str, Tuple[Document, Any, List[Dict[str, Any]]]] = {}
     outputs: List[str] = []
 
     try:
@@ -118,7 +119,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     wb = load_workbook(mapping_path)
     ws = wb.active
 
-    for row in ws.iter_rows(min_row=3, values_only=True):
+    for row in ws.iter_rows(min_row=2, values_only=True):
         raw_out, raw_title, raw_folder, raw_input, raw_instruction = row[:5]
         out_name = str(raw_out).strip() if raw_out else ""
         title = str(raw_title).strip() if raw_title else ""
@@ -148,17 +149,30 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                 logs.append(f"{out_name or '未命名'}: 找不到檔案 {input_name}")
                 continue
 
-            doc, section = docs.get(out_name, (None, None))
+            doc, section, log_entries = docs.get(out_name, (None, None, None))
             if doc is None:
                 doc = Document()
                 section = doc.AddSection()
-                docs[out_name] = (doc, section)
+                log_entries = []
+                docs[out_name] = (doc, section, log_entries)
+
+            # record heading insertion in step log
+            if title:
+                roman_match = re.match(r"^[IVXLCDM]+\.\s*(.*)", title)
+                if roman_match:
+                    log_entries.append({"type": "insert_roman_heading", "params": {"text": roman_match.group(1).strip() or title}})
+                elif title.startswith("⚫"):
+                    log_entries.append({"type": "insert_bulleted_heading", "params": {"text": title.lstrip('⚫').strip()}})
+                else:
+                    cleaned = re.sub(r"^[0-9]+(?:\.[0-9]+)*\s*", "", title)
+                    log_entries.append({"type": "insert_numbered_heading", "params": {"text": cleaned, "level": 0}})
 
             insert_title(section, title)
 
             if is_all:
                 extract_word_all_content(infile, output_doc=doc, section=section)
                 logs.append(f"擷取 {input_name} (全部內容)")
+                log_entries.append({"type": "extract_word_all_content", "params": {"input_file": infile}})
             else:
                 chapter = chapter_match.group(1)
                 if "," in instruction:
@@ -172,6 +186,15 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                         section=section,
                     )
                     logs.append(f"擷取 {input_name} (章節: {chapter} 標題: {after.strip()})")
+                    log_entries.append({
+                        "type": "extract_word_chapter",
+                        "params": {
+                            "input_file": infile,
+                            "target_chapter_section": chapter,
+                            "target_title": True,
+                            "target_title_section": after.strip(),
+                        },
+                    })
                 else:
                     extract_word_chapter(
                         infile,
@@ -180,6 +203,15 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                         section=section,
                     )
                     logs.append(f"擷取 {input_name} (章節: {chapter})")
+                    log_entries.append({
+                        "type": "extract_word_chapter",
+                        "params": {
+                            "input_file": infile,
+                            "target_chapter_section": chapter,
+                            "target_title": False,
+                            "target_title_section": "",
+                        },
+                    })
         else:
             dest = os.path.join(task_files_dir, out_name or "output")
             if title:
@@ -211,7 +243,8 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                 logs.append(f"複製檔案失敗: {e}")
 
     os.makedirs(output_dir, exist_ok=True)
-    for name, (doc, _section) in docs.items():
+    step_logs: Dict[str, List[Dict[str, Any]]] = {}
+    for name, (doc, _section, log_entries) in docs.items():
         out_path = os.path.join(output_dir, f"{name}.docx")
         doc.SaveToFile(out_path, FileFormat.Docx)
         doc.Close()
@@ -219,7 +252,19 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         renumber_figures_tables_file(out_path)
         center_table_figure_paragraphs(out_path)
         apply_basic_style(out_path)
+        # Strip Spire evaluation warning paragraph if present
+        try:
+            from docx import Document as DocxDocument
+
+            docx_obj = DocxDocument(out_path)
+            if docx_obj.paragraphs and "Evaluation Warning" in docx_obj.paragraphs[0].text:
+                p = docx_obj.paragraphs[0]._element
+                p.getparent().remove(p)
+                docx_obj.save(out_path)
+        except Exception:
+            pass
         outputs.append(out_path)
+        step_logs[out_path] = log_entries
         # logs.append(f"產生文件 {out_path}")
 
-    return {"logs": logs, "outputs": outputs}
+    return {"logs": logs, "outputs": outputs, "step_logs": step_logs}

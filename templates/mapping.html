@@ -22,8 +22,14 @@
 {% if outputs %}
 <h2 class="h6">產出文件</h2>
 <ul class="list-group mb-3">
-  {% for name in outputs %}
-  <li class="list-group-item"><a href="{{ url_for('task_download_output', task_id=task_id, filename=name) }}">{{ name }}</a></li>
+  {% for item in outputs %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <span>{{ item.name }}</span>
+    <div class="btn-group btn-group-sm">
+      <a class="btn btn-outline-primary" href="{{ url_for('task_download_output', task_id=task_id, filename=item.name) }}">下載</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('task_compare', task_id=task_id, job_id=item.job_id) }}">比對</a>
+    </div>
+  </li>
   {% endfor %}
 </ul>
 {% endif %}

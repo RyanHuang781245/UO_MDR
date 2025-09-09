@@ -774,6 +774,7 @@ def task_compare_save(task_id, job_id):
     note = request.form.get("note") or data.get("note", "")
     if not html_content:
         return "缺少內容", 400
+    save_version(job_dir, note or "")
     # Remove any hidden elements marked via CSS display:none to strip chapter titles
     html_content = re.sub(
         r'<(\w+)[^>]*style="[^"]*display\s*:\s*none[^"]*"[^>]*>.*?</\1>',

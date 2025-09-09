@@ -51,25 +51,19 @@ const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
+const ALL_SOURCES = [...new Set(Object.values(CHAPTER_SOURCES).flat())];
+const SOURCE_COLORS = {};
+ALL_SOURCES.forEach((src, idx) => {
+  SOURCE_COLORS[src] = COLORS[idx % COLORS.length];
+});
 const VERSIONS_URL = '{{ versions_url }}';
 const REVERT_URL_BASE = '{{ revert_url_base }}';
 const VERSION_DOWNLOAD_BASE = '{{ version_download_base }}';
 const HTML_URL = '{{ html_url }}';
-let highlighted = [];
-
 function openWindow(url) {
   window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
 }
-
-function clearHighlights() {
-  highlighted.forEach(el => {
-    el.style.backgroundColor = '';
-  });
-  highlighted = [];
-}
-
-function updateSources(ch, element) {
-  clearHighlights();
+function updateSources(ch) {
   const list = document.getElementById('sourceList');
   list.innerHTML = '';
   let sequence = [];
@@ -84,26 +78,11 @@ function updateSources(ch, element) {
   if (!sequence.length) return;
 
   const uniqueSources = [...new Set(sequence)];
-  const colorMap = {};
-  let colorIdx = 0;
-  let pdfColor = null;
   uniqueSources.forEach(src => {
-    let color;
-    if (src.toLowerCase().endsWith('.pdf')) {
-      if (!pdfColor) {
-        pdfColor = COLORS[colorIdx % COLORS.length];
-        colorIdx++;
-      }
-      color = pdfColor;
-    } else {
-      color = COLORS[colorIdx % COLORS.length];
-      colorIdx++;
-    }
-    colorMap[src] = color;
     const li = document.createElement('li');
     li.className = 'list-group-item';
     li.textContent = src;
-    li.style.backgroundColor = color;
+    li.style.backgroundColor = SOURCE_COLORS[src];
     const url = SOURCE_URLS[src];
     if (url) {
       li.style.cursor = 'pointer';
@@ -111,41 +90,40 @@ function updateSources(ch, element) {
     }
     list.appendChild(li);
   });
+}
 
-  if (element) {
-    let node = element.nextElementSibling;
-    let idx = 0;
-    const markers = sequence.map(src => {
-      const title = src.match(/標題\s*(.+)/);
-      if (title) return {type: 'title', value: title[1]};
-      const sec = src.match(/章節\s*([\d\.]+)/);
-      return sec ? {type: 'section', value: sec[1]} : null;
-    });
-    const findNextMarkerIdx = from => {
-      for (let i = from + 1; i < markers.length; i++) {
-        if (markers[i]) return i;
-      }
-      return -1;
-    };
-    let nextIdx = findNextMarkerIdx(0);
-    let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const text = node.textContent.trim();
-      if (nextMarker && highlighted.length && (
-          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
-          (nextMarker.type === 'title' && text.includes(nextMarker.value))
-        )) {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-      }
-        const src = sequence[idx] || sequence[sequence.length - 1];
-        node.style.backgroundColor = colorMap[src];
-        highlighted.push(node);
-        node = node.nextElementSibling;
-      }
+function applyColors(sequence, element) {
+  let node = element.nextElementSibling;
+  let idx = 0;
+  const markers = sequence.map(src => {
+    const title = src.match(/標題\s*(.+)/);
+    if (title) return {type: 'title', value: title[1]};
+    const sec = src.match(/章節\s*([\d\.]+)/);
+    return sec ? {type: 'section', value: sec[1]} : null;
+  });
+  const findNextMarkerIdx = from => {
+    for (let i = from + 1; i < markers.length; i++) {
+      if (markers[i]) return i;
     }
+    return -1;
+  };
+  let nextIdx = findNextMarkerIdx(0);
+  let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
+  while (node && !CHAPTER_SET.has(node.textContent.trim())) {
+    const text = node.textContent.trim();
+    if (nextMarker && (
+        (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
+        (nextMarker.type === 'title' && text.includes(nextMarker.value))
+      )) {
+      idx = nextIdx;
+      nextIdx = findNextMarkerIdx(idx);
+      nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
+    }
+    const src = sequence[idx] || sequence[sequence.length - 1];
+    node.style.backgroundColor = SOURCE_COLORS[src];
+    node = node.nextElementSibling;
   }
+}
 
 const iframe = document.getElementById('htmlFrame');
 let doc;
@@ -166,15 +144,17 @@ iframe.addEventListener('load', () => {
   let found = false;
   let unhandled = [];
   CHAPTERS.forEach(ch => {
+    const sequence = CHAPTER_SOURCES[ch] || [];
     const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => el.textContent.trim() === ch);
     if (elements.length) {
       found = true;
       elements.forEach(el => {
         el.style.cursor = 'pointer';
-        el.addEventListener('click', () => updateSources(ch, el));
+        el.addEventListener('click', () => updateSources(ch));
+        applyColors(sequence, el);
       });
     } else {
-      unhandled = unhandled.concat(CHAPTER_SOURCES[ch] || []);
+      unhandled = unhandled.concat(sequence);
     }
   });
   if (unhandled.length) {

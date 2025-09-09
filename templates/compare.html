@@ -261,44 +261,5 @@ document.getElementById('versionsBtn').addEventListener('click', () => {
     new bootstrap.Modal(document.getElementById('versionsModal')).show();
   });
 });
-
-document.getElementById('versionsBtn').addEventListener('click', () => {
-  fetch(VERSIONS_URL).then(r => r.json()).then(list => {
-    const ul = document.getElementById('versionList');
-    ul.innerHTML = '';
-    list.slice().reverse().forEach(v => {
-      const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between align-items-center';
-      const span = document.createElement('span');
-      span.textContent = `版本 ${v.version} - ${v.saved_at}${v.note ? ' - ' + v.note : ''}`;
-      const btns = document.createElement('div');
-      const dl = document.createElement('a');
-      dl.className = 'btn btn-sm btn-outline-success me-2';
-      dl.textContent = '下載';
-      dl.href = VERSION_DOWNLOAD_BASE.replace('result_0', `result_${v.version}`);
-      btns.appendChild(dl);
-      const rv = document.createElement('button');
-      rv.className = 'btn btn-sm btn-outline-primary';
-      rv.textContent = '復原';
-      rv.addEventListener('click', () => {
-        fetch(REVERT_URL_BASE.replace(/0$/, v.version), {method:'POST'}).then(rr => {
-          if (rr.ok) {
-            iframe.src = HTML_URL + '?t=' + Date.now();
-            setSaved(true);
-            bootstrap.Modal.getInstance(document.getElementById('versionsModal')).hide();
-            alert('已復原');
-          } else {
-            alert('復原失敗');
-          }
-        });
-      });
-      btns.appendChild(rv);
-      li.appendChild(span);
-      li.appendChild(btns);
-      ul.appendChild(li);
-    });
-    new bootstrap.Modal(document.getElementById('versionsModal')).show();
-  });
-});
 </script>
 {% endblock %}

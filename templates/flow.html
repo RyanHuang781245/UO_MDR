@@ -49,8 +49,7 @@
         {% for value, label in line_spacing_choices %}
         <option value="{{ value }}" {% if value == selected_line_spacing %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
-        {% set known_spacing = line_spacing_choices | map(attribute=0) | list %}
-        {% if selected_line_spacing and selected_line_spacing not in known_spacing %}
+        {% if selected_line_spacing and selected_line_spacing not in line_spacing_values %}
         <option value="{{ selected_line_spacing }}" selected>自訂（{{ selected_line_spacing }}）</option>
         {% endif %}
       </select>
@@ -90,20 +89,40 @@
 </div>
 <hr>
 <h2 class="h5 mt-4">已保存的流程</h2>
-<table class="table table-striped text-center">
+<table class="table table-striped text-center align-middle">
   <thead>
     <tr>
       <th class="text-center">名稱</th>
       <th class="text-center">建立時間</th>
+      <th class="text-center">文件格式 / 行距</th>
       <th class="text-center">操作</th>
     </tr>
   </thead>
   <tbody>
   {% for f in flows %}
     <tr>
-      <td>{{ f.name }}</td>
-      <td>{{ f.created }}</td>
-      <td>
+      <td class="align-middle">{{ f.name }}</td>
+      <td class="align-middle">{{ f.created }}</td>
+      <td class="align-middle">
+        <form action="{{ url_for('update_flow_format', task_id=task.id, flow_name=f.name) }}" method="post" class="d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center justify-content-center">
+          <select class="form-select form-select-sm" name="document_format">
+            {% for key, meta in format_presets.items() %}
+            <option value="{{ key }}" {% if key == f.document_format %}selected{% endif %}>{{ meta.label }}</option>
+            {% endfor %}
+          </select>
+          <select class="form-select form-select-sm" name="line_spacing">
+            {% for value, label in line_spacing_choices %}
+            <option value="{{ value }}" {% if value == f.line_spacing_value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+            {% if f.line_spacing_value and f.line_spacing_value not in line_spacing_values %}
+            <option value="{{ f.line_spacing_value }}" selected>自訂（{{ f.line_spacing_value }}）</option>
+            {% endif %}
+          </select>
+          <button class="btn btn-sm btn-outline-primary" type="submit">套用</button>
+        </form>
+        <div class="small text-muted mt-1">目前：{{ f.format_label }}，{{ f.line_spacing_label }}</div>
+      </td>
+      <td class="align-middle">
         <form action="{{ url_for('execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('此流程包含複製檔案步驟，確定要執行嗎？');"{% endif %}>
           <button class="btn btn-sm btn-outline-success">執行</button>
         </form>
@@ -116,7 +135,7 @@
         </td>
       </tr>
     {% else %}
-    <tr><td colspan="3">尚無流程</td></tr>
+    <tr><td colspan="4">尚無流程</td></tr>
   {% endfor %}
   </tbody>
 </table>

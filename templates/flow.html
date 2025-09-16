@@ -33,6 +33,30 @@
     <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
   </div>
 
+  <div class="row g-3 align-items-end">
+    <div class="col-md-6">
+      <label class="form-label" for="document_format">文件格式</label>
+      <select class="form-select" id="document_format" name="document_format">
+        {% for key, meta in format_presets.items() %}
+        <option value="{{ key }}" {% if key == selected_format %}selected{% endif %}>{{ meta.label }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text" id="document_format_help"></div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="line_spacing">行距</label>
+      <select class="form-select" id="line_spacing" name="line_spacing">
+        {% for value, label in line_spacing_choices %}
+        <option value="{{ value }}" {% if value == selected_line_spacing %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+        {% set known_spacing = line_spacing_choices | map(attribute=0) | list %}
+        {% if selected_line_spacing and selected_line_spacing not in known_spacing %}
+        <option value="{{ selected_line_spacing }}" selected>自訂（{{ selected_line_spacing }}）</option>
+        {% endif %}
+      </select>
+    </div>
+  </div>
+
   <div class="d-flex gap-2 mt-2">
     <div class="dropdown">
       <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
@@ -114,6 +138,33 @@ const TASK_ID = '{{ task.id }}';
 const SUPPORTED_STEPS = {{ steps|tojson }};
 const AVAILABLE_FILES = {{ files|tojson }};
 const PRESET_FLOW = {{ preset|tojson }};
+const FORMAT_PRESETS = {{ format_presets|tojson }};
+
+function updateDocumentFormatHelp(){
+  const select = document.getElementById('document_format');
+  const help = document.getElementById('document_format_help');
+  if (!select || !help) return;
+  const meta = FORMAT_PRESETS[select.value];
+  if (!meta){
+    help.textContent = '';
+    return;
+  }
+  const parts = [
+    `西文：${meta.western_font}`,
+    `中文：${meta.east_asian_font}`,
+    `字體大小 ${meta.font_size} pt`,
+  ];
+  if (typeof meta.space_before !== 'undefined' && typeof meta.space_after !== 'undefined'){
+    parts.push(`段前 ${meta.space_before} pt`, `段後 ${meta.space_after} pt`);
+  }
+  help.textContent = parts.join('，');
+}
+
+updateDocumentFormatHelp();
+const documentFormatSelect = document.getElementById('document_format');
+if (documentFormatSelect){
+  documentFormatSelect.addEventListener('change', updateDocumentFormatHelp);
+}
 let isInitialising = true;
 let isDirty = false;
 function markDirty(){

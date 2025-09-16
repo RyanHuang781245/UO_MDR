@@ -125,6 +125,8 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
             for i in range(cloned.Rows.Count):
                 cloned.Rows.get_Item(i).RowFormat.IsBreakAcrossPages = False
             sec.Tables.Add(cloned)
+            separator_para = sec.AddParagraph()
+            separator_para.AppendText("\u200B")
         except Exception as e:
             print("處理表格錯誤:", e)
 
@@ -210,6 +212,8 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
             for i in range(cloned.Rows.Count):
                 cloned.Rows.get_Item(i).RowFormat.IsBreakAcrossPages = False
             sec.Tables.Add(cloned)
+            separator_para = sec.AddParagraph()
+            separator_para.AppendText("\u200B")
         except Exception as e:
             print("處理表格錯誤:", e)
 

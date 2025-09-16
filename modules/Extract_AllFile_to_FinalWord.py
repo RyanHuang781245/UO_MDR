@@ -125,6 +125,8 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
             for i in range(cloned.Rows.Count):
                 cloned.Rows.get_Item(i).RowFormat.IsBreakAcrossPages = False
             sec.Tables.Add(cloned)
+            separator_para = sec.AddParagraph()
+            separator_para.AppendText("\u200B")
         except Exception as e:
             print("處理表格錯誤:", e)
 
@@ -210,6 +212,8 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
             for i in range(cloned.Rows.Count):
                 cloned.Rows.get_Item(i).RowFormat.IsBreakAcrossPages = False
             sec.Tables.Add(cloned)
+            separator_para = sec.AddParagraph()
+            separator_para.AppendText("\u200B")
         except Exception as e:
             print("處理表格錯誤:", e)
 
@@ -331,6 +335,12 @@ def remove_hidden_runs(input_file: str) -> bool:
                 )
             )
             if not para.text.strip() and not has_image:
+                parent = para._element.getparent()
+                if parent is not None and parent.tag == qn('w:tc'):
+                    # Ensure each table cell keeps at least one paragraph
+                    paragraph_count = len(parent.findall(qn('w:p')))
+                    if paragraph_count <= 1:
+                        continue
                 p = para._element
                 p.getparent().remove(p)
         doc.save(input_file)

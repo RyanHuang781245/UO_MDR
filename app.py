@@ -37,6 +37,49 @@ ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
 
+DOCUMENT_FORMAT_PRESETS = {
+    "default": {
+        "label": "Times New Roman / 新細明體（12 pt）",
+        "western_font": "Times New Roman",
+        "east_asian_font": "新細明體",
+        "font_size": 12,
+        "space_before": 6,
+        "space_after": 6,
+    },
+    "modern": {
+        "label": "Calibri / 微軟正黑體（12 pt）",
+        "western_font": "Calibri",
+        "east_asian_font": "微軟正黑體",
+        "font_size": 12,
+        "space_before": 6,
+        "space_after": 6,
+    },
+}
+DEFAULT_DOCUMENT_FORMAT_KEY = "default"
+DEFAULT_LINE_SPACING = 1.5
+LINE_SPACING_CHOICES = [
+    ("1", "單行（1.0）"),
+    ("1.15", "1.15 倍行距"),
+    ("1.5", "1.5 倍行距"),
+    ("2", "雙行（2.0）"),
+]
+
+
+def normalize_document_format(key: str) -> str:
+    if not key or key not in DOCUMENT_FORMAT_PRESETS:
+        return DEFAULT_DOCUMENT_FORMAT_KEY
+    return key
+
+
+def coerce_line_spacing(value) -> float:
+    try:
+        spacing = float(value)
+        if spacing <= 0:
+            raise ValueError
+        return spacing
+    except (TypeError, ValueError):
+        return DEFAULT_LINE_SPACING
+
 
 def allowed_file(filename, kinds=("docx", "pdf", "zip")):
     ext = os.path.splitext(filename)[1].lower()
@@ -356,6 +399,8 @@ def flow_builder(task_id):
             flows.append({"name": os.path.splitext(fn)[0], "created": created, "has_copy": has_copy})
     preset = None
     center_titles = True
+    document_format = DEFAULT_DOCUMENT_FORMAT_KEY
+    line_spacing = DEFAULT_LINE_SPACING
     loaded_name = request.args.get("flow")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
@@ -367,6 +412,8 @@ def flow_builder(task_id):
                 center_titles = data.get("center_titles", True) or any(
                     isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
                 )
+                document_format = normalize_document_format(data.get("document_format"))
+                line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
             else:
                 steps_data = data
                 center_titles = True
@@ -385,6 +432,11 @@ def flow_builder(task_id):
         preset=preset,
         loaded_name=loaded_name,
         center_titles=center_titles,
+        format_presets=DOCUMENT_FORMAT_PRESETS,
+        selected_format=document_format,
+        line_spacing_choices=LINE_SPACING_CHOICES,
+        selected_line_spacing=f"{line_spacing:g}",
+        line_spacing=line_spacing,
         files_tree=tree,
     )
 
@@ -399,6 +451,8 @@ def run_flow(task_id):
     flow_name = request.form.get("flow_name", "").strip()
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     center_titles = request.form.get("center_titles") == "on"
+    document_format = normalize_document_format(request.form.get("document_format"))
+    line_spacing = coerce_line_spacing(request.form.get("line_spacing"))
     workflow = []
     for sid in ordered_ids:
         sid = sid.strip()
@@ -429,7 +483,13 @@ def run_flow(task_id):
                     created = data["created"]
             except Exception:
                 pass
-        data = {"created": created, "steps": workflow, "center_titles": center_titles}
+        data = {
+            "created": created,
+            "steps": workflow,
+            "center_titles": center_titles,
+            "document_format": document_format,
+            "line_spacing": line_spacing,
+        }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return redirect(url_for("flow_builder", task_id=task_id))
@@ -458,7 +518,16 @@ def run_flow(task_id):
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)
-    apply_basic_style(result_path)
+    format_spec = DOCUMENT_FORMAT_PRESETS.get(document_format, DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY])
+    apply_basic_style(
+        result_path,
+        western_font=format_spec["western_font"],
+        east_asian_font=format_spec["east_asian_font"],
+        font_size=format_spec["font_size"],
+        line_spacing=line_spacing,
+        space_before=format_spec.get("space_before", 6),
+        space_after=format_spec.get("space_after", 6),
+    )
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -474,11 +543,15 @@ def execute_flow(task_id, flow_name):
         abort(404)
     with open(flow_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+    document_format = DEFAULT_DOCUMENT_FORMAT_KEY
+    line_spacing = DEFAULT_LINE_SPACING
     if isinstance(data, dict):
         workflow = data.get("steps", [])
         center_titles = data.get("center_titles", True) or any(
             isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
         )
+        document_format = normalize_document_format(data.get("document_format"))
+        line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
     else:
         workflow = data
         center_titles = True
@@ -505,7 +578,16 @@ def execute_flow(task_id, flow_name):
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)
-    apply_basic_style(result_path)
+    format_spec = DOCUMENT_FORMAT_PRESETS.get(document_format, DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY])
+    apply_basic_style(
+        result_path,
+        western_font=format_spec["western_font"],
+        east_asian_font=format_spec["east_asian_font"],
+        font_size=format_spec["font_size"],
+        line_spacing=line_spacing,
+        space_before=format_spec.get("space_before", 6),
+        space_after=format_spec.get("space_after", 6),
+    )
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 

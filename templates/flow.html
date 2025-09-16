@@ -44,8 +44,59 @@
     </div>
       <button class="btn btn-success" type="submit" name="action" value="run">執行流程</button>
       <button class="btn btn-secondary" type="submit" name="action" value="save">保存流程</button>
+      <button class="btn btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#formatSettings" aria-expanded="{{ 'true' if formatting_open else 'false' }}" aria-controls="formatSettings">調整文件格式</button>
       <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
     </div>
+  <div class="collapse mt-3 {% if formatting_open %}show{% endif %}" id="formatSettings">
+    <div class="card">
+      <div class="card-body">
+        <h2 class="h5">文件格式設置</h2>
+        <div class="row g-3 mt-1">
+          <div class="col-md-4">
+            <label class="form-label">西文字體</label>
+            <input class="form-control" name="format_western_font" value="{{ formatting.western_font }}" placeholder="Times New Roman">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">中文/東亞字體</label>
+            <input class="form-control" name="format_east_asian_font" value="{{ formatting.east_asian_font }}" placeholder="新細明體">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">字體大小</label>
+            <select class="form-select" name="format_font_size">
+              {% for size in [10, 11, 12, 13, 14, 16, 18] %}
+              <option value="{{ size }}" {% if formatting.font_size == size %}selected{% endif %}>{{ size }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">行距</label>
+            <select class="form-select" name="format_line_spacing">
+              {% for spacing in [1, 1.15, 1.5, 2] %}
+              <option value="{{ spacing }}" {% if formatting.line_spacing == spacing %}selected{% endif %}>{{ spacing }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">段前間距</label>
+            <select class="form-select" name="format_space_before">
+              {% for space in [0, 3, 6, 12] %}
+              <option value="{{ space }}" {% if formatting.space_before == space %}selected{% endif %}>{{ space }} pt</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">段後間距</label>
+            <select class="form-select" name="format_space_after">
+              {% for space in [0, 3, 6, 12] %}
+              <option value="{{ space }}" {% if formatting.space_after == space %}selected{% endif %}>{{ space }} pt</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-text mt-2">上述設定將套用至整份輸出文件，保存流程時會一併記錄。</div>
+      </div>
+    </div>
+  </div>
   </form>
 
 <div class="modal fade" id="filesModal" tabindex="-1" aria-labelledby="filesModalLabel" aria-hidden="true">
@@ -84,6 +135,8 @@
           <button class="btn btn-sm btn-outline-success">執行</button>
         </form>
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flow_builder', task_id=task.id, flow=f.name) }}">編輯</a>
+        <a class="btn btn-sm btn-outline-info" href="{{ url_for('flow_builder', task_id=task.id, flow=f.name, show_format='1') }}" title="調整輸出文件的字型、行距等設定">調整格式</a>
+        {% if f.custom_format %}<span class="badge text-bg-info ms-1 align-middle">已自訂</span>{% endif %}
         <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameFlow('{{ f.name }}')">重新命名</button>
         <form action="{{ url_for('delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
           <button class="btn btn-sm btn-outline-danger">刪除</button>

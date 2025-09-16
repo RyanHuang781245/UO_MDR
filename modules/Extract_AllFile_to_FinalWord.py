@@ -331,6 +331,12 @@ def remove_hidden_runs(input_file: str) -> bool:
                 )
             )
             if not para.text.strip() and not has_image:
+                parent = para._element.getparent()
+                if parent is not None and parent.tag == qn('w:tc'):
+                    # Ensure each table cell keeps at least one paragraph
+                    paragraph_count = len(parent.findall(qn('w:p')))
+                    if paragraph_count <= 1:
+                        continue
                 p = para._element
                 p.getparent().remove(p)
         doc.save(input_file)

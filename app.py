@@ -41,6 +41,57 @@ ALLOWED_ZIP = {".zip"}
 
 MAX_VERSIONS = 20
 
+DEFAULT_FORMATTING = {
+    "western_font": "Times New Roman",
+    "east_asian_font": "新細明體",
+    "font_size": 12,
+    "line_spacing": 1.5,
+    "space_before": 6,
+    "space_after": 6,
+}
+
+_FORMAT_FORM_FIELDS = {
+    "western_font": "format_western_font",
+    "east_asian_font": "format_east_asian_font",
+    "font_size": "format_font_size",
+    "line_spacing": "format_line_spacing",
+    "space_before": "format_space_before",
+    "space_after": "format_space_after",
+}
+
+_FORMAT_CASTERS = {
+    "font_size": float,
+    "line_spacing": float,
+    "space_before": float,
+    "space_after": float,
+}
+
+
+def sanitize_formatting(raw: dict) -> dict:
+    formatting = DEFAULT_FORMATTING.copy()
+    for key, default in DEFAULT_FORMATTING.items():
+        value = raw.get(key, default)
+        if key in _FORMAT_CASTERS:
+            caster = _FORMAT_CASTERS[key]
+            try:
+                formatting[key] = caster(value)
+            except (TypeError, ValueError):
+                formatting[key] = default
+        else:
+            if isinstance(value, str):
+                value = value.strip()
+            elif value is None:
+                value = ""
+            else:
+                value = str(value)
+            formatting[key] = value or default
+    return formatting
+
+
+def formatting_from_form(form) -> dict:
+    raw = {key: form.get(field) for key, field in _FORMAT_FORM_FIELDS.items()}
+    return sanitize_formatting(raw)
+
 
 def allowed_file(filename, kinds=("docx", "pdf", "zip")):
     ext = os.path.splitext(filename)[1].lower()
@@ -376,12 +427,15 @@ def flow_builder(task_id):
             path = os.path.join(flow_dir, fn)
             created = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
             has_copy = False
+            custom_format = False
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, dict):
                     steps_data = data.get("steps", [])
                     created = data.get("created", created)
+                    fmt = sanitize_formatting(data.get("formatting", {}))
+                    custom_format = any(fmt[key] != DEFAULT_FORMATTING[key] for key in DEFAULT_FORMATTING)
                 else:
                     steps_data = data
                 has_copy = any(
@@ -390,9 +444,15 @@ def flow_builder(task_id):
                 )
             except Exception:
                 pass
-            flows.append({"name": os.path.splitext(fn)[0], "created": created, "has_copy": has_copy})
+            flows.append({
+                "name": os.path.splitext(fn)[0],
+                "created": created,
+                "has_copy": has_copy,
+                "custom_format": custom_format,
+            })
     preset = None
     center_titles = True
+    formatting = DEFAULT_FORMATTING.copy()
     loaded_name = request.args.get("flow")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
@@ -404,15 +464,20 @@ def flow_builder(task_id):
                 center_titles = data.get("center_titles", True) or any(
                     isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
                 )
+                formatting = sanitize_formatting(data.get("formatting", {}))
             else:
                 steps_data = data
                 center_titles = True
+                formatting = DEFAULT_FORMATTING.copy()
             preset = [
                 s for s in steps_data
                 if isinstance(s, dict) and s.get("type") in SUPPORTED_STEPS
             ]
     avail = gather_available_files(files_dir)
     tree = build_file_tree(files_dir)
+    formatting_custom = any(formatting[key] != DEFAULT_FORMATTING[key] for key in DEFAULT_FORMATTING)
+    show_format_param = (request.args.get("show_format", "") or "").lower()
+    formatting_open = formatting_custom or show_format_param in {"1", "true", "yes", "open"}
     return render_template(
         "flow.html",
         task={"id": task_id},
@@ -423,6 +488,9 @@ def flow_builder(task_id):
         loaded_name=loaded_name,
         center_titles=center_titles,
         files_tree=tree,
+        formatting=formatting,
+        formatting_custom=formatting_custom,
+        formatting_open=formatting_open,
     )
 
 
@@ -436,6 +504,7 @@ def run_flow(task_id):
     flow_name = request.form.get("flow_name", "").strip()
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     center_titles = request.form.get("center_titles") == "on"
+    formatting = formatting_from_form(request.form)
     workflow = []
     for sid in ordered_ids:
         sid = sid.strip()
@@ -466,7 +535,12 @@ def run_flow(task_id):
                     created = data["created"]
             except Exception:
                 pass
-        data = {"created": created, "steps": workflow, "center_titles": center_titles}
+        data = {
+            "created": created,
+            "steps": workflow,
+            "center_titles": center_titles,
+            "formatting": formatting,
+        }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return redirect(url_for("flow_builder", task_id=task_id))
@@ -495,7 +569,15 @@ def run_flow(task_id):
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)
-    apply_basic_style(result_path)
+    apply_basic_style(
+        result_path,
+        western_font=formatting["western_font"],
+        east_asian_font=formatting["east_asian_font"],
+        font_size=formatting["font_size"],
+        line_spacing=formatting["line_spacing"],
+        space_before=formatting["space_before"],
+        space_after=formatting["space_after"],
+    )
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -511,14 +593,17 @@ def execute_flow(task_id, flow_name):
         abort(404)
     with open(flow_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+    formatting = DEFAULT_FORMATTING.copy()
     if isinstance(data, dict):
         workflow = data.get("steps", [])
         center_titles = data.get("center_titles", True) or any(
             isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
         )
+        formatting = sanitize_formatting(data.get("formatting", {}))
     else:
         workflow = data
         center_titles = True
+        formatting = DEFAULT_FORMATTING.copy()
     runtime_steps = []
     for step in workflow:
         stype = step.get("type")
@@ -542,7 +627,15 @@ def execute_flow(task_id, flow_name):
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path)
-    apply_basic_style(result_path)
+    apply_basic_style(
+        result_path,
+        western_font=formatting["western_font"],
+        east_asian_font=formatting["east_asian_font"],
+        font_size=formatting["font_size"],
+        line_spacing=formatting["line_spacing"],
+        space_before=formatting["space_before"],
+        space_after=formatting["space_after"],
+    )
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 

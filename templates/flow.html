@@ -33,6 +33,29 @@
     <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
   </div>
 
+  <div class="row g-3 align-items-end">
+    <div class="col-md-6">
+      <label class="form-label" for="document_format">文件格式</label>
+      <select class="form-select" id="document_format" name="document_format">
+        {% for key, meta in format_presets.items() %}
+        <option value="{{ key }}" {% if key == selected_format %}selected{% endif %}>{{ meta.label }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text" id="document_format_help"></div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="line_spacing">行距</label>
+      <select class="form-select" id="line_spacing" name="line_spacing">
+        {% for value, label in line_spacing_choices %}
+        <option value="{{ value }}" {% if value == selected_line_spacing %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+        {% if selected_line_spacing and selected_line_spacing not in line_spacing_values %}
+        <option value="{{ selected_line_spacing }}" selected>自訂（{{ selected_line_spacing }}）</option>
+        {% endif %}
+      </select>
+    </div>
+  </div>
+
   <div class="d-flex gap-2 mt-2">
     <div class="dropdown">
       <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
@@ -66,20 +89,40 @@
 </div>
 <hr>
 <h2 class="h5 mt-4">已保存的流程</h2>
-<table class="table table-striped text-center">
+<table class="table table-striped text-center align-middle">
   <thead>
     <tr>
       <th class="text-center">名稱</th>
       <th class="text-center">建立時間</th>
+      <th class="text-center">文件格式 / 行距</th>
       <th class="text-center">操作</th>
     </tr>
   </thead>
   <tbody>
   {% for f in flows %}
     <tr>
-      <td>{{ f.name }}</td>
-      <td>{{ f.created }}</td>
-      <td>
+      <td class="align-middle">{{ f.name }}</td>
+      <td class="align-middle">{{ f.created }}</td>
+      <td class="align-middle">
+        <form action="{{ url_for('update_flow_format', task_id=task.id, flow_name=f.name) }}" method="post" class="d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center justify-content-center">
+          <select class="form-select form-select-sm" name="document_format">
+            {% for key, meta in format_presets.items() %}
+            <option value="{{ key }}" {% if key == f.document_format %}selected{% endif %}>{{ meta.label }}</option>
+            {% endfor %}
+          </select>
+          <select class="form-select form-select-sm" name="line_spacing">
+            {% for value, label in line_spacing_choices %}
+            <option value="{{ value }}" {% if value == f.line_spacing_value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+            {% if f.line_spacing_value and f.line_spacing_value not in line_spacing_values %}
+            <option value="{{ f.line_spacing_value }}" selected>自訂（{{ f.line_spacing_value }}）</option>
+            {% endif %}
+          </select>
+          <button class="btn btn-sm btn-outline-primary" type="submit">套用</button>
+        </form>
+        <div class="small text-muted mt-1">目前：{{ f.format_label }}，{{ f.line_spacing_label }}</div>
+      </td>
+      <td class="align-middle">
         <form action="{{ url_for('execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('此流程包含複製檔案步驟，確定要執行嗎？');"{% endif %}>
           <button class="btn btn-sm btn-outline-success">執行</button>
         </form>
@@ -92,7 +135,7 @@
         </td>
       </tr>
     {% else %}
-    <tr><td colspan="3">尚無流程</td></tr>
+    <tr><td colspan="4">尚無流程</td></tr>
   {% endfor %}
   </tbody>
 </table>
@@ -114,6 +157,33 @@ const TASK_ID = '{{ task.id }}';
 const SUPPORTED_STEPS = {{ steps|tojson }};
 const AVAILABLE_FILES = {{ files|tojson }};
 const PRESET_FLOW = {{ preset|tojson }};
+const FORMAT_PRESETS = {{ format_presets|tojson }};
+
+function updateDocumentFormatHelp(){
+  const select = document.getElementById('document_format');
+  const help = document.getElementById('document_format_help');
+  if (!select || !help) return;
+  const meta = FORMAT_PRESETS[select.value];
+  if (!meta){
+    help.textContent = '';
+    return;
+  }
+  const parts = [
+    `西文：${meta.western_font}`,
+    `中文：${meta.east_asian_font}`,
+    `字體大小 ${meta.font_size} pt`,
+  ];
+  if (typeof meta.space_before !== 'undefined' && typeof meta.space_after !== 'undefined'){
+    parts.push(`段前 ${meta.space_before} pt`, `段後 ${meta.space_after} pt`);
+  }
+  help.textContent = parts.join('，');
+}
+
+updateDocumentFormatHelp();
+const documentFormatSelect = document.getElementById('document_format');
+if (documentFormatSelect){
+  documentFormatSelect.addEventListener('change', updateDocumentFormatHelp);
+}
 let isInitialising = true;
 let isDirty = false;
 function markDirty(){

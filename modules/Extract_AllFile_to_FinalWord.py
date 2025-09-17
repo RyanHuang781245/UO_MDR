@@ -250,7 +250,9 @@ def extract_word_chapter(
                     capture_mode = True
                     captured_titles.append(paragraph_text)
                     marker_para = section.AddParagraph()
-                    marker_para.AppendText(paragraph_text)
+                    text_range = marker_para.AppendText(paragraph_text)
+                    if text_range is not None:
+                        text_range.CharacterFormat.Hidden = True
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False

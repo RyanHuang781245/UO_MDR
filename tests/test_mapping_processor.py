@@ -84,7 +84,7 @@ def test_process_mapping_strips_chapter_numbers(tmp_path):
     docx_doc = DocxDocument(out_path)
     texts = [p.text for p in docx_doc.paragraphs]
     assert "Heading" in texts
-    assert "6.4.2 Heading" in texts
+    assert "6.4.2 Heading" not in texts
 
 
 def test_process_mapping_folder_input(tmp_path):

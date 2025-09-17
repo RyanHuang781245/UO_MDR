@@ -6,7 +6,7 @@ from spire.doc import Document, FileFormat
 from modules.Extract_AllFile_to_FinalWord import extract_word_chapter
 
 
-def test_extract_word_chapter_keeps_title(tmp_path: Path) -> None:
+def test_extract_word_chapter_hides_title(tmp_path: Path) -> None:
     src = Document()
     sec = src.AddSection()
     sec.AddParagraph().AppendText("1.1 Sample Title")
@@ -35,5 +35,6 @@ def test_extract_word_chapter_keeps_title(tmp_path: Path) -> None:
     paragraphs = [p for p in docx_doc.paragraphs if p.text.strip()]
     title_para = next((p for p in paragraphs if p.text == "1.1 Sample Title"), None)
     assert title_para is not None
-    assert all(not run.font.hidden for run in title_para.runs)
+    assert any(run.font.hidden for run in title_para.runs)
+    assert all(run.font.hidden or not run.text.strip() for run in title_para.runs)
     assert any("Body text" in p.text for p in paragraphs)

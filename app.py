@@ -783,6 +783,7 @@ def task_compare(task_id, job_id):
     source_urls = {}
     converted_docx = {}
     current = None
+    titles_to_hide: list[str] = []
     with open(log_path, "r", encoding="utf-8") as f:
         entries = json.load(f)
     for entry in entries:
@@ -815,6 +816,16 @@ def task_compare(task_id, job_id):
             if title:
                 info += f" 標題 {title}"
             chapter_sources.setdefault(current or "未分類", []).append(info)
+            captured_titles = entry.get("captured_titles")
+            if not captured_titles:
+                result_meta = entry.get("result")
+                if isinstance(result_meta, dict):
+                    captured_titles = result_meta.get("captured_titles")
+            captured_titles = captured_titles or []
+            for t in captured_titles:
+                t = (t or "").strip()
+                if t and t not in titles_to_hide:
+                    titles_to_hide.append(t)
             if base not in converted_docx and infile and os.path.exists(infile):
                 preview_dir = os.path.join(job_dir, "source_html")
                 os.makedirs(preview_dir, exist_ok=True)
@@ -860,6 +871,7 @@ def task_compare(task_id, job_id):
         chapters=chapters,
         chapter_sources=chapter_sources,
         source_urls=source_urls,
+        titles_to_hide=titles_to_hide,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
         save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),
         download_url=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),

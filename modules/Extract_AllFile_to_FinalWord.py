@@ -1,6 +1,7 @@
 import os
 import re
 import queue
+from typing import Optional
 import fitz  # PyMuPDF
 from docx import Document as DocxDocument
 from docx.shared import Pt
@@ -179,7 +180,15 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
     print(f"已將所有內容擷取")
 
 
-def extract_word_chapter(input_file: str, target_chapter_section: str, target_title=False, target_title_section="", output_image_path="images", output_doc=None, section=None):
+def extract_word_chapter(
+    input_file: str,
+    target_chapter_section: str,
+    target_title=False,
+    target_title_section="",
+    output_image_path="images",
+    output_doc=None,
+    section=None,
+):
     if not os.path.exists(output_image_path):
         os.makedirs(output_image_path)
 
@@ -187,8 +196,58 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
         section_pattern = re.compile(rf"^\s*{re.escape(target_title_section)}\s*$", re.IGNORECASE)
     else:
         section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
-    stop_prefix = target_chapter_section.rsplit('.', 1)[0]
-    stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+    chapter_number_match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)*)", target_chapter_section or "")
+    chapter_number = chapter_number_match.group(1) if chapter_number_match else ""
+    if chapter_number.endswith('.'):
+        chapter_number = chapter_number.rstrip('.')
+    chapter_number_parts = chapter_number.split('.') if chapter_number else []
+
+    def strip_number_prefix(text: str) -> str:
+        return re.sub(r"^\s*[0-9]+(?:\.[0-9]+)*\s*", "", text or "").strip()
+
+    def extract_heading_number(paragraph_text: str, list_text: Optional[str]) -> str:
+        candidates = []
+        if list_text:
+            candidates.append(list_text)
+        candidates.append(paragraph_text)
+        for candidate in candidates:
+            if not candidate:
+                continue
+            match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)*)", candidate)
+            if match:
+                number = match.group(1)
+                return number.rstrip('.')
+        return ""
+
+    def is_heading_style(paragraph) -> bool:
+        name = getattr(paragraph, "StyleName", "") or ""
+        lowered = name.lower()
+        return any(keyword in lowered for keyword in ("heading", "標題", "标题"))
+
+    def should_stop_capture(number: str, paragraph) -> bool:
+        if not chapter_number_parts or not number:
+            return False
+        normalized = number.rstrip('.')
+        if not normalized:
+            return False
+        if normalized == chapter_number:
+            return False
+        if chapter_number and normalized.startswith(f"{chapter_number}."):
+            return False
+        number_parts = normalized.split('.')
+        heading_style = is_heading_style(paragraph)
+        if len(number_parts) < len(chapter_number_parts) and not heading_style:
+            return False
+        same_root = (
+            bool(chapter_number_parts)
+            and bool(number_parts)
+            and number_parts[0] == chapter_number_parts[0]
+        )
+        if not heading_style and not same_root:
+            return False
+        if chapter_number and chapter_number.startswith(f"{normalized}."):
+            return True
+        return True
 
     input_doc = Document()
     input_doc.LoadFromFile(input_file)
@@ -204,6 +263,7 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
     nodes.put(input_doc)
     image_count = [1]
     capture_mode = False
+    captured_titles: list[str] = []
 
     def add_table_to_section(sec, table):
         try:
@@ -237,14 +297,19 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                         paragraph_text += f"[Image: {file_name}]"
                         image_count[0] += 1
                 paragraph_text = paragraph_text.strip()
-                if section_pattern.match(paragraph_text):
+                stripped_for_match = strip_number_prefix(paragraph_text)
+                matches_section = section_pattern.match(paragraph_text)
+                if target_title and not matches_section and stripped_for_match:
+                    matches_section = section_pattern.match(stripped_for_match)
+                if matches_section:
                     capture_mode = True
-                    marker_para = section.AddParagraph()
-                    marker_run = marker_para.AppendText(paragraph_text)
-                    marker_run.CharacterFormat.Hidden = True
+                    if paragraph_text:
+                        captured_titles.append(paragraph_text)
                     continue
-                elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
+                heading_number = extract_heading_number(paragraph_text, child.ListText)
+                if capture_mode and should_stop_capture(heading_number, child):
                     capture_mode = False
+                    continue
                 if capture_mode:
                     para = section.AddParagraph()
                     if paragraph_text:
@@ -266,6 +331,7 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
         output_doc.SaveToFile("word_chapter_result.docx", FileFormat.Docx)
     input_doc.Close()
     print(f"以將章節 {target_chapter_section} 擷取")
+    return {"captured_titles": captured_titles}
 
 def center_table_figure_paragraphs(input_file: str) -> bool:
     pattern = re.compile(r'^\s*(Table|Figure)\s+', re.IGNORECASE)

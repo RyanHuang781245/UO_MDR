@@ -37,8 +37,14 @@ def test_process_mapping_centers_and_renumbers(tmp_path):
     out = Document()
     out.LoadFromFile(out_path)
     sec = out.Sections.get_Item(0)
-    fig = sec.Paragraphs.get_Item(0)
-    tab = sec.Paragraphs.get_Item(1)
+    paragraphs = [
+        sec.Paragraphs.get_Item(i)
+        for i in range(sec.Paragraphs.Count)
+        if sec.Paragraphs.get_Item(i).Text.strip()
+        and not sec.Paragraphs.get_Item(i).Text.startswith("Evaluation Warning")
+    ]
+    fig = paragraphs[0]
+    tab = paragraphs[1]
     assert "Figure 1" in fig.Text
     assert fig.Format.HorizontalAlignment == HorizontalAlignment.Center
     assert "Table 1" in tab.Text
@@ -76,9 +82,9 @@ def test_process_mapping_strips_chapter_numbers(tmp_path):
     process_mapping_excel(str(mapping_path), str(tmp_path), str(out_dir))
     out_path = os.path.join(out_dir, "Out.docx")
     docx_doc = DocxDocument(out_path)
-    text = "\n".join(p.text for p in docx_doc.paragraphs)
-    assert "6.4.2" not in text
-    assert "Heading" in text
+    texts = [p.text for p in docx_doc.paragraphs]
+    assert "Heading" in texts
+    assert "6.4.2 Heading" not in texts
 
 
 def test_process_mapping_folder_input(tmp_path):

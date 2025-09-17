@@ -34,9 +34,11 @@
 const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
+const TITLES_TO_HIDE = {{ titles_to_hide|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
+let hiddenTitleNodes = [];
 
 function openWindow(url) {
   window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
@@ -138,12 +140,33 @@ function setSaved(saved) {
   statusEl.classList.toggle('text-success', saved);
   statusEl.classList.toggle('text-danger', !saved);
 }
+
+function hideChapterTitles() {
+  hiddenTitleNodes = [];
+  if (!doc || !doc.body) return;
+  const titles = Array.isArray(TITLES_TO_HIDE) ? TITLES_TO_HIDE : [];
+  const trimmed = titles.map(t => (t || '').trim()).filter(Boolean);
+  if (!trimmed.length) return;
+  const hideSet = new Set(trimmed);
+  const paragraphs = doc.body.querySelectorAll('p');
+  paragraphs.forEach(p => {
+    const text = p.textContent.trim();
+    if (hideSet.has(text)) {
+      if (!p.dataset.prevDisplay) {
+        p.dataset.prevDisplay = p.style.display || '';
+      }
+      p.style.display = 'none';
+      hiddenTitleNodes.push(p);
+    }
+  });
+}
 setSaved(true);
 
 iframe.addEventListener('load', () => {
   doc = iframe.contentDocument || iframe.contentWindow.document;
   doc.designMode = 'off';
   doc.addEventListener('input', () => setSaved(false));
+  hideChapterTitles();
   let found = false;
   let unhandled = [];
   CHAPTERS.forEach(ch => {
@@ -177,7 +200,8 @@ document.getElementById('modeBtn').addEventListener('click', () => {
 });
 
 function saveHtml() {
-  const html = (iframe.contentDocument || iframe.contentWindow.document).documentElement.outerHTML;
+  const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+  const html = iframeDoc.documentElement.outerHTML;
   return fetch('{{ save_url }}', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},

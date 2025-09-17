@@ -20,6 +20,7 @@ from modules.Extract_AllFile_to_FinalWord import (
     center_table_figure_paragraphs,
     apply_basic_style,
     remove_hidden_runs,
+    hide_paragraphs_with_text,
 )
 from modules.Edit_Word import renumber_figures_tables_file
 from modules.translate_with_bedrock import translate_file
@@ -121,6 +122,33 @@ def list_dirs(base_dir):
             path = os.path.normpath(os.path.join(rel_root, d))
             dirs.append(path)
     return sorted(dirs)
+
+
+def collect_titles_to_hide(entries):
+    titles = []
+    seen = set()
+    if not isinstance(entries, list):
+        return titles
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        captured = entry.get("captured_titles")
+        if not captured:
+            result_meta = entry.get("result")
+            if isinstance(result_meta, dict):
+                captured = result_meta.get("captured_titles")
+        if not captured:
+            continue
+        for title in captured:
+            if not isinstance(title, str):
+                continue
+            trimmed = title.strip()
+            normalized = " ".join(trimmed.split())
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            titles.append(trimmed)
+    return titles
 
 
 def task_name_exists(name, exclude_id=None):
@@ -537,12 +565,13 @@ def run_flow(task_id):
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
-    run_workflow(runtime_steps, workdir=job_dir)
-    result_path = os.path.join(job_dir, "result.docx")
+    workflow_result = run_workflow(runtime_steps, workdir=job_dir)
+    result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
+    titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
     renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
-    remove_hidden_runs(result_path)
+    remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
     format_spec = DOCUMENT_FORMAT_PRESETS.get(document_format, DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY])
     apply_basic_style(
         result_path,
@@ -553,6 +582,7 @@ def run_flow(task_id):
         space_before=format_spec.get("space_before", 6),
         space_after=format_spec.get("space_after", 6),
     )
+    hide_paragraphs_with_text(result_path, titles_to_hide)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -597,12 +627,13 @@ def execute_flow(task_id, flow_name):
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
-    run_workflow(runtime_steps, workdir=job_dir)
-    result_path = os.path.join(job_dir, "result.docx")
+    workflow_result = run_workflow(runtime_steps, workdir=job_dir)
+    result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
+    titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
     renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
-    remove_hidden_runs(result_path)
+    remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
     format_spec = DOCUMENT_FORMAT_PRESETS.get(document_format, DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY])
     apply_basic_style(
         result_path,
@@ -613,6 +644,7 @@ def execute_flow(task_id, flow_name):
         space_before=format_spec.get("space_before", 6),
         space_after=format_spec.get("space_after", 6),
     )
+    hide_paragraphs_with_text(result_path, titles_to_hide)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -769,6 +801,10 @@ def task_compare(task_id, job_id):
 
     from spire.doc import Document, FileFormat
 
+    with open(log_path, "r", encoding="utf-8") as f:
+        entries = json.load(f)
+    titles_to_hide = collect_titles_to_hide(entries)
+
     html_name = "result.html"
     html_path = os.path.join(job_dir, html_name)
     if not os.path.exists(html_path):
@@ -777,15 +813,12 @@ def task_compare(task_id, job_id):
         doc.HtmlExportOptions.ImageEmbedded = True
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
-        remove_hidden_runs(docx_path)
+        remove_hidden_runs(docx_path, preserve_texts=titles_to_hide)
 
     chapter_sources = {}
     source_urls = {}
     converted_docx = {}
     current = None
-    titles_to_hide: list[str] = []
-    with open(log_path, "r", encoding="utf-8") as f:
-        entries = json.load(f)
     for entry in entries:
         stype = entry.get("type")
         params = entry.get("params", {})
@@ -816,16 +849,6 @@ def task_compare(task_id, job_id):
             if title:
                 info += f" 標題 {title}"
             chapter_sources.setdefault(current or "未分類", []).append(info)
-            captured_titles = entry.get("captured_titles")
-            if not captured_titles:
-                result_meta = entry.get("result")
-                if isinstance(result_meta, dict):
-                    captured_titles = result_meta.get("captured_titles")
-            captured_titles = captured_titles or []
-            for t in captured_titles:
-                t = (t or "").strip()
-                if t and t not in titles_to_hide:
-                    titles_to_hide.append(t)
             if base not in converted_docx and infile and os.path.exists(infile):
                 preview_dir = os.path.join(job_dir, "source_html")
                 os.makedirs(preview_dir, exist_ok=True)
@@ -882,6 +905,15 @@ def task_compare(task_id, job_id):
 def task_compare_save(task_id, job_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
+    log_path = os.path.join(job_dir, "log.json")
+    titles_to_hide = []
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                entries = json.load(f)
+            titles_to_hide = collect_titles_to_hide(entries)
+        except Exception:
+            titles_to_hide = []
     html_content = request.form.get("html")
     if not html_content:
         data = request.get_json(silent=True) or {}
@@ -912,8 +944,9 @@ def task_compare_save(task_id, job_id):
     doc.SaveToFile(os.path.join(job_dir, "result.docx"), FileFormat.Docx)
     doc.Close()
     result_docx = os.path.join(job_dir, "result.docx")
-    remove_hidden_runs(result_docx)
+    remove_hidden_runs(result_docx, preserve_texts=titles_to_hide)
     apply_basic_style(result_docx)
+    hide_paragraphs_with_text(result_docx, titles_to_hide)
     return "OK"
 
 

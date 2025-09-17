@@ -24,3 +24,19 @@ def test_remove_hidden_runs_keeps_paragraph_in_table_cell(tmp_path: Path) -> Non
     # Even though all visible text was removed, the table cell must keep a paragraph
     assert len(cell_after.paragraphs) == 1
     assert cell_after.paragraphs[0].text == ""
+
+
+def test_remove_hidden_runs_preserves_titles(tmp_path: Path) -> None:
+    doc = Document()
+    para = doc.add_paragraph("1.1 Sample Title")
+    for run in para.runs:
+        run.font.hidden = True
+
+    doc_path = tmp_path / "title.docx"
+    doc.save(doc_path)
+
+    assert remove_hidden_runs(str(doc_path), preserve_texts=["1.1 Sample Title"])
+
+    updated = Document(doc_path)
+    assert updated.paragraphs[0].text == "1.1 Sample Title"
+    assert all(run.font.hidden for run in updated.paragraphs[0].runs)

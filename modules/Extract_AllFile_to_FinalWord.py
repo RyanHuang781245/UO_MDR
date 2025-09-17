@@ -1,6 +1,7 @@
 import os
 import re
 import queue
+from typing import Iterable, Optional
 import fitz  # PyMuPDF
 from docx import Document as DocxDocument
 from docx.shared import Pt
@@ -179,6 +180,10 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
     print(f"已將所有內容擷取")
 
 
+def _normalize_text(value: str) -> str:
+    return " ".join(value.split()) if value else ""
+
+
 def extract_word_chapter(
     input_file: str,
     target_chapter_section: str,
@@ -250,7 +255,9 @@ def extract_word_chapter(
                     capture_mode = True
                     captured_titles.append(paragraph_text)
                     marker_para = section.AddParagraph()
-                    marker_para.AppendText(paragraph_text)
+                    text_range = marker_para.AppendText(paragraph_text)
+                    if isinstance(text_range, TextRange):
+                        text_range.CharacterFormat.Hidden = True
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False
@@ -331,11 +338,22 @@ def _iter_paragraphs(parent):
                 for cell in row.cells:
                     yield from _iter_paragraphs(cell)
 
-def remove_hidden_runs(input_file: str) -> bool:
+def remove_hidden_runs(
+    input_file: str,
+    preserve_texts: Optional[Iterable[str]] = None,
+) -> bool:
     """Remove runs marked as hidden and drop empty paragraphs without losing images."""
     try:
         doc = DocxDocument(input_file)
+        preserve_set = {
+            _normalize_text(t)
+            for t in (preserve_texts or [])
+            if isinstance(t, str) and _normalize_text(t)
+        }
         for para in list(_iter_paragraphs(doc)):
+            normalized_para_text = _normalize_text(para.text)
+            if preserve_set and normalized_para_text in preserve_set:
+                continue
             to_remove = [run for run in para.runs if run.font.hidden]
             for run in to_remove:
                 para._element.remove(run._element)
@@ -345,6 +363,8 @@ def remove_hidden_runs(input_file: str) -> bool:
                 )
             )
             if not para.text.strip() and not has_image:
+                if preserve_set and normalized_para_text in preserve_set:
+                    continue
                 parent = para._element.getparent()
                 if parent is not None and parent.tag == qn('w:tc'):
                     # Ensure each table cell keeps at least one paragraph
@@ -357,6 +377,32 @@ def remove_hidden_runs(input_file: str) -> bool:
         return True
     except Exception as e:
         print(f"錯誤：移除隱藏文字 {input_file} 時出錯: {str(e)}")
+        return False
+
+
+def hide_paragraphs_with_text(
+    input_file: str,
+    texts_to_hide: Iterable[str],
+) -> bool:
+    """Mark paragraphs whose text matches any provided strings as hidden."""
+    cleaned = [
+        t.strip()
+        for t in texts_to_hide
+        if isinstance(t, str) and t.strip()
+    ]
+    if not cleaned:
+        return True
+    targets = {_normalize_text(t) for t in cleaned}
+    try:
+        doc = DocxDocument(input_file)
+        for para in _iter_paragraphs(doc):
+            if _normalize_text(para.text) in targets:
+                for run in para.runs:
+                    run.font.hidden = True
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：隱藏段落於 {input_file} 時出錯: {str(e)}")
         return False
 
 

@@ -36,11 +36,65 @@ const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
+const SOURCE_COLOR_MAP = {};
+let colorIndex = 0;
 let highlighted = [];
 
 function openWindow(url) {
   window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
 }
+
+function getColorForSource(source) {
+  if (!source) {
+    return null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(SOURCE_COLOR_MAP, source)) {
+    SOURCE_COLOR_MAP[source] = COLORS[colorIndex % COLORS.length];
+    colorIndex += 1;
+  }
+  return SOURCE_COLOR_MAP[source];
+}
+
+function extractSection(label) {
+  if (!label) return '';
+  const match = label.match(/章節\s*([\d\.]+)/);
+  return match ? match[1].trim() : '';
+}
+
+function extractTitle(label) {
+  if (!label) return '';
+  const match = label.match(/標題\s*(.+)/);
+  return match ? match[1].trim() : '';
+}
+
+function normalizeEntry(entry) {
+  if (!entry) {
+    return {label: '', source: '', section: '', title: ''};
+  }
+  if (typeof entry === 'string') {
+    return {
+      label: entry,
+      source: entry,
+      section: extractSection(entry),
+      title: extractTitle(entry),
+    };
+  }
+  const label = entry.label || '';
+  const source = entry.source || label;
+  return {
+    label,
+    source,
+    section: entry.section || extractSection(label),
+    title: entry.title || extractTitle(label),
+  };
+}
+
+Object.values(CHAPTER_SOURCES).forEach(items => {
+  items.forEach(item => {
+    const meta = normalizeEntry(item);
+    getColorForSource(meta.source);
+  });
+});
 
 function clearHighlights() {
   highlighted.forEach(el => {
@@ -64,28 +118,26 @@ function updateSources(ch, element) {
   }
   if (!sequence.length) return;
 
-  const uniqueSources = [...new Set(sequence)];
-  const colorMap = {};
-  let colorIdx = 0;
-  let pdfColor = null;
-  uniqueSources.forEach(src => {
-    let color;
-    if (src.toLowerCase().endsWith('.pdf')) {
-      if (!pdfColor) {
-        pdfColor = COLORS[colorIdx % COLORS.length];
-        colorIdx++;
-      }
-      color = pdfColor;
-    } else {
-      color = COLORS[colorIdx % COLORS.length];
-      colorIdx++;
+  const metaSequence = sequence.map(normalizeEntry);
+  const uniqueEntries = [];
+  const seenLabels = new Set();
+  metaSequence.forEach(meta => {
+    if (!meta.label || seenLabels.has(meta.label)) {
+      return;
     }
-    colorMap[src] = color;
+    seenLabels.add(meta.label);
+    uniqueEntries.push(meta);
+  });
+
+  uniqueEntries.forEach(meta => {
     const li = document.createElement('li');
     li.className = 'list-group-item';
-    li.textContent = src;
-    li.style.backgroundColor = color;
-    const url = SOURCE_URLS[src];
+    li.textContent = meta.label;
+    const color = getColorForSource(meta.source);
+    if (color) {
+      li.style.backgroundColor = color;
+    }
+    const url = SOURCE_URLS[meta.label];
     if (url) {
       li.style.cursor = 'pointer';
       li.addEventListener('click', () => openWindow(url));
@@ -93,14 +145,17 @@ function updateSources(ch, element) {
     list.appendChild(li);
   });
 
-  if (element) {
+  if (element && metaSequence.length) {
     let node = element.nextElementSibling;
     let idx = 0;
-    const markers = sequence.map(src => {
-      const title = src.match(/標題\s*(.+)/);
-      if (title) return {type: 'title', value: title[1]};
-      const sec = src.match(/章節\s*([\d\.]+)/);
-      return sec ? {type: 'section', value: sec[1]} : null;
+    const markers = metaSequence.map(meta => {
+      if (meta.title) {
+        return {type: 'title', value: meta.title};
+      }
+      if (meta.section) {
+        return {type: 'section', value: meta.section};
+      }
+      return null;
     });
     const findNextMarkerIdx = from => {
       for (let i = from + 1; i < markers.length; i++) {
@@ -112,21 +167,26 @@ function updateSources(ch, element) {
     let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
     while (node && !CHAPTER_SET.has(node.textContent.trim())) {
       const text = node.textContent.trim();
-      if (nextMarker && highlighted.length && (
-          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
-          (nextMarker.type === 'title' && text.includes(nextMarker.value))
-        )) {
+      if (
+        nextMarker &&
+        highlighted.length &&
+        ((nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
+          (nextMarker.type === 'title' && text.includes(nextMarker.value)))
+      ) {
         idx = nextIdx;
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
-        const src = sequence[idx] || sequence[sequence.length - 1];
-        node.style.backgroundColor = colorMap[src];
-        highlighted.push(node);
-        node = node.nextElementSibling;
+      const meta = metaSequence[idx] || metaSequence[metaSequence.length - 1];
+      const color = getColorForSource(meta.source);
+      if (color) {
+        node.style.backgroundColor = color;
       }
+      highlighted.push(node);
+      node = node.nextElementSibling;
     }
   }
+}
 
 const iframe = document.getElementById('htmlFrame');
 let doc;

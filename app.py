@@ -783,14 +783,23 @@ def task_compare(task_id, job_id):
     source_urls = {}
     converted_docx = {}
     current = None
+
+    def add_source_entry(chapter, label, source_key):
+        if not label:
+            return
+        key = chapter or "未分類"
+        entry = {"label": label, "source": source_key or label}
+        chapter_sources.setdefault(key, []).append(entry)
     with open(log_path, "r", encoding="utf-8") as f:
         entries = json.load(f)
     for entry in entries:
         stype = entry.get("type")
         params = entry.get("params", {})
         if stype == "insert_roman_heading":
-            current = params.get("text", "")
-            chapter_sources.setdefault(current, [])
+            current = params.get("text", "") or ""
+            chapter_key = current or "未分類"
+            chapter_sources.setdefault(chapter_key, [])
+            current = chapter_key
         elif stype == "extract_pdf_chapter_to_table":
             pdf_dir = os.path.join(job_dir, "pdfs_extracted")
             pdfs = []
@@ -802,7 +811,8 @@ def task_compare(task_id, job_id):
                         source_urls[fn] = url_for(
                             "task_view_file", task_id=task_id, job_id=job_id, filename=rel
                         )
-            chapter_sources.setdefault(current or "未分類", []).extend(pdfs)
+            for pdf_name in pdfs:
+                add_source_entry(current, pdf_name, pdf_name)
         elif stype == "extract_word_chapter":
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
@@ -814,7 +824,7 @@ def task_compare(task_id, job_id):
                 info += f" 章節 {sec}"
             if title:
                 info += f" 標題 {title}"
-            chapter_sources.setdefault(current or "未分類", []).append(info)
+            add_source_entry(current, info, base)
             if base not in converted_docx and infile and os.path.exists(infile):
                 preview_dir = os.path.join(job_dir, "source_html")
                 os.makedirs(preview_dir, exist_ok=True)
@@ -834,7 +844,7 @@ def task_compare(task_id, job_id):
         elif stype == "extract_word_all_content":
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
-            chapter_sources.setdefault(current or "未分類", []).append(base)
+            add_source_entry(current, base, base)
             if base not in converted_docx and infile and os.path.exists(infile):
                 preview_dir = os.path.join(job_dir, "source_html")
                 os.makedirs(preview_dir, exist_ok=True)

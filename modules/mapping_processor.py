@@ -1,5 +1,6 @@
 import os
 import re
+from collections import defaultdict
 from typing import Dict, List, Tuple
 
 from spire.doc import Document, FileFormat
@@ -16,6 +17,7 @@ from .Extract_AllFile_to_FinalWord import (
     center_table_figure_paragraphs,
     apply_basic_style,
     remove_hidden_runs,
+    hide_paragraphs_with_text,
 )
 from .file_copier import copy_files
 
@@ -109,6 +111,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     logs: List[str] = []
     docs: Dict[str, Tuple[Document, any]] = {}
     outputs: List[str] = []
+    hidden_titles: Dict[str, List[str]] = defaultdict(list)
 
     try:
         from openpyxl import load_workbook
@@ -164,7 +167,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                 chapter = chapter_match.group(1)
                 if "," in instruction:
                     _prefix, after = instruction.split(",", 1)
-                    extract_word_chapter(
+                    result = extract_word_chapter(
                         infile,
                         chapter,
                         target_title=True,
@@ -172,14 +175,28 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                         output_doc=doc,
                         section=section,
                     )
+                    if isinstance(result, dict):
+                        for captured in result.get("captured_titles", []):
+                            if not isinstance(captured, str):
+                                continue
+                            trimmed = captured.strip()
+                            if trimmed and trimmed not in hidden_titles[out_name]:
+                                hidden_titles[out_name].append(trimmed)
                     logs.append(f"擷取 {input_name} (章節: {chapter} 標題: {after.strip()})")
                 else:
-                    extract_word_chapter(
+                    result = extract_word_chapter(
                         infile,
                         chapter,
                         output_doc=doc,
                         section=section,
                     )
+                    if isinstance(result, dict):
+                        for captured in result.get("captured_titles", []):
+                            if not isinstance(captured, str):
+                                continue
+                            trimmed = captured.strip()
+                            if trimmed and trimmed not in hidden_titles[out_name]:
+                                hidden_titles[out_name].append(trimmed)
                     logs.append(f"擷取 {input_name} (章節: {chapter})")
         else:
             dest = os.path.join(task_files_dir, out_name or "output")
@@ -216,10 +233,12 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         out_path = os.path.join(output_dir, f"{name}.docx")
         doc.SaveToFile(out_path, FileFormat.Docx)
         doc.Close()
-        remove_hidden_runs(out_path)
+        titles = hidden_titles.get(name, [])
+        remove_hidden_runs(out_path, preserve_texts=titles)
         renumber_figures_tables_file(out_path)
         center_table_figure_paragraphs(out_path)
         apply_basic_style(out_path)
+        hide_paragraphs_with_text(out_path, titles)
         outputs.append(out_path)
         # logs.append(f"產生文件 {out_path}")
 

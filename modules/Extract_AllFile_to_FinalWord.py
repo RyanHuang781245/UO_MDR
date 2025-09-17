@@ -406,6 +406,51 @@ def hide_paragraphs_with_text(
         return False
 
 
+def remove_paragraphs_with_text(
+    input_file: str,
+    texts_to_remove: Iterable[str],
+) -> bool:
+    """Remove paragraphs whose text matches any provided strings.
+
+    Paragraphs inside table cells keep an empty placeholder if they would be
+    the last remaining paragraph to avoid corrupting the table structure.
+    """
+
+    cleaned = [
+        t.strip()
+        for t in texts_to_remove
+        if isinstance(t, str) and t.strip()
+    ]
+    if not cleaned:
+        return True
+
+    targets = {_normalize_text(t) for t in cleaned}
+    try:
+        doc = DocxDocument(input_file)
+        for para in list(_iter_paragraphs(doc)):
+            if _normalize_text(para.text) not in targets:
+                continue
+
+            parent = para._element.getparent()
+            if parent is not None and parent.tag == qn('w:tc'):
+                paragraph_count = len(parent.findall(qn('w:p')))
+                if paragraph_count <= 1:
+                    for run in list(para.runs):
+                        para._element.remove(run._element)
+                    continue
+
+            element = para._element
+            container = element.getparent()
+            if container is not None:
+                container.remove(element)
+
+        doc.save(input_file)
+        return True
+    except Exception as e:
+        print(f"錯誤：移除段落於 {input_file} 時出錯: {str(e)}")
+        return False
+
+
 def apply_basic_style(
     input_file: str,
     western_font: str = "Times New Roman",

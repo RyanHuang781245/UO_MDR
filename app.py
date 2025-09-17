@@ -1,4 +1,5 @@
 import os
+import shutil
 import uuid
 import json
 import zipfile
@@ -21,6 +22,7 @@ from modules.Extract_AllFile_to_FinalWord import (
     apply_basic_style,
     remove_hidden_runs,
     hide_paragraphs_with_text,
+    remove_paragraphs_with_text,
 )
 from modules.Edit_Word import renumber_figures_tables_file
 from modules.translate_with_bedrock import translate_file
@@ -966,8 +968,26 @@ def task_download(task_id, job_id, kind):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
     if kind == "docx":
+        result_path = os.path.join(job_dir, "result.docx")
+        if not os.path.exists(result_path):
+            abort(404)
+        titles_to_remove = []
+        log_path = os.path.join(job_dir, "log.json")
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    entries = json.load(f)
+                titles_to_remove = collect_titles_to_hide(entries)
+            except Exception:
+                titles_to_remove = []
+
+        download_path = os.path.join(job_dir, "result_download.docx")
+        shutil.copyfile(result_path, download_path)
+        if titles_to_remove:
+            remove_paragraphs_with_text(download_path, titles_to_remove)
+        remove_hidden_runs(download_path)
         return send_file(
-            os.path.join(job_dir, "result.docx"),
+            download_path,
             as_attachment=True,
             download_name=f"result_{job_id}.docx",
         )

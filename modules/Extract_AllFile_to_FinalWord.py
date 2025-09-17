@@ -179,7 +179,15 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
     print(f"已將所有內容擷取")
 
 
-def extract_word_chapter(input_file: str, target_chapter_section: str, target_title=False, target_title_section="", output_image_path="images", output_doc=None, section=None):
+def extract_word_chapter(
+    input_file: str,
+    target_chapter_section: str,
+    target_title=False,
+    target_title_section="",
+    output_image_path="images",
+    output_doc=None,
+    section=None,
+):
     if not os.path.exists(output_image_path):
         os.makedirs(output_image_path)
 
@@ -204,6 +212,7 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
     nodes.put(input_doc)
     image_count = [1]
     capture_mode = False
+    captured_titles: list[str] = []
 
     def add_table_to_section(sec, table):
         try:
@@ -239,9 +248,7 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
                 paragraph_text = paragraph_text.strip()
                 if section_pattern.match(paragraph_text):
                     capture_mode = True
-                    marker_para = section.AddParagraph()
-                    marker_run = marker_para.AppendText(paragraph_text)
-                    marker_run.CharacterFormat.Hidden = True
+                    captured_titles.append(paragraph_text)
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False
@@ -266,6 +273,7 @@ def extract_word_chapter(input_file: str, target_chapter_section: str, target_ti
         output_doc.SaveToFile("word_chapter_result.docx", FileFormat.Docx)
     input_doc.Close()
     print(f"以將章節 {target_chapter_section} 擷取")
+    return {"captured_titles": captured_titles}
 
 def center_table_figure_paragraphs(input_file: str) -> bool:
     pattern = re.compile(r'^\s*(Table|Figure)\s+', re.IGNORECASE)

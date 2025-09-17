@@ -249,8 +249,6 @@ def extract_word_chapter(
                 if section_pattern.match(paragraph_text):
                     capture_mode = True
                     captured_titles.append(paragraph_text)
-                    marker_para = section.AddParagraph()
-                    marker_para.AppendText(paragraph_text)
                     continue
                 elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
                     capture_mode = False

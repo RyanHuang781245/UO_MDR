@@ -107,7 +107,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 tsec = params.get("target_chapter_section","")
                 use_title = boolish(params.get("target_title","false"))
                 title_text = params.get("target_title_section","")
-                extract_word_chapter(
+                result = extract_word_chapter(
                     infile,
                     tsec,
                     target_title=use_title,
@@ -116,6 +116,8 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     output_doc=output_doc,
                     section=section
                 )
+                if isinstance(result, dict):
+                    log[-1]["captured_titles"] = result.get("captured_titles", [])
 
             elif stype == "insert_text":
                 insert_text(section,

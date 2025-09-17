@@ -35,7 +35,52 @@ const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
-const CHAPTER_SET = new Set(CHAPTERS);
+
+function normalizeSpaces(value) {
+  return (value || '').replace(/\s+/g, ' ').trim();
+}
+
+function toComparable(value) {
+  return normalizeSpaces(value).toLowerCase();
+}
+
+const NUMBER_PREFIX_PATTERN = /^([ivxlcdm]+|[\u2160-\u2188]+|\d+(?:\.\d+)*)(?:[.\uFF0E\u3002\uFF61\uFF0C\u3001\uFF1A\)\uFF09]*)$/i;
+
+function matchesChapterText(text, info) {
+  const normalizedTextRaw = normalizeSpaces(text);
+  if (!normalizedTextRaw) return false;
+  const normalizedText = normalizedTextRaw.toLowerCase();
+  if (normalizedText === info.comparable) {
+    return true;
+  }
+  if (!normalizedText.endsWith(info.comparable)) {
+    return false;
+  }
+  const prefix = normalizedTextRaw.slice(0, normalizedTextRaw.length - info.comparable.length).trim();
+  if (!prefix) return false;
+  const collapsed = prefix.replace(/\s+/g, '');
+  return NUMBER_PREFIX_PATTERN.test(collapsed);
+}
+
+const CHAPTER_INFOS = CHAPTERS.map(ch => ({
+  value: ch,
+  comparable: toComparable(ch),
+}));
+
+function findChapterInfoByText(text) {
+  for (const info of CHAPTER_INFOS) {
+    if (matchesChapterText(text, info)) {
+      return info;
+    }
+  }
+  return null;
+}
+
+function isChapterHeadingNode(node) {
+  if (!node) return false;
+  return Boolean(findChapterInfoByText(node.textContent || ''));
+}
+
 let highlighted = [];
 
 function openWindow(url) {
@@ -110,7 +155,7 @@ function updateSources(ch, element) {
     };
     let nextIdx = findNextMarkerIdx(0);
     let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
+    while (node && !isChapterHeadingNode(node)) {
       const text = node.textContent.trim();
       if (nextMarker && highlighted.length && (
           (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
@@ -120,13 +165,13 @@ function updateSources(ch, element) {
         nextIdx = findNextMarkerIdx(idx);
         nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
       }
-        const src = sequence[idx] || sequence[sequence.length - 1];
-        node.style.backgroundColor = colorMap[src];
-        highlighted.push(node);
-        node = node.nextElementSibling;
-      }
+      const src = sequence[idx] || sequence[sequence.length - 1];
+      node.style.backgroundColor = colorMap[src];
+      highlighted.push(node);
+      node = node.nextElementSibling;
     }
   }
+
 
 const iframe = document.getElementById('htmlFrame');
 let doc;
@@ -146,16 +191,16 @@ iframe.addEventListener('load', () => {
   doc.addEventListener('input', () => setSaved(false));
   let found = false;
   let unhandled = [];
-  CHAPTERS.forEach(ch => {
-    const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => el.textContent.trim() === ch);
+  CHAPTER_INFOS.forEach(info => {
+    const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => matchesChapterText(el.textContent, info));
     if (elements.length) {
       found = true;
       elements.forEach(el => {
         el.style.cursor = 'pointer';
-        el.addEventListener('click', () => updateSources(ch, el));
+        el.addEventListener('click', () => updateSources(info.value, el));
       });
     } else {
-      unhandled = unhandled.concat(CHAPTER_SOURCES[ch] || []);
+      unhandled = unhandled.concat(CHAPTER_SOURCES[info.value] || []);
     }
   });
   if (unhandled.length) {

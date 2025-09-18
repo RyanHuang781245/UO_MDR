@@ -11,10 +11,33 @@
       <div class="d-flex gap-2">
         <button id="modeBtn" class="btn btn-outline-secondary" type="button">編輯模式</button>
         <button id="saveBtn" class="btn btn-primary" type="button">保存</button>
+        <button id="saveAsBtn" class="btn btn-outline-primary" type="button">另存新檔</button>
         <button id="downloadBtn" class="btn btn-success" type="button">下載</button>
         <a class="btn btn-secondary" href="{{ back_link }}">返回結果</a>
       </div>
       <span id="saveStatus" class="d-block mt-2">已保存</span>
+    </div>
+    <div class="mt-4">
+      <h2 class="h6 mb-2">版本歷程</h2>
+      <ul id="versionList" class="list-group small">
+        {% if versions %}
+          {% for version in versions %}
+            <li class="list-group-item d-flex justify-content-between align-items-start flex-wrap gap-2">
+              <div>
+                <div class="fw-semibold">{{ version.name }}</div>
+                <div class="text-muted">{{ version.created_at_display }}</div>
+              </div>
+              <div class="btn-group btn-group-sm flex-wrap">
+                <a class="btn btn-outline-secondary" href="{{ version.html_url }}" target="_blank">檢視</a>
+                <a class="btn btn-outline-success" href="{{ version.docx_url }}">下載</a>
+                <button class="btn btn-outline-primary restore-version" data-restore-url="{{ version.restore_url }}" data-version-name="{{ version.name }}">恢復</button>
+              </div>
+            </li>
+          {% endfor %}
+        {% else %}
+          <li class="list-group-item text-muted" data-placeholder="empty">尚無版本紀錄</li>
+        {% endif %}
+      </ul>
     </div>
   </div>
 </div>
@@ -35,6 +58,7 @@ const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
 const CHAPTERS = {{ chapters|tojson }};
 const SOURCE_URLS = {{ source_urls|tojson }};
 const TITLES_TO_HIDE = {{ titles_to_hide|tojson }};
+const SAVE_AS_URL = '{{ save_as_url }}';
 const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
 const CHAPTER_SET = new Set(CHAPTERS);
 let highlighted = [];
@@ -199,7 +223,7 @@ document.getElementById('modeBtn').addEventListener('click', () => {
   }
 });
 
-function saveHtml() {
+function saveHtml(targetUrl = '{{ save_url }}', extraData = {}) {
   const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
   hiddenTitleNodes.forEach(node => {
     node.style.display = node.dataset.prevDisplay || '';
@@ -208,10 +232,11 @@ function saveHtml() {
   hiddenTitleNodes.forEach(node => {
     node.style.display = 'none';
   });
-  return fetch('{{ save_url }}', {
+  const payload = Object.assign({html}, extraData);
+  return fetch(targetUrl, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({html})
+    body: JSON.stringify(payload)
   });
 }
 
@@ -233,5 +258,133 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
   }
   window.location = '{{ download_url }}';
 });
+
+function attachRestoreHandler(btn) {
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const url = btn.dataset.restoreUrl;
+    if (!url) return;
+    const name = btn.dataset.versionName || '';
+    const message = isSaved
+      ? `確定要恢復版本「${name || '未命名'}」嗎？目前內容將被覆蓋。`
+      : `目前有未保存的變更，確定要恢復版本「${name || '未命名'}」並覆蓋現有內容嗎？`;
+    if (!confirm(message)) {
+      return;
+    }
+    fetch(url, {method: 'POST'}).then(async r => {
+      let data = null;
+      try {
+        data = await r.json();
+      } catch (err) {
+        data = null;
+      }
+      if (!r.ok) {
+        const errorMessage = data && data.error ? data.error : '恢復版本失敗';
+        alert(errorMessage);
+        return;
+      }
+      setSaved(true);
+      try {
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.location.reload();
+        }
+      } catch (err) {
+        iframe.src = iframe.src;
+      }
+      alert('已恢復指定版本');
+      window.location.reload();
+    }).catch(() => {
+      alert('恢復版本失敗');
+    });
+  });
+}
+
+function addVersionToList(version) {
+  if (!version) return;
+  const list = document.getElementById('versionList');
+  if (!list) return;
+  const placeholder = list.querySelector('[data-placeholder="empty"]');
+  if (placeholder) {
+    placeholder.remove();
+  }
+  const item = document.createElement('li');
+  item.className = 'list-group-item d-flex justify-content-between align-items-start flex-wrap gap-2';
+  const infoDiv = document.createElement('div');
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'fw-semibold';
+  nameDiv.textContent = version.name || version.id || '未命名';
+  const timeDiv = document.createElement('div');
+  timeDiv.className = 'text-muted';
+  timeDiv.textContent = version.created_at_display || '';
+  infoDiv.appendChild(nameDiv);
+  infoDiv.appendChild(timeDiv);
+  const btnGroup = document.createElement('div');
+  btnGroup.className = 'btn-group btn-group-sm flex-wrap';
+  if (version.html_url) {
+    const viewLink = document.createElement('a');
+    viewLink.className = 'btn btn-outline-secondary';
+    viewLink.href = version.html_url;
+    viewLink.target = '_blank';
+    viewLink.textContent = '檢視';
+    btnGroup.appendChild(viewLink);
+  }
+  if (version.docx_url) {
+    const downloadLink = document.createElement('a');
+    downloadLink.className = 'btn btn-outline-success';
+    downloadLink.href = version.docx_url;
+    downloadLink.textContent = '下載';
+    btnGroup.appendChild(downloadLink);
+  }
+  if (version.restore_url) {
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'btn btn-outline-primary restore-version';
+    restoreBtn.dataset.restoreUrl = version.restore_url;
+    restoreBtn.dataset.versionName = version.name || version.id || '';
+    restoreBtn.type = 'button';
+    restoreBtn.textContent = '恢復';
+    btnGroup.appendChild(restoreBtn);
+    attachRestoreHandler(restoreBtn);
+  }
+  item.appendChild(infoDiv);
+  item.appendChild(btnGroup);
+  list.prepend(item);
+}
+
+document.querySelectorAll('.restore-version').forEach(attachRestoreHandler);
+
+const saveAsBtn = document.getElementById('saveAsBtn');
+if (saveAsBtn) {
+  saveAsBtn.addEventListener('click', () => {
+    const defaultName = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const input = prompt('請輸入版本名稱', defaultName);
+    if (input === null) {
+      return;
+    }
+    const name = input.trim();
+    if (!name) {
+      alert('版本名稱不可為空');
+      return;
+    }
+    saveHtml(SAVE_AS_URL, {name}).then(async r => {
+      let data = null;
+      try {
+        data = await r.json();
+      } catch (err) {
+        data = null;
+      }
+      if (!r.ok) {
+        const message = data && data.error ? data.error : '另存新檔失敗';
+        alert(message);
+        return;
+      }
+      if (data && data.version) {
+        addVersionToList(data.version);
+      }
+      alert('已另存為新版本');
+    }).catch(() => {
+      alert('另存新檔失敗');
+    });
+  });
+}
 </script>
 {% endblock %}

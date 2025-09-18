@@ -14,6 +14,7 @@ from flask import (
     send_file,
     send_from_directory,
     abort,
+    jsonify,
 )
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
@@ -151,6 +152,145 @@ def collect_titles_to_hide(entries):
             seen.add(normalized)
             titles.append(trimmed)
     return titles
+
+
+def load_titles_to_hide_from_log(job_dir):
+    log_path = os.path.join(job_dir, "log.json")
+    if not os.path.exists(log_path):
+        return []
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            entries = json.load(f)
+        return collect_titles_to_hide(entries)
+    except Exception:
+        return []
+
+
+def clean_compare_html_content(html_content):
+    html_content = re.sub(
+        r'<(\w+)[^>]*style="[^"]*display\s*:\s*none[^"]*"[^>]*>.*?</\1>',
+        "",
+        html_content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    html_content = re.sub(
+        r"<p[^>]*>(?:\s|&nbsp;|&#160;)*</p>",
+        "",
+        html_content,
+        flags=re.IGNORECASE,
+    )
+    return html_content
+
+
+def save_compare_output(
+    job_dir,
+    html_content,
+    titles_to_hide,
+    base_name="result",
+    subdir=None,
+):
+    target_dir = job_dir if not subdir else os.path.join(job_dir, subdir)
+    os.makedirs(target_dir, exist_ok=True)
+    html_path = os.path.join(target_dir, f"{base_name}.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    from spire.doc import Document, FileFormat
+
+    doc = Document()
+    doc.LoadFromFile(html_path, FileFormat.Html)
+    doc.SaveToFile(os.path.join(target_dir, f"{base_name}.docx"), FileFormat.Docx)
+    doc.Close()
+    result_docx = os.path.join(target_dir, f"{base_name}.docx")
+    remove_hidden_runs(result_docx, preserve_texts=titles_to_hide)
+    apply_basic_style(result_docx)
+    hide_paragraphs_with_text(result_docx, titles_to_hide)
+    return html_path, result_docx
+
+
+def load_version_metadata(versions_dir):
+    metadata = {"versions": []}
+    if not os.path.isdir(versions_dir):
+        return metadata
+    meta_path = os.path.join(versions_dir, "metadata.json")
+    if not os.path.exists(meta_path):
+        return metadata
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and isinstance(data.get("versions"), list):
+            metadata = data
+    except Exception:
+        metadata = {"versions": []}
+    return metadata
+
+
+def save_version_metadata(versions_dir, metadata):
+    os.makedirs(versions_dir, exist_ok=True)
+    meta_path = os.path.join(versions_dir, "metadata.json")
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+
+def sanitize_version_slug(name):
+    if not name:
+        return "version"
+    slug = re.sub(r"[^\w\-]+", "_", name.strip(), flags=re.UNICODE)
+    slug = slug.strip("_")
+    if not slug:
+        slug = "version"
+    return slug[:60]
+
+
+def build_version_context(task_id, job_id, job_dir):
+    versions_dir = os.path.join(job_dir, "versions")
+    metadata = load_version_metadata(versions_dir)
+    context = []
+    versions = metadata.get("versions", [])
+    for item in sorted(versions, key=lambda v: v.get("created_at", ""), reverse=True):
+        version_id = item.get("id")
+        base_name = item.get("base_name")
+        if not version_id or not base_name:
+            continue
+        html_rel = f"versions/{base_name}.html"
+        docx_rel = os.path.join(versions_dir, f"{base_name}.docx")
+        html_abs = os.path.join(versions_dir, f"{base_name}.html")
+        if not os.path.exists(docx_rel) or not os.path.exists(html_abs):
+            continue
+        created_display = item.get("created_at", "")
+        created_at = item.get("created_at")
+        if created_at:
+            try:
+                created_display = datetime.fromisoformat(created_at).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            except ValueError:
+                created_display = created_at
+        context.append(
+            {
+                "id": version_id,
+                "name": item.get("name") or version_id,
+                "created_at_display": created_display,
+                "html_url": url_for(
+                    "task_view_file",
+                    task_id=task_id,
+                    job_id=job_id,
+                    filename=html_rel,
+                ),
+                "docx_url": url_for(
+                    "task_download_version",
+                    task_id=task_id,
+                    job_id=job_id,
+                    version_id=version_id,
+                ),
+                "restore_url": url_for(
+                    "task_compare_restore_version",
+                    task_id=task_id,
+                    job_id=job_id,
+                    version_id=version_id,
+                ),
+            }
+        )
+    return context
 
 
 def task_name_exists(name, exclude_id=None):
@@ -890,6 +1030,7 @@ def task_compare(task_id, job_id):
 
     chapters = list(chapter_sources.keys())
     html_url = url_for("task_view_file", task_id=task_id, job_id=job_id, filename=html_name)
+    versions = build_version_context(task_id, job_id, job_dir)
     return render_template(
         "compare.html",
         html_url=html_url,
@@ -899,7 +1040,9 @@ def task_compare(task_id, job_id):
         titles_to_hide=titles_to_hide,
         back_link=url_for("task_result", task_id=task_id, job_id=job_id),
         save_url=url_for("task_compare_save", task_id=task_id, job_id=job_id),
+        save_as_url=url_for("task_compare_save_as", task_id=task_id, job_id=job_id),
         download_url=url_for("task_download", task_id=task_id, job_id=job_id, kind="docx"),
+        versions=versions,
     )
 
 
@@ -907,49 +1050,88 @@ def task_compare(task_id, job_id):
 def task_compare_save(task_id, job_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
-    log_path = os.path.join(job_dir, "log.json")
-    titles_to_hide = []
-    if os.path.exists(log_path):
-        try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                entries = json.load(f)
-            titles_to_hide = collect_titles_to_hide(entries)
-        except Exception:
-            titles_to_hide = []
+    titles_to_hide = load_titles_to_hide_from_log(job_dir)
     html_content = request.form.get("html")
     if not html_content:
         data = request.get_json(silent=True) or {}
         html_content = data.get("html", "")
     if not html_content:
         return "缺少內容", 400
-    # Remove any hidden elements marked via CSS display:none to strip chapter titles
-    html_content = re.sub(
-        r'<(\w+)[^>]*style="[^"]*display\s*:\s*none[^"]*"[^>]*>.*?</\1>',
-        '',
-        html_content,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    # Drop empty paragraphs that may remain after removing hidden markers
-    html_content = re.sub(
-        r'<p[^>]*>(?:\s|&nbsp;|&#160;)*</p>',
-        '',
-        html_content,
-        flags=re.IGNORECASE,
-    )
-    html_path = os.path.join(job_dir, "result.html")
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
-    from spire.doc import Document, FileFormat
-
-    doc = Document()
-    doc.LoadFromFile(html_path, FileFormat.Html)
-    doc.SaveToFile(os.path.join(job_dir, "result.docx"), FileFormat.Docx)
-    doc.Close()
-    result_docx = os.path.join(job_dir, "result.docx")
-    remove_hidden_runs(result_docx, preserve_texts=titles_to_hide)
-    apply_basic_style(result_docx)
-    hide_paragraphs_with_text(result_docx, titles_to_hide)
+    html_content = clean_compare_html_content(html_content)
+    save_compare_output(job_dir, html_content, titles_to_hide)
     return "OK"
+
+
+@app.post("/tasks/<task_id>/compare/<job_id>/save-as")
+def task_compare_save_as(task_id, job_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    titles_to_hide = load_titles_to_hide_from_log(job_dir)
+    payload = request.get_json(silent=True) or {}
+    html_content = payload.get("html")
+    name = payload.get("name") or ""
+    if not html_content:
+        html_content = request.form.get("html")
+        name = request.form.get("name") or name
+    if not html_content:
+        return jsonify({"error": "缺少內容"}), 400
+    version_name = (name or "").strip()
+    if not version_name:
+        return jsonify({"error": "缺少版本名稱"}), 400
+    html_content = clean_compare_html_content(html_content)
+    versions_dir = os.path.join(job_dir, "versions")
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    unique_suffix = uuid.uuid4().hex[:6]
+    version_id = f"{timestamp}_{unique_suffix}"
+    slug = sanitize_version_slug(version_name)
+    base_name = f"{version_id}_{slug}" if slug else version_id
+    save_compare_output(
+        job_dir,
+        html_content,
+        titles_to_hide,
+        base_name=base_name,
+        subdir="versions",
+    )
+    metadata = load_version_metadata(versions_dir)
+    versions = metadata.get("versions", [])
+    versions = [v for v in versions if v.get("id") != version_id]
+    created_ts = datetime.now()
+    versions.append(
+        {
+            "id": version_id,
+            "name": version_name,
+            "slug": slug,
+            "base_name": base_name,
+            "created_at": created_ts.isoformat(timespec="seconds"),
+        }
+    )
+    versions.sort(key=lambda v: v.get("created_at", ""), reverse=True)
+    metadata["versions"] = versions
+    save_version_metadata(versions_dir, metadata)
+    version_payload = {
+        "id": version_id,
+        "name": version_name,
+        "created_at_display": created_ts.strftime("%Y-%m-%d %H:%M:%S"),
+        "html_url": url_for(
+            "task_view_file",
+            task_id=task_id,
+            job_id=job_id,
+            filename=f"versions/{base_name}.html",
+        ),
+        "docx_url": url_for(
+            "task_download_version",
+            task_id=task_id,
+            job_id=job_id,
+            version_id=version_id,
+        ),
+        "restore_url": url_for(
+            "task_compare_restore_version",
+            task_id=task_id,
+            job_id=job_id,
+            version_id=version_id,
+        ),
+    }
+    return jsonify({"status": "ok", "version": version_payload})
 
 
 @app.get("/tasks/<task_id>/view/<job_id>/<path:filename>")
@@ -961,6 +1143,49 @@ def task_view_file(task_id, job_id, filename):
     if not os.path.isfile(file_path):
         abort(404)
     return send_from_directory(job_dir, safe_filename)
+
+
+@app.post("/tasks/<task_id>/compare/<job_id>/restore/<version_id>")
+def task_compare_restore_version(task_id, job_id, version_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    versions_dir = os.path.join(job_dir, "versions")
+    metadata = load_version_metadata(versions_dir)
+    versions = metadata.get("versions", [])
+    version = next((v for v in versions if v.get("id") == version_id), None)
+    if not version:
+        return jsonify({"error": "找不到指定版本"}), 404
+    base_name = version.get("base_name")
+    if not base_name:
+        return jsonify({"error": "版本資料不完整"}), 404
+    html_src = os.path.join(versions_dir, f"{base_name}.html")
+    docx_src = os.path.join(versions_dir, f"{base_name}.docx")
+    if not os.path.exists(html_src) or not os.path.exists(docx_src):
+        return jsonify({"error": "版本檔案不存在"}), 404
+    shutil.copyfile(html_src, os.path.join(job_dir, "result.html"))
+    shutil.copyfile(docx_src, os.path.join(job_dir, "result.docx"))
+    return jsonify({"status": "ok"})
+
+
+@app.get("/tasks/<task_id>/download/<job_id>/version/<version_id>")
+def task_download_version(task_id, job_id, version_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    versions_dir = os.path.join(job_dir, "versions")
+    metadata = load_version_metadata(versions_dir)
+    versions = metadata.get("versions", [])
+    version = next((v for v in versions if v.get("id") == version_id), None)
+    if not version:
+        abort(404)
+    base_name = version.get("base_name")
+    if not base_name:
+        abort(404)
+    docx_src = os.path.join(versions_dir, f"{base_name}.docx")
+    if not os.path.exists(docx_src):
+        abort(404)
+    slug = version.get("slug") or version_id
+    download_name = f"{slug}_{version_id}.docx"
+    return send_file(docx_src, as_attachment=True, download_name=download_name)
 
 
 @app.get("/tasks/<task_id>/download/<job_id>/<kind>")

@@ -31,6 +31,7 @@
                 <a class="btn btn-outline-secondary" href="{{ version.html_url }}" target="_blank">檢視</a>
                 <a class="btn btn-outline-success" href="{{ version.docx_url }}">下載</a>
                 <button class="btn btn-outline-primary restore-version" data-restore-url="{{ version.restore_url }}" data-version-name="{{ version.name }}">恢復</button>
+                <button class="btn btn-outline-danger delete-version" data-delete-url="{{ version.delete_url }}" data-version-name="{{ version.name }}">刪除</button>
               </div>
             </li>
           {% endfor %}
@@ -163,6 +164,22 @@ function setSaved(saved) {
   statusEl.textContent = saved ? '已保存' : '未保存';
   statusEl.classList.toggle('text-success', saved);
   statusEl.classList.toggle('text-danger', !saved);
+}
+
+function ensureVersionPlaceholder() {
+  const list = document.getElementById('versionList');
+  if (!list) return;
+  const remaining = list.querySelectorAll('li:not([data-placeholder="empty"])');
+  if (remaining.length === 0) {
+    let placeholder = list.querySelector('[data-placeholder="empty"]');
+    if (!placeholder) {
+      placeholder = document.createElement('li');
+      placeholder.className = 'list-group-item text-muted';
+      placeholder.dataset.placeholder = 'empty';
+      placeholder.textContent = '尚無版本紀錄';
+      list.appendChild(placeholder);
+    }
+  }
 }
 
 function hideChapterTitles() {
@@ -299,6 +316,40 @@ function attachRestoreHandler(btn) {
   });
 }
 
+function attachDeleteHandler(btn) {
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const url = btn.dataset.deleteUrl;
+    if (!url) return;
+    const name = btn.dataset.versionName || '';
+    const message = `確定要刪除版本「${name || '未命名'}」嗎？此操作無法復原。`;
+    if (!confirm(message)) {
+      return;
+    }
+    fetch(url, {method: 'POST'}).then(async r => {
+      let data = null;
+      try {
+        data = await r.json();
+      } catch (err) {
+        data = null;
+      }
+      if (!r.ok) {
+        const errorMessage = data && data.error ? data.error : '刪除版本失敗';
+        alert(errorMessage);
+        return;
+      }
+      const item = btn.closest('li');
+      if (item) {
+        item.remove();
+      }
+      ensureVersionPlaceholder();
+      alert('已刪除指定版本');
+    }).catch(() => {
+      alert('刪除版本失敗');
+    });
+  });
+}
+
 function addVersionToList(version) {
   if (!version) return;
   const list = document.getElementById('versionList');
@@ -345,12 +396,23 @@ function addVersionToList(version) {
     btnGroup.appendChild(restoreBtn);
     attachRestoreHandler(restoreBtn);
   }
+  if (version.delete_url) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-outline-danger delete-version';
+    deleteBtn.dataset.deleteUrl = version.delete_url;
+    deleteBtn.dataset.versionName = version.name || version.id || '';
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = '刪除';
+    btnGroup.appendChild(deleteBtn);
+    attachDeleteHandler(deleteBtn);
+  }
   item.appendChild(infoDiv);
   item.appendChild(btnGroup);
   list.prepend(item);
 }
 
 document.querySelectorAll('.restore-version').forEach(attachRestoreHandler);
+document.querySelectorAll('.delete-version').forEach(attachDeleteHandler);
 
 const saveAsBtn = document.getElementById('saveAsBtn');
 if (saveAsBtn) {

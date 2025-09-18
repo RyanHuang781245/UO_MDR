@@ -288,6 +288,12 @@ def build_version_context(task_id, job_id, job_dir):
                     job_id=job_id,
                     version_id=version_id,
                 ),
+                "delete_url": url_for(
+                    "task_compare_delete_version",
+                    task_id=task_id,
+                    job_id=job_id,
+                    version_id=version_id,
+                ),
             }
         )
     return context
@@ -1130,6 +1136,12 @@ def task_compare_save_as(task_id, job_id):
             job_id=job_id,
             version_id=version_id,
         ),
+        "delete_url": url_for(
+            "task_compare_delete_version",
+            task_id=task_id,
+            job_id=job_id,
+            version_id=version_id,
+        ),
     }
     return jsonify({"status": "ok", "version": version_payload})
 
@@ -1164,6 +1176,30 @@ def task_compare_restore_version(task_id, job_id, version_id):
         return jsonify({"error": "版本檔案不存在"}), 404
     shutil.copyfile(html_src, os.path.join(job_dir, "result.html"))
     shutil.copyfile(docx_src, os.path.join(job_dir, "result.docx"))
+    return jsonify({"status": "ok"})
+
+
+@app.post("/tasks/<task_id>/compare/<job_id>/delete/<version_id>")
+def task_compare_delete_version(task_id, job_id, version_id):
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    versions_dir = os.path.join(job_dir, "versions")
+    metadata = load_version_metadata(versions_dir)
+    versions = metadata.get("versions", [])
+    version = next((v for v in versions if v.get("id") == version_id), None)
+    if not version:
+        return jsonify({"error": "找不到指定版本"}), 404
+    metadata["versions"] = [v for v in versions if v.get("id") != version_id]
+    save_version_metadata(versions_dir, metadata)
+    base_name = version.get("base_name")
+    if base_name:
+        for ext in ("html", "docx"):
+            path = os.path.join(versions_dir, f"{base_name}.{ext}")
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
     return jsonify({"status": "ok"})
 
 

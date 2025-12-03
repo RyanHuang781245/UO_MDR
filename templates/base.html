@@ -13,12 +13,27 @@
           法規系統
           <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="ms-2" style="height:24px;">
         </a>
-        <div class="btn-group">
-          <a class="btn btn-outline-primary" href="{{ url_for('tasks') }}">回首頁</a>
+        <div class="d-flex align-items-center gap-2">
+          {% if current_user.is_authenticated %}
+            <span class="text-muted">歡迎，{{ current_user.username }}{% if current_user.is_admin %}（管理員）{% endif %}</span>
+            <a class="btn btn-outline-secondary" href="{{ url_for('logout') }}">登出</a>
+          {% else %}
+            <a class="btn btn-outline-primary" href="{{ url_for('login') }}">登入</a>
+            <a class="btn btn-primary" href="{{ url_for('register') }}">註冊</a>
+          {% endif %}
         </div>
       </div>
     </nav>
     <main class="container my-4">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="mb-3">
+            {% for category, message in messages %}
+              <div class="alert alert-{{ 'warning' if category == 'message' else category }}" role="alert">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
       {% block content %}{% endblock %}
     </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h1 class="h4 mb-3 text-center">註冊</h1>
+        <form method="post" novalidate>
+          <div class="mb-3">
+            <label class="form-label">帳號</label>
+            <input class="form-control" type="text" name="username" value="{{ username or '' }}" placeholder="輸入帳號" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">密碼</label>
+            <input class="form-control" type="password" name="password" placeholder="輸入密碼" required>
+          </div>
+          <div class="d-grid gap-2">
+            <button class="btn btn-primary" type="submit">建立帳號</button>
+            <a class="btn btn-outline-secondary" href="{{ url_for('login') }}">返回登入</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -15,7 +15,17 @@ from flask import (
     send_from_directory,
     abort,
     jsonify,
+    flash,
 )
+from flask_login import (
+    LoginManager,
+    UserMixin,
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
+from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 from modules.workflow import SUPPORTED_STEPS, run_workflow
 from modules.Extract_AllFile_to_FinalWord import (
@@ -31,6 +41,14 @@ from modules.file_copier import copy_files
 
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
+os.makedirs(app.instance_path, exist_ok=True)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(
+    app.instance_path, "auth.db"
+)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
 BASE_DIR = os.path.dirname(__file__)
 app.config["OUTPUT_FOLDER"] = os.path.join(BASE_DIR, "output")
 app.config["TASK_FOLDER"] = os.path.join(BASE_DIR, "tasks")
@@ -40,6 +58,110 @@ os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
+
+
+class Role(db.Model):
+    __tablename__ = "roles"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(20), unique=True, nullable=False)
+    users = db.relationship("User", backref="role", lazy=True)
+
+    def __repr__(self):
+        return f"<Role {self.name}>"
+
+
+class User(UserMixin, db.Model):
+    __tablename__ = "users"
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=False)
+
+    def set_password(self, password: str) -> None:
+        from werkzeug.security import generate_password_hash
+
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        from werkzeug.security import check_password_hash
+
+        return check_password_hash(self.password_hash, password)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role and self.role.name == "Admin"
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+
+def ensure_default_roles_and_admin():
+    created = False
+    if not Role.query.filter_by(name="Admin").first():
+        admin_role = Role(name="Admin")
+        user_role = Role(name="User")
+        db.session.add_all([admin_role, user_role])
+        db.session.commit()
+        created = True
+    if not User.query.filter_by(username="admin").first():
+        admin_role = Role.query.filter_by(name="Admin").first()
+        if admin_role:
+            admin_user = User(username="admin", role=admin_role)
+            admin_user.set_password("1234")
+            db.session.add(admin_user)
+            db.session.commit()
+            created = True
+    return created
+
+
+def admin_required(view_func):
+    from functools import wraps
+
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return login_manager.unauthorized()
+        if not current_user.is_admin:
+            abort(403)
+        return view_func(*args, **kwargs)
+
+    return wrapper
+
+
+@login_manager.unauthorized_handler
+def handle_unauthorized():
+    flash("請先登入以使用此功能。", "warning")
+    return redirect(url_for("login", next=request.url))
+
+
+_bootstrapped_auth = False
+
+
+@app.before_request
+def enforce_login():
+    global _bootstrapped_auth
+    if not _bootstrapped_auth:
+        db.create_all()
+        ensure_default_roles_and_admin()
+        _bootstrapped_auth = True
+    allowed_endpoints = {"login", "register", "static"}
+    if request.endpoint in allowed_endpoints or (request.endpoint or "").startswith("static"):
+        return None
+    if not current_user.is_authenticated:
+        return login_manager.unauthorized()
+    return None
+
+
+@app.cli.command("init-users")
+def init_users():
+    db.create_all()
+    created = ensure_default_roles_and_admin()
+    if created:
+        print("已初始化預設角色與管理員帳號 (admin/1234)")
+    else:
+        print("角色與使用者已存在，無需重新建立")
 
 DOCUMENT_FORMAT_PRESETS = {
     "default": {
@@ -395,7 +517,67 @@ def task_download_output(task_id, filename):
     return send_from_directory(out_dir, filename, as_attachment=True)
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        next_url = request.args.get("next")
+        return redirect(next_url or url_for("tasks"))
+
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            login_user(user)
+            next_url = request.args.get("next")
+            return redirect(next_url or url_for("tasks"))
+        flash("帳號或密碼錯誤", "danger")
+
+    return render_template("auth/login.html")
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("tasks"))
+
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        if not username or not password:
+            flash("請輸入帳號與密碼", "warning")
+            return render_template("auth/register.html", username=username)
+
+        if User.query.filter_by(username=username).first():
+            flash("該帳號已被註冊", "warning")
+            return render_template("auth/register.html", username=username)
+
+        role = Role.query.filter_by(name="User").first()
+        if not role:
+            role = Role(name="User")
+            db.session.add(role)
+            db.session.commit()
+
+        new_user = User(username=username, role=role)
+        new_user.set_password(password)
+        db.session.add(new_user)
+        db.session.commit()
+        flash("註冊成功！請登入。", "success")
+        return redirect(url_for("login"))
+
+    return render_template("auth/register.html")
+
+
+@app.get("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash("您已成功登出", "info")
+    return redirect(url_for("login"))
+
+
 @app.get("/")
+@login_required
 def tasks():
     task_list = []
     for tid in os.listdir(app.config["TASK_FOLDER"]):
@@ -419,6 +601,7 @@ def tasks():
 
 
 @app.post("/tasks")
+@login_required
 def create_task():
     f = request.files.get("task_zip")
     if not f or not f.filename or not allowed_file(f.filename, kinds=("zip",)):
@@ -450,6 +633,8 @@ def create_task():
 
 
 @app.post("/tasks/<task_id>/delete")
+@login_required
+@admin_required
 def delete_task(task_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     if os.path.isdir(tdir):
@@ -459,6 +644,8 @@ def delete_task(task_id):
 
 
 @app.post("/tasks/<task_id>/rename")
+@login_required
+@admin_required
 def rename_task(task_id):
     new_name = request.form.get("name", "").strip()
     if not new_name:
@@ -482,6 +669,7 @@ def rename_task(task_id):
 
 
 @app.get("/tasks/<task_id>")
+@login_required
 def task_detail(task_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
     files_dir = os.path.join(tdir, "files")
@@ -504,6 +692,7 @@ def task_detail(task_id):
 
 
 @app.post("/tasks/<task_id>/files")
+@login_required
 def upload_task_file(task_id):
     """Upload additional files to an existing task."""
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)

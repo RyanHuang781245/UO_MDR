@@ -4,6 +4,7 @@ import uuid
 import json
 import zipfile
 import re
+import urllib.parse
 from datetime import datetime
 from flask import (
     Flask,
@@ -42,9 +43,30 @@ from modules.file_copier import copy_files
 app = Flask(__name__, instance_relative_config=True)
 app.config["SECRET_KEY"] = "dev-secret"
 os.makedirs(app.instance_path, exist_ok=True)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(
-    app.instance_path, "auth.db"
-)
+
+
+def build_sql_server_uri() -> str:
+    """Build an ODBC connection string for SQL Server using environment variables."""
+
+    server = os.getenv("SQLSERVER_HOST", "localhost")
+    database = os.getenv("SQLSERVER_DATABASE", "RBAC_TEST")
+    username = os.getenv("SQLSERVER_USER", "user")
+    password = os.getenv("SQLSERVER_PASSWORD", "user")
+    driver = os.getenv("SQLSERVER_DRIVER", "ODBC Driver 18 for SQL Server")
+    trust_cert = os.getenv("SQLSERVER_TRUST_CERT", "yes")
+
+    params = urllib.parse.quote_plus(
+        f"DRIVER={{{driver}}};"
+        f"SERVER={server};"
+        f"DATABASE={database};"
+        f"UID={username};"
+        f"PWD={password};"
+        f"TrustServerCertificate={trust_cert};"
+    )
+    return f"mssql+pyodbc:///?odbc_connect={params}"
+
+
+app.config["SQLALCHEMY_DATABASE_URI"] = build_sql_server_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)

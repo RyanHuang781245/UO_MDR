@@ -8,3 +8,4 @@ PyMuPDF==1.24.8
 spire.doc==12.1.0
 boto3
 openpyxl==3.1.2
+gunicorn

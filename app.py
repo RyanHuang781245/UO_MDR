@@ -48,7 +48,7 @@ os.makedirs(app.instance_path, exist_ok=True)
 def build_sql_server_uri() -> str:
     """Build an ODBC connection string for SQL Server using environment variables."""
 
-    server = os.getenv("SQLSERVER_HOST", "localhost")
+    server = os.getenv("SQLSERVER_HOST", "10.30.12.177")
     database = os.getenv("SQLSERVER_DATABASE", "RBAC_TEST")
     username = os.getenv("SQLSERVER_USER", "user")
     password = os.getenv("SQLSERVER_PASSWORD", "user")
@@ -1472,6 +1472,6 @@ def task_download(task_id, job_id, kind):
     abort(404)
 
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# if __name__ == "__main__":
+#     app.run(debug=True)
 

@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    container_name: flask-web
+    ports:
+      - "8000:8000"
+    environment:
+      - FLASK_ENV=production
+      - DB_DRIVER=ODBC Driver 18 for SQL Server
+      - DB_SERVER=10.30.12.177
+      - DB_NAME=RBAC_TEST
+      - DB_USER=user
+      - DB_PASSWORD=user
+      - DB_TRUST_CERT=yes
+    restart: unless-stopped

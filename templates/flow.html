@@ -16,6 +16,11 @@
   {% endfor %}
 {% endmacro %}
 <style>
+  /* Allow this page to use the full viewport width so the canvas can stretch with the browser. */
+  main.container {
+    max-width: 100%;
+  }
+
   .flow-canvas-wrapper {
     position: relative;
     min-height: 1100px;

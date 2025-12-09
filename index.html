@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask Node-Flow Editor Prototype</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background-color: #f3f4f6;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* 格線背景 */
+        #canvas {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 20px 20px;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* SVG 連線層 */
+        svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* 讓點擊事件穿透到下層，除非點到線條 */
+            z-index: 0;
+        }
+
+        .connection-line {
+            fill: none;
+            stroke: #64748b;
+            stroke-width: 4px;
+            stroke-linecap: round;
+            pointer-events: stroke;
+            cursor: pointer;
+            transition: stroke 0.2s;
+        }
+
+        .connection-line:hover {
+            stroke: #ef4444; /* 刪除提示色 */
+        }
+
+        /* 節點樣式 */
+        .node {
+            position: absolute;
+            width: 160px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e2e8f0;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .node-header {
+            padding: 8px 12px;
+            background-color: #3b82f6;
+            color: white;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            cursor: grab;
+            font-weight: bold;
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .node-header:active {
+            cursor: grabbing;
+        }
+
+        .node-body {
+            padding: 10px;
+            font-size: 0.8rem;
+            color: #475569;
+        }
+
+        /* 連接點 (Ports) */
+        .port {
+            width: 14px;
+            height: 14px;
+            background-color: #64748b;
+            border: 2px solid white;
+            border-radius: 50%;
+            position: absolute;
+            cursor: crosshair;
+            z-index: 20;
+            transition: transform 0.1s;
+        }
+
+        .port:hover {
+            transform: scale(1.2);
+            background-color: #3b82f6;
+        }
+
+        .port.input {
+            top: 50%;
+            left: -8px;
+            transform: translateY(-50%);
+        }
+
+        .port.output {
+            top: 50%;
+            right: -8px;
+            transform: translateY(-50%);
+        }
+
+        /* 側邊欄 */
+        #sidebar {
+            position: absolute;
+            left: 20px;
+            top: 20px;
+            width: 220px;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            z-index: 50;
+        }
+
+        .draggable-item {
+            background-color: #eff6ff;
+            border: 1px solid #bfdbfe;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            cursor: grab;
+            font-size: 0.9rem;
+            color: #1e40af;
+            display: flex;
+            align-items: center;
+        }
+        
+        .draggable-item:hover {
+            background-color: #dbeafe;
+        }
+
+        .icon {
+            margin-right: 8px;
+            font-size: 1.1rem;
+        }
+
+        /* 控制按鈕區 */
+        #controls {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            z-index: 50;
+            display: flex;
+            gap: 10px;
+        }
+
+        /* 類型顏色 */
+        .node.type-start .node-header { background-color: #10b981; }
+        .node.type-process .node-header { background-color: #f59e0b; }
+        .node.type-end .node-header { background-color: #ef4444; }
+
+    </style>
+</head>
+<body>
+
+    <!-- 工具欄 -->
+    <div id="sidebar">
+        <h2 class="text-lg font-bold mb-4 text-slate-800">元件庫</h2>
+        <div class="draggable-item" draggable="true" ondragstart="drag(event)" data-type="start" data-title="開始 (Start)">
+            <span class="icon">🚀</span> 開始節點
+        </div>
+        <div class="draggable-item" draggable="true" ondragstart="drag(event)" data-type="process" data-title="資料處理 (Process)">
+            <span class="icon">⚙️</span> 處理邏輯
+        </div>
+        <div class="draggable-item" draggable="true" ondragstart="drag(event)" data-type="process" data-title="API 請求 (Request)">
+            <span class="icon">🌐</span> API 請求
+        </div>
+        <div class="draggable-item" draggable="true" ondragstart="drag(event)" data-type="end" data-title="結束 (End)">
+            <span class="icon">🏁</span> 結束輸出
+        </div>
+        
+        <div class="mt-4 pt-4 border-t border-slate-200">
+            <p class="text-xs text-slate-500">提示：從左側拖曳元件到畫布，點擊輸出點並拖曳到輸入點進行連線。點擊連線可刪除。</p>
+        </div>
+    </div>
+
+    <!-- 頂部按鈕 -->
+    <div id="controls">
+        <button onclick="exportFlow()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow transition">
+            匯出 JSON (給 Flask)
+        </button>
+        <button onclick="runSimulation()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow transition">
+            模擬執行
+        </button>
+        <button onclick="clearCanvas()" class="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded shadow transition">
+            清空畫布
+        </button>
+    </div>
+
+    <!-- 主畫布 -->
+    <div id="canvas" ondrop="drop(event)" ondragover="allowDrop(event)">
+        <!-- SVG 層用於繪製連線 -->
+        <svg id="connections-layer">
+            <!-- 動態生成的連線會在這裡 -->
+        </svg>
+        <!-- 節點會被動態添加到這裡 -->
+    </div>
+
+    <!-- 模擬執行結果彈窗 -->
+    <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[100] flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 max-w-lg w-full shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">執行結果 / JSON 輸出</h3>
+            <pre id="modal-content" class="bg-slate-100 p-4 rounded overflow-auto max-h-60 text-sm font-mono"></pre>
+            <div class="mt-4 flex justify-end">
+                <button onclick="closeModal()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 狀態管理
+        let nodes = [];
+        let connections = [];
+        let nextNodeId = 1;
+        
+        // 拖曳連線狀態
+        let isDrawing = false;
+        let tempLine = null;
+        let startPort = null;
+        let dragSrcEl = null;
+
+        // 初始化
+        const canvas = document.getElementById('canvas');
+        const svgLayer = document.getElementById('connections-layer');
+
+        // --- 1. 拖放新增節點邏輯 ---
+        function allowDrop(ev) {
+            ev.preventDefault();
+        }
+
+        function drag(ev) {
+            ev.dataTransfer.setData("type", ev.target.dataset.type);
+            ev.dataTransfer.setData("title", ev.target.dataset.title);
+        }
+
+        function drop(ev) {
+            ev.preventDefault();
+            // 確保只在 canvas 本體上放開，或其子元素冒泡
+            const type = ev.dataTransfer.getData("type");
+            const title = ev.dataTransfer.getData("title");
+            
+            if (type && title) {
+                const rect = canvas.getBoundingClientRect();
+                const x = ev.clientX - rect.left;
+                const y = ev.clientY - rect.top;
+                createNode(x, y, type, title);
+            }
+        }
+
+        // --- 2. 建立節點 DOM ---
+        function createNode(x, y, type, title) {
+            const id = `node-${nextNodeId++}`;
+            const nodeEl = document.createElement('div');
+            nodeEl.classList.add('node', `type-${type}`);
+            nodeEl.id = id;
+            nodeEl.style.left = `${x}px`;
+            nodeEl.style.top = `${y}px`;
+
+            // 節點內容
+            nodeEl.innerHTML = `
+                <div class="node-header" onmousedown="startDragNode(event, '${id}')">
+                    <span>${title}</span>
+                    <span style="font-size:10px; opacity:0.7">ID:${nextNodeId-1}</span>
+                </div>
+                <div class="node-body">
+                    設定參數...
+                </div>
+            `;
+
+            // 根據類型添加端口
+            if (type !== 'start') {
+                const inputPort = document.createElement('div');
+                inputPort.className = 'port input';
+                inputPort.onmouseup = (e) => endConnection(e, id, 'input');
+                nodeEl.appendChild(inputPort);
+            }
+
+            if (type !== 'end') {
+                const outputPort = document.createElement('div');
+                outputPort.className = 'port output';
+                outputPort.onmousedown = (e) => startConnection(e, id, 'output');
+                nodeEl.appendChild(outputPort);
+            }
+
+            // 刪除按鈕 (右鍵)
+            nodeEl.oncontextmenu = (e) => {
+                e.preventDefault();
+                if(confirm('確定要刪除此節點嗎？')) {
+                    deleteNode(id);
+                }
+            };
+
+            canvas.appendChild(nodeEl);
+            nodes.push({ id, x, y, type, title, el: nodeEl });
+        }
+
+        // --- 3. 拖曳移動節點邏輯 ---
+        let currentDragNodeId = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        function startDragNode(e, nodeId) {
+            e.stopPropagation(); // 防止觸發畫布點擊
+            currentDragNodeId = nodeId;
+            const node = nodes.find(n => n.id === nodeId);
+            const rect = node.el.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+
+            document.addEventListener('mousemove', moveNode);
+            document.addEventListener('mouseup', stopDragNode);
+        }
+
+        function moveNode(e) {
+            if (!currentDragNodeId) return;
+            
+            const node = nodes.find(n => n.id === currentDragNodeId);
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            let newX = e.clientX - canvasRect.left - dragOffsetX;
+            let newY = e.clientY - canvasRect.top - dragOffsetY;
+
+            // 更新 DOM
+            node.el.style.left = `${newX}px`;
+            node.el.style.top = `${newY}px`;
+            node.x = newX;
+            node.y = newY;
+
+            // 更新相關連線
+            updateConnections();
+        }
+
+        function stopDragNode() {
+            currentDragNodeId = null;
+            document.removeEventListener('mousemove', moveNode);
+            document.removeEventListener('mouseup', stopDragNode);
+        }
+
+        // --- 4. 連線邏輯 (Bezier Curves) ---
+        function startConnection(e, nodeId, type) {
+            e.stopPropagation();
+            e.preventDefault(); // 防止選取文字
+            isDrawing = true;
+            
+            const rect = e.target.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            startPort = {
+                nodeId: nodeId,
+                x: rect.left + rect.width / 2 - canvasRect.left,
+                y: rect.top + rect.height / 2 - canvasRect.top,
+                el: e.target
+            };
+
+            // 創建臨時線條
+            tempLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            tempLine.setAttribute("class", "connection-line");
+            tempLine.setAttribute("stroke-dasharray", "5,5"); // 虛線表示正在拖曳
+            svgLayer.appendChild(tempLine);
+
+            document.addEventListener('mousemove', drawTempLine);
+            document.addEventListener('mouseup', abortConnection);
+        }
+
+        function drawTempLine(e) {
+            if (!isDrawing) return;
+            const canvasRect = canvas.getBoundingClientRect();
+            const endX = e.clientX - canvasRect.left;
+            const endY = e.clientY - canvasRect.top;
+            
+            // 繪製貝茲曲線
+            const d = getBezierPath(startPort.x, startPort.y, endX, endY);
+            tempLine.setAttribute("d", d);
+        }
+
+        function endConnection(e, targetNodeId, type) {
+            if (!isDrawing) return;
+            e.stopPropagation();
+
+            if (startPort.nodeId === targetNodeId) {
+                console.log("不能連接自己");
+                return; // 不能連自己
+            }
+
+            // 檢查是否重複連線
+            const exists = connections.find(c => c.from === startPort.nodeId && c.to === targetNodeId);
+            if (exists) return;
+
+            // 創建正式連線
+            connections.push({
+                id: `conn-${Date.now()}`,
+                from: startPort.nodeId,
+                to: targetNodeId,
+                fromPortEl: startPort.el,
+                toPortEl: e.target
+            });
+
+            updateConnections();
+            
+            // 清理狀態
+            cleanUpTempLine();
+        }
+
+        function abortConnection() {
+            cleanUpTempLine();
+        }
+
+        function cleanUpTempLine() {
+            isDrawing = false;
+            if (tempLine) {
+                tempLine.remove();
+                tempLine = null;
+            }
+            startPort = null;
+            document.removeEventListener('mousemove', drawTempLine);
+            document.removeEventListener('mouseup', abortConnection);
+        }
+
+        // --- 5. 繪製與更新所有連線 ---
+        function updateConnections() {
+            // 清空 SVG (除了 tempLine)
+            const lines = Array.from(svgLayer.querySelectorAll('.connection-line:not([stroke-dasharray])'));
+            lines.forEach(l => l.remove());
+
+            const canvasRect = canvas.getBoundingClientRect();
+
+            connections.forEach(conn => {
+                const fromRect = conn.fromPortEl.getBoundingClientRect();
+                const toRect = conn.toPortEl.getBoundingClientRect();
+
+                const x1 = fromRect.left + fromRect.width / 2 - canvasRect.left;
+                const y1 = fromRect.top + fromRect.height / 2 - canvasRect.top;
+                const x2 = toRect.left + toRect.width / 2 - canvasRect.left;
+                const y2 = toRect.top + toRect.height / 2 - canvasRect.top;
+
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("class", "connection-line");
+                path.setAttribute("d", getBezierPath(x1, y1, x2, y2));
+                
+                // 點擊線條刪除
+                path.onclick = (e) => {
+                    e.stopPropagation();
+                    if(confirm("刪除這條連線?")) {
+                        connections = connections.filter(c => c.id !== conn.id);
+                        updateConnections();
+                    }
+                };
+                
+                svgLayer.appendChild(path);
+            });
+        }
+
+        function getBezierPath(x1, y1, x2, y2) {
+            // 計算控制點，讓線條水平彎曲 (類似 Node-RED 風格)
+            const curvature = 0.5;
+            const hx1 = x1 + Math.abs(x2 - x1) * curvature;
+            const hx2 = x2 - Math.abs(x2 - x1) * curvature;
+            return `M ${x1} ${y1} C ${hx1} ${y1} ${hx2} ${y2} ${x2} ${y2}`;
+        }
+
+        // --- 6. 其他功能 ---
+        function deleteNode(nodeId) {
+            // 移除 DOM
+            const node = nodes.find(n => n.id === nodeId);
+            if(node) node.el.remove();
+            
+            // 移除數據
+            nodes = nodes.filter(n => n.id !== nodeId);
+            
+            // 移除相關連線
+            connections = connections.filter(c => c.from !== nodeId && c.to !== nodeId);
+            
+            updateConnections();
+        }
+
+        function clearCanvas() {
+            nodes.forEach(n => n.el.remove());
+            nodes = [];
+            connections = [];
+            nextNodeId = 1;
+            updateConnections();
+        }
+
+        function exportFlow() {
+            // 準備發送給 Flask 的資料結構
+            const flowData = {
+                nodes: nodes.map(n => ({ 
+                    id: n.id, 
+                    type: n.type, 
+                    title: n.title, 
+                    position: { x: n.x, y: n.y },
+                    config: {} // 未來可放參數
+                })),
+                connections: connections.map(c => ({
+                    from: c.from,
+                    to: c.to
+                }))
+            };
+            
+            showModal(JSON.stringify(flowData, null, 2));
+            // 在實際 Flask 應用中，這裡會用 fetch('/api/save_flow', ...)
+        }
+
+        function runSimulation() {
+            const flowData = {
+                nodes: nodes.map(n => ({ id: n.id, type: n.type, title: n.title })),
+                connections: connections.map(c => ({ from: c.from, to: c.to }))
+            };
+
+            // 簡單的拓撲排序模擬 (只找 Start 節點往下跑)
+            let logs = "模擬執行日誌:\n------------------\n";
+            const startNodes = flowData.nodes.filter(n => n.type === 'start');
+            
+            if (startNodes.length === 0) {
+                logs += "錯誤: 沒有找到開始節點 (Start Node)";
+            } else {
+                startNodes.forEach(startNode => {
+                    logs += `[執行] 節點 ${startNode.title} (${startNode.id})\n`;
+                    
+                    // 簡單的遞歸尋找下一層
+                    let currentId = startNode.id;
+                    let nextConn = flowData.connections.find(c => c.from === currentId);
+                    
+                    while(nextConn) {
+                        const nextNode = flowData.nodes.find(n => n.id === nextConn.to);
+                        if (!nextNode) break;
+                        logs += `  ↓\n[執行] 節點 ${nextNode.title} (${nextNode.id})\n`;
+                        currentId = nextNode.id;
+                        nextConn = flowData.connections.find(c => c.from === currentId);
+                    }
+                    logs += "  ↓\n[結束] 流程結束\n\n";
+                });
+            }
+
+            showModal(logs);
+        }
+
+        // Modal UI
+        function showModal(content) {
+            const modal = document.getElementById('modal');
+            const contentEl = document.getElementById('modal-content');
+            contentEl.textContent = content;
+            modal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.add('hidden');
+        }
+
+    </script>
+</body>
+</html>

@@ -338,6 +338,81 @@
   </div>
 </div>
 
+  <div class="row g-4 mt-1">
+    <div class="col-12">
+      <div class="card shadow-sm mb-3">
+        <div class="card-body vstack gap-3">
+          <div>
+            <label class="form-label">流程名稱</label>
+            <input class="form-control" name="flow_name" value="{{ loaded_name or '' }}">
+            <div class="form-text">保存或執行前請先命名流程。</div>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
+            <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
+          </div>
+          <div>
+            <label class="form-label" for="document_format">文件格式</label>
+            <select class="form-select" id="document_format" name="document_format">
+              {% for key, meta in format_presets.items() %}
+              <option value="{{ key }}" {% if key == selected_format %}selected{% endif %}>{{ meta.label }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text" id="document_format_help"></div>
+          </div>
+          <div>
+            <label class="form-label" for="line_spacing">行距</label>
+            <select class="form-select" id="line_spacing" name="line_spacing">
+              {% for value, label in line_spacing_choices %}
+              <option value="{{ value }}" {% if value == selected_line_spacing %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+              {% if selected_line_spacing and selected_line_spacing not in line_spacing_values %}
+              <option value="{{ selected_line_spacing }}" selected>自訂（{{ selected_line_spacing }}）</option>
+              {% endif %}
+            </select>
+          </div>
+          <div>
+            <button class="btn btn-outline-secondary w-100" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-success flex-fill" type="submit" name="action" value="run">執行流程</button>
+            <button class="btn btn-primary flex-fill" type="submit" name="action" value="save">保存流程</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-header bg-white fw-bold">操作提示</div>
+        <div class="card-body small text-muted">
+          <ul class="mb-2">
+            <li>從左側元件庫拖曳至畫布建立節點，點擊節點即可拖移位置。</li>
+            <li>拖曳輸出點到另一節點輸入點建立流程順序，點擊線條可刪除。</li>
+            <li>提交時系統會依連線自動推算執行順序，若無連線則依建立順序執行。</li>
+          </ul>
+          <div class="alert alert-info mb-0">每個節點都含有原先的步驟設定欄位，既有流程會自動帶入並串接。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<div class="modal fade" id="flowModal" tabindex="-1" aria-labelledby="flowModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="flowModalLabel">匯出 / 模擬結果</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <pre id="flowModalContent" class="bg-light border rounded p-3" style="max-height: 400px; overflow: auto;"></pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="filesModal" tabindex="-1" aria-labelledby="filesModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">

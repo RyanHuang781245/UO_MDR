@@ -2,7 +2,7 @@
 {% block content %}
 {% macro render_tables(node, path="") %}
   {% if node.files %}
-  <h3 class="h6 mt-3">{{ path or '根目錄' }}</h3>
+  <h6 class="mt-3">{{ path or '根目錄' }}</h6>
   <table class="table table-sm">
     <tbody>
       {% for fname in node.files %}
@@ -15,79 +15,234 @@
     {{ render_tables(dnode, path ~ ("/" if path else "") ~ dname) }}
   {% endfor %}
 {% endmacro %}
-<h1 class="h3 mb-3">定義流程</h1>
+<style>
+  .flow-canvas-wrapper {
+    position: relative;
+    min-height: 900px;
+    background: radial-gradient(#dee2e6 1px, transparent 1px);
+    background-size: 24px 24px;
+    overflow: hidden;
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+  }
 
-<form id="flow_form" action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
+  #flow-canvas {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 900px;
+    user-select: none;
+    overflow: auto;
+  }
+
+  #canvas-content {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 1400px;
+    min-height: 1000px;
+    transform-origin: top left;
+  }
+
+  #connections-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .connection-line {
+    fill: none;
+    stroke: #6c757d;
+    stroke-width: 4px;
+    stroke-linecap: round;
+    pointer-events: stroke;
+    cursor: pointer;
+    transition: stroke 0.2s;
+  }
+
+  .connection-line:hover { stroke: #dc3545; }
+
+  .component-drawer {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    width: 240px;
+    z-index: 5;
+  }
+
+  .component-item {
+    cursor: grab;
+  }
+
+  .canvas-controls {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    z-index: 5;
+  }
+
+  .zoom-indicator {
+    min-width: 72px;
+  }
+
+  .flow-node {
+    position: absolute;
+    width: 240px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+    border: 1px solid #dee2e6;
+    z-index: 10;
+  }
+
+  .flow-node .card-header {
+    cursor: grab;
+  }
+
+  .port {
+    width: 16px;
+    height: 16px;
+    background-color: #6c757d;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: crosshair;
+    z-index: 15;
+    transition: transform 0.1s, background-color 0.1s;
+  }
+
+  .port:hover {
+    transform: translateY(-50%) scale(1.1);
+    background-color: #0d6efd;
+  }
+
+  .port.input { left: -10px; }
+  .port.output { right: -10px; }
+
+  .flow-node .form-control,
+  .flow-node .form-select {
+    font-size: 0.85rem;
+  }
+
+  .flow-node .form-text {
+    font-size: 0.75rem;
+  }
+</style>
+
+<h1 class="h3 mb-4">流程節點編輯器</h1>
+
+<form id="flow_form" action="{{ url_for('run_flow', task_id=task.id) }}" method="post">
   <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
-  <div id="steps" class="vstack gap-3"></div>
 
-  <div class="row g-3">
-    <div class="col-md-6">
-      <label class="form-label">流程名稱</label>
-      <input class="form-control" name="flow_name" value="{{ loaded_name or '' }}">
-    </div>
-  </div>
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="flow-canvas-wrapper" id="canvas-wrapper">
+        <div class="component-drawer">
+          <div class="card shadow-sm">
+            <div class="card-header bg-white fw-bold">元件庫</div>
+            <div class="card-body p-2">
+              {% for key, meta in steps.items() %}
+              <div class="card component-item mb-2" draggable="true" ondragstart="startDragComponent(event)" data-type="{{ key }}" data-label="{{ meta.label }}">
+                <div class="card-body py-2 d-flex align-items-center gap-2">
+                  <span class="badge bg-secondary">{{ loop.index }}</span>
+                  <div>
+                    <div class="fw-semibold">{{ meta.label }}</div>
+                    <div class="small text-muted">拖曳到畫布建立節點</div>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+              <div class="small text-muted px-2">點擊輸出點並拖曳到下一個節點的輸入點以建立流程順序。</div>
+            </div>
+          </div>
+        </div>
 
-  <div class="form-check">
-    <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
-    <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
-  </div>
+        <div class="canvas-controls d-flex flex-column align-items-end gap-2">
+          <div class="btn-group" role="group" aria-label="Zoom controls">
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="zoomOut()">－</button>
+            <div class="btn btn-light btn-sm zoom-indicator" id="zoom-label">100%</div>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="zoomIn()">＋</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="resetZoom()">重設</button>
+          </div>
+          <div class="btn-group" role="group" aria-label="Canvas actions">
+            <button class="btn btn-outline-primary btn-sm" type="button" onclick="exportFlow()">匯出 JSON</button>
+            <button class="btn btn-outline-success btn-sm" type="button" onclick="simulateFlow()">模擬執行</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearCanvas()">清空畫布</button>
+          </div>
+        </div>
 
-  <div class="row g-3 align-items-end">
-    <div class="col-md-6">
-      <label class="form-label" for="document_format">文件格式</label>
-      <select class="form-select" id="document_format" name="document_format">
-        {% for key, meta in format_presets.items() %}
-        <option value="{{ key }}" {% if key == selected_format %}selected{% endif %}>{{ meta.label }}</option>
-        {% endfor %}
-      </select>
-      <div class="form-text" id="document_format_help"></div>
-    </div>
-    <div class="col-md-3">
-      <label class="form-label" for="line_spacing">行距</label>
-      <select class="form-select" id="line_spacing" name="line_spacing">
-        {% for value, label in line_spacing_choices %}
-        <option value="{{ value }}" {% if value == selected_line_spacing %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-        {% if selected_line_spacing and selected_line_spacing not in line_spacing_values %}
-        <option value="{{ selected_line_spacing }}" selected>自訂（{{ selected_line_spacing }}）</option>
-        {% endif %}
-      </select>
-    </div>
-  </div>
-
-  <div class="d-flex gap-2 mt-2">
-    <div class="dropdown">
-      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
-      <ul class="dropdown-menu">
-        {% for key, meta in steps.items() %}
-        <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
-        {% endfor %}
-      </ul>
-    </div>
-      <button class="btn btn-success" type="submit" name="action" value="run">執行流程</button>
-      <button class="btn btn-secondary" type="submit" name="action" value="save">保存流程</button>
-      <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
-    </div>
-  </form>
-
-<div class="modal fade" id="filesModal" tabindex="-1" aria-labelledby="filesModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="filesModalLabel">檔案結構</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        {{ render_tables(files_tree) }}
+        <div id="flow-canvas" class="p-2">
+          <div id="canvas-content">
+            <svg id="connections-layer"></svg>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
-</div>
 
-<div class="mt-3">
-</div>
-<hr>
+    <div class="col-lg-4">
+      <div class="card shadow-sm mb-3">
+        <div class="card-body vstack gap-3">
+          <div>
+            <label class="form-label">流程名稱</label>
+            <input class="form-control" name="flow_name" value="{{ loaded_name or '' }}">
+            <div class="form-text">保存或執行前請先命名流程。</div>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
+            <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
+          </div>
+          <div>
+            <label class="form-label" for="document_format">文件格式</label>
+            <select class="form-select" id="document_format" name="document_format">
+              {% for key, meta in format_presets.items() %}
+              <option value="{{ key }}" {% if key == selected_format %}selected{% endif %}>{{ meta.label }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text" id="document_format_help"></div>
+          </div>
+          <div>
+            <label class="form-label" for="line_spacing">行距</label>
+            <select class="form-select" id="line_spacing" name="line_spacing">
+              {% for value, label in line_spacing_choices %}
+              <option value="{{ value }}" {% if value == selected_line_spacing %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+              {% if selected_line_spacing and selected_line_spacing not in line_spacing_values %}
+              <option value="{{ selected_line_spacing }}" selected>自訂（{{ selected_line_spacing }}）</option>
+              {% endif %}
+            </select>
+          </div>
+          <div>
+            <button class="btn btn-outline-secondary w-100" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-success flex-fill" type="submit" name="action" value="run">執行流程</button>
+            <button class="btn btn-primary flex-fill" type="submit" name="action" value="save">保存流程</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-header bg-white fw-bold">操作提示</div>
+        <div class="card-body small text-muted">
+          <ul class="mb-2">
+            <li>從左側元件庫拖曳至畫布建立節點，點擊節點即可拖移位置。</li>
+            <li>拖曳輸出點到另一節點輸入點建立流程順序，點擊線條可刪除。</li>
+            <li>提交時系統會依連線自動推算執行順序，若無連線則依建立順序執行。</li>
+          </ul>
+          <div class="alert alert-info mb-0">每個節點都含有原先的步驟設定欄位，既有流程會自動帶入並串接。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<hr class="my-4">
 <h2 class="h5 mt-4">已保存的流程</h2>
 <table class="table table-striped text-center align-middle">
   <thead>
@@ -152,12 +307,63 @@
   </div>
 </form>
 
+<div class="modal fade" id="filesModal" tabindex="-1" aria-labelledby="filesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="filesModalLabel">檔案結構</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        {{ render_tables(files_tree) }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="flowModal" tabindex="-1" aria-labelledby="flowModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="flowModalLabel">匯出 / 模擬結果</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <pre id="flowModalContent" class="bg-light border rounded p-3" style="max-height: 400px; overflow: auto;"></pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 const TASK_ID = '{{ task.id }}';
 const SUPPORTED_STEPS = {{ steps|tojson }};
 const AVAILABLE_FILES = {{ files|tojson }};
 const PRESET_FLOW = {{ preset|tojson }};
 const FORMAT_PRESETS = {{ format_presets|tojson }};
+
+const canvas = document.getElementById('flow-canvas');
+const canvasContent = document.getElementById('canvas-content');
+const svgLayer = document.getElementById('connections-layer');
+const flowForm = document.getElementById('flow_form');
+const zoomLabel = document.getElementById('zoom-label');
+canvas.addEventListener('dragover', allowDrop);
+canvas.addEventListener('drop', handleDrop);
+let nodes = [];
+let connections = [];
+let nextNode = 1;
+let dragStart = null;
+let tempLine = null;
+let currentDragNode = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let canvasZoom = 1;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2;
+const ZOOM_STEP = 0.1;
 
 function updateDocumentFormatHelp(){
   const select = document.getElementById('document_format');
@@ -180,206 +386,376 @@ function updateDocumentFormatHelp(){
 }
 
 updateDocumentFormatHelp();
-const documentFormatSelect = document.getElementById('document_format');
-if (documentFormatSelect){
-  documentFormatSelect.addEventListener('change', updateDocumentFormatHelp);
-}
-let isInitialising = true;
-let isDirty = false;
-function markDirty(){
-  if (!isInitialising) isDirty = true;
-}
-window.addEventListener('beforeunload', function(e){
-  if (!isDirty) return;
-  e.preventDefault();
-  e.returnValue = '';
-});
-const flowForm = document.getElementById('flow_form');
-flowForm.addEventListener('submit', (e) => {
-  const action = e.submitter?.value;
-  if ((action === 'save' || action === 'run') && !flowForm.elements['flow_name'].value.trim()) {
-    e.preventDefault();
-    alert('請輸入流程名稱');
-    return;
-  }
-  if (action === 'run') {
-    const hasCopy = Array.from(flowForm.querySelectorAll('input[name$="_type"]'))
-      .some(el => el.value === 'copy_files');
-    if (hasCopy && !confirm('此流程包含複製檔案步驟，確定要執行嗎？')) {
-      e.preventDefault();
-      return;
-    }
-  }
-  isDirty = false;
-});
-flowForm.addEventListener('input', markDirty);
-flowForm.addEventListener('change', markDirty);
-function genId(){ return (Date.now().toString(36) + Math.random().toString(36).slice(2,7)); }
-function updateOrder(){
-  const ids = Array.from(document.querySelectorAll("#steps .card")).map(el => el.dataset.sid);
-  document.getElementById("ordered_ids").value = ids.join(",");
-  markDirty();
-}
-function addStep(typeKey, preset={}, refSid=null, position='end'){
-  const spec = SUPPORTED_STEPS[typeKey];
-  const sid = genId();
-  const card = document.createElement("div");
-  card.className = "card";
-  card.dataset.sid = sid;
+document.getElementById('document_format').addEventListener('change', updateDocumentFormatHelp);
 
-  let menuBefore = '', menuAfter = '';
-  for (const [k, m] of Object.entries(SUPPORTED_STEPS)){
-    menuBefore += `<li><a class="dropdown-item" href="#" onclick="addStep('${k}', {}, '${sid}', 'before'); return false;">${m.label}</a></li>`;
-    menuAfter  += `<li><a class="dropdown-item" href="#" onclick="addStep('${k}', {}, '${sid}', 'after'); return false;">${m.label}</a></li>`;
+function allowDrop(ev){ ev.preventDefault(); }
+
+function startDragComponent(ev){
+  const item = ev.currentTarget?.closest('.component-item') || ev.target.closest('.component-item');
+  if (!item) return;
+  ev.dataTransfer.setData('type', item.dataset.type);
+  ev.dataTransfer.setData('label', item.dataset.label);
+}
+
+function applyZoom(){
+  canvasContent.style.transform = `scale(${canvasZoom})`;
+  if (zoomLabel){
+    zoomLabel.textContent = `${Math.round(canvasZoom * 100)}%`;
   }
+  updateConnections();
+}
 
-  let body = `<div class="card-body">
-    <div class="d-flex justify-content-between align-items-center">
-      <h2 class="h5 mb-0">${spec.label}</h2>
-      <div class="btn-group">
-        <div class="btn-group">
-          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
-          <ul class="dropdown-menu">${menuBefore}</ul>
-        </div>
-        <div class="btn-group">
-          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
-          <ul class="dropdown-menu">${menuAfter}</ul>
-        </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
-        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
-      </div>
-    </div>
-    <input type="hidden" name="step_${sid}_type" value="${typeKey}">
-    <div class="row g-3 mt-1">`;
+function zoomIn(){
+  canvasZoom = Math.min(MAX_ZOOM, Math.round((canvasZoom + ZOOM_STEP) * 100) / 100);
+  applyZoom();
+}
 
+function zoomOut(){
+  canvasZoom = Math.max(MIN_ZOOM, Math.round((canvasZoom - ZOOM_STEP) * 100) / 100);
+  applyZoom();
+}
+
+function resetZoom(){
+  canvasZoom = 1;
+  applyZoom();
+}
+
+applyZoom();
+
+function handleDrop(ev){
+  ev.preventDefault();
+  const type = ev.dataTransfer.getData('type');
+  const label = ev.dataTransfer.getData('label');
+  if (!type) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (ev.clientX - rect.left + canvas.scrollLeft) / canvasZoom;
+  const y = (ev.clientY - rect.top + canvas.scrollTop) / canvasZoom;
+  createNode(type, label, x, y);
+}
+
+function genSid(){
+  return `n${Date.now().toString(36)}${Math.random().toString(36).slice(2,5)}`;
+}
+
+function renderFields(spec, sid, preset={}){
+  let body = '';
   for (const k of spec.inputs){
     const accept = spec.accepts[k];
     let label = k;
-    if (k === "pdf_zip") label = "PDF ZIP 壓縮檔";
-    if (k === "target_section") label = "章節編號（例如 6.12.1）";
-    if (k === "target_chapter_section") label = "章節編號（例如 6.12.1）";
-    if (k === "target_title_section") label = "章節標題（完整比對）";
-    if (k === "input_file") label = "輸入檔案";
-    if (k === "target_title") label = "擷取標題內容";
-    if (k === "text") label = "輸入文字";
-    if (k === "align") label = "對齊方式";
-    if (k === "bold") label = "粗體";
-    if (k === "source_dir") label = "來源資料夾";
-    if (k === "dest_dir") label = "目的資料夾";
-    if (k === "keywords") label = "關鍵字（逗號分隔）";
-
-    const val = preset[k] || "";
-    if (accept === "text"){
-      body += `<div class="col-md-6"><label class="form-label">${label}</label>
-               <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${label}"></div>`;
-    } else if (accept === "bool"){
-      body += `<div class="col-md-3"><label class="form-label">${label}</label>
-               <select class="form-select" name="step_${sid}_${k}">
-                 <option value="false" ${val==="false"?"selected": ""}>否</option>
-                 <option value="true" ${val==="true"?"selected": ""}>是</option>
-               </select>
-             </div>`;
-    } else if (accept === "int" || accept === "float"){
-      if (k === "level") {
-        let options = "", help = "";
-        if (typeKey === "insert_numbered_heading") {
-          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（1.）</option>
-                     <option value="1" ${val==="1"?"selected": ""}>Level 1（1.1.）</option>
-                     <option value="2" ${val==="2"?"selected": ""}>Level 2（1.1.1.）</option>`;
-          help = "建議僅用到 Level 2；更深層需先擴充樣式。";
-        } else if (typeKey === "insert_roman_heading") {
-          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（I.）</option>`;
-          help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式。";
+    if (k === 'pdf_zip') label = 'PDF ZIP 壓縮檔';
+    if (k === 'target_section') label = '章節編號（例如 6.12.1）';
+    if (k === 'target_chapter_section') label = '章節編號（例如 6.12.1）';
+    if (k === 'target_title_section') label = '章節標題（完整比對）';
+    if (k === 'input_file') label = '輸入檔案';
+    if (k === 'target_title') label = '擷取標題內容';
+    if (k === 'text') label = '輸入文字';
+    if (k === 'align') label = '對齊方式';
+    if (k === 'bold') label = '粗體';
+    if (k === 'source_dir') label = '來源資料夾';
+    if (k === 'dest_dir') label = '目的資料夾';
+    if (k === 'keywords') label = '關鍵字（逗號分隔）';
+    const rawVal = preset[k];
+    const val = (rawVal === undefined || rawVal === null) ? '' : String(rawVal);
+    if (accept === 'text'){
+      body += `<div class="mb-2"><label class="form-label small mb-1">${label}</label>`+
+              `<input class="form-control form-control-sm" name="step_${sid}_${k}" value="${val}" placeholder="${label}"></div>`;
+    } else if (accept === 'bool'){
+      body += `<div class="mb-2"><label class="form-label small mb-1">${label}</label>`+
+              `<select class="form-select form-select-sm" name="step_${sid}_${k}">`+
+              `<option value="false" ${val==="false"?"selected": ""}>否</option>`+
+              `<option value="true" ${val==="true"?"selected": ""}>是</option>`+
+              `</select></div>`;
+    } else if (accept === 'int' || accept === 'float'){
+      if (k === 'level'){
+        let options = '', help = '';
+        if (spec.label.includes('阿拉伯')){
+          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（1.）</option>`+
+                   `<option value="1" ${val==="1"?"selected": ""}>Level 1（1.1.）</option>`+
+                   `<option value="2" ${val==="2"?"selected": ""}>Level 2（1.1.1.）</option>`;
+          help = '建議僅用到 Level 2；更深層需先擴充樣式。';
         } else {
-          options = `<option value="0" ${val==="0"?"selected": ""}>0</option>`;
+          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（I.）</option>`;
+          help = '僅定義 Level 0；要 I→A→1 多層需擴充樣式。';
         }
-        body += `<div class="col-md-4">
-                   <label class="form-label">level</label>
-                   <select class="form-select" name="step_${sid}_${k}">${options}</select>
-                   <div class="form-text">${help}</div>
-                 </div>`;
-      } else if (k === "font_size") {
-        body += `<div class="col-md-3"><label class="form-label">字體大小</label>
-                 <select class="form-select" name="step_${sid}_${k}">
-                   <option value="12" ${val==="12"?"selected": ""}>12</option>
-                   <option value="13" ${val==="13"?"selected": ""}>13</option>
-                   <option value="14" ${val==="14"?"selected": ""}>14</option>
-                   <option value="16" ${val==="16"?"selected": ""}>16</option>
-                   <option value="18" ${val==="18"?"selected": ""}>18</option>
-                 </select></div>`;
-      } else if (k === "before_space" || k === "after_space") {
-        const nice = k === "before_space" ? "段前間距" : "段後間距";
-        body += `<div class="col-md-3"><label class="form-label">${nice}</label>
-                 <select class="form-select" name="step_${sid}_${k}">
-                   <option value="0" ${val==="0"?"selected": ""}>0 pt</option>
-                   <option value="6" ${val==="6"?"selected": ""}>6 pt</option>
-                   <option value="12" ${val==="12"?"selected": ""}>12 pt</option>
-                 </select></div>`;
+        body += `<div class="mb-2"><label class="form-label small mb-1">level</label>`+
+                `<select class="form-select form-select-sm" name="step_${sid}_${k}">${options}</select>`+
+                `<div class="form-text">${help}</div></div>`;
+      } else if (k === 'font_size'){
+        body += `<div class="mb-2"><label class="form-label small mb-1">字體大小</label>`+
+                `<select class="form-select form-select-sm" name="step_${sid}_${k}">`+
+                `<option value="12" ${val==="12"?"selected": ""}>12</option>`+
+                `<option value="13" ${val==="13"?"selected": ""}>13</option>`+
+                `<option value="14" ${val==="14"?"selected": ""}>14</option>`+
+                `<option value="16" ${val==="16"?"selected": ""}>16</option>`+
+                `<option value="18" ${val==="18"?"selected": ""}>18</option>`+
+                `</select></div>`;
+      } else if (k === 'before_space' || k === 'after_space'){
+        const nice = k === 'before_space' ? '段前間距' : '段後間距';
+        body += `<div class="mb-2"><label class="form-label small mb-1">${nice}</label>`+
+                `<select class="form-select form-select-sm" name="step_${sid}_${k}">`+
+                `<option value="0" ${val==="0"?"selected": ""}>0 pt</option>`+
+                `<option value="6" ${val==="6"?"selected": ""}>6 pt</option>`+
+                `<option value="12" ${val==="12"?"selected": ""}>12 pt</option>`+
+                `</select></div>`;
       } else {
-        body += `<div class="col-md-3"><label class="form-label">${label}</label>
-                 <input class="form-control" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${label}"></div>`;
+        body += `<div class="mb-2"><label class="form-label small mb-1">${label}</label>`+
+                `<input class="form-control form-control-sm" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${label}"></div>`;
       }
-    } else if (accept.startsWith("file")){
-      const ext = accept.split(":")[1];
-      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
-      const placeholder = ext === "dir" ? "選擇資料夾" : "選擇檔案";
-      const selected = val ? "" : "selected";
-      body += `<div class="col-md-6"><label class="form-label">${label}</label>
-               <select class="form-select" name="step_${sid}_${k}" required>
-                 <option value="" disabled ${selected}>${placeholder}</option>${options}
-               </select></div>`;
-    } else if (k === "align"){
-      body += `<div class="col-md-3"><label class="form-label">對齊</label>
-               <select class="form-select" name="step_${sid}_align">
-                 <option value="left" ${val==="left"?"selected": ""}>靠左</option>
-                 <option value="center" ${val==="center"?"selected": ""}>置中</option>
-                 <option value="right" ${val==="right"?"selected": ""}>靠右</option>
-                 <option value="justify" ${val==="justify"?"selected": ""}>左右對齊</option>
-               </select>
-               <div class="form-text">一般內文建議使用 左/左右對齊；標題多用 置中。</div>
-             </div>`;
+    } else if (accept.startsWith('file')){
+      const ext = accept.split(':')[1];
+      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join('');
+      const placeholder = ext === 'dir' ? '選擇資料夾' : '選擇檔案';
+      const selected = val ? '' : 'selected';
+      body += `<div class="mb-2"><label class="form-label small mb-1">${label}</label>`+
+              `<select class="form-select form-select-sm" name="step_${sid}_${k}" required>`+
+              `<option value="" disabled ${selected}>${placeholder}</option>${options}`+
+              `</select></div>`;
+    } else if (k === 'align'){
+      body += `<div class="mb-2"><label class="form-label small mb-1">對齊</label>`+
+              `<select class="form-select form-select-sm" name="step_${sid}_align">`+
+              `<option value="left" ${val==="left"?"selected": ""}>靠左</option>`+
+              `<option value="center" ${val==="center"?"selected": ""}>置中</option>`+
+              `<option value="right" ${val==="right"?"selected": ""}>靠右</option>`+
+              `<option value="justify" ${val==="justify"?"selected": ""}>左右對齊</option>`+
+              `</select>`+
+              `<div class="form-text">一般內文建議使用 左/左右對齊；標題多用 置中。</div></div>`;
     }
   }
+  return body;
+}
 
-  body += `</div></div>`;
-  card.innerHTML = body;
-  const container = document.getElementById("steps");
-  if (refSid){
-    const ref = document.querySelector(`.card[data-sid="${refSid}"]`);
-    if (ref){
-      if (position === 'before'){
-        container.insertBefore(card, ref);
-      } else {
-        container.insertBefore(card, ref.nextSibling);
-      }
-    } else {
-      container.appendChild(card);
-    }
-  } else {
-    container.appendChild(card);
+function createNode(type, label, x=60, y=60, preset={}){
+  const sid = genSid();
+  const spec = SUPPORTED_STEPS[type];
+  if (!spec){
+    alert(`未知的元件類型：${type}`);
+    return null;
   }
-  updateOrder();
+  const node = document.createElement('div');
+  node.className = 'flow-node card';
+  node.dataset.sid = sid;
+  node.style.left = `${x}px`;
+  node.style.top = `${y}px`;
+
+  node.innerHTML = `
+    <div class="card-header py-2 d-flex justify-content-between align-items-center" onmousedown="startDragNode(event, '${sid}')">
+      <div class="fw-semibold small">${label}</div>
+      <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeNode('${sid}')">刪除</button>
+    </div>
+    <div class="card-body p-2">
+      <input type="hidden" name="step_${sid}_type" value="${type}">
+      ${renderFields(spec, sid, preset)}
+    </div>`;
+
+  const inputPort = document.createElement('div');
+  inputPort.className = 'port input';
+  inputPort.onmouseup = (e) => endConnection(e, sid);
+  node.appendChild(inputPort);
+
+  const outputPort = document.createElement('div');
+  outputPort.className = 'port output';
+  outputPort.onmousedown = (e) => startConnection(e, sid);
+  node.appendChild(outputPort);
+
+  canvasContent.appendChild(node);
+  nodes.push({ id: sid, type, label, el: node, index: nextNode++ });
+  return sid;
 }
-function removeStep(sid){
-  const el = document.querySelector(`.card[data-sid="${sid}"]`);
-  if (el) el.remove();
-  updateOrder();
+
+function removeNode(sid){
+  const node = nodes.find(n => n.id === sid);
+  if (node){
+    node.el.remove();
+    nodes = nodes.filter(n => n.id !== sid);
+    connections = connections.filter(c => c.from !== sid && c.to !== sid);
+    updateConnections();
+  }
 }
-function moveUp(sid){
-  const el = document.querySelector(`.card[data-sid="${sid}"]`);
-  if (!el) return;
-  const prev = el.previousElementSibling;
-  if (prev) el.parentNode.insertBefore(el, prev);
-  updateOrder();
+
+function startDragNode(e, sid){
+  e.stopPropagation();
+  currentDragNode = sid;
+  const node = nodes.find(n => n.id === sid);
+  const canvasRect = canvas.getBoundingClientRect();
+  const rect = node.el.getBoundingClientRect();
+  dragOffsetX = ((e.clientX - canvasRect.left) + canvas.scrollLeft) / canvasZoom - parseFloat(node.el.style.left);
+  dragOffsetY = ((e.clientY - canvasRect.top) + canvas.scrollTop) / canvasZoom - parseFloat(node.el.style.top);
+  document.addEventListener('mousemove', moveNode);
+  document.addEventListener('mouseup', stopDragNode);
 }
-function moveDown(sid){
-  const el = document.querySelector(`.card[data-sid="${sid}"]`);
-  if (!el) return;
-  const next = el.nextElementSibling;
-  if (next) el.parentNode.insertBefore(next, el);
-  updateOrder();
+
+function moveNode(e){
+  if (!currentDragNode) return;
+  const node = nodes.find(n => n.id === currentDragNode);
+  const canvasRect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - canvasRect.left) + canvas.scrollLeft) / canvasZoom - dragOffsetX;
+  const y = ((e.clientY - canvasRect.top) + canvas.scrollTop) / canvasZoom - dragOffsetY;
+  node.el.style.left = `${x}px`;
+  node.el.style.top = `${y}px`;
+  updateConnections();
 }
+
+function stopDragNode(){
+  currentDragNode = null;
+  document.removeEventListener('mousemove', moveNode);
+  document.removeEventListener('mouseup', stopDragNode);
+}
+
+function startConnection(e, sid){
+  e.stopPropagation();
+  const rect = e.target.getBoundingClientRect();
+  const canvasRect = canvas.getBoundingClientRect();
+  dragStart = {
+    nodeId: sid,
+    x: (rect.left + rect.width / 2 - canvasRect.left + canvas.scrollLeft) / canvasZoom,
+    y: (rect.top + rect.height / 2 - canvasRect.top + canvas.scrollTop) / canvasZoom,
+    el: e.target
+  };
+  tempLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tempLine.setAttribute('class', 'connection-line');
+  tempLine.setAttribute('stroke-dasharray', '5,5');
+  svgLayer.appendChild(tempLine);
+  document.addEventListener('mousemove', drawTempLine);
+  document.addEventListener('mouseup', abortConnection);
+}
+
+function drawTempLine(e){
+  if (!dragStart) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  const endX = (e.clientX - canvasRect.left + canvas.scrollLeft) / canvasZoom;
+  const endY = (e.clientY - canvasRect.top + canvas.scrollTop) / canvasZoom;
+  const d = getBezierPath(dragStart.x, dragStart.y, endX, endY);
+  tempLine.setAttribute('d', d);
+}
+
+function endConnection(e, targetId){
+  if (!dragStart) return;
+  e.stopPropagation();
+  if (dragStart.nodeId === targetId){
+    cleanTempLine();
+    return;
+  }
+  // 移除既有指向目標的連線，以保持單一輸入
+  connections = connections.filter(c => c.to !== targetId);
+  const exists = connections.find(c => c.from === dragStart.nodeId && c.to === targetId);
+  if (!exists){
+    connections.push({
+      id: `c-${Date.now()}`,
+      from: dragStart.nodeId,
+      to: targetId,
+      fromPortEl: dragStart.el,
+      toPortEl: e.target
+    });
+  }
+  updateConnections();
+  cleanTempLine();
+}
+
+function abortConnection(){ cleanTempLine(); }
+
+function cleanTempLine(){
+  dragStart = null;
+  if (tempLine){ tempLine.remove(); tempLine = null; }
+  document.removeEventListener('mousemove', drawTempLine);
+  document.removeEventListener('mouseup', abortConnection);
+}
+
+function getBezierPath(x1, y1, x2, y2){
+  const curvature = 0.5;
+  const hx1 = x1 + Math.abs(x2 - x1) * curvature;
+  const hx2 = x2 - Math.abs(x2 - x1) * curvature;
+  return `M ${x1} ${y1} C ${hx1} ${y1} ${hx2} ${y2} ${x2} ${y2}`;
+}
+
+function updateConnections(){
+  const lines = Array.from(svgLayer.querySelectorAll('.connection-line:not([stroke-dasharray])'));
+  lines.forEach(l => l.remove());
+  const canvasRect = canvas.getBoundingClientRect();
+  connections.forEach(conn => {
+    const fromRect = conn.fromPortEl.getBoundingClientRect();
+    const toRect = conn.toPortEl.getBoundingClientRect();
+    const x1 = (fromRect.left + fromRect.width / 2 - canvasRect.left + canvas.scrollLeft) / canvasZoom;
+    const y1 = (fromRect.top + fromRect.height / 2 - canvasRect.top + canvas.scrollTop) / canvasZoom;
+    const x2 = (toRect.left + toRect.width / 2 - canvasRect.left + canvas.scrollLeft) / canvasZoom;
+    const y2 = (toRect.top + toRect.height / 2 - canvasRect.top + canvas.scrollTop) / canvasZoom;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('class', 'connection-line');
+    path.setAttribute('d', getBezierPath(x1, y1, x2, y2));
+    path.onclick = (evt) => {
+      evt.stopPropagation();
+      if (confirm('刪除這條連線？')){
+        connections = connections.filter(c => c.id !== conn.id);
+        updateConnections();
+      }
+    };
+    svgLayer.appendChild(path);
+  });
+}
+
+function clearCanvas(){
+  nodes.forEach(n => n.el.remove());
+  nodes = [];
+  connections = [];
+  nextNode = 1;
+  updateConnections();
+}
+
+function computeOrder(){
+  const indegree = {};
+  const adj = {};
+  nodes.forEach(n => { indegree[n.id] = 0; adj[n.id] = []; });
+  connections.forEach(c => { indegree[c.to] = (indegree[c.to] || 0) + 1; adj[c.from].push(c.to); });
+  const queue = nodes.filter(n => indegree[n.id] === 0).slice().sort((a,b)=>a.index-b.index);
+  const order = [];
+  while(queue.length){
+    const n = queue.shift();
+    order.push(n.id);
+    for (const to of adj[n.id]){
+      indegree[to] -= 1;
+      if (indegree[to] === 0){
+        const target = nodes.find(nn => nn.id === to);
+        queue.push(target);
+      }
+    }
+    queue.sort((a,b)=>a.index-b.index);
+  }
+  if (order.length !== nodes.length){
+    // 有循環時，以建立順序補齊
+    nodes.slice().sort((a,b)=>a.index-b.index).forEach(n => { if(!order.includes(n.id)) order.push(n.id); });
+  }
+  return order;
+}
+
+function exportFlow(){
+  const payload = {
+    nodes: nodes.map(n => ({ id: n.id, type: n.type, label: n.label })),
+    connections: connections.map(c => ({ from: c.from, to: c.to })),
+    order: computeOrder()
+  };
+  showModal(JSON.stringify(payload, null, 2));
+}
+
+function simulateFlow(){
+  const order = computeOrder();
+  if (!order.length){
+    showModal('尚未建立節點');
+    return;
+  }
+  let log = '模擬執行日誌\n-----------------\n';
+  order.forEach((sid, idx) => {
+    const node = nodes.find(n => n.id === sid);
+    log += `[${idx+1}] ${node.label} (${sid})\n`;
+  });
+  showModal(log);
+}
+
+function showModal(content){
+  const modalBody = document.getElementById('flowModalContent');
+  modalBody.textContent = content;
+  const modal = new bootstrap.Modal(document.getElementById('flowModal'));
+  modal.show();
+}
+
 function renameFlow(current){
   const name = prompt('輸入新流程名稱', current);
   if(!name) return;
@@ -394,12 +770,58 @@ function renameFlow(current){
   document.body.appendChild(form);
   form.submit();
 }
-if (PRESET_FLOW){
-  for (const st of PRESET_FLOW){
-    addStep(st.type, st.params);
+
+function prepareSubmission(action){
+  if ((action === 'save' || action === 'run') && !flowForm.elements['flow_name'].value.trim()){
+    alert('請輸入流程名稱');
+    return false;
   }
+  const order = computeOrder();
+  if (!order.length){
+    alert('請至少建立一個節點');
+    return false;
+  }
+  document.getElementById('ordered_ids').value = order.join(',');
+  return true;
 }
-isInitialising = false;
+
+flowForm.addEventListener('submit', (e) => {
+  const action = e.submitter?.value;
+  const ok = prepareSubmission(action);
+  if (!ok){
+    e.preventDefault();
+  }
+});
+
+function initFromPreset(){
+  if (!Array.isArray(PRESET_FLOW)) return;
+  let y = 40;
+  let prev = null;
+  PRESET_FLOW.forEach(st => {
+    const sid = createNode(st.type, SUPPORTED_STEPS[st.type]?.label || st.type, 320, y, st.params || {});
+    if (!sid) return;
+    if (prev){
+      const fromNode = nodes.find(n => n.id === prev);
+      const toNode = nodes.find(n => n.id === sid);
+      if (fromNode && toNode){
+        const fromPort = fromNode.el.querySelector('.port.output');
+        const toPort = toNode.el.querySelector('.port.input');
+        connections.push({
+          id: `c-${Date.now()}-${sid}`,
+          from: prev,
+          to: sid,
+          fromPortEl: fromPort,
+          toPortEl: toPort
+        });
+      }
+    }
+    prev = sid;
+    y += 180;
+  });
+  updateConnections();
+}
+
+initFromPreset();
 </script>
 {% endblock %}
 

@@ -18,7 +18,7 @@
 <style>
   .flow-canvas-wrapper {
     position: relative;
-    min-height: 900px;
+    min-height: 1100px;
     background: radial-gradient(#dee2e6 1px, transparent 1px);
     background-size: 24px 24px;
     overflow: hidden;
@@ -30,7 +30,7 @@
     position: relative;
     width: 100%;
     height: 100%;
-    min-height: 900px;
+    min-height: 1100px;
     user-select: none;
     overflow: auto;
   }
@@ -40,7 +40,7 @@
     width: 100%;
     height: 100%;
     min-width: 1400px;
-    min-height: 1000px;
+    min-height: 1600px;
     transform-origin: top left;
   }
 
@@ -149,16 +149,12 @@
             <div class="card-body p-2">
               {% for key, meta in steps.items() %}
               <div class="card component-item mb-2" draggable="true" ondragstart="startDragComponent(event)" data-type="{{ key }}" data-label="{{ meta.label }}">
-                <div class="card-body py-2 d-flex align-items-center gap-2">
-                  <span class="badge bg-secondary">{{ loop.index }}</span>
-                  <div>
-                    <div class="fw-semibold">{{ meta.label }}</div>
-                    <div class="small text-muted">拖曳到畫布建立節點</div>
-                  </div>
+                <div class="card-body py-2 text-center fw-semibold">
+                  {{ meta.label }}
                 </div>
               </div>
               {% endfor %}
-              <div class="small text-muted px-2">點擊輸出點並拖曳到下一個節點的輸入點以建立流程順序。</div>
+              <div class="small text-muted px-2">拖曳元件到畫布建立節點，雙擊節點可開啟設定。</div>
             </div>
           </div>
         </div>
@@ -555,9 +551,16 @@ function createNode(type, label, x=60, y=60, preset={}){
   node.innerHTML = `
     <div class="card-header py-2 d-flex justify-content-between align-items-center" onmousedown="startDragNode(event, '${sid}')">
       <div class="fw-semibold small">${label}</div>
-      <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeNode('${sid}')">刪除</button>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-light text-secondary border">雙擊設定</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeNode('${sid}')">刪除</button>
+      </div>
     </div>
-    <div class="card-body p-2">
+    <div class="card-body p-2 node-settings d-none">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="text-muted small">設定</div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeNodeSettings('${sid}')">收合</button>
+      </div>
       <input type="hidden" name="step_${sid}_type" value="${type}">
       ${renderFields(spec, sid, preset)}
     </div>`;
@@ -572,9 +575,32 @@ function createNode(type, label, x=60, y=60, preset={}){
   outputPort.onmousedown = (e) => startConnection(e, sid);
   node.appendChild(outputPort);
 
+  node.ondblclick = (e) => {
+    e.stopPropagation();
+    openNodeSettings(sid);
+  };
+
   canvasContent.appendChild(node);
   nodes.push({ id: sid, type, label, el: node, index: nextNode++ });
   return sid;
+}
+
+function openNodeSettings(sid){
+  const node = nodes.find(n => n.id === sid);
+  if (!node) return;
+  const body = node.el.querySelector('.node-settings');
+  if (body){
+    body.classList.remove('d-none');
+  }
+}
+
+function closeNodeSettings(sid){
+  const node = nodes.find(n => n.id === sid);
+  if (!node) return;
+  const body = node.el.querySelector('.node-settings');
+  if (body){
+    body.classList.add('d-none');
+  }
 }
 
 function removeNode(sid){
@@ -588,6 +614,9 @@ function removeNode(sid){
 }
 
 function startDragNode(e, sid){
+  if (e.detail === 2){
+    return;
+  }
   e.stopPropagation();
   currentDragNode = sid;
   const node = nodes.find(n => n.id === sid);

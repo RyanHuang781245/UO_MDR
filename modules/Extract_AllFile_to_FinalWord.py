@@ -139,6 +139,7 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
                 if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
                     continue
                 paragraph_text = child.ListText + " " if child.ListText else ""
+                paragraph_alignment = getattr(child.Format, "HorizontalAlignment", None)
                 for j in range(child.ChildObjects.Count):
                     sub = child.ChildObjects.get_Item(j)
                     if sub.DocumentObjectType == DocumentObjectType.TextRange:
@@ -147,17 +148,30 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
                         file_name = _save_picture_with_original_format(
                             sub, output_image_path, image_count
                         )
-                        paragraph_text += f"[Image: {file_name}]"
+                        paragraph_text += (
+                            f"[Image: {file_name}|{sub.Width}|{sub.Height}]"
+                        )
 
                 para = section.AddParagraph()
                 if paragraph_text.strip():
                     for part in re.split(r'(\[Image:.+?\])', paragraph_text):
                         if part.startswith("[Image:"):
-                            img_name = part[7:-1].strip()
-                            img_path = os.path.join(output_image_path, img_name)
+                            try:
+                                content = part[7:-1]
+                                img_name, width, height = content.split("|")
+                                width = float(width)
+                                height = float(height)
+                            except ValueError:
+                                img_name = part[7:-1].strip()
+                                width = height = None
+                            img_path = os.path.join(output_image_path, img_name.strip())
                             if os.path.isfile(img_path):
-                                para.AppendPicture(img_path)
-                                para.Format.HorizontalAlignment = HorizontalAlignment.Center
+                                pic = para.AppendPicture(img_path)
+                                if width and height:
+                                    pic.Width = width
+                                    pic.Height = height
+                                if paragraph_alignment is not None:
+                                    para.Format.HorizontalAlignment = paragraph_alignment
                         else:
                             para.AppendText(part)
             elif isinstance(child, Table):
@@ -286,6 +300,7 @@ def extract_word_chapter(
                 if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
                     continue
                 paragraph_text = child.ListText + " " if child.ListText else ""
+                paragraph_alignment = getattr(child.Format, "HorizontalAlignment", None)
                 for j in range(child.ChildObjects.Count):
                     sub = child.ChildObjects.get_Item(j)
                     if sub.DocumentObjectType == DocumentObjectType.TextRange:
@@ -294,7 +309,9 @@ def extract_word_chapter(
                         file_name = _save_picture_with_original_format(
                             sub, output_image_path, image_count
                         )
-                        paragraph_text += f"[Image: {file_name}]"
+                        paragraph_text += (
+                            f"[Image: {file_name}|{sub.Width}|{sub.Height}]"
+                        )
                 paragraph_text = paragraph_text.strip()
                 if section_pattern.match(paragraph_text):
                     capture_mode = True
@@ -311,11 +328,22 @@ def extract_word_chapter(
                     if paragraph_text:
                         for part in re.split(r'(\[Image:.+?\])', paragraph_text):
                             if part.startswith("[Image:"):
-                                img_name = part[7:-1].strip()
-                                img_path = os.path.join(output_image_path, img_name)
+                                try:
+                                    content = part[7:-1]
+                                    img_name, width, height = content.split("|")
+                                    width = float(width)
+                                    height = float(height)
+                                except ValueError:
+                                    img_name = part[7:-1].strip()
+                                    width = height = None
+                                img_path = os.path.join(output_image_path, img_name.strip())
                                 if os.path.isfile(img_path):
-                                    para.AppendPicture(img_path)
-                                    para.Format.HorizontalAlignment = HorizontalAlignment.Center
+                                    pic = para.AppendPicture(img_path)
+                                    if width and height:
+                                        pic.Width = width
+                                        pic.Height = height
+                                    if paragraph_alignment is not None:
+                                        para.Format.HorizontalAlignment = paragraph_alignment
                             else:
                                 para.AppendText(part)
             elif isinstance(child, Table) and capture_mode:

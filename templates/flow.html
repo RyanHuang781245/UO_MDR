@@ -30,7 +30,6 @@
     border-radius: 14px;
     padding: 1.25rem;
     background: #f8f9fa;
-    height: 100%;
   }
 
   @media (min-width: 1200px) {
@@ -260,7 +259,7 @@
       <div class="card shadow-sm flow-manage-card">
         <div class="card-header bg-white fw-bold">流程配置與已保存的流程</div>
         <div class="card-body">
-          <div class="row g-4 align-items-stretch">
+          <div class="row g-4 align-items-start">
             <div class="col-12 col-xl-5">
               <div class="section-wrap divider-xl">
                 <form id="flow_form" action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="h-100">

@@ -21,6 +21,10 @@
     max-width: 100%;
   }
 
+  .saved-flows-section {
+    min-height: 420px;
+  }
+
   .flow-canvas-wrapper {
     position: relative;
     min-height: 900px;
@@ -210,98 +214,97 @@
       <div class="card shadow-sm">
         <div class="card-header bg-white fw-bold">流程配置與已保存的流程</div>
         <div class="card-body">
-        <div class="vstack gap-4">
-          <div class="col-12 col-xl-5">
-            <form id="flow_form" action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="h-100">
-              <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
-              <div class="vstack gap-3">
-                <div>
-                  <label class="form-label">流程名稱</label>
-                  <input class="form-control" name="flow_name" value="{{ loaded_name or '' }}">
-                  <div class="form-text">保存或執行前請先命名流程。</div>
+          <div class="row g-4 align-items-start">
+            <div class="col-12 col-xl-5">
+              <form id="flow_form" action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="h-100">
+                <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
+                <div class="vstack gap-3">
+                  <div>
+                    <label class="form-label">流程名稱</label>
+                    <input class="form-control" name="flow_name" value="{{ loaded_name or '' }}">
+                    <div class="form-text">保存或執行前請先命名流程。</div>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
+                    <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
+                  </div>
+                  <div>
+                    <button class="btn btn-outline-secondary w-100" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
+                  </div>
+                  <div class="border rounded p-3 bg-light-subtle">
+                    <div class="fw-bold mb-2">操作提示</div>
+                    <ul class="small text-muted mb-2">
+                      <li>從左側元件庫拖曳至畫布建立節點，點擊節點即可拖移位置。</li>
+                      <li>拖曳輸出點到另一節點輸入點建立流程順序，點擊線條可刪除。</li>
+                      <li>提交時系統會依連線自動推算執行順序，若無連線則依建立順序執行。</li>
+                    </ul>
+                    <div class="alert alert-info mb-0">每個節點都含有原先的步驟設定欄位，既有流程會自動帶入並串接。</div>
+                  </div>
+                  <div class="d-flex gap-2">
+                    <button class="btn btn-success flex-fill" type="submit" name="action" value="run">執行流程</button>
+                    <button class="btn btn-primary flex-fill" type="submit" name="action" value="save">保存流程</button>
+                  </div>
                 </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
-                  <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
-                </div>
-                <div>
-                  <button class="btn btn-outline-secondary w-100" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
-                </div>
-                <div class="border rounded p-3 bg-light-subtle">
-                  <div class="fw-bold mb-2">操作提示</div>
-                  <ul class="small text-muted mb-2">
-                    <li>從左側元件庫拖曳至畫布建立節點，點擊節點即可拖移位置。</li>
-                    <li>拖曳輸出點到另一節點輸入點建立流程順序，點擊線條可刪除。</li>
-                    <li>提交時系統會依連線自動推算執行順序，若無連線則依建立順序執行。</li>
-                  </ul>
-                  <div class="alert alert-info mb-0">每個節點都含有原先的步驟設定欄位，既有流程會自動帶入並串接。</div>
-                </div>
-                <div class="d-flex gap-2">
-                  <button class="btn btn-success flex-fill" type="submit" name="action" value="run">執行流程</button>
-                  <button class="btn btn-primary flex-fill" type="submit" name="action" value="save">保存流程</button>
-                </div>
-              </div>
-            </form>
-          </div>
-
-          <hr class="my-0">
-
-          <div class="col-12 col-xl-7">
-            <div class="table-responsive">
-              <table class="table table-striped text-center align-middle mb-3">
-                <thead>
-                  <tr>
-                    <th class="text-center">名稱</th>
-                    <th class="text-center">建立時間</th>
-                    <th class="text-center">文件格式</th>
-                    <th class="text-center">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                {% for f in flows %}
-                  <tr>
-                    <td class="align-middle">{{ f.name }}</td>
-                    <td class="align-middle">{{ f.created }}</td>
-                    <td class="align-middle">
-                      <form action="{{ url_for('update_flow_format', task_id=task.id, flow_name=f.name) }}" method="post" class="d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center justify-content-center">
-                        <select class="form-select form-select-sm" name="document_format">
-                          {% for key, meta in format_presets.items() %}
-                          <option value="{{ key }}" {% if key == f.document_format %}selected{% endif %}>{{ meta.label }}</option>
-                          {% endfor %}
-                        </select>
-                        <button class="btn btn-sm btn-outline-primary" type="submit">套用</button>
-                      </form>
-                      <div class="small text-muted mt-1">目前：{{ f.format_label }}</div>
-                    </td>
-                    <td class="align-middle">
-                      <form action="{{ url_for('execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('此流程包含複製檔案步驟，確定要執行嗎？');"{% endif %}>
-                        <button class="btn btn-sm btn-outline-success">執行</button>
-                      </form>
-                      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flow_builder', task_id=task.id, flow=f.name) }}">編輯</a>
-                      <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameFlow('{{ f.name }}')">重新命名</button>
-                      <form action="{{ url_for('delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
-                        <button class="btn btn-sm btn-outline-danger">刪除</button>
-                      </form>
-                      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a>
-                    </td>
-                  </tr>
-                {% else %}
-                  <tr><td colspan="4">尚無流程</td></tr>
-                {% endfor %}
-                </tbody>
-              </table>
+              </form>
             </div>
-            <form action="{{ url_for('import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="mt-3">
-              <div class="row g-3 align-items-end">
-                <div class="col-md-6">
-                  <label class="form-label">匯入流程 JSON</label>
-                  <input class="form-control" type="file" name="flow_file" required>
-                </div>
-                <div class="col-md-3">
-                  <button class="btn btn-outline-primary" type="submit">匯入</button>
-                </div>
+
+            <div class="col-12 col-xl-7 saved-flows-section">
+              <div class="table-responsive">
+                <table class="table table-striped text-center align-middle mb-3">
+                  <thead>
+                    <tr>
+                      <th class="text-center">名稱</th>
+                      <th class="text-center">建立時間</th>
+                      <th class="text-center">文件格式</th>
+                      <th class="text-center">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {% for f in flows %}
+                    <tr>
+                      <td class="align-middle">{{ f.name }}</td>
+                      <td class="align-middle">{{ f.created }}</td>
+                      <td class="align-middle">
+                        <form action="{{ url_for('update_flow_format', task_id=task.id, flow_name=f.name) }}" method="post" class="d-flex flex-column flex-lg-row gap-2 align-items-stretch align-items-lg-center justify-content-center">
+                          <select class="form-select form-select-sm" name="document_format">
+                            {% for key, meta in format_presets.items() %}
+                            <option value="{{ key }}" {% if key == f.document_format %}selected{% endif %}>{{ meta.label }}</option>
+                            {% endfor %}
+                          </select>
+                          <button class="btn btn-sm btn-outline-primary" type="submit">套用</button>
+                        </form>
+                        <div class="small text-muted mt-1">目前：{{ f.format_label }}</div>
+                      </td>
+                      <td class="align-middle">
+                        <form action="{{ url_for('execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('此流程包含複製檔案步驟，確定要執行嗎？');"{% endif %}>
+                          <button class="btn btn-sm btn-outline-success">執行</button>
+                        </form>
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flow_builder', task_id=task.id, flow=f.name) }}">編輯</a>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameFlow('{{ f.name }}')">重新命名</button>
+                        <form action="{{ url_for('delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
+                          <button class="btn btn-sm btn-outline-danger">刪除</button>
+                        </form>
+                        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a>
+                      </td>
+                    </tr>
+                  {% else %}
+                    <tr><td colspan="4">尚無流程</td></tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
               </div>
-            </form>
+              <form action="{{ url_for('import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="mt-3">
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-6">
+                    <label class="form-label">匯入流程 JSON</label>
+                    <input class="form-control" type="file" name="flow_file" required>
+                  </div>
+                  <div class="col-md-3">
+                    <button class="btn btn-outline-primary" type="submit">匯入</button>
+                  </div>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       </div>

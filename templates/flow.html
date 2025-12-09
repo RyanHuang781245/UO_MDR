@@ -87,6 +87,23 @@
     z-index: 6;
   }
 
+  .hint-toggle {
+    position: absolute;
+    left: 50%;
+    top: 12px;
+    transform: translateX(-50%);
+    z-index: 6;
+  }
+
+  .hint-panel {
+    position: absolute;
+    left: 50%;
+    top: 64px;
+    transform: translateX(-50%);
+    max-width: 520px;
+    z-index: 4;
+  }
+
   .component-drawer {
     position: absolute;
     left: 12px;
@@ -170,6 +187,9 @@
       <button type="button" class="btn btn-outline-secondary btn-sm component-toggle" id="toggle-drawer" onclick="toggleComponentDrawer()">
         隱藏元件庫
       </button>
+      <button type="button" class="btn btn-outline-info btn-sm hint-toggle" id="toggle-hints" onclick="toggleHintPanel()">
+        隱藏操作提示
+      </button>
       <div class="component-drawer">
         <div class="card shadow-sm">
           <div class="card-header bg-white fw-bold">元件庫</div>
@@ -183,6 +203,18 @@
             {% endfor %}
             <div class="small text-muted px-2">拖曳元件到畫布建立節點，雙擊節點可開啟設定。</div>
           </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm hint-panel" id="hint-panel">
+        <div class="card-body p-3">
+          <div class="fw-bold mb-2">操作提示</div>
+          <ul class="small text-muted mb-2">
+            <li>從左側元件庫拖曳至畫布建立節點，點擊節點即可拖移位置。</li>
+            <li>拖曳輸出點到另一節點輸入點建立流程順序，點擊線條可刪除。</li>
+            <li>提交時系統會依連線自動推算執行順序，若無連線則依建立順序執行。</li>
+          </ul>
+          <div class="alert alert-info mb-0">每個節點都含有原先的步驟設定欄位，既有流程會自動帶入並串接。</div>
         </div>
       </div>
 
@@ -230,15 +262,6 @@
                   </div>
                   <div>
                     <button class="btn btn-outline-secondary w-100" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
-                  </div>
-                  <div class="border rounded p-3 bg-light-subtle">
-                    <div class="fw-bold mb-2">操作提示</div>
-                    <ul class="small text-muted mb-2">
-                      <li>從左側元件庫拖曳至畫布建立節點，點擊節點即可拖移位置。</li>
-                      <li>拖曳輸出點到另一節點輸入點建立流程順序，點擊線條可刪除。</li>
-                      <li>提交時系統會依連線自動推算執行順序，若無連線則依建立順序執行。</li>
-                    </ul>
-                    <div class="alert alert-info mb-0">每個節點都含有原先的步驟設定欄位，既有流程會自動帶入並串接。</div>
                   </div>
                   <div class="d-flex gap-2">
                     <button class="btn btn-success flex-fill" type="submit" name="action" value="run">執行流程</button>
@@ -356,6 +379,8 @@ const flowForm = document.getElementById('flow_form');
 const zoomLabel = document.getElementById('zoom-label');
 const componentDrawer = document.querySelector('.component-drawer');
 const toggleDrawerBtn = document.getElementById('toggle-drawer');
+const hintPanel = document.getElementById('hint-panel');
+const toggleHintsBtn = document.getElementById('toggle-hints');
 canvas.addEventListener('dragover', allowDrop);
 canvas.addEventListener('drop', handleDrop);
 canvas.addEventListener('wheel', handleWheelZoom, { passive: false });
@@ -407,6 +432,12 @@ function toggleComponentDrawer(){
   if (!componentDrawer || !toggleDrawerBtn) return;
   const collapsed = componentDrawer.classList.toggle('collapsed');
   toggleDrawerBtn.textContent = collapsed ? '顯示元件庫' : '隱藏元件庫';
+}
+
+function toggleHintPanel(){
+  if (!hintPanel || !toggleHintsBtn) return;
+  const hidden = hintPanel.classList.toggle('d-none');
+  toggleHintsBtn.textContent = hidden ? '顯示操作提示' : '隱藏操作提示';
 }
 
 function startCanvasPan(e){

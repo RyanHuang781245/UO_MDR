@@ -141,7 +141,7 @@
   <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
 
   <div class="row g-4">
-    <div class="col-lg-8">
+    <div class="col-12">
       <div class="flow-canvas-wrapper" id="canvas-wrapper">
         <div class="component-drawer">
           <div class="card shadow-sm">
@@ -185,7 +185,10 @@
       </div>
     </div>
 
-    <div class="col-lg-4">
+  </div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-12">
       <div class="card shadow-sm mb-3">
         <div class="card-body vstack gap-3">
           <div>
@@ -352,6 +355,7 @@ const flowForm = document.getElementById('flow_form');
 const zoomLabel = document.getElementById('zoom-label');
 canvas.addEventListener('dragover', allowDrop);
 canvas.addEventListener('drop', handleDrop);
+canvas.addEventListener('wheel', handleWheelZoom, { passive: false });
 let nodes = [];
 let connections = [];
 let nextNode = 1;
@@ -403,6 +407,17 @@ function applyZoom(){
     zoomLabel.textContent = `${Math.round(canvasZoom * 100)}%`;
   }
   updateConnections();
+}
+
+function handleWheelZoom(ev){
+  if (!ev.ctrlKey) return;
+  ev.preventDefault();
+  const delta = Math.sign(ev.deltaY || 0);
+  if (delta < 0){
+    zoomIn();
+  } else if (delta > 0){
+    zoomOut();
+  }
 }
 
 function zoomIn(){

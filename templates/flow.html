@@ -33,13 +33,18 @@
     min-height: 1100px;
     user-select: none;
     overflow: auto;
+    cursor: grab;
+  }
+
+  #flow-canvas.panning {
+    cursor: grabbing;
   }
 
   #canvas-content {
     position: relative;
     width: 100%;
     height: 100%;
-    min-width: 1400px;
+    min-width: 2000px;
     min-height: 1600px;
     transform-origin: top left;
   }
@@ -352,6 +357,7 @@ const zoomLabel = document.getElementById('zoom-label');
 canvas.addEventListener('dragover', allowDrop);
 canvas.addEventListener('drop', handleDrop);
 canvas.addEventListener('wheel', handleWheelZoom, { passive: false });
+canvas.addEventListener('mousedown', startCanvasPan);
 let nodes = [];
 let connections = [];
 let nextNode = 1;
@@ -364,6 +370,8 @@ let canvasZoom = 1;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
 const ZOOM_STEP = 0.1;
+let isPanning = false;
+let panState = { x: 0, y: 0, left: 0, top: 0 };
 
 function updateDocumentFormatHelp(){
   const select = document.getElementById('document_format');
@@ -414,6 +422,37 @@ function handleWheelZoom(ev){
   } else if (delta > 0){
     zoomOut();
   }
+}
+
+function startCanvasPan(e){
+  if (e.button !== 0) return;
+  if (e.target.closest('.flow-node') || e.target.closest('.port') || e.target.closest('.component-drawer') || e.target.closest('.canvas-controls') || e.target.closest('.connection-line')){
+    return;
+  }
+  isPanning = true;
+  canvas.classList.add('panning');
+  panState = {
+    x: e.clientX,
+    y: e.clientY,
+    left: canvas.scrollLeft,
+    top: canvas.scrollTop
+  };
+  document.addEventListener('mousemove', panCanvas);
+  document.addEventListener('mouseup', stopCanvasPan);
+}
+
+function panCanvas(e){
+  if (!isPanning) return;
+  canvas.scrollLeft = panState.left - (e.clientX - panState.x);
+  canvas.scrollTop = panState.top - (e.clientY - panState.y);
+}
+
+function stopCanvasPan(){
+  if (!isPanning) return;
+  isPanning = false;
+  canvas.classList.remove('panning');
+  document.removeEventListener('mousemove', panCanvas);
+  document.removeEventListener('mouseup', stopCanvasPan);
 }
 
 function zoomIn(){

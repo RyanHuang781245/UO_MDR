@@ -36,13 +36,13 @@ SUPPORTED_STEPS = {
         "accepts": {"input_file": "file:docx", "target_chapter_section": "text", "target_title": "bool", "target_title_section": "text"}
     },
     "extract_specific_figure_from_word": {
-        "label": "Extract specific figure from Word",
-        "inputs": ["input_file", "target_chapter_section", "target_figure_label", "target_subtitle"],
+        "label": "擷取 Word 指定章節/標題的特定圖",
+        "inputs": ["input_file", "target_chapter_section", "target_subtitle", "target_figure_label"],
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_subtitle": "text",
             "target_figure_label": "text",
-            "target_subtitle": "text"
         }
     },
     "insert_text": {

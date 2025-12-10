@@ -260,6 +260,8 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
     if (k === "target_section") label = "章節編號（例如 6.12.1）";
     if (k === "target_chapter_section") label = "章節編號（例如 6.12.1）";
     if (k === "target_title_section") label = "章節標題（完整比對）";
+    if (k === "target_subtitle") label = "小標題（完整比對）";
+    if (k === "target_figure_label") label = "目標圖號（例如 Figure 1）";
     if (k === "input_file") label = "輸入檔案";
     if (k === "target_title") label = "擷取標題內容";
     if (k === "text") label = "輸入文字";

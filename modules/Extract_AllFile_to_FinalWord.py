@@ -552,6 +552,14 @@ def apply_basic_style(
         print(f"錯誤：套用樣式至 {input_file} 時出錯: {str(e)}")
         return False
     
+
+def _is_header_or_footer(doc_type) -> bool:
+    header = getattr(DocumentObjectType, "Header", None)
+    footer = getattr(DocumentObjectType, "Footer", None)
+    header_footer = getattr(DocumentObjectType, "HeaderFooter", None)
+    return doc_type in (header, footer, header_footer)
+
+
 def extract_specific_figure_from_word(
     input_file: str,
     target_chapter_section: str,   # 例如 "2.1.1"
@@ -716,7 +724,9 @@ def extract_specific_figure_from_word(
                 nodes.put(child.Body)
             elif isinstance(child, ICompositeObject):
                 doc_type = getattr(child, "DocumentObjectType", None)
-                if doc_type in (DocumentObjectType.Header, DocumentObjectType.Footer):
+                # if doc_type in (DocumentObjectType.Header, DocumentObjectType.Footer):
+                #     continue
+                if _is_header_or_footer(doc_type):
                     continue
                 nodes.put(child)
 

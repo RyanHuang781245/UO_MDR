@@ -4,4 +4,5 @@ output/
 tasks/
 word_all_images/
 images/
-mapping_file.xlsx
+test.ipynb
+.vscode/

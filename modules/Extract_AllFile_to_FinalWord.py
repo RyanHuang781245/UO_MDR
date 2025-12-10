@@ -261,8 +261,9 @@ def extract_word_chapter(
         section_pattern = re.compile(rf"^\s*{re.escape(target_title_section)}\s*$", re.IGNORECASE)
     else:
         section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
-    stop_prefix = target_chapter_section.rsplit('.', 1)[0]
-    stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+    # stop_prefix = target_chapter_section.rsplit('.', 1)[0]
+    # stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+    stop_pattern = re.compile(rf"^\s*(?!{re.escape(target_chapter_section)}(\.|$))\d+(\.\d+)*(\s|$)",re.IGNORECASE)
 
     input_doc = Document()
     input_doc.LoadFromFile(input_file)
@@ -321,8 +322,11 @@ def extract_word_chapter(
                     if isinstance(text_range, TextRange):
                         text_range.CharacterFormat.Hidden = True
                     continue
-                elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
+                # elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
+                #     capture_mode = False
+                elif capture_mode and child.ListText and stop_pattern.match(child.ListText.strip()):
                     capture_mode = False
+                    continue
                 if capture_mode:
                     para = section.AddParagraph()
                     if paragraph_text:

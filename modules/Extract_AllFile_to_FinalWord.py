@@ -551,3 +551,186 @@ def apply_basic_style(
     except Exception as e:
         print(f"錯誤：套用樣式至 {input_file} 時出錯: {str(e)}")
         return False
+    
+def extract_specific_figure_from_word(
+    input_file: str,
+    target_chapter_section: str,   # 例如 "2.1.1"
+    target_figure_label: str,      # 例如 "Figure 1."
+    target_subtitle: str | None = None,  # 可選，有就填，沒有就 None
+    output_image_path: str = "figure_output",
+    output_doc=None,
+    section=None,
+):
+    """
+    從指定 Word 檔中，擷取「某章節」(可選擇是否限制到某小節) 裡，
+    對應指定 Figure caption 的那一張圖。
+
+    參數說明
+    ----------
+    input_file : str
+        要處理的 Word 檔路徑。
+    target_chapter_section : str
+        章節編號，例如 "2.1.1"。用來鎖定章節範圍。
+    target_figure_label : str
+        要找的 Figure 標題文字，例如 "Figure 1."。
+    target_subtitle : str 或 None
+        若有特定小節標題，例如 "Information on product label"，就填入；
+        若整個章節沒有小標題或不想限定，就給 None 或空字串。
+    output_image_path : str
+        圖片輸出資料夾路徑。
+    output_doc : spire.doc.Document, optional
+        若有傳入，會將找到的圖片插入到這份 Document 的 section 中。
+    section : spire.doc.Section, optional
+        搭配 output_doc 使用，指定插入圖片的 section。
+
+    回傳
+    ----------
+    dict 或 None
+        若成功，回傳:
+        {
+            "image_filename": "Image-1.png",
+            "caption": "Figure 1. xxx",
+        }
+        若找不到，回傳 None。
+    """
+
+    if not os.path.exists(output_image_path):
+        os.makedirs(output_image_path)
+
+    # 章節起始與停止條件
+    section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
+    stop_prefix = target_chapter_section.rsplit('.', 1)[0]
+    stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+
+    # 小節標題 (可選)
+    if target_subtitle and target_subtitle.strip():
+        subtitle_pattern = re.compile(rf"^\s*{re.escape(target_subtitle.strip())}\s*$", re.IGNORECASE)
+    else:
+        subtitle_pattern = None  # 不限制小節
+
+    # Figure caption
+    figure_pattern = re.compile(rf"^\s*{re.escape(target_figure_label)}", re.IGNORECASE)
+
+    input_doc = Document()
+    input_doc.LoadFromFile(input_file)
+
+    is_standalone_doc = False
+    if output_doc is None or section is None:
+        output_doc = Document()
+        section = output_doc.AddSection()
+        is_standalone_doc = True
+
+    nodes = queue.Queue()
+    nodes.put(input_doc)
+
+    image_count = [1]
+
+    in_target_chapter = False
+    in_target_subtitle = False  # 如果沒有 subtitle，會在進入章節時直接視為 True
+
+    recent_pictures = []
+    result = None
+
+    def save_picture_and_record(pic: DocPicture) -> str:
+        file_name = _save_picture_with_original_format(pic, output_image_path, image_count)
+        return file_name
+
+    while nodes.qsize() > 0 and result is None:
+        node = nodes.get()
+        for i in range(node.ChildObjects.Count):
+            child = node.ChildObjects.get_Item(i)
+
+            if isinstance(child, Paragraph):
+                paragraph_text = child.ListText + " " if child.ListText else ""
+                for j in range(child.ChildObjects.Count):
+                    sub = child.ChildObjects.get_Item(j)
+                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
+                        paragraph_text += sub.Text
+
+                paragraph_text_stripped = paragraph_text.strip()
+
+                # 1) 章節開頭
+                if section_pattern.match(paragraph_text_stripped):
+                    in_target_chapter = True
+                    recent_pictures.clear()
+                    # 若沒有指定 subtitle，整個章節都視為有效範圍
+                    if subtitle_pattern is None:
+                        in_target_subtitle = True
+                    else:
+                        in_target_subtitle = False
+                    continue
+
+                # 2) 超出章節範圍
+                if in_target_chapter and child.ListText and stop_pattern.match(child.ListText):
+                    in_target_chapter = False
+                    in_target_subtitle = False
+                    recent_pictures.clear()
+                    continue
+
+                # 3) 有指定 subtitle 的情況：在章節內遇到目標小節標題才開始算
+                if in_target_chapter and subtitle_pattern is not None and subtitle_pattern.match(paragraph_text_stripped):
+                    in_target_subtitle = True
+                    recent_pictures.clear()
+                    continue
+
+                # 4) 若有 subtitle，就簡單用「看起來像新標題」來判斷離開小節
+                if in_target_chapter and subtitle_pattern is not None and in_target_subtitle:
+                    if paragraph_text_stripped and (
+                        section_pattern.match(paragraph_text_stripped)
+                        or re.match(r'^\s*\d+(\.\d+)*\s+', paragraph_text_stripped)
+                    ):
+                        in_target_subtitle = False
+                        recent_pictures.clear()
+                        continue
+
+                # 5) 在有效範圍內處理圖片與 Figure caption
+                if in_target_chapter and in_target_subtitle:
+                    # 先抓圖
+                    for j in range(child.ChildObjects.Count):
+                        sub = child.ChildObjects.get_Item(j)
+                        if sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture):
+                            img_file = save_picture_and_record(sub)
+                            recent_pictures.append(img_file)
+
+                    # 再判斷是不是目標 Figure caption
+                    if figure_pattern.match(paragraph_text_stripped) and recent_pictures:
+                        target_img = recent_pictures[-1]
+                        img_path = os.path.join(output_image_path, target_img)
+
+                        if os.path.isfile(img_path):
+                            para = section.AddParagraph()
+                            pic = para.AppendPicture(img_path)
+
+                            cap_para = section.AddParagraph()
+                            cap_para.AppendText(paragraph_text_stripped)
+
+                        result = {
+                            "image_filename": target_img,
+                            "caption": paragraph_text_stripped,
+                        }
+                        break
+
+            elif isinstance(child, Table):
+                nodes.put(child)
+            elif isinstance(child, Section):
+                nodes.put(child.Body)
+            elif isinstance(child, ICompositeObject):
+                doc_type = getattr(child, "DocumentObjectType", None)
+                if doc_type in (DocumentObjectType.Header, DocumentObjectType.Footer):
+                    continue
+                nodes.put(child)
+
+    if is_standalone_doc:
+        if result is not None:
+            output_doc.SaveToFile("figure_result.docx", FileFormat.Docx)
+        input_doc.Close()
+    else:
+        input_doc.Close()
+
+    if result is None:
+        print("未在指定章節範圍內找到對應的 Figure 圖片。")
+    else:
+        print(f"已擷取圖片 {result['image_filename']}，對應 caption: {result['caption']}")
+
+    return result
+

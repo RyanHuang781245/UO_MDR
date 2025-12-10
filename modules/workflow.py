@@ -9,11 +9,13 @@ from .Edit_Word import (
     insert_numbered_heading,
     insert_roman_heading,
     insert_bulleted_heading,
+    renumber_figures_tables,
 )
 from .Extract_AllFile_to_FinalWord import (
     extract_pdf_chapter_to_table,
     extract_word_all_content,
-    extract_word_chapter
+    extract_word_chapter,
+    extract_specific_figure_from_word,
 )
 from .file_copier import copy_files
 
@@ -32,6 +34,16 @@ SUPPORTED_STEPS = {
         "label": "擷取 Word 指定章節/標題",
         "inputs": ["input_file", "target_chapter_section", "target_title", "target_title_section"],
         "accepts": {"input_file": "file:docx", "target_chapter_section": "text", "target_title": "bool", "target_title_section": "text"}
+    },
+    "extract_specific_figure_from_word": {
+        "label": "Extract specific figure from Word",
+        "inputs": ["input_file", "target_chapter_section", "target_figure_label", "target_subtitle"],
+        "accepts": {
+            "input_file": "file:docx",
+            "target_chapter_section": "text",
+            "target_figure_label": "text",
+            "target_subtitle": "text"
+        }
     },
     "insert_text": {
         "label": "插入純文字段落",
@@ -118,6 +130,21 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 )
                 if isinstance(result, dict):
                     log[-1]["captured_titles"] = result.get("captured_titles", [])
+
+            elif stype == "extract_specific_figure_from_word":
+                infile = params["input_file"]
+                result = extract_specific_figure_from_word(
+                    infile,
+                    params.get("target_chapter_section", ""),
+                    params.get("target_figure_label", ""),
+                    target_subtitle=params.get("target_subtitle"),
+                    output_image_path=os.path.join(workdir, "images"),
+                    output_doc=output_doc,
+                    section=section,
+                )
+                if isinstance(result, dict):
+                    log[-1]["image_filename"] = result.get("image_filename")
+                    log[-1]["caption"] = result.get("caption")
 
             elif stype == "insert_text":
                 insert_text(section,

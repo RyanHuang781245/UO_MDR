@@ -357,6 +357,233 @@ def extract_word_chapter(
     print(f"以將章節 {target_chapter_section} 擷取")
     return {"captured_titles": captured_titles}
 
+def is_inline_subtitle_spire(paragraph: Paragraph) -> bool:
+    """判斷這個 Spire 段落是不是像 'Device trade name' 這種小標題。
+    規則：
+    - 段落有文字
+    - StyleName == 'Normal'
+    - 所有有文字的 TextRange 都是粗體
+    """
+    # 1. 取得整段文字
+    full_text = ""
+    for i in range(paragraph.ChildObjects.Count):
+        sub = paragraph.ChildObjects.get_Item(i)
+        if sub.DocumentObjectType == DocumentObjectType.TextRange:
+            full_text += sub.Text or ""
+    if not full_text.strip():
+        return False
+
+    # 2. 只處理 Normal 樣式
+    style_name = getattr(paragraph, "StyleName", None)
+    if style_name != "Normal":
+        return False
+
+    # 3. 所有有文字的 run 都要是粗體
+    has_text_run = False
+    for i in range(paragraph.ChildObjects.Count):
+        sub = paragraph.ChildObjects.get_Item(i)
+        if sub.DocumentObjectType == DocumentObjectType.TextRange:
+            tr: TextRange = sub
+            text = (tr.Text or "").strip()
+            if not text:
+                continue
+            has_text_run = True
+            # Bold 不是 True 就視為不是小標題
+            if tr.CharacterFormat.Bold is not True:
+                return False
+
+    return has_text_run
+
+def extract_word_subsection(
+    input_file: str,
+    outer_chapter_section: str,   # 例如 "1.1.1"
+    subsection_title: str,        # 例如 "Principles of operation and mode of action"
+    output_image_path: str = "images",
+    output_doc=None,
+    section=None,):
+    """
+    從 Word 檔中擷取「指定章節內的某一個小節」內容。
+
+    範圍：
+      1. 先進入 outer_chapter_section 章節，例如 1.1.1
+      2. 在章節內找到 subsection_title 這一行（Normal + 粗體）
+      3. 從小節標題「下一行開始」擷取內容（文字、圖片、表格）
+      4. 遇到下一個 inline 小標題（Normal + 粗體）或者下一個章節 (1.1.2...) 就停止
+    """
+
+    if not os.path.exists(output_image_path):
+        os.makedirs(output_image_path)
+
+    # 章節起始：例如 "1.1.1"
+    chapter_pattern = re.compile(rf"^\s*{re.escape(outer_chapter_section)}(\s|$)", re.IGNORECASE)
+
+    # 章節停止：以前綴 "1.1" 找下一個章節 (1.1.2, 1.1.3 ...)
+    stop_prefix = outer_chapter_section.rsplit(".", 1)[0]
+    chapter_stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+
+    # 小節標題：整行比對文字
+    subsection_pattern = re.compile(rf"^\s*{re.escape(subsection_title.strip())}\s*$", re.IGNORECASE)
+
+    input_doc = Document()
+    input_doc.LoadFromFile(input_file)
+
+    is_standalone_doc = False
+    if output_doc is None or section is None:
+        output_doc = Document()
+        section = output_doc.AddSection()
+        is_standalone_doc = True
+
+    nodes = queue.Queue()
+    nodes.put(input_doc)
+
+    image_count = [1]
+
+    in_chapter = False
+    in_subsection = False
+    skip_first_line_after_title = False
+    done = False
+
+    def add_table_to_section(sec, table):
+        """將表格複製到輸出文件，避免跨頁斷行問題。"""
+        try:
+            cloned = table.Clone()
+            cloned.TableFormat.IsBreakAcrossPages = False
+            for i in range(cloned.Rows.Count):
+                cloned.Rows.get_Item(i).RowFormat.IsBreakAcrossPages = False
+            sec.Tables.Add(cloned)
+            sep_para = sec.AddParagraph()
+            sep_para.AppendText("\u200B")
+        except Exception as e:
+            print("處理表格錯誤:", e)
+
+    while nodes.qsize() > 0 and not done:
+        node = nodes.get()
+        for i in range(node.ChildObjects.Count):
+            child = node.ChildObjects.get_Item(i)
+
+            if isinstance(child, Paragraph):
+                # 略過目錄樣式
+                if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
+                    continue
+
+                # 組出原段落文字（含 ListText）
+                paragraph_text = child.ListText + " " if child.ListText else ""
+                for j in range(child.ChildObjects.Count):
+                    sub = child.ChildObjects.get_Item(j)
+                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
+                        paragraph_text += sub.Text or ""
+
+                paragraph_text_stripped = paragraph_text.strip()
+
+                # 1) 判斷是否進入指定章節 1.1.1
+                if not in_chapter:
+                    if chapter_pattern.match(paragraph_text_stripped) or (
+                        child.ListText and chapter_pattern.match(child.ListText.strip())
+                    ):
+                        in_chapter = True
+                    continue
+
+                # 2) 章節內，先看是否遇到下一個章節（1.1.2...），整個擷取結束
+                stop_hit = False
+                if child.ListText and chapter_stop_pattern.match(child.ListText.strip()):
+                    stop_hit = True
+                if not stop_hit and paragraph_text_stripped and chapter_stop_pattern.match(paragraph_text_stripped):
+                    stop_hit = True
+
+                if stop_hit:
+                    in_chapter = False
+                    in_subsection = False
+                    done = True
+                    break
+
+                # 3) 在 1.1.1 內，尚未進入小節 → 尋找目標小節標題
+                if in_chapter and not in_subsection:
+                    if subsection_pattern.match(paragraph_text_stripped) and is_inline_subtitle_spire(child):
+                        in_subsection = True
+                        skip_first_line_after_title = True
+                    continue
+
+                # 4) 已在小節範圍內
+                if in_subsection:
+                    # 4-1) 遇到下一個 inline 小標題（Normal + 全粗體，文字不同）→ 結束小節
+                    if is_inline_subtitle_spire(child):
+                        if _normalize_text(paragraph_text_stripped) != _normalize_text(subsection_title):
+                            print("STOP BY NEXT SUBTITLE")
+                            print(f"-> text: {paragraph_text_stripped}")
+                            print(f"-> style: {child.StyleName}")
+                            in_subsection = False
+                            done = True
+                            break
+                        else:
+                            # 再遇到同標題，保守跳過
+                            continue
+
+                    # 4-2) 小節標題下一行開始才真正輸出內容
+                    paragraph_alignment = getattr(child.Format, "HorizontalAlignment", None)
+
+                    # 建立一個文字＋圖片標記的字串
+                    text_with_markers = ""
+                    for j in range(child.ChildObjects.Count):
+                        sub = child.ChildObjects.get_Item(j)
+                        if sub.DocumentObjectType == DocumentObjectType.TextRange:
+                            text_with_markers += sub.Text or ""
+                        elif sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture):
+                            img_name = _save_picture_with_original_format(
+                                sub, output_image_path, image_count
+                            )
+                            text_with_markers += f"[Image: {img_name}|{sub.Width}|{sub.Height}]"
+
+                    # 小節標題下一行的第一個內容段落也要輸出
+                    if skip_first_line_after_title:
+                        skip_first_line_after_title = False
+
+                    if text_with_markers.strip():
+                        para = section.AddParagraph()
+                        # 拆解 [Image: ...] 標記，把圖片塞回去
+                        for part in re.split(r'(\[Image:.+?\])', text_with_markers):
+                            if part.startswith("[Image:"):
+                                try:
+                                    content = part[7:-1]
+                                    img_name, width, height = content.split("|")
+                                    width = float(width)
+                                    height = float(height)
+                                except ValueError:
+                                    img_name = part[7:-1].strip()
+                                    width = height = None
+                                img_path = os.path.join(output_image_path, img_name.strip())
+                                if os.path.isfile(img_path):
+                                    pic = para.AppendPicture(img_path)
+                                    if width and height:
+                                        pic.Width = width
+                                        pic.Height = height
+                                    if paragraph_alignment is not None:
+                                        para.Format.HorizontalAlignment = paragraph_alignment
+                            else:
+                                if part:
+                                    para.AppendText(part)
+
+            elif isinstance(child, Table):
+                # 表格只有在小節範圍內才複製
+                if in_subsection:
+                    add_table_to_section(section, child)
+            elif isinstance(child, Section):
+                nodes.put(child.Body)
+            elif isinstance(child, ICompositeObject):
+                doc_type = getattr(child, "DocumentObjectType", None)
+                # if doc_type in (DocumentObjectType.Header, DocumentObjectType.Footer):
+                #     continue
+                if _is_header_or_footer(doc_type):
+                    continue
+                nodes.put(child)
+
+    if is_standalone_doc:
+        output_doc.SaveToFile("word_subsection_result.docx", FileFormat.Docx)
+        input_doc.Close()
+    else:
+        input_doc.Close()
+
+    print(f"已擷取 {outer_chapter_section} 中小節「{subsection_title}」的文字與圖片")
+
 def center_table_figure_paragraphs(input_file: str) -> bool:
     pattern = re.compile(r'^\s*(Table|Figure)\s+', re.IGNORECASE)
     doc = Document()

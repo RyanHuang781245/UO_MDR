@@ -37,6 +37,13 @@ app.config["TASK_FOLDER"] = os.path.join(BASE_DIR, "tasks")
 os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
 
+nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS", "")
+app.config["ALLOWED_NAS_ROOTS"] = [
+    os.path.abspath(p)
+    for p in nas_roots_env.split(os.pathsep)
+    if p.strip()
+]
+
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
@@ -241,6 +248,45 @@ def sanitize_version_slug(name):
     return slug[:60]
 
 
+def resolve_nas_directory(nas_path):
+    if nas_path is None:
+        return None, "缺少 NAS 路徑"
+    if os.path.isabs(nas_path):
+        return None, "不允許使用絕對路徑"
+    normalized_rel = nas_path.strip()
+    if not normalized_rel:
+        return None, "請輸入 NAS 路徑"
+    normalized_rel = normalized_rel.replace("\\", "/")
+    parts = normalized_rel.split("/")
+    if ".." in parts:
+        return None, "路徑不可包含 .."
+    normalized_rel = os.path.normpath("/".join(parts)).lstrip("./")
+
+    allowed_roots = app.config.get("ALLOWED_NAS_ROOTS", [])
+    if not allowed_roots:
+        return None, "尚未設定可用的 NAS 共享根路徑"
+
+    access_denied = False
+    for root in allowed_roots:
+        abs_root = os.path.abspath(root)
+        candidate = os.path.abspath(os.path.join(abs_root, normalized_rel))
+        try:
+            common = os.path.commonpath([candidate, abs_root])
+        except ValueError:
+            continue
+        if common != abs_root:
+            continue
+        if not os.path.isdir(candidate):
+            continue
+        if not os.access(candidate, os.R_OK | os.X_OK):
+            access_denied = True
+            continue
+        return candidate, None
+    if access_denied:
+        return None, "NAS 目錄無法存取"
+    return None, "路徑不在允許的 NAS 共享範圍或目錄不存在"
+
+
 def build_version_context(task_id, job_id, job_dir):
     versions_dir = os.path.join(job_dir, "versions")
     metadata = load_version_metadata(versions_dir)
@@ -415,14 +461,19 @@ def tasks():
                 created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
             task_list.append({"id": tid, "name": name, "description": description, "created": created})
     task_list.sort(key=lambda x: x["created"], reverse=True)
-    return render_template("tasks.html", tasks=task_list)
+    return render_template(
+        "tasks.html",
+        tasks=task_list,
+        allowed_nas_roots=app.config.get("ALLOWED_NAS_ROOTS", []),
+    )
 
 
 @app.post("/tasks")
 def create_task():
-    f = request.files.get("task_zip")
-    if not f or not f.filename or not allowed_file(f.filename, kinds=("zip",)):
-        return "請上傳 ZIP 檔", 400
+    nas_path = request.form.get("nas_path", "")
+    resolved_path, error = resolve_nas_directory(nas_path)
+    if error:
+        return error, 400
     task_name = request.form.get("task_name", "").strip() or "未命名任務"
     task_desc = request.form.get("task_desc", "").strip()
     if task_name_exists(task_name):
@@ -431,10 +482,11 @@ def create_task():
     tdir = os.path.join(app.config["TASK_FOLDER"], tid)
     files_dir = os.path.join(tdir, "files")
     os.makedirs(files_dir, exist_ok=True)
-    zpath = os.path.join(tdir, "source.zip")
-    f.save(zpath)
-    with zipfile.ZipFile(zpath, "r") as zf:
-        zf.extractall(files_dir)
+    try:
+        shutil.copytree(resolved_path, files_dir, dirs_exist_ok=True)
+    except Exception as exc:
+        shutil.rmtree(tdir, ignore_errors=True)
+        return f"複製 NAS 目錄失敗: {exc}", 400
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
         json.dump(
             {

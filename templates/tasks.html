@@ -2,15 +2,16 @@
 {% block content %}
 <h1 class="h3 mb-3">任務列表</h1>
 
-<form action="{{ url_for('create_task') }}" method="post" enctype="multipart/form-data" class="card card-body mb-4">
+<form action="{{ url_for('create_task') }}" method="post" class="card card-body mb-4">
   <div class="row g-3">
     <div class="col-md-5">
       <label class="form-label">任務名稱</label>
       <input class="form-control" name="task_name" placeholder="輸入任務名稱">
     </div>
     <div class="col-md-5">
-      <label class="form-label">檔案壓縮包 (ZIP)</label>
-      <input class="form-control" type="file" name="task_zip" required>
+      <label class="form-label">NAS 共享路徑</label>
+      <input class="form-control" type="text" name="nas_path" placeholder="例如 projects/report1" required>
+      <div class="form-text">可填寫的共享根目錄: {{ allowed_nas_roots | join(', ') if allowed_nas_roots else '尚未設定' }}</div>
     </div>
     <div class="col-md-2 d-grid align-items-end">
       <button class="btn btn-primary" type="submit">建立任務</button>

@@ -34,6 +34,7 @@ app.config["SECRET_KEY"] = "dev-secret"
 BASE_DIR = os.path.dirname(__file__)
 app.config["OUTPUT_FOLDER"] = os.path.join(BASE_DIR, "output")
 app.config["TASK_FOLDER"] = os.path.join(BASE_DIR, "tasks")
+app.config["ALLOWED_SOURCE_ROOTS"] = []
 os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
 
@@ -101,6 +102,59 @@ def allowed_file(filename, kinds=("docx", "pdf", "zip")):
     if "zip" in kinds and ext in ALLOWED_ZIP:
         return True
     return False
+
+
+def load_allowed_roots_from_env():
+    roots = []
+    raw = os.environ.get("TASK_ALLOWED_ROOTS", "")
+    for entry in raw.split(os.path.pathsep):
+        candidate = entry.strip()
+        if not candidate:
+            continue
+        abs_path = os.path.abspath(candidate)
+        if os.path.isdir(abs_path):
+            roots.append(abs_path)
+    return roots
+
+
+def ensure_allowed_roots_loaded():
+    if not app.config.get("ALLOWED_SOURCE_ROOTS"):
+        app.config["ALLOWED_SOURCE_ROOTS"] = load_allowed_roots_from_env()
+
+
+def validate_nas_path(raw_path: str, allowed_roots):
+    if not raw_path or not raw_path.strip():
+        raise ValueError("請提供要匯入的檔案或資料夾路徑")
+    if os.path.isabs(raw_path):
+        raise ValueError("路徑不可為絕對路徑，請填寫相對於允許根目錄的路徑")
+    norm_rel = os.path.normpath(raw_path.strip())
+    if norm_rel.startswith(".."):
+        raise ValueError("路徑不可包含 .. 或跳脫允許的根目錄")
+    ensure_allowed_roots_loaded()
+    allowed_roots = allowed_roots or app.config.get("ALLOWED_SOURCE_ROOTS", [])
+    if not allowed_roots:
+        raise ValueError("尚未設定允許的根目錄，請聯絡系統管理員")
+    for root in allowed_roots:
+        root_abs = os.path.abspath(root)
+        candidate = os.path.abspath(os.path.join(root, norm_rel))
+        try:
+            if os.path.commonpath([root_abs, candidate]) != root_abs:
+                continue
+        except ValueError:
+            continue
+        if os.path.exists(candidate):
+            return candidate
+    raise FileNotFoundError("找不到指定的路徑，或不在允許的根目錄內")
+
+
+def deduplicate_name(base_dir: str, name: str) -> str:
+    candidate = name
+    stem, ext = os.path.splitext(name)
+    counter = 1
+    while os.path.exists(os.path.join(base_dir, candidate)):
+        candidate = f"{stem} ({counter}){ext}"
+        counter += 1
+    return candidate
 
 
 def list_files(base_dir):
@@ -563,20 +617,37 @@ def upload_task_file(task_id):
     if not os.path.isdir(files_dir):
         abort(404)
 
-    f = request.files.get("task_file")
-    if not f or not f.filename or not allowed_file(f.filename):
-        return "請上傳 DOCX、PDF 或 ZIP 檔", 400
+    nas_input = request.form.get("nas_file_path", "").strip()
+    try:
+        source_path = validate_nas_path(nas_input, app.config.get("ALLOWED_SOURCE_ROOTS", []))
+    except ValueError as e:
+        return str(e), 400
+    except FileNotFoundError as e:
+        return str(e), 404
 
-    filename = secure_filename(f.filename)
-    ext = os.path.splitext(filename)[1].lower()
-    if ext == ".zip":
-        tmp_path = os.path.join(files_dir, filename)
-        f.save(tmp_path)
-        with zipfile.ZipFile(tmp_path, "r") as zf:
-            zf.extractall(files_dir)
-        os.remove(tmp_path)
-    else:
-        f.save(os.path.join(files_dir, filename))
+    try:
+        if os.path.isdir(source_path):
+            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
+            dest_path = os.path.join(files_dir, dest_name)
+            shutil.copytree(source_path, dest_path)
+        else:
+            if not allowed_file(source_path):
+                return "僅支援 DOCX、PDF 或 ZIP 檔案，或複製整個資料夾", 400
+            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
+            dest_path = os.path.join(files_dir, dest_name)
+            if dest_name.lower().endswith(".zip"):
+                shutil.copy2(source_path, dest_path)
+                with zipfile.ZipFile(dest_path, "r") as zf:
+                    zf.extractall(files_dir)
+                os.remove(dest_path)
+            else:
+                shutil.copy2(source_path, dest_path)
+    except PermissionError:
+        return "沒有足夠的權限讀取或複製指定路徑", 400
+    except FileNotFoundError:
+        return "找不到指定的檔案或資料夾", 404
+    except shutil.Error as e:
+        return f"複製檔案時發生錯誤：{e}", 400
 
     return redirect(url_for("task_detail", task_id=task_id))
 

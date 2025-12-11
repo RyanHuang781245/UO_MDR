@@ -43,7 +43,7 @@ def parse_bool(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS", "")
+nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS", r"\\Nas100\twr\UOC_UR4\應用軟體開發\1-系統開發\測試專案\1. 國際送件\輸入-USTAR II System")
 nas_allowed_roots = [
     os.path.abspath(p)
     for p in nas_roots_env.split(os.pathsep)
@@ -198,10 +198,23 @@ def deduplicate_name(base_dir: str, name: str) -> str:
     return candidate
 
 
+def ensure_windows_long_path(path: str) -> str:
+    """Add the Windows long-path prefix to avoid MAX_PATH issues."""
+    if os.name != "nt" or not path:
+        return path
+    normalized = os.path.abspath(path)
+    if normalized.startswith("\\\\?\\"):
+        return normalized
+    if normalized.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + normalized[2:]
+    return "\\\\?\\" + normalized
+
+
 def enforce_max_copy_size(path: str):
     max_bytes = app.config.get("NAS_MAX_COPY_FILE_SIZE")
     if not max_bytes:
         return
+    checked_path = ensure_windows_long_path(path)
 
     def _check(target: str):
         try:
@@ -209,12 +222,12 @@ def enforce_max_copy_size(path: str):
         except OSError:
             return 0
 
-    if os.path.isfile(path):
-        if _check(path) > max_bytes:
+    if os.path.isfile(checked_path):
+        if _check(checked_path) > max_bytes:
             raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
         return
 
-    for root, _, files in os.walk(path):
+    for root, _, files in os.walk(checked_path):
         for fn in files:
             fpath = os.path.join(root, fn)
             if _check(fpath) > max_bytes:
@@ -572,11 +585,22 @@ def create_task():
     tdir = os.path.join(app.config["TASK_FOLDER"], tid)
     files_dir = os.path.join(tdir, "files")
     os.makedirs(files_dir, exist_ok=True)
+    src_dir = ensure_windows_long_path(resolved_path)
+    dest_dir = ensure_windows_long_path(files_dir)
     try:
-        shutil.copytree(resolved_path, files_dir, dirs_exist_ok=True)
+        shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
     except PermissionError:
         shutil.rmtree(tdir, ignore_errors=True)
         return "沒有足夠的權限讀取或複製指定路徑", 400
+    except shutil.Error as exc:
+        app.logger.exception("複製 NAS 目錄失敗")
+        shutil.rmtree(tdir, ignore_errors=True)
+        detail = ""
+        if exc.args and isinstance(exc.args[0], list) and exc.args[0]:
+            first_error = exc.args[0][0]
+            if len(first_error) >= 3:
+                detail = f"：{first_error[2]}"
+        return f"複製 NAS 目錄時發生錯誤{detail or ''}，請稍後再試", 400
     except Exception:
         app.logger.exception("複製 NAS 目錄失敗")
         shutil.rmtree(tdir, ignore_errors=True)
@@ -670,15 +694,16 @@ def upload_task_file(task_id):
         return str(e), 404
 
     try:
+        source_path = ensure_windows_long_path(source_path)
         if os.path.isdir(source_path):
             dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
-            dest_path = os.path.join(files_dir, dest_name)
+            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
             shutil.copytree(source_path, dest_path)
         else:
             if not allowed_file(source_path):
                 return "僅支援 DOCX、PDF 或 ZIP 檔案，或複製整個資料夾", 400
             dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
-            dest_path = os.path.join(files_dir, dest_name)
+            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
             if dest_name.lower().endswith(".zip"):
                 shutil.copy2(source_path, dest_path)
                 with zipfile.ZipFile(dest_path, "r") as zf:

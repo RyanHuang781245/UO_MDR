@@ -35,15 +35,35 @@ BASE_DIR = os.path.dirname(__file__)
 app.config["OUTPUT_FOLDER"] = os.path.join(BASE_DIR, "output")
 app.config["TASK_FOLDER"] = os.path.join(BASE_DIR, "tasks")
 app.config["ALLOWED_SOURCE_ROOTS"] = []
-os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
-os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
+
+
+def parse_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
 
 nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS", "")
-app.config["ALLOWED_NAS_ROOTS"] = [
+nas_allowed_roots = [
     os.path.abspath(p)
     for p in nas_roots_env.split(os.pathsep)
     if p.strip()
 ]
+app.config["ALLOWED_NAS_ROOTS"] = nas_allowed_roots
+app.config["NAS_ALLOWED_ROOTS"] = nas_allowed_roots
+app.config["NAS_ALLOW_RECURSIVE"] = parse_bool(
+    os.environ.get("NAS_ALLOW_RECURSIVE"), True
+)
+max_copy_size_mb = os.environ.get("NAS_MAX_COPY_FILE_SIZE_MB")
+try:
+    app.config["NAS_MAX_COPY_FILE_SIZE"] = (
+        int(max_copy_size_mb) * 1024 * 1024 if max_copy_size_mb else 500 * 1024 * 1024
+    )
+except ValueError:
+    app.config["NAS_MAX_COPY_FILE_SIZE"] = 500 * 1024 * 1024
+
+os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
+os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
 
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
@@ -119,24 +139,45 @@ def load_allowed_roots_from_env():
 
 def ensure_allowed_roots_loaded():
     if not app.config.get("ALLOWED_SOURCE_ROOTS"):
-        app.config["ALLOWED_SOURCE_ROOTS"] = load_allowed_roots_from_env()
+        loaded_roots = load_allowed_roots_from_env()
+        if loaded_roots:
+            app.config["ALLOWED_SOURCE_ROOTS"] = loaded_roots
+        elif app.config.get("NAS_ALLOWED_ROOTS"):
+            app.config["ALLOWED_SOURCE_ROOTS"] = list(app.config["NAS_ALLOWED_ROOTS"])
 
 
-def validate_nas_path(raw_path: str, allowed_roots):
+def normalize_relative_path(raw_path: str, allow_recursive: bool) -> str:
     if not raw_path or not raw_path.strip():
         raise ValueError("請提供要匯入的檔案或資料夾路徑")
-    if os.path.isabs(raw_path):
+    cleaned = raw_path.strip().replace("\\", "/")
+    if os.path.isabs(cleaned):
         raise ValueError("路徑不可為絕對路徑，請填寫相對於允許根目錄的路徑")
-    norm_rel = os.path.normpath(raw_path.strip())
+    norm_rel = os.path.normpath(cleaned)
     if norm_rel.startswith(".."):
         raise ValueError("路徑不可包含 .. 或跳脫允許的根目錄")
+    if not allow_recursive and os.sep in norm_rel:
+        raise ValueError("目前僅允許存取根層級的項目")
+    return norm_rel
+
+
+def validate_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None):
+    allow_recursive = (
+        app.config.get("NAS_ALLOW_RECURSIVE", True)
+        if allow_recursive is None
+        else allow_recursive
+    )
+    norm_rel = normalize_relative_path(raw_path, allow_recursive)
     ensure_allowed_roots_loaded()
-    allowed_roots = allowed_roots or app.config.get("ALLOWED_SOURCE_ROOTS", [])
+    allowed_roots = (
+        allowed_roots
+        or app.config.get("NAS_ALLOWED_ROOTS")
+        or app.config.get("ALLOWED_SOURCE_ROOTS", [])
+    )
     if not allowed_roots:
         raise ValueError("尚未設定允許的根目錄，請聯絡系統管理員")
     for root in allowed_roots:
         root_abs = os.path.abspath(root)
-        candidate = os.path.abspath(os.path.join(root, norm_rel))
+        candidate = os.path.abspath(os.path.join(root_abs, norm_rel))
         try:
             if os.path.commonpath([root_abs, candidate]) != root_abs:
                 continue
@@ -155,6 +196,30 @@ def deduplicate_name(base_dir: str, name: str) -> str:
         candidate = f"{stem} ({counter}){ext}"
         counter += 1
     return candidate
+
+
+def enforce_max_copy_size(path: str):
+    max_bytes = app.config.get("NAS_MAX_COPY_FILE_SIZE")
+    if not max_bytes:
+        return
+
+    def _check(target: str):
+        try:
+            return os.path.getsize(target)
+        except OSError:
+            return 0
+
+    if os.path.isfile(path):
+        if _check(path) > max_bytes:
+            raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
+        return
+
+    for root, _, files in os.walk(path):
+        for fn in files:
+            fpath = os.path.join(root, fn)
+            if _check(fpath) > max_bytes:
+                app.logger.warning("檔案大小超過限制：%s", fpath)
+                raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
 
 
 def list_files(base_dir):
@@ -300,45 +365,6 @@ def sanitize_version_slug(name):
     if not slug:
         slug = "version"
     return slug[:60]
-
-
-def resolve_nas_directory(nas_path):
-    if nas_path is None:
-        return None, "缺少 NAS 路徑"
-    if os.path.isabs(nas_path):
-        return None, "不允許使用絕對路徑"
-    normalized_rel = nas_path.strip()
-    if not normalized_rel:
-        return None, "請輸入 NAS 路徑"
-    normalized_rel = normalized_rel.replace("\\", "/")
-    parts = normalized_rel.split("/")
-    if ".." in parts:
-        return None, "路徑不可包含 .."
-    normalized_rel = os.path.normpath("/".join(parts)).lstrip("./")
-
-    allowed_roots = app.config.get("ALLOWED_NAS_ROOTS", [])
-    if not allowed_roots:
-        return None, "尚未設定可用的 NAS 共享根路徑"
-
-    access_denied = False
-    for root in allowed_roots:
-        abs_root = os.path.abspath(root)
-        candidate = os.path.abspath(os.path.join(abs_root, normalized_rel))
-        try:
-            common = os.path.commonpath([candidate, abs_root])
-        except ValueError:
-            continue
-        if common != abs_root:
-            continue
-        if not os.path.isdir(candidate):
-            continue
-        if not os.access(candidate, os.R_OK | os.X_OK):
-            access_denied = True
-            continue
-        return candidate, None
-    if access_denied:
-        return None, "NAS 目錄無法存取"
-    return None, "路徑不在允許的 NAS 共享範圍或目錄不存在"
 
 
 def build_version_context(task_id, job_id, job_dir):
@@ -525,9 +551,19 @@ def tasks():
 @app.post("/tasks")
 def create_task():
     nas_path = request.form.get("nas_path", "")
-    resolved_path, error = resolve_nas_directory(nas_path)
-    if error:
-        return error, 400
+    try:
+        resolved_path = validate_nas_path(
+            nas_path,
+            allowed_roots=app.config.get("NAS_ALLOWED_ROOTS"),
+            allow_recursive=app.config.get("NAS_ALLOW_RECURSIVE", True),
+        )
+        if not os.path.isdir(resolved_path):
+            return "指定的 NAS 路徑不是資料夾", 400
+        enforce_max_copy_size(resolved_path)
+    except ValueError as exc:
+        return str(exc), 400
+    except FileNotFoundError as exc:
+        return str(exc), 404
     task_name = request.form.get("task_name", "").strip() or "未命名任務"
     task_desc = request.form.get("task_desc", "").strip()
     if task_name_exists(task_name):
@@ -538,9 +574,13 @@ def create_task():
     os.makedirs(files_dir, exist_ok=True)
     try:
         shutil.copytree(resolved_path, files_dir, dirs_exist_ok=True)
-    except Exception as exc:
+    except PermissionError:
         shutil.rmtree(tdir, ignore_errors=True)
-        return f"複製 NAS 目錄失敗: {exc}", 400
+        return "沒有足夠的權限讀取或複製指定路徑", 400
+    except Exception:
+        app.logger.exception("複製 NAS 目錄失敗")
+        shutil.rmtree(tdir, ignore_errors=True)
+        return "複製 NAS 目錄時發生錯誤，請稍後再試", 400
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
         json.dump(
             {
@@ -619,7 +659,11 @@ def upload_task_file(task_id):
 
     nas_input = request.form.get("nas_file_path", "").strip()
     try:
-        source_path = validate_nas_path(nas_input, app.config.get("ALLOWED_SOURCE_ROOTS", []))
+        source_path = validate_nas_path(
+            nas_input,
+            allowed_roots=app.config.get("ALLOWED_SOURCE_ROOTS", []),
+        )
+        enforce_max_copy_size(source_path)
     except ValueError as e:
         return str(e), 400
     except FileNotFoundError as e:
@@ -646,8 +690,12 @@ def upload_task_file(task_id):
         return "沒有足夠的權限讀取或複製指定路徑", 400
     except FileNotFoundError:
         return "找不到指定的檔案或資料夾", 404
-    except shutil.Error as e:
-        return f"複製檔案時發生錯誤：{e}", 400
+    except shutil.Error:
+        app.logger.exception("複製檔案時發生錯誤")
+        return "複製檔案時發生錯誤，請稍後再試", 400
+    except Exception:
+        app.logger.exception("處理 NAS 檔案時發生未預期錯誤")
+        return "處理檔案時發生錯誤，請稍後再試", 400
 
     return redirect(url_for("task_detail", task_id=task_id))
 

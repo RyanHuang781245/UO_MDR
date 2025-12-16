@@ -245,6 +245,12 @@ def _save_picture_with_original_format(
     return file_name
 
 
+def is_heading_paragraph(paragraph: Paragraph) -> bool:
+    """Return True when the paragraph uses a Heading style."""
+    style_name = getattr(paragraph, "StyleName", "") or ""
+    return "heading" in style_name.lower()
+
+
 def extract_word_chapter(
     input_file: str,
     target_chapter_section: str,
@@ -264,6 +270,7 @@ def extract_word_chapter(
     # stop_prefix = target_chapter_section.rsplit('.', 1)[0]
     # stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
     stop_pattern = re.compile(rf"^\s*(?!{re.escape(target_chapter_section)}(\.|$))\d+(\.\d+)*(\s|$)",re.IGNORECASE)
+    target_prefix = target_chapter_section.rstrip(".")
 
     input_doc = Document()
     input_doc.LoadFromFile(input_file)
@@ -322,11 +329,25 @@ def extract_word_chapter(
                     if isinstance(text_range, TextRange):
                         text_range.CharacterFormat.Hidden = True
                     continue
-                # elif capture_mode and child.ListText and stop_pattern.match(child.ListText):
-                #     capture_mode = False
-                elif capture_mode and child.ListText and stop_pattern.match(child.ListText.strip()):
-                    capture_mode = False
-                    continue
+                elif capture_mode:
+                    is_heading_style = is_heading_paragraph(child)
+                    list_text_value = (child.ListText or "").strip().rstrip(".")
+
+                    def is_stop_candidate(val: str, from_list_text: bool) -> bool:
+                        """Only treat list bullets/numbers as stop markers; headings can also stop."""
+                        if not val:
+                            return False
+                        normalized = val.strip().rstrip(".")
+                        if target_prefix and normalized.startswith(target_prefix):
+                            return False
+                        if is_heading_style and normalized:
+                            return True
+                        return from_list_text and bool(stop_pattern.match(normalized))
+
+                    if is_stop_candidate(list_text_value, True) or is_stop_candidate(paragraph_text, False):
+                        print(f"[STOP] list={child.ListText!r} text={paragraph_text!r}")
+                        capture_mode = False
+                        continue
                 if capture_mode:
                     para = section.AddParagraph()
                     if paragraph_text:
@@ -974,4 +995,3 @@ def extract_specific_figure_from_word(
         print(f"已擷取圖片 {result['image_filename']}，對應 caption: {result['caption']}")
 
     return result
-

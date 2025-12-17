@@ -251,6 +251,14 @@ def is_heading_paragraph(paragraph: Paragraph) -> bool:
     return "heading" in style_name.lower()
 
 
+def _split_leading_numbers(text: str) -> list[str]:
+    """Return numeric parts from the leading chapter numbering like '6.13.4'."""
+    match = re.match(r"^\s*(\d+(?:\.\d+)*)", text or "")
+    if not match:
+        return []
+    return match.group(1).split(".")
+
+
 def extract_word_chapter(
     input_file: str,
     target_chapter_section: str,
@@ -271,6 +279,8 @@ def extract_word_chapter(
     # stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
     stop_pattern = re.compile(rf"^\s*(?!{re.escape(target_chapter_section)}(\.|$))\d+(\.\d+)*(\s|$)",re.IGNORECASE)
     target_prefix = target_chapter_section.rstrip(".")
+    target_parts = _split_leading_numbers(target_prefix)
+    parent_parts = target_parts[:-1]
 
     input_doc = Document()
     input_doc.LoadFromFile(input_file)
@@ -334,14 +344,26 @@ def extract_word_chapter(
                     list_text_value = (child.ListText or "").strip().rstrip(".")
 
                     def is_stop_candidate(val: str, from_list_text: bool) -> bool:
-                        """Only treat list bullets/numbers as stop markers; headings can also stop."""
+                        """Detect the next chapter/section marker to stop capturing."""
                         if not val:
                             return False
                         normalized = val.strip().rstrip(".")
-                        if target_prefix and normalized.startswith(target_prefix):
+                        candidate_parts = _split_leading_numbers(normalized)
+                        # Same section or nested under current target: keep capturing
+                        if target_parts and candidate_parts[: len(target_parts)] == target_parts:
                             return False
                         if is_heading_style and normalized:
                             return True
+                        # Plain text numbering that looks like a sibling/higher-level section
+                        if candidate_parts and target_parts:
+                            cand_depth = len(candidate_parts)
+                            target_depth = len(target_parts)
+                            if cand_depth == target_depth:
+                                if not parent_parts or candidate_parts[: len(parent_parts)] == parent_parts:
+                                    return True
+                            elif cand_depth < target_depth and parent_parts:
+                                if candidate_parts[: len(parent_parts)] == parent_parts:
+                                    return True
                         return from_list_text and bool(stop_pattern.match(normalized))
 
                     if is_stop_candidate(list_text_value, True) or is_stop_candidate(paragraph_text, False):
@@ -373,7 +395,12 @@ def extract_word_chapter(
                                 para.AppendText(part)
             elif isinstance(child, Table) and capture_mode:
                 add_table_to_section(section, child)
+            elif isinstance(child, Section):
+                nodes.put(child.Body)
             elif isinstance(child, ICompositeObject):
+                doc_type = getattr(child, "DocumentObjectType", None)
+                if _is_header_or_footer(doc_type):
+                    continue
                 nodes.put(child)
 
     if is_standalone:

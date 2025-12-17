@@ -292,8 +292,20 @@ def extract_word_chapter(
     else:
         is_standalone = False
 
-    nodes = queue.Queue()
-    nodes.put(input_doc)
+    def push_children_onto_stack(obj, stack):
+        """Push children in reverse order to keep reading order when popping."""
+        if not hasattr(obj, "ChildObjects"):
+            return
+        for idx in range(obj.ChildObjects.Count - 1, -1, -1):
+            child = obj.ChildObjects.get_Item(idx)
+            if isinstance(child, ICompositeObject):
+                doc_type = getattr(child, "DocumentObjectType", None)
+                if _is_header_or_footer(doc_type):
+                    continue
+            stack.append(child)
+
+    stack: list[ICompositeObject] = []
+    push_children_onto_stack(input_doc, stack)
     image_count = [1]
     capture_mode = False
     captured_titles: list[str] = []
@@ -310,98 +322,93 @@ def extract_word_chapter(
         except Exception as e:
             print("處理表格錯誤:", e)
 
-    while nodes.qsize() > 0:
-        node = nodes.get()
-        for i in range(node.ChildObjects.Count):
-            child = node.ChildObjects.get_Item(i)
-            if isinstance(child, Paragraph):
-                if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
-                    continue
-                paragraph_text = child.ListText + " " if child.ListText else ""
-                paragraph_alignment = getattr(child.Format, "HorizontalAlignment", None)
-                for j in range(child.ChildObjects.Count):
-                    sub = child.ChildObjects.get_Item(j)
-                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
-                        paragraph_text += sub.Text
-                    elif sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture) and capture_mode:
-                        file_name = _save_picture_with_original_format(
-                            sub, output_image_path, image_count
-                        )
-                        paragraph_text += (
-                            f"[Image: {file_name}|{sub.Width}|{sub.Height}]"
-                        )
-                paragraph_text = paragraph_text.strip()
-                if section_pattern.match(paragraph_text):
-                    capture_mode = True
-                    captured_titles.append(paragraph_text)
-                    marker_para = section.AddParagraph()
-                    text_range = marker_para.AppendText(paragraph_text)
-                    if isinstance(text_range, TextRange):
-                        text_range.CharacterFormat.Hidden = True
-                    continue
-                elif capture_mode:
-                    is_heading_style = is_heading_paragraph(child)
-                    list_text_value = (child.ListText or "").strip().rstrip(".")
+    while stack:
+        child = stack.pop()
+        if isinstance(child, Paragraph):
+            if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
+                continue
+            paragraph_text = child.ListText + " " if child.ListText else ""
+            paragraph_alignment = getattr(child.Format, "HorizontalAlignment", None)
+            for j in range(child.ChildObjects.Count):
+                sub = child.ChildObjects.get_Item(j)
+                if sub.DocumentObjectType == DocumentObjectType.TextRange:
+                    paragraph_text += sub.Text
+                elif sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture) and capture_mode:
+                    file_name = _save_picture_with_original_format(
+                        sub, output_image_path, image_count
+                    )
+                    paragraph_text += (
+                        f"[Image: {file_name}|{sub.Width}|{sub.Height}]"
+                    )
+            paragraph_text = paragraph_text.strip()
+            if section_pattern.match(paragraph_text):
+                capture_mode = True
+                captured_titles.append(paragraph_text)
+                marker_para = section.AddParagraph()
+                text_range = marker_para.AppendText(paragraph_text)
+                if isinstance(text_range, TextRange):
+                    text_range.CharacterFormat.Hidden = True
+                continue
+            elif capture_mode:
+                is_heading_style = is_heading_paragraph(child)
+                list_text_value = (child.ListText or "").strip().rstrip(".")
 
-                    def is_stop_candidate(val: str, from_list_text: bool) -> bool:
-                        """Detect the next chapter/section marker to stop capturing."""
-                        if not val:
-                            return False
-                        normalized = val.strip().rstrip(".")
-                        candidate_parts = _split_leading_numbers(normalized)
-                        # Same section or nested under current target: keep capturing
-                        if target_parts and candidate_parts[: len(target_parts)] == target_parts:
-                            return False
-                        if is_heading_style and normalized:
-                            return True
-                        # Plain text numbering that looks like a sibling/higher-level section
-                        if candidate_parts and target_parts:
-                            cand_depth = len(candidate_parts)
-                            target_depth = len(target_parts)
-                            if cand_depth == target_depth:
-                                if not parent_parts or candidate_parts[: len(parent_parts)] == parent_parts:
-                                    return True
-                            elif cand_depth < target_depth and parent_parts:
-                                if candidate_parts[: len(parent_parts)] == parent_parts:
-                                    return True
-                        return from_list_text and bool(stop_pattern.match(normalized))
+                def is_stop_candidate(val: str, from_list_text: bool) -> bool:
+                    """Detect the next chapter/section marker to stop capturing."""
+                    if not val:
+                        return False
+                    normalized = val.strip().rstrip(".")
+                    candidate_parts = _split_leading_numbers(normalized)
+                    # Same section or nested under current target: keep capturing
+                    if target_parts and candidate_parts[: len(target_parts)] == target_parts:
+                        return False
+                    if is_heading_style and normalized:
+                        return True
+                    # Plain text numbering that looks like a sibling/higher-level section
+                    if candidate_parts and target_parts:
+                        cand_depth = len(candidate_parts)
+                        target_depth = len(target_parts)
+                        if cand_depth == target_depth:
+                            if not parent_parts or candidate_parts[: len(parent_parts)] == parent_parts:
+                                return True
+                        elif cand_depth < target_depth and parent_parts:
+                            if candidate_parts[: len(parent_parts)] == parent_parts:
+                                return True
+                    return from_list_text and bool(stop_pattern.match(normalized))
 
-                    if is_stop_candidate(list_text_value, True) or is_stop_candidate(paragraph_text, False):
-                        print(f"[STOP] list={child.ListText!r} text={paragraph_text!r}")
-                        capture_mode = False
-                        continue
-                if capture_mode:
-                    para = section.AddParagraph()
-                    if paragraph_text:
-                        for part in re.split(r'(\[Image:.+?\])', paragraph_text):
-                            if part.startswith("[Image:"):
-                                try:
-                                    content = part[7:-1]
-                                    img_name, width, height = content.split("|")
-                                    width = float(width)
-                                    height = float(height)
-                                except ValueError:
-                                    img_name = part[7:-1].strip()
-                                    width = height = None
-                                img_path = os.path.join(output_image_path, img_name.strip())
-                                if os.path.isfile(img_path):
-                                    pic = para.AppendPicture(img_path)
-                                    if width and height:
-                                        pic.Width = width
-                                        pic.Height = height
-                                    if paragraph_alignment is not None:
-                                        para.Format.HorizontalAlignment = paragraph_alignment
-                            else:
-                                para.AppendText(part)
-            elif isinstance(child, Table) and capture_mode:
-                add_table_to_section(section, child)
-            elif isinstance(child, Section):
-                nodes.put(child.Body)
-            elif isinstance(child, ICompositeObject):
-                doc_type = getattr(child, "DocumentObjectType", None)
-                if _is_header_or_footer(doc_type):
+                if is_stop_candidate(list_text_value, True) or is_stop_candidate(paragraph_text, False):
+                    print(f"[STOP] list={child.ListText!r} text={paragraph_text!r}")
+                    capture_mode = False
                     continue
-                nodes.put(child)
+            if capture_mode:
+                para = section.AddParagraph()
+                if paragraph_text:
+                    for part in re.split(r'(\[Image:.+?\])', paragraph_text):
+                        if part.startswith("[Image:"):
+                            try:
+                                content = part[7:-1]
+                                img_name, width, height = content.split("|")
+                                width = float(width)
+                                height = float(height)
+                            except ValueError:
+                                img_name = part[7:-1].strip()
+                                width = height = None
+                            img_path = os.path.join(output_image_path, img_name.strip())
+                            if os.path.isfile(img_path):
+                                pic = para.AppendPicture(img_path)
+                                if width and height:
+                                    pic.Width = width
+                                    pic.Height = height
+                                if paragraph_alignment is not None:
+                                    para.Format.HorizontalAlignment = paragraph_alignment
+                        else:
+                            para.AppendText(part)
+        elif isinstance(child, Table) and capture_mode:
+            add_table_to_section(section, child)
+        elif isinstance(child, Section):
+            push_children_onto_stack(child.Body, stack)
+        elif isinstance(child, ICompositeObject):
+            push_children_onto_stack(child, stack)
 
     if is_standalone:
         output_doc.SaveToFile("word_chapter_result.docx", FileFormat.Docx)

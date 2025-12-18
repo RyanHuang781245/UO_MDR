@@ -281,7 +281,7 @@ def create_user_command():
     user_id = create_user(engine, username=username, password=password, role=role)
     print(f"Created user id={user_id}")
 
-nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS", r"\\Nas100\twr\UOC_UR4\應用軟體開發\1-系統開發\測試專案\1. 國際送件\輸入-USTAR II System")
+nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS")
 nas_allowed_roots = [
     os.path.abspath(p)
     for p in nas_roots_env.split(os.pathsep)

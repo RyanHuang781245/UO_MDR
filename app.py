@@ -46,16 +46,48 @@ from modules.rbac_store import (
     set_user_role,
     user_has_permission,
 )
-from modules.workflow import SUPPORTED_STEPS, run_workflow
-from modules.Extract_AllFile_to_FinalWord import (
-    center_table_figure_paragraphs,
-    apply_basic_style,
-    remove_hidden_runs,
-    hide_paragraphs_with_text,
-    remove_paragraphs_with_text,
-)
-from modules.Edit_Word import renumber_figures_tables_file
-from modules.translate_with_bedrock import translate_file
+
+def _optional_dependency_stub(feature: str):
+    def _stub(*_args, **_kwargs):
+        raise RuntimeError(
+            f"{feature} requires optional document-processing dependencies "
+            "(e.g. spire.doc / python-docx / PyMuPDF)."
+        )
+
+    return _stub
+
+
+try:
+    from modules.workflow import SUPPORTED_STEPS, run_workflow
+except Exception:  # optional dependency (spire.doc) may be missing
+    SUPPORTED_STEPS = {}
+    run_workflow = _optional_dependency_stub("Workflow execution")
+
+try:
+    from modules.Extract_AllFile_to_FinalWord import (
+        center_table_figure_paragraphs,
+        apply_basic_style,
+        remove_hidden_runs,
+        hide_paragraphs_with_text,
+        remove_paragraphs_with_text,
+    )
+except Exception:  # optional dependencies may be missing
+    center_table_figure_paragraphs = _optional_dependency_stub("center_table_figure_paragraphs")
+    apply_basic_style = _optional_dependency_stub("apply_basic_style")
+    remove_hidden_runs = _optional_dependency_stub("remove_hidden_runs")
+    hide_paragraphs_with_text = _optional_dependency_stub("hide_paragraphs_with_text")
+    remove_paragraphs_with_text = _optional_dependency_stub("remove_paragraphs_with_text")
+
+try:
+    from modules.Edit_Word import renumber_figures_tables_file
+except Exception:
+    renumber_figures_tables_file = _optional_dependency_stub("renumber_figures_tables_file")
+
+try:
+    from modules.translate_with_bedrock import translate_file
+except Exception:
+    translate_file = _optional_dependency_stub("translate_file")
+
 from modules.file_copier import copy_files
 
 app = Flask(__name__, instance_relative_config=True)
@@ -388,6 +420,9 @@ def normalize_relative_path(raw_path: str, allow_recursive: bool) -> str:
     if not raw_path or not raw_path.strip():
         raise ValueError("請提供要匯入的檔案或資料夾路徑")
     cleaned = raw_path.strip().replace("\\", "/")
+    # Make POSIX-style absolute paths invalid on Windows too (e.g. "/abs/path").
+    if cleaned.startswith("/"):
+        raise ValueError("路徑不可為絕對路徑，請填寫相對於允許根目錄的路徑")
     if os.path.isabs(cleaned):
         raise ValueError("路徑不可為絕對路徑，請填寫相對於允許根目錄的路徑")
     norm_rel = os.path.normpath(cleaned)
@@ -424,6 +459,48 @@ def validate_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None):
         if os.path.exists(candidate):
             return candidate
     raise FileNotFoundError("找不到指定的路徑，或不在允許的根目錄內")
+
+
+def get_configured_nas_roots() -> list[str]:
+    ensure_allowed_roots_loaded()
+    roots = app.config.get("NAS_ALLOWED_ROOTS") or app.config.get("ALLOWED_SOURCE_ROOTS", [])
+    return list(roots) if roots else []
+
+
+def resolve_nas_path_in_root(raw_path: str, root_index: int, allow_recursive=None) -> str:
+    allow_recursive = (
+        app.config.get("NAS_ALLOW_RECURSIVE", True)
+        if allow_recursive is None
+        else allow_recursive
+    )
+    roots = get_configured_nas_roots()
+    if not roots:
+        raise ValueError("NAS roots are not configured")
+    if root_index < 0 or root_index >= len(roots):
+        raise ValueError("Invalid NAS root index")
+
+    root_abs = os.path.abspath(roots[root_index])
+    norm_rel = normalize_relative_path(raw_path, allow_recursive)
+    candidate = os.path.abspath(os.path.join(root_abs, norm_rel))
+    try:
+        if os.path.commonpath([root_abs, candidate]) != root_abs:
+            raise ValueError("Path escapes the allowed NAS root")
+    except ValueError:
+        raise ValueError("Invalid path")
+
+    if os.path.exists(candidate):
+        return candidate
+    raise FileNotFoundError("Path does not exist in the selected NAS root")
+
+
+def resolve_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None, root_index=None) -> str:
+    if root_index is None or str(root_index).strip() == "":
+        return validate_nas_path(raw_path, allowed_roots=allowed_roots, allow_recursive=allow_recursive)
+    try:
+        root_index_int = int(root_index)
+    except (TypeError, ValueError):
+        raise ValueError("Invalid NAS root index")
+    return resolve_nas_path_in_root(raw_path, root_index_int, allow_recursive=allow_recursive)
 
 
 def deduplicate_name(base_dir: str, name: str) -> str:
@@ -471,6 +548,66 @@ def enforce_max_copy_size(path: str):
             if _check(fpath) > max_bytes:
                 app.logger.warning("檔案大小超過限制：%s", fpath)
                 raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
+
+
+@app.get("/api/nas/dirs")
+def api_nas_list_dirs():
+    """List sub-directories under a configured NAS root.
+
+    Query params:
+      - root_index: int (required)
+      - path: str (optional, relative path; empty means the root itself)
+    """
+    root_index = request.args.get("root_index", type=int)
+    if root_index is None:
+        return jsonify({"error": "root_index is required"}), 400
+
+    rel_path_raw = (request.args.get("path") or "").strip()
+    allow_recursive = app.config.get("NAS_ALLOW_RECURSIVE", True)
+
+    try:
+        roots = get_configured_nas_roots()
+        if not roots:
+            return jsonify({"error": "NAS roots are not configured"}), 400
+        if root_index < 0 or root_index >= len(roots):
+            return jsonify({"error": "Invalid NAS root index"}), 400
+
+        root_abs = os.path.abspath(roots[root_index])
+        if rel_path_raw in {"", ".", "/"}:
+            abs_dir = root_abs
+            rel_path = ""
+        else:
+            rel_path = normalize_relative_path(rel_path_raw, allow_recursive=allow_recursive).replace("\\", "/")
+            abs_dir = resolve_nas_path_in_root(rel_path, root_index, allow_recursive=allow_recursive)
+
+        if not os.path.isdir(abs_dir):
+            return jsonify({"error": "Path is not a directory"}), 400
+
+        dirs = []
+        for name in sorted(os.listdir(abs_dir), key=str.lower):
+            full = os.path.join(abs_dir, name)
+            if os.path.isdir(full):
+                child_rel = f"{rel_path}/{name}" if rel_path else name
+                dirs.append({"name": name, "path": child_rel.replace("\\", "/")})
+
+        parent = None
+        if rel_path:
+            parent_parts = rel_path.split("/")
+            parent = "/".join(parent_parts[:-1]) if len(parent_parts) > 1 else ""
+
+        return jsonify(
+            {
+                "root_index": root_index,
+                "path": rel_path,
+                "parent": parent,
+                "dirs": dirs,
+                "allow_recursive": bool(allow_recursive),
+            }
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except PermissionError:
+        return jsonify({"error": "Permission denied"}), 403
 
 
 def list_files(base_dir):
@@ -803,10 +940,12 @@ def tasks():
 def create_task():
     nas_path = request.form.get("nas_path", "")
     try:
-        resolved_path = validate_nas_path(
+        nas_root_index = request.form.get("nas_root_index", "").strip()
+        resolved_path = resolve_nas_path(
             nas_path,
             allowed_roots=app.config.get("NAS_ALLOWED_ROOTS"),
             allow_recursive=app.config.get("NAS_ALLOW_RECURSIVE", True),
+            root_index=nas_root_index or None,
         )
         if not os.path.isdir(resolved_path):
             return "指定的 NAS 路徑不是資料夾", 400

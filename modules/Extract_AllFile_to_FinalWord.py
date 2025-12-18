@@ -138,7 +138,8 @@ def extract_word_all_content(input_file: str, output_image_path: str = "word_all
             if isinstance(child, Paragraph):
                 if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
                     continue
-                paragraph_text = child.ListText + " " if child.ListText else ""
+                list_text = child.ListText.strip() if child.ListText else ""
+                paragraph_text = list_text + " " if list_text else ""
                 paragraph_alignment = getattr(child.Format, "HorizontalAlignment", None)
                 for j in range(child.ChildObjects.Count):
                     sub = child.ChildObjects.get_Item(j)

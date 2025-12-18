@@ -5,6 +5,11 @@ import json
 import zipfile
 import re
 from datetime import datetime
+from urllib.parse import urlparse
+
+from modules.env_loader import load_dotenv_if_present
+
+load_dotenv_if_present(os.path.dirname(__file__))
 from flask import (
     Flask,
     render_template,
@@ -15,8 +20,32 @@ from flask import (
     send_from_directory,
     abort,
     jsonify,
+    session,
+    g,
+    flash,
 )
 from werkzeug.utils import secure_filename
+from functools import wraps
+
+from modules.rbac_store import (
+    RBACConfigError,
+    ROLE_ADMIN,
+    ROLE_EDITOR,
+    ROLE_LABELS_ZH,
+    PERM_USER_MANAGE,
+    authenticate,
+    build_mssql_engine_from_env,
+    create_user,
+    ensure_schema,
+    get_user_by_id,
+    get_user_roles,
+    list_users,
+    seed_defaults,
+    set_user_active,
+    set_user_password,
+    set_user_role,
+    user_has_permission,
+)
 from modules.workflow import SUPPORTED_STEPS, run_workflow
 from modules.Extract_AllFile_to_FinalWord import (
     center_table_figure_paragraphs,
@@ -42,6 +71,215 @@ def parse_bool(value, default=False):
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
+
+app.config["AUTH_ENABLED"] = parse_bool(os.environ.get("AUTH_ENABLED"), True)
+
+
+def get_rbac_engine():
+    engine = getattr(app, "_rbac_engine", None)
+    if engine is not None:
+        return engine
+    engine = build_mssql_engine_from_env()
+    app._rbac_engine = engine
+    return engine
+
+
+def permission_required(permission_name: str):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if not app.config.get("AUTH_ENABLED", True):
+                return func(*args, **kwargs)
+            if not getattr(g, "user", None):
+                abort(401)
+            engine = get_rbac_engine()
+            if not user_has_permission(engine, g.user.id, permission_name):
+                abort(403)
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+@app.context_processor
+def inject_auth_context():
+    def _has_perm(perm: str) -> bool:
+        if not app.config.get("AUTH_ENABLED", True):
+            return True
+        if not getattr(g, "user", None):
+            return False
+        try:
+            return user_has_permission(get_rbac_engine(), g.user.id, perm)
+        except RBACConfigError:
+            return False
+
+    def _role_labels(role_names: list[str]) -> str:
+        return "、".join(ROLE_LABELS_ZH.get(name, name) for name in role_names)
+
+    return {
+        "auth_enabled": app.config.get("AUTH_ENABLED", True),
+        "current_user": getattr(g, "user", None),
+        "current_user_roles": getattr(g, "user_roles", []),
+        "has_permission": _has_perm,
+        "role_labels": _role_labels,
+        "ROLE_ADMIN": ROLE_ADMIN,
+        "ROLE_EDITOR": ROLE_EDITOR,
+        "PERM_USER_MANAGE": PERM_USER_MANAGE,
+    }
+
+
+@app.before_request
+def enforce_login():
+    g.user = None
+    g.user_roles = []
+    if not app.config.get("AUTH_ENABLED", True):
+        return
+
+    public_endpoints = {"login", "logout", "static"}
+    if request.endpoint in public_endpoints:
+        return
+
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            engine = get_rbac_engine()
+            user = get_user_by_id(engine, int(user_id))
+            if user and user.is_active:
+                g.user = user
+                g.user_roles = get_user_roles(engine, user.id)
+                return
+        except RBACConfigError:
+            g.user = None
+        except Exception:
+            g.user = None
+
+    next_url = request.full_path
+    if next_url.endswith("?"):
+        next_url = next_url[:-1]
+    return redirect(url_for("login", next=next_url))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not app.config.get("AUTH_ENABLED", True):
+        return redirect(url_for("tasks"))
+
+    if session.get("user_id"):
+        return redirect(url_for("tasks"))
+
+    error = ""
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        try:
+            user = authenticate(get_rbac_engine(), username=username, password=password)
+        except RBACConfigError as exc:
+            error = str(exc)
+            user = None
+        except Exception:
+            app.logger.exception("登入驗證失敗")
+            error = "登入時發生錯誤，請稍後再試或聯絡系統管理員"
+            user = None
+
+        if user:
+            session["user_id"] = user.id
+            flash("登入成功", "success")
+            next_url = request.args.get("next")
+            if next_url:
+                parsed = urlparse(next_url)
+                if parsed.scheme or parsed.netloc or not next_url.startswith("/"):
+                    next_url = None
+            return redirect(next_url or url_for("tasks"))
+        if not error:
+            error = "帳號或密碼錯誤，或帳號已停用"
+
+    return render_template("login.html", error=error)
+
+
+@app.get("/logout")
+def logout():
+    session.clear()
+    flash("已登出", "info")
+    return redirect(url_for("login"))
+
+
+@app.route("/admin/users", methods=["GET", "POST"])
+@permission_required(PERM_USER_MANAGE)
+def admin_users():
+    engine = get_rbac_engine()
+
+    message = ""
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        try:
+            if action == "create":
+                username = request.form.get("username", "")
+                password = request.form.get("password", "")
+                role = request.form.get("role", ROLE_EDITOR)
+                ensure_schema(engine)
+                seed_defaults(engine)
+                create_user(engine, username=username, password=password, role=role)
+                message = f"已新增使用者 {username}"
+            elif action == "set_role":
+                user_id = int(request.form.get("user_id", "0"))
+                role = request.form.get("role", ROLE_EDITOR)
+                set_user_role(engine, user_id=user_id, role=role)
+                message = "已更新角色"
+            elif action == "set_active":
+                user_id = int(request.form.get("user_id", "0"))
+                is_active = parse_bool(request.form.get("is_active"), True)
+                set_user_active(engine, user_id=user_id, is_active=is_active)
+                message = "已更新狀態"
+            elif action == "reset_password":
+                user_id = int(request.form.get("user_id", "0"))
+                new_password = request.form.get("new_password", "")
+                if not new_password:
+                    raise ValueError("請輸入新密碼")
+                set_user_password(engine, user_id=user_id, new_password=new_password)
+                message = "已重設密碼"
+        except Exception as exc:
+            message = str(exc)
+
+    ensure_schema(engine)
+    seed_defaults(engine)
+    users_data = list_users(engine)
+    return render_template(
+        "admin_users.html",
+        users=users_data,
+        message=message,
+        role_labels_map=ROLE_LABELS_ZH,
+    )
+
+
+@app.errorhandler(403)
+def forbidden(_exc):
+    return render_template("403.html"), 403
+
+
+@app.cli.command("init-rbac")
+def init_rbac_command():
+    """初始化 RBAC 相關資料表並建立預設角色/權限。"""
+    engine = get_rbac_engine()
+    ensure_schema(engine)
+    seed_defaults(engine)
+    print("RBAC schema ready. (roles/permissions seeded)")
+
+
+@app.cli.command("create-user")
+def create_user_command():
+    """互動式建立使用者（需先 init-rbac）。"""
+    import getpass
+
+    engine = get_rbac_engine()
+    ensure_schema(engine)
+    seed_defaults(engine)
+
+    username = input("Username: ").strip()
+    role = input("Role (admin/editor) [editor]: ").strip() or ROLE_EDITOR
+    password = getpass.getpass("Password: ")
+    user_id = create_user(engine, username=username, password=password, role=role)
+    print(f"Created user id={user_id}")
 
 nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS", r"\\Nas100\twr\UOC_UR4\應用軟體開發\1-系統開發\測試專案\1. 國際送件\輸入-USTAR II System")
 nas_allowed_roots = [
@@ -1459,4 +1697,3 @@ def task_download(task_id, job_id, kind):
 
 if __name__ == "__main__":
     app.run(debug=True)
-

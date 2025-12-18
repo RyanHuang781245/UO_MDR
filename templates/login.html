@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <h1 class="h4 mb-3">登入</h1>
+    <form method="post" class="card card-body shadow-sm">
+      <div class="mb-3">
+        <label class="form-label">帳號</label>
+        <input class="form-control" name="username" autocomplete="username" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">密碼</label>
+        <input class="form-control" type="password" name="password" autocomplete="current-password" required>
+      </div>
+      {% if error %}
+        <div class="alert alert-danger py-2 mb-3">{{ error }}</div>
+      {% endif %}
+      <button class="btn btn-primary w-100" type="submit">登入</button>
+    </form>
+    <div class="text-muted small mt-3">
+      若尚未建立帳號，請請系統管理者先執行 <code>flask --app app.py init-rbac</code> 與 <code>flask --app app.py create-user</code>。
+    </div>
+  </div>
+</div>
+{% endblock %}
+

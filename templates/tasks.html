@@ -85,19 +85,28 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-md-6 d-flex gap-2 justify-content-end">
-              <button class="btn btn-primary" type="button" id="nasSelectBtn" data-bs-dismiss="modal">選擇此資料夾</button>
-            </div>
           </div>
 
           <div class="border rounded p-2">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <nav aria-label="breadcrumb" class="mb-0">
-                <ol class="breadcrumb mb-0" id="nasBreadcrumb"></ol>
-              </nav>
-              <div class="text-muted small" id="nasStatus"></div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <button class="btn btn-sm btn-outline-secondary" type="button" id="nasGoUpBtn">上一層</button>
+              <div class="small text-muted">
+                目前位置：<code id="nasCurrentPath">/</code>
+              </div>
+              <div class="ms-auto text-muted small" id="nasStatus"></div>
             </div>
-            <div class="list-group" id="nasDirList"></div>
+
+            <div class="list-group" id="nasFolderList"></div>
+
+            <hr class="my-3">
+
+            <div class="small">
+              已選取：<code id="nasSelectedPath">尚未選取</code>
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-2">
+              <button class="btn btn-outline-secondary" type="button" id="nasPickCurrentBtn">選取目前資料夾</button>
+              <button class="btn btn-primary" type="button" id="nasApplyBtn" data-bs-dismiss="modal">套用</button>
+            </div>
           </div>
         {% endif %}
       </div>
@@ -124,112 +133,108 @@ function renameTask(id, current){
 const allowedNasRoots = {{ allowed_nas_roots | tojson }};
 const nasModalEl = document.getElementById('nasBrowserModal');
 const nasPathInput = document.getElementById('nasPathInput');
-const nasPathDisplay = document.getElementById('nasPathDisplay');
+const nasRootIndexInput = document.getElementById('nasRootIndexInput');
 const nasRootSelect = document.getElementById('nasRootSelect');
-const nasSelectBtn = document.getElementById('nasSelectBtn');
-const nasDirList = document.getElementById('nasDirList');
-const nasBreadcrumb = document.getElementById('nasBreadcrumb');
 const nasStatus = document.getElementById('nasStatus');
+const nasGoUpBtn = document.getElementById('nasGoUpBtn');
+const nasFolderList = document.getElementById('nasFolderList');
+const nasCurrentPathEl = document.getElementById('nasCurrentPath');
+const nasSelectedPathEl = document.getElementById('nasSelectedPath');
+const nasPickCurrentBtn = document.getElementById('nasPickCurrentBtn');
+const nasApplyBtn = document.getElementById('nasApplyBtn');
 
 const nasState = {
   rootIndex: 0,
-  path: '' // '' means root
+  currentRel: '',  // '' means root
+  selectedRel: null // null means not selected; '' means root
 };
-
-function joinPath(base, name){
-  if(!base) return name;
-  return `${base.replace(/\\/+$/,'')}/${name}`;
-}
 
 function setStatus(text){
   if(nasStatus) nasStatus.textContent = text || '';
 }
 
-function renderBreadcrumb(){
-  if(!nasBreadcrumb) return;
-  nasBreadcrumb.innerHTML = '';
-  const parts = nasState.path ? nasState.path.split('/') : [];
-
-  const rootItem = document.createElement('li');
-  rootItem.className = 'breadcrumb-item';
-  const rootLink = document.createElement('a');
-  rootLink.href = '#';
-  rootLink.textContent = '根目錄';
-  rootLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    nasState.path = '';
-    loadDirs();
-  });
-  rootItem.appendChild(rootLink);
-  nasBreadcrumb.appendChild(rootItem);
-
-  let acc = '';
-  parts.forEach((p, idx) => {
-    acc = joinPath(acc, p);
-    const li = document.createElement('li');
-    li.className = 'breadcrumb-item' + (idx === parts.length - 1 ? ' active' : '');
-    if(idx === parts.length - 1){
-      li.textContent = p;
-    } else {
-      const a = document.createElement('a');
-      a.href = '#';
-      a.textContent = p;
-      a.addEventListener('click', (e) => {
-        e.preventDefault();
-        nasState.path = acc;
-        loadDirs();
-      });
-      li.appendChild(a);
-    }
-    nasBreadcrumb.appendChild(li);
-  });
+function updateCurrentPathDisplay(){
+  if(!nasCurrentPathEl) return;
+  nasCurrentPathEl.textContent = '/' + (nasState.currentRel || '');
 }
 
-function renderDirs(dirs){
-  if(!nasDirList) return;
-  nasDirList.innerHTML = '';
-  if(!dirs.length){
+function updateSelectedPathDisplay(){
+  if(!nasSelectedPathEl) return;
+  if(nasState.selectedRel === null){
+    nasSelectedPathEl.textContent = '尚未選取';
+    return;
+  }
+  nasSelectedPathEl.textContent = nasState.selectedRel ? '/' + nasState.selectedRel : '/';
+}
+
+function renderFolders(folders){
+  if(!nasFolderList) return;
+  nasFolderList.innerHTML = '';
+
+  if(!folders.length){
     const empty = document.createElement('div');
     empty.className = 'text-muted small p-2';
     empty.textContent = '此層沒有子資料夾';
-    nasDirList.appendChild(empty);
+    nasFolderList.appendChild(empty);
     return;
   }
-  for(const d of dirs){
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
-    btn.textContent = d.name;
-    btn.addEventListener('click', () => {
-      nasState.path = d.path;
-      loadDirs();
+
+  for(const folder of folders){
+    const row = document.createElement('div');
+    row.className = 'list-group-item d-flex align-items-center justify-content-between gap-2';
+
+    const nameBtn = document.createElement('button');
+    nameBtn.type = 'button';
+    nameBtn.className = 'btn btn-link p-0 text-start flex-grow-1 text-decoration-none';
+    nameBtn.textContent = folder.name;
+    nameBtn.addEventListener('click', () => loadFolders(folder.path));
+
+    const actions = document.createElement('div');
+    actions.className = 'd-flex gap-2 flex-shrink-0';
+
+    const enterBtn = document.createElement('button');
+    enterBtn.type = 'button';
+    enterBtn.className = 'btn btn-sm btn-outline-secondary';
+    enterBtn.textContent = '進入';
+    enterBtn.addEventListener('click', () => loadFolders(folder.path));
+
+    const pickBtn = document.createElement('button');
+    pickBtn.type = 'button';
+    pickBtn.className = 'btn btn-sm btn-outline-primary';
+    pickBtn.textContent = '選取';
+    pickBtn.addEventListener('click', () => {
+      nasState.selectedRel = folder.path || '';
+      updateSelectedPathDisplay();
     });
-    const chevron = document.createElement('span');
-    chevron.className = 'text-muted';
-    chevron.textContent = '›';
-    btn.appendChild(chevron);
-    nasDirList.appendChild(btn);
+
+    actions.appendChild(enterBtn);
+    actions.appendChild(pickBtn);
+
+    row.appendChild(nameBtn);
+    row.appendChild(actions);
+    nasFolderList.appendChild(row);
   }
 }
 
-async function loadDirs(){
+async function loadFolders(rel = ''){
   if(!allowedNasRoots || !allowedNasRoots.length) return;
   setStatus('讀取中…');
-  renderBreadcrumb();
+  nasState.currentRel = rel || '';
+  updateCurrentPathDisplay();
   const qs = new URLSearchParams({
     root_index: String(nasState.rootIndex),
-    path: nasState.path
+    path: nasState.currentRel
   });
   const resp = await fetch(`/api/nas/dirs?${qs.toString()}`);
   const data = await resp.json();
   if(!resp.ok){
     setStatus(data.error || '讀取失敗');
-    renderDirs([]);
+    renderFolders([]);
     return;
   }
-  nasState.path = data.path || '';
-  renderBreadcrumb();
-  renderDirs(data.dirs || []);
+  nasState.currentRel = data.path || '';
+  updateCurrentPathDisplay();
+  renderFolders(data.dirs || []);
   setStatus('');
 }
 
@@ -244,23 +249,46 @@ if(nasModalEl){
     if(nasRootSelect){
       nasState.rootIndex = parseInt(nasRootSelect.value || '0', 10);
     }
-    nasState.path = '';
-    loadDirs();
+    nasState.currentRel = '';
+    nasState.selectedRel = null;
+    updateCurrentPathDisplay();
+    updateSelectedPathDisplay();
+    loadFolders('');
   });
 }
 
 if(nasRootSelect){
   nasRootSelect.addEventListener('change', () => {
     nasState.rootIndex = parseInt(nasRootSelect.value || '0', 10);
-    nasState.path = '';
-    loadDirs();
+    nasState.currentRel = '';
+    nasState.selectedRel = null;
+    updateCurrentPathDisplay();
+    updateSelectedPathDisplay();
+    loadFolders('');
   });
 }
 
-if(nasSelectBtn){
-  nasSelectBtn.addEventListener('click', () => {
+if(nasGoUpBtn){
+  nasGoUpBtn.addEventListener('click', () => {
+    if(!nasState.currentRel) return;
+    const parts = nasState.currentRel.split('/').filter(Boolean);
+    parts.pop();
+    loadFolders(parts.join('/'));
+  });
+}
+
+if(nasPickCurrentBtn){
+  nasPickCurrentBtn.addEventListener('click', () => {
+    nasState.selectedRel = nasState.currentRel || '';
+    updateSelectedPathDisplay();
+  });
+}
+
+if(nasApplyBtn){
+  nasApplyBtn.addEventListener('click', () => {
     if(!nasPathInput) return;
-    const chosen = nasState.path || '.';
+    const rel = nasState.selectedRel === null ? (nasState.currentRel || '') : nasState.selectedRel;
+    const chosen = rel === '' ? '.' : rel;
     nasPathInput.value = chosen;
     if(nasRootIndexInput) nasRootIndexInput.value = String(nasState.rootIndex);
   });

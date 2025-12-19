@@ -2,7 +2,7 @@
 {% block content %}
 <h1 class="h3 mb-3">任務管理列表</h1>
 
-<form action="{{ url_for('create_task') }}" method="post" class="card card-body mb-4">
+<form action="{{ url_for('create_task') }}" method="post" class="card card-body mb-4" id="createTaskForm">
   <div class="row g-3">
     <div class="col-md-5">
       <label class="form-label">任務名稱</label>
@@ -31,8 +31,17 @@
       <label class="form-label">任務描述</label>
       <textarea class="form-control" name="task_desc" placeholder="輸入任務描述"></textarea>
     </div>
+    <div class="col-12">
+    </div>
   </div>
 </form>
+
+<div class="task-loading-overlay d-none" id="taskLoadingOverlay" aria-live="polite" aria-busy="false">
+  <div class="task-loading-box">
+    <div class="spinner-border text-secondary me-3" role="status" aria-hidden="true"></div>
+    <div class="fw-semibold">處理中，請稍候...</div>
+  </div>
+</div>
 
 <h2 class="h5">現有任務</h2>
 <table class="table table-striped text-center">
@@ -293,5 +302,40 @@ if(nasApplyBtn){
     if(nasRootIndexInput) nasRootIndexInput.value = String(nasState.rootIndex);
   });
 }
+
+const createTaskForm = document.getElementById('createTaskForm');
+const taskSubmittingAlert = document.getElementById('taskSubmittingAlert');
+const taskLoadingOverlay = document.getElementById('taskLoadingOverlay');
+if(createTaskForm){
+  createTaskForm.addEventListener('submit', () => {
+    if(taskSubmittingAlert){ taskSubmittingAlert.classList.remove('d-none'); }
+    if(taskLoadingOverlay){
+      taskLoadingOverlay.classList.remove('d-none');
+      taskLoadingOverlay.setAttribute('aria-busy', 'true');
+    }
+  });
+}
 </script>
+<style>
+.task-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  pointer-events: all;
+}
+.task-loading-box {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px 20px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  min-width: 260px;
+  justify-content: center;
+}
+</style>
 {% endblock %}

@@ -938,6 +938,10 @@ def tasks():
 
 @app.post("/tasks")
 def create_task():
+    def _fail(message: str):
+        flash(message, "danger")
+        return redirect(url_for("tasks"))
+
     nas_path = request.form.get("nas_path", "")
     try:
         nas_root_index = request.form.get("nas_root_index", "").strip()
@@ -948,16 +952,16 @@ def create_task():
             root_index=nas_root_index or None,
         )
         if not os.path.isdir(resolved_path):
-            return "指定的 NAS 路徑不是資料夾", 400
+            return _fail("指定的 NAS 路徑不是資料夾")
         enforce_max_copy_size(resolved_path)
     except ValueError as exc:
-        return str(exc), 400
+        return _fail(str(exc))
     except FileNotFoundError as exc:
-        return str(exc), 404
+        return _fail(str(exc))
     task_name = request.form.get("task_name", "").strip() or "未命名任務"
     task_desc = request.form.get("task_desc", "").strip()
     if task_name_exists(task_name):
-        return "任務名稱已存在", 400
+        return _fail("任務名稱已存在")
     tid = str(uuid.uuid4())[:8]
     tdir = os.path.join(app.config["TASK_FOLDER"], tid)
     files_dir = os.path.join(tdir, "files")
@@ -968,7 +972,7 @@ def create_task():
         shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
     except PermissionError:
         shutil.rmtree(tdir, ignore_errors=True)
-        return "沒有足夠的權限讀取或複製指定路徑", 400
+        return _fail("沒有足夠的權限讀取或複製指定路徑")
     except shutil.Error as exc:
         app.logger.exception("複製 NAS 目錄失敗")
         shutil.rmtree(tdir, ignore_errors=True)
@@ -977,11 +981,11 @@ def create_task():
             first_error = exc.args[0][0]
             if len(first_error) >= 3:
                 detail = f"：{first_error[2]}"
-        return f"複製 NAS 目錄時發生錯誤{detail or ''}，請稍後再試", 400
+        return _fail(f"複製 NAS 目錄時發生錯誤{detail or ''}，請稍後再試")
     except Exception:
         app.logger.exception("複製 NAS 目錄失敗")
         shutil.rmtree(tdir, ignore_errors=True)
-        return "複製 NAS 目錄時發生錯誤，請稍後再試", 400
+        return _fail("複製 NAS 目錄時發生錯誤，請稍後再試")
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
         json.dump(
             {

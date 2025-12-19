@@ -5,6 +5,11 @@ import json
 import zipfile
 import re
 from datetime import datetime
+from urllib.parse import urlparse
+
+from modules.env_loader import load_dotenv_if_present
+
+load_dotenv_if_present(os.path.dirname(__file__))
 from flask import (
     Flask,
     render_template,
@@ -15,18 +20,74 @@ from flask import (
     send_from_directory,
     abort,
     jsonify,
+    session,
+    g,
+    flash,
 )
 from werkzeug.utils import secure_filename
-from modules.workflow import SUPPORTED_STEPS, run_workflow
-from modules.Extract_AllFile_to_FinalWord import (
-    center_table_figure_paragraphs,
-    apply_basic_style,
-    remove_hidden_runs,
-    hide_paragraphs_with_text,
-    remove_paragraphs_with_text,
+from functools import wraps
+
+from modules.rbac_store import (
+    RBACConfigError,
+    ROLE_ADMIN,
+    ROLE_EDITOR,
+    ROLE_LABELS_ZH,
+    PERM_USER_MANAGE,
+    authenticate,
+    build_mssql_engine_from_env,
+    create_user,
+    ensure_schema,
+    get_user_by_id,
+    get_user_roles,
+    list_users,
+    seed_defaults,
+    set_user_active,
+    set_user_password,
+    set_user_role,
+    user_has_permission,
 )
-from modules.Edit_Word import renumber_figures_tables_file
-from modules.translate_with_bedrock import translate_file
+
+def _optional_dependency_stub(feature: str):
+    def _stub(*_args, **_kwargs):
+        raise RuntimeError(
+            f"{feature} requires optional document-processing dependencies "
+            "(e.g. spire.doc / python-docx / PyMuPDF)."
+        )
+
+    return _stub
+
+
+try:
+    from modules.workflow import SUPPORTED_STEPS, run_workflow
+except Exception:  # optional dependency (spire.doc) may be missing
+    SUPPORTED_STEPS = {}
+    run_workflow = _optional_dependency_stub("Workflow execution")
+
+try:
+    from modules.Extract_AllFile_to_FinalWord import (
+        center_table_figure_paragraphs,
+        apply_basic_style,
+        remove_hidden_runs,
+        hide_paragraphs_with_text,
+        remove_paragraphs_with_text,
+    )
+except Exception:  # optional dependencies may be missing
+    center_table_figure_paragraphs = _optional_dependency_stub("center_table_figure_paragraphs")
+    apply_basic_style = _optional_dependency_stub("apply_basic_style")
+    remove_hidden_runs = _optional_dependency_stub("remove_hidden_runs")
+    hide_paragraphs_with_text = _optional_dependency_stub("hide_paragraphs_with_text")
+    remove_paragraphs_with_text = _optional_dependency_stub("remove_paragraphs_with_text")
+
+try:
+    from modules.Edit_Word import renumber_figures_tables_file
+except Exception:
+    renumber_figures_tables_file = _optional_dependency_stub("renumber_figures_tables_file")
+
+try:
+    from modules.translate_with_bedrock import translate_file
+except Exception:
+    translate_file = _optional_dependency_stub("translate_file")
+
 from modules.file_copier import copy_files
 
 app = Flask(__name__, instance_relative_config=True)
@@ -34,6 +95,243 @@ app.config["SECRET_KEY"] = "dev-secret"
 BASE_DIR = os.path.dirname(__file__)
 app.config["OUTPUT_FOLDER"] = os.path.join(BASE_DIR, "output")
 app.config["TASK_FOLDER"] = os.path.join(BASE_DIR, "tasks")
+app.config["ALLOWED_SOURCE_ROOTS"] = []
+
+
+def parse_bool(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+app.config["AUTH_ENABLED"] = parse_bool(os.environ.get("AUTH_ENABLED"), True)
+
+
+def get_rbac_engine():
+    engine = getattr(app, "_rbac_engine", None)
+    if engine is not None:
+        return engine
+    engine = build_mssql_engine_from_env()
+    app._rbac_engine = engine
+    return engine
+
+
+def permission_required(permission_name: str):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if not app.config.get("AUTH_ENABLED", True):
+                return func(*args, **kwargs)
+            if not getattr(g, "user", None):
+                abort(401)
+            engine = get_rbac_engine()
+            if not user_has_permission(engine, g.user.id, permission_name):
+                abort(403)
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+@app.context_processor
+def inject_auth_context():
+    def _has_perm(perm: str) -> bool:
+        if not app.config.get("AUTH_ENABLED", True):
+            return True
+        if not getattr(g, "user", None):
+            return False
+        try:
+            return user_has_permission(get_rbac_engine(), g.user.id, perm)
+        except RBACConfigError:
+            return False
+
+    def _role_labels(role_names: list[str]) -> str:
+        return "、".join(ROLE_LABELS_ZH.get(name, name) for name in role_names)
+
+    return {
+        "auth_enabled": app.config.get("AUTH_ENABLED", True),
+        "current_user": getattr(g, "user", None),
+        "current_user_roles": getattr(g, "user_roles", []),
+        "has_permission": _has_perm,
+        "role_labels": _role_labels,
+        "ROLE_ADMIN": ROLE_ADMIN,
+        "ROLE_EDITOR": ROLE_EDITOR,
+        "PERM_USER_MANAGE": PERM_USER_MANAGE,
+    }
+
+
+@app.before_request
+def enforce_login():
+    g.user = None
+    g.user_roles = []
+    if not app.config.get("AUTH_ENABLED", True):
+        return
+
+    public_endpoints = {"login", "logout", "static"}
+    if request.endpoint in public_endpoints:
+        return
+
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            engine = get_rbac_engine()
+            user = get_user_by_id(engine, int(user_id))
+            if user and user.is_active:
+                g.user = user
+                g.user_roles = get_user_roles(engine, user.id)
+                return
+        except RBACConfigError:
+            g.user = None
+        except Exception:
+            g.user = None
+
+    next_url = request.full_path
+    if next_url.endswith("?"):
+        next_url = next_url[:-1]
+    return redirect(url_for("login", next=next_url))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not app.config.get("AUTH_ENABLED", True):
+        return redirect(url_for("tasks"))
+
+    if session.get("user_id"):
+        return redirect(url_for("tasks"))
+
+    error = ""
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        try:
+            user = authenticate(get_rbac_engine(), username=username, password=password)
+        except RBACConfigError as exc:
+            error = str(exc)
+            user = None
+        except Exception:
+            app.logger.exception("登入驗證失敗")
+            error = "登入時發生錯誤，請稍後再試或聯絡系統管理員"
+            user = None
+
+        if user:
+            session["user_id"] = user.id
+            flash("登入成功", "success")
+            next_url = request.args.get("next")
+            if next_url:
+                parsed = urlparse(next_url)
+                if parsed.scheme or parsed.netloc or not next_url.startswith("/"):
+                    next_url = None
+            return redirect(next_url or url_for("tasks"))
+        if not error:
+            error = "帳號或密碼錯誤，或帳號已停用"
+
+    return render_template("login.html", error=error)
+
+
+@app.get("/logout")
+def logout():
+    session.clear()
+    flash("已登出", "info")
+    return redirect(url_for("login"))
+
+
+@app.route("/admin/users", methods=["GET", "POST"])
+@permission_required(PERM_USER_MANAGE)
+def admin_users():
+    engine = get_rbac_engine()
+
+    message = ""
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        try:
+            if action == "create":
+                username = request.form.get("username", "")
+                password = request.form.get("password", "")
+                role = request.form.get("role", ROLE_EDITOR)
+                ensure_schema(engine)
+                seed_defaults(engine)
+                create_user(engine, username=username, password=password, role=role)
+                message = f"已新增使用者 {username}"
+            elif action == "set_role":
+                user_id = int(request.form.get("user_id", "0"))
+                role = request.form.get("role", ROLE_EDITOR)
+                set_user_role(engine, user_id=user_id, role=role)
+                message = "已更新角色"
+            elif action == "set_active":
+                user_id = int(request.form.get("user_id", "0"))
+                is_active = parse_bool(request.form.get("is_active"), True)
+                set_user_active(engine, user_id=user_id, is_active=is_active)
+                message = "已更新狀態"
+            elif action == "reset_password":
+                user_id = int(request.form.get("user_id", "0"))
+                new_password = request.form.get("new_password", "")
+                if not new_password:
+                    raise ValueError("請輸入新密碼")
+                set_user_password(engine, user_id=user_id, new_password=new_password)
+                message = "已重設密碼"
+        except Exception as exc:
+            message = str(exc)
+
+    ensure_schema(engine)
+    seed_defaults(engine)
+    users_data = list_users(engine)
+    return render_template(
+        "admin_users.html",
+        users=users_data,
+        message=message,
+        role_labels_map=ROLE_LABELS_ZH,
+    )
+
+
+@app.errorhandler(403)
+def forbidden(_exc):
+    return render_template("403.html"), 403
+
+
+@app.cli.command("init-rbac")
+def init_rbac_command():
+    """初始化 RBAC 相關資料表並建立預設角色/權限。"""
+    engine = get_rbac_engine()
+    ensure_schema(engine)
+    seed_defaults(engine)
+    print("RBAC schema ready. (roles/permissions seeded)")
+
+
+@app.cli.command("create-user")
+def create_user_command():
+    """互動式建立使用者（需先 init-rbac）。"""
+    import getpass
+
+    engine = get_rbac_engine()
+    ensure_schema(engine)
+    seed_defaults(engine)
+
+    username = input("Username: ").strip()
+    role = input("Role (admin/editor) [editor]: ").strip() or ROLE_EDITOR
+    password = getpass.getpass("Password: ")
+    user_id = create_user(engine, username=username, password=password, role=role)
+    print(f"Created user id={user_id}")
+
+nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS")
+nas_allowed_roots = [
+    os.path.abspath(p)
+    for p in nas_roots_env.split(os.pathsep)
+    if p.strip()
+]
+app.config["ALLOWED_NAS_ROOTS"] = nas_allowed_roots
+app.config["NAS_ALLOWED_ROOTS"] = nas_allowed_roots
+app.config["NAS_ALLOW_RECURSIVE"] = parse_bool(
+    os.environ.get("NAS_ALLOW_RECURSIVE"), True
+)
+max_copy_size_mb = os.environ.get("NAS_MAX_COPY_FILE_SIZE_MB")
+try:
+    app.config["NAS_MAX_COPY_FILE_SIZE"] = (
+        int(max_copy_size_mb) * 1024 * 1024 if max_copy_size_mb else 500 * 1024 * 1024
+    )
+except ValueError:
+    app.config["NAS_MAX_COPY_FILE_SIZE"] = 500 * 1024 * 1024
+
 os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
 
@@ -94,6 +392,222 @@ def allowed_file(filename, kinds=("docx", "pdf", "zip")):
     if "zip" in kinds and ext in ALLOWED_ZIP:
         return True
     return False
+
+
+def load_allowed_roots_from_env():
+    roots = []
+    raw = os.environ.get("TASK_ALLOWED_ROOTS", "")
+    for entry in raw.split(os.path.pathsep):
+        candidate = entry.strip()
+        if not candidate:
+            continue
+        abs_path = os.path.abspath(candidate)
+        if os.path.isdir(abs_path):
+            roots.append(abs_path)
+    return roots
+
+
+def ensure_allowed_roots_loaded():
+    if not app.config.get("ALLOWED_SOURCE_ROOTS"):
+        loaded_roots = load_allowed_roots_from_env()
+        if loaded_roots:
+            app.config["ALLOWED_SOURCE_ROOTS"] = loaded_roots
+        elif app.config.get("NAS_ALLOWED_ROOTS"):
+            app.config["ALLOWED_SOURCE_ROOTS"] = list(app.config["NAS_ALLOWED_ROOTS"])
+
+
+def normalize_relative_path(raw_path: str, allow_recursive: bool) -> str:
+    if not raw_path or not raw_path.strip():
+        raise ValueError("請提供要匯入的檔案或資料夾路徑")
+    cleaned = raw_path.strip().replace("\\", "/")
+    # Make POSIX-style absolute paths invalid on Windows too (e.g. "/abs/path").
+    if cleaned.startswith("/"):
+        raise ValueError("路徑不可為絕對路徑，請填寫相對於允許根目錄的路徑")
+    if os.path.isabs(cleaned):
+        raise ValueError("路徑不可為絕對路徑，請填寫相對於允許根目錄的路徑")
+    norm_rel = os.path.normpath(cleaned)
+    if norm_rel.startswith(".."):
+        raise ValueError("路徑不可包含 .. 或跳脫允許的根目錄")
+    if not allow_recursive and os.sep in norm_rel:
+        raise ValueError("目前僅允許存取根層級的項目")
+    return norm_rel
+
+
+def validate_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None):
+    allow_recursive = (
+        app.config.get("NAS_ALLOW_RECURSIVE", True)
+        if allow_recursive is None
+        else allow_recursive
+    )
+    norm_rel = normalize_relative_path(raw_path, allow_recursive)
+    ensure_allowed_roots_loaded()
+    allowed_roots = (
+        allowed_roots
+        or app.config.get("NAS_ALLOWED_ROOTS")
+        or app.config.get("ALLOWED_SOURCE_ROOTS", [])
+    )
+    if not allowed_roots:
+        raise ValueError("尚未設定允許的根目錄，請聯絡系統管理員")
+    for root in allowed_roots:
+        root_abs = os.path.abspath(root)
+        candidate = os.path.abspath(os.path.join(root_abs, norm_rel))
+        try:
+            if os.path.commonpath([root_abs, candidate]) != root_abs:
+                continue
+        except ValueError:
+            continue
+        if os.path.exists(candidate):
+            return candidate
+    raise FileNotFoundError("找不到指定的路徑，或不在允許的根目錄內")
+
+
+def get_configured_nas_roots() -> list[str]:
+    ensure_allowed_roots_loaded()
+    roots = app.config.get("NAS_ALLOWED_ROOTS") or app.config.get("ALLOWED_SOURCE_ROOTS", [])
+    return list(roots) if roots else []
+
+
+def resolve_nas_path_in_root(raw_path: str, root_index: int, allow_recursive=None) -> str:
+    allow_recursive = (
+        app.config.get("NAS_ALLOW_RECURSIVE", True)
+        if allow_recursive is None
+        else allow_recursive
+    )
+    roots = get_configured_nas_roots()
+    if not roots:
+        raise ValueError("NAS roots are not configured")
+    if root_index < 0 or root_index >= len(roots):
+        raise ValueError("Invalid NAS root index")
+
+    root_abs = os.path.abspath(roots[root_index])
+    norm_rel = normalize_relative_path(raw_path, allow_recursive)
+    candidate = os.path.abspath(os.path.join(root_abs, norm_rel))
+    try:
+        if os.path.commonpath([root_abs, candidate]) != root_abs:
+            raise ValueError("Path escapes the allowed NAS root")
+    except ValueError:
+        raise ValueError("Invalid path")
+
+    if os.path.exists(candidate):
+        return candidate
+    raise FileNotFoundError("Path does not exist in the selected NAS root")
+
+
+def resolve_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None, root_index=None) -> str:
+    if root_index is None or str(root_index).strip() == "":
+        return validate_nas_path(raw_path, allowed_roots=allowed_roots, allow_recursive=allow_recursive)
+    try:
+        root_index_int = int(root_index)
+    except (TypeError, ValueError):
+        raise ValueError("Invalid NAS root index")
+    return resolve_nas_path_in_root(raw_path, root_index_int, allow_recursive=allow_recursive)
+
+
+def deduplicate_name(base_dir: str, name: str) -> str:
+    candidate = name
+    stem, ext = os.path.splitext(name)
+    counter = 1
+    while os.path.exists(os.path.join(base_dir, candidate)):
+        candidate = f"{stem} ({counter}){ext}"
+        counter += 1
+    return candidate
+
+
+def ensure_windows_long_path(path: str) -> str:
+    """Add the Windows long-path prefix to avoid MAX_PATH issues."""
+    if os.name != "nt" or not path:
+        return path
+    normalized = os.path.abspath(path)
+    if normalized.startswith("\\\\?\\"):
+        return normalized
+    if normalized.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + normalized[2:]
+    return "\\\\?\\" + normalized
+
+
+def enforce_max_copy_size(path: str):
+    max_bytes = app.config.get("NAS_MAX_COPY_FILE_SIZE")
+    if not max_bytes:
+        return
+    checked_path = ensure_windows_long_path(path)
+
+    def _check(target: str):
+        try:
+            return os.path.getsize(target)
+        except OSError:
+            return 0
+
+    if os.path.isfile(checked_path):
+        if _check(checked_path) > max_bytes:
+            raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
+        return
+
+    for root, _, files in os.walk(checked_path):
+        for fn in files:
+            fpath = os.path.join(root, fn)
+            if _check(fpath) > max_bytes:
+                app.logger.warning("檔案大小超過限制：%s", fpath)
+                raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
+
+
+@app.get("/api/nas/dirs")
+def api_nas_list_dirs():
+    """List sub-directories under a configured NAS root.
+
+    Query params:
+      - root_index: int (required)
+      - path: str (optional, relative path; empty means the root itself)
+    """
+    root_index = request.args.get("root_index", type=int)
+    if root_index is None:
+        return jsonify({"error": "root_index is required"}), 400
+
+    rel_path_raw = (request.args.get("path") or "").strip()
+    allow_recursive = app.config.get("NAS_ALLOW_RECURSIVE", True)
+
+    try:
+        roots = get_configured_nas_roots()
+        if not roots:
+            return jsonify({"error": "NAS roots are not configured"}), 400
+        if root_index < 0 or root_index >= len(roots):
+            return jsonify({"error": "Invalid NAS root index"}), 400
+
+        root_abs = os.path.abspath(roots[root_index])
+        if rel_path_raw in {"", ".", "/"}:
+            abs_dir = root_abs
+            rel_path = ""
+        else:
+            rel_path = normalize_relative_path(rel_path_raw, allow_recursive=allow_recursive).replace("\\", "/")
+            abs_dir = resolve_nas_path_in_root(rel_path, root_index, allow_recursive=allow_recursive)
+
+        if not os.path.isdir(abs_dir):
+            return jsonify({"error": "Path is not a directory"}), 400
+
+        dirs = []
+        for name in sorted(os.listdir(abs_dir), key=str.lower):
+            full = os.path.join(abs_dir, name)
+            if os.path.isdir(full):
+                child_rel = f"{rel_path}/{name}" if rel_path else name
+                dirs.append({"name": name, "path": child_rel.replace("\\", "/")})
+
+        parent = None
+        if rel_path:
+            parent_parts = rel_path.split("/")
+            parent = "/".join(parent_parts[:-1]) if len(parent_parts) > 1 else ""
+
+        return jsonify(
+            {
+                "root_index": root_index,
+                "path": rel_path,
+                "parent": parent,
+                "dirs": dirs,
+                "allow_recursive": bool(allow_recursive),
+            }
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except PermissionError:
+        return jsonify({"error": "Permission denied"}), 403
 
 
 def list_files(base_dir):
@@ -415,26 +929,63 @@ def tasks():
                 created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
             task_list.append({"id": tid, "name": name, "description": description, "created": created})
     task_list.sort(key=lambda x: x["created"], reverse=True)
-    return render_template("tasks.html", tasks=task_list)
+    return render_template(
+        "tasks.html",
+        tasks=task_list,
+        allowed_nas_roots=app.config.get("ALLOWED_NAS_ROOTS", []),
+    )
 
 
 @app.post("/tasks")
 def create_task():
-    f = request.files.get("task_zip")
-    if not f or not f.filename or not allowed_file(f.filename, kinds=("zip",)):
-        return "請上傳 ZIP 檔", 400
+    def _fail(message: str):
+        flash(message, "danger")
+        return redirect(url_for("tasks"))
+
+    nas_path = request.form.get("nas_path", "")
+    try:
+        nas_root_index = request.form.get("nas_root_index", "").strip()
+        resolved_path = resolve_nas_path(
+            nas_path,
+            allowed_roots=app.config.get("NAS_ALLOWED_ROOTS"),
+            allow_recursive=app.config.get("NAS_ALLOW_RECURSIVE", True),
+            root_index=nas_root_index or None,
+        )
+        if not os.path.isdir(resolved_path):
+            return _fail("指定的 NAS 路徑不是資料夾")
+        enforce_max_copy_size(resolved_path)
+    except ValueError as exc:
+        return _fail(str(exc))
+    except FileNotFoundError as exc:
+        return _fail(str(exc))
     task_name = request.form.get("task_name", "").strip() or "未命名任務"
     task_desc = request.form.get("task_desc", "").strip()
     if task_name_exists(task_name):
-        return "任務名稱已存在", 400
+        return _fail("任務名稱已存在")
     tid = str(uuid.uuid4())[:8]
     tdir = os.path.join(app.config["TASK_FOLDER"], tid)
     files_dir = os.path.join(tdir, "files")
     os.makedirs(files_dir, exist_ok=True)
-    zpath = os.path.join(tdir, "source.zip")
-    f.save(zpath)
-    with zipfile.ZipFile(zpath, "r") as zf:
-        zf.extractall(files_dir)
+    src_dir = ensure_windows_long_path(resolved_path)
+    dest_dir = ensure_windows_long_path(files_dir)
+    try:
+        shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
+    except PermissionError:
+        shutil.rmtree(tdir, ignore_errors=True)
+        return _fail("沒有足夠的權限讀取或複製指定路徑")
+    except shutil.Error as exc:
+        app.logger.exception("複製 NAS 目錄失敗")
+        shutil.rmtree(tdir, ignore_errors=True)
+        detail = ""
+        if exc.args and isinstance(exc.args[0], list) and exc.args[0]:
+            first_error = exc.args[0][0]
+            if len(first_error) >= 3:
+                detail = f"：{first_error[2]}"
+        return _fail(f"複製 NAS 目錄時發生錯誤{detail or ''}，請稍後再試")
+    except Exception:
+        app.logger.exception("複製 NAS 目錄失敗")
+        shutil.rmtree(tdir, ignore_errors=True)
+        return _fail("複製 NAS 目錄時發生錯誤，請稍後再試")
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
         json.dump(
             {
@@ -511,20 +1062,46 @@ def upload_task_file(task_id):
     if not os.path.isdir(files_dir):
         abort(404)
 
-    f = request.files.get("task_file")
-    if not f or not f.filename or not allowed_file(f.filename):
-        return "請上傳 DOCX、PDF 或 ZIP 檔", 400
+    nas_input = request.form.get("nas_file_path", "").strip()
+    try:
+        source_path = validate_nas_path(
+            nas_input,
+            allowed_roots=app.config.get("ALLOWED_SOURCE_ROOTS", []),
+        )
+        enforce_max_copy_size(source_path)
+    except ValueError as e:
+        return str(e), 400
+    except FileNotFoundError as e:
+        return str(e), 404
 
-    filename = secure_filename(f.filename)
-    ext = os.path.splitext(filename)[1].lower()
-    if ext == ".zip":
-        tmp_path = os.path.join(files_dir, filename)
-        f.save(tmp_path)
-        with zipfile.ZipFile(tmp_path, "r") as zf:
-            zf.extractall(files_dir)
-        os.remove(tmp_path)
-    else:
-        f.save(os.path.join(files_dir, filename))
+    try:
+        source_path = ensure_windows_long_path(source_path)
+        if os.path.isdir(source_path):
+            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
+            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
+            shutil.copytree(source_path, dest_path)
+        else:
+            if not allowed_file(source_path):
+                return "僅支援 DOCX、PDF 或 ZIP 檔案，或複製整個資料夾", 400
+            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
+            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
+            if dest_name.lower().endswith(".zip"):
+                shutil.copy2(source_path, dest_path)
+                with zipfile.ZipFile(dest_path, "r") as zf:
+                    zf.extractall(files_dir)
+                os.remove(dest_path)
+            else:
+                shutil.copy2(source_path, dest_path)
+    except PermissionError:
+        return "沒有足夠的權限讀取或複製指定路徑", 400
+    except FileNotFoundError:
+        return "找不到指定的檔案或資料夾", 404
+    except shutil.Error:
+        app.logger.exception("複製檔案時發生錯誤")
+        return "複製檔案時發生錯誤，請稍後再試", 400
+    except Exception:
+        app.logger.exception("處理 NAS 檔案時發生未預期錯誤")
+        return "處理檔案時發生錯誤，請稍後再試", 400
 
     return redirect(url_for("task_detail", task_id=task_id))
 
@@ -1263,4 +1840,3 @@ def task_download(task_id, job_id, kind):
 
 if __name__ == "__main__":
     app.run(debug=True)
-

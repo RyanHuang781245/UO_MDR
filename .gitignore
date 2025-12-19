@@ -7,3 +7,4 @@ images/
 test.ipynb
 test.py
 .vscode/
+.env

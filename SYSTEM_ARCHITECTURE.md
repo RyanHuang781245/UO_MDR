@@ -26,3 +26,30 @@ UO_MDR is a Flask-based document processing workstation that hosts task-specific
 - Routes in `app.py` orchestrate filesystem operations, marshal parameters into workflow steps, and persist artifacts so subsequent endpoints (download, view, compare) can serve them directly from disk.
 - Workflow steps read from the task’s `files/` tree and write images, Word documents, and logs into job-specific directories, enabling iterative runs without cross-task contamination.
 - Utility modules are deliberately stateless and accept explicit file paths, making it straightforward to reuse them in new workflow steps or CLIs without additional global configuration.
+
+## Authentication & RBAC (MSSQL)
+The UI is protected by a login + RBAC layer backed by MSSQL (SQLAlchemy + pyodbc). When auth is enabled, all routes require login except `/login`, `/logout`, and static assets.
+
+### Roles
+- `admin` (系統管理者): can manage users/roles (`/admin/users`)
+- `editor` (編輯者): can use the document/task features
+
+### Database configuration
+Provide **either** a full SQLAlchemy URL or individual MSSQL settings. The app will auto-load a local `.env` file at startup (project root) if present:
+- `DATABASE_URL` or `RBAC_DATABASE_URL` (preferred), e.g. `mssql+pyodbc://user:pass@server/db?driver=ODBC+Driver+18+for+SQL+Server`
+- Or:
+  - `MSSQL_SERVER`, `MSSQL_DB`
+  - `MSSQL_USER`, `MSSQL_PASSWORD` (unless using Windows integrated auth)
+  - Optional: `MSSQL_TRUSTED_CONNECTION=1`, `MSSQL_DRIVER`, `MSSQL_TRUST_SERVER_CERT=1`
+  - Optional: `MSSQL_ENCRYPT=0/1` (ODBC Driver 18 預設 Encrypt=Yes；若憑證不受信任可搭配 `MSSQL_TRUST_SERVER_CERT=1`)
+
+### Initialization
+Run once to create tables and seed default roles/permissions:
+- `flask --app app.py init-rbac`
+
+Create the first user (interactive):
+- `flask --app app.py create-user`
+
+### Testing toggle
+Auth can be disabled for local testing/CI by setting:
+- `AUTH_ENABLED=0`

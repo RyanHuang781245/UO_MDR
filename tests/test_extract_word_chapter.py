@@ -25,11 +25,12 @@ def test_extract_word_chapter_keeps_title(tmp_path: Path) -> None:
         section=out_section,
     )
 
+    assert result["captured_titles"] == ["1.1 Sample Title"]
+    assert Path(result["output_docx"]).is_file()
+
     out_path = tmp_path / "out.docx"
     out_doc.SaveToFile(str(out_path), FileFormat.Docx)
     out_doc.Close()
-
-    assert result == {"captured_titles": ["1.1 Sample Title"]}
 
     docx_doc = DocxDocument(out_path)
     paragraphs = [p for p in docx_doc.paragraphs if p.text.strip()]
@@ -60,11 +61,12 @@ def test_extract_word_chapter_stops_at_next_heading_text(tmp_path: Path) -> None
         section=out_section,
     )
 
+    assert result["captured_titles"] == ["1.1 Sample Title"]
+    assert Path(result["output_docx"]).is_file()
+
     out_path = tmp_path / "out.docx"
     out_doc.SaveToFile(str(out_path), FileFormat.Docx)
     out_doc.Close()
-
-    assert result == {"captured_titles": ["1.1 Sample Title"]}
 
     docx_doc = DocxDocument(out_path)
     paragraphs = [p.text.strip() for p in docx_doc.paragraphs if p.text.strip()]

@@ -1,0 +1,22 @@
+{% macro render_file_tree(node, path="", level=0) -%}
+  <ul class="file-tree{% if level == 0 %} file-tree-root{% endif %}">
+    {%- for dname, dnode in (node.dirs or {}) | dictsort %}
+      {%- set current = path ~ ("/" if path else "") ~ dname %}
+      <li class="file-tree-item dir" data-level="{{ level }}" data-path="{{ current }}">
+        <div class="file-tree-row" role="button" tabindex="0" aria-expanded="{{ 'true' if level == 0 else 'false' }}">
+          <span class="file-tree-caret" aria-hidden="true"></span>
+          <span class="file-tree-label">{{ dname }}</span>
+        </div>
+        {{ render_file_tree(dnode, current, level + 1) }}
+      </li>
+    {%- endfor %}
+    {%- for fname in node.files %}
+      <li class="file-tree-item file" data-level="{{ level }}">
+        <div class="file-tree-row">
+          <span class="file-tree-bullet" aria-hidden="true"></span>
+          <span class="file-tree-label">{{ fname }}</span>
+        </div>
+      </li>
+    {%- endfor %}
+  </ul>
+{%- endmacro %}

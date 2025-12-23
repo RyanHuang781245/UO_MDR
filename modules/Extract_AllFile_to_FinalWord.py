@@ -1,7 +1,9 @@
 import os
 import re
 import queue
+import tempfile
 from typing import Iterable, Optional
+from uuid import uuid4
 import fitz  # PyMuPDF
 from docx import Document as DocxDocument
 from docx.shared import Pt
@@ -9,6 +11,8 @@ from docx.enum.text import WD_LINE_SPACING
 from docx.oxml.ns import qn
 from spire.doc import *
 from spire.doc.common import *
+from modules.extract_word_all_content import extract_body_with_options
+from modules.extract_word_chapter import extract_section_docx_xml
 
 
 def set_run_font_eastasia(run, eastasia_name: str):
@@ -17,6 +21,74 @@ def set_run_font_eastasia(run, eastasia_name: str):
         rPr = run._element.get_or_add_rPr()
         rFonts = rPr.get_or_add_rFonts()
         rFonts.set(qn("w:eastAsia"), eastasia_name)
+
+
+def _build_output_docx_path(input_file: str, suffix: str) -> str:
+    base_dir = os.path.dirname(os.path.abspath(input_file))
+    base_name = os.path.splitext(os.path.basename(input_file))[0]
+    safe_suffix = re.sub(r"[^A-Za-z0-9_.-]+", "_", suffix) or "extract"
+    candidate = os.path.join(base_dir, f"{base_name}_{safe_suffix}.docx")
+    if os.path.exists(candidate):
+        candidate = os.path.join(
+            tempfile.gettempdir(),
+            f"{base_name}_{safe_suffix}_{uuid4().hex[:8]}.docx",
+        )
+    return candidate
+
+
+def _append_docx_to_section(docx_path: str, output_doc: Document, section=None):
+    target_section = section or output_doc.AddSection()
+    temp_doc = Document()
+    temp_doc.LoadFromFile(docx_path)
+    try:
+        for s_idx in range(temp_doc.Sections.Count):
+            src_section = temp_doc.Sections.get_Item(s_idx)
+            body = src_section.Body
+            for i in range(body.ChildObjects.Count):
+                cloned = body.ChildObjects.get_Item(i).Clone()
+                target_section.Body.ChildObjects.Add(cloned)
+    finally:
+        temp_doc.Close()
+    return target_section
+
+
+def _read_first_paragraph_text(docx_path: str) -> str:
+    try:
+        doc = DocxDocument(docx_path)
+    except Exception:
+        return ""
+    for para in doc.paragraphs:
+        text = (para.text or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _get_paragraph_text(paragraph: Paragraph) -> str:
+    text = paragraph.ListText + " " if paragraph.ListText else ""
+    for j in range(paragraph.ChildObjects.Count):
+        sub = paragraph.ChildObjects.get_Item(j)
+        if sub.DocumentObjectType == DocumentObjectType.TextRange:
+            text += sub.Text or ""
+    return text
+
+
+def _hide_titles_in_section(section, titles: list[str], start_index: int = 0):
+    if not section or not titles:
+        return
+    targets = {_normalize_text(t) for t in titles if _normalize_text(t)}
+    if not targets:
+        return
+    child_objects = section.Body.ChildObjects
+    for idx in range(start_index, child_objects.Count):
+        obj = child_objects.get_Item(idx)
+        if isinstance(obj, Paragraph):
+            para_text = _normalize_text(_get_paragraph_text(obj))
+            if para_text in targets:
+                for j in range(obj.ChildObjects.Count):
+                    sub = obj.ChildObjects.get_Item(j)
+                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
+                        sub.CharacterFormat.Hidden = True
 
 
 def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, output_doc=None, section=None):
@@ -101,96 +173,34 @@ def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, outp
     print(f"已將PDF章節 {target_section} 擷取至表格")
 
 
-def extract_word_all_content(input_file: str, output_image_path: str = "word_all_images", output_doc=None, section=None):
-    if not os.path.exists(output_image_path):
-        os.makedirs(output_image_path)
+def extract_word_all_content(
+    input_file: str,
+    output_image_path: str | None = None,
+    output_doc=None,
+    section=None,
+    *,
+    output_docx_path: str | None = None,
+    ignore_toc_and_before: bool = True,
+    ignore_header_footer: bool = True,
+):
+    if not os.path.isfile(input_file):
+        raise FileNotFoundError(f"input file not found: {input_file}")
 
-    input_doc = Document()
-    input_doc.LoadFromFile(input_file)
+    out_path = output_docx_path or _build_output_docx_path(input_file, "body")
+    extract_body_with_options(
+        input_docx=input_file,
+        output_docx=out_path,
+        ignore_toc_and_before=ignore_toc_and_before,
+        ignore_header_footer=ignore_header_footer,
+    )
 
-    if output_doc is None or section is None:
-        output_doc = Document()
-        section = output_doc.AddSection()
-        is_standalone = True
-    else:
-        is_standalone = False
+    appended_section = None
+    if output_doc is not None:
+        target_section = section or output_doc.AddSection()
+        _append_docx_to_section(out_path, output_doc, target_section)
+        appended_section = target_section
 
-    nodes = queue.Queue()
-    nodes.put(input_doc)
-    image_count = [1]
-
-    def add_table_to_section(sec, table):
-        try:
-            cloned = table.Clone()
-            cloned.TableFormat.IsBreakAcrossPages = False
-            for i in range(cloned.Rows.Count):
-                cloned.Rows.get_Item(i).RowFormat.IsBreakAcrossPages = False
-            sec.Tables.Add(cloned)
-            separator_para = sec.AddParagraph()
-            separator_para.AppendText("\u200B")
-        except Exception as e:
-            print("處理表格錯誤:", e)
-
-    while nodes.qsize() > 0:
-        node = nodes.get()
-        for i in range(node.ChildObjects.Count):
-            child = node.ChildObjects.get_Item(i)
-            if isinstance(child, Paragraph):
-                if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
-                    continue
-                list_text = child.ListText.strip() if child.ListText else ""
-                paragraph_text = list_text + " " if list_text else ""
-                paragraph_alignment = getattr(child.Format, "HorizontalAlignment", None)
-                for j in range(child.ChildObjects.Count):
-                    sub = child.ChildObjects.get_Item(j)
-                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
-                        paragraph_text += sub.Text
-                    elif sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture):
-                        file_name = _save_picture_with_original_format(
-                            sub, output_image_path, image_count
-                        )
-                        paragraph_text += (
-                            f"[Image: {file_name}|{sub.Width}|{sub.Height}]"
-                        )
-
-                para = section.AddParagraph()
-                if paragraph_text.strip():
-                    for part in re.split(r'(\[Image:.+?\])', paragraph_text):
-                        if part.startswith("[Image:"):
-                            try:
-                                content = part[7:-1]
-                                img_name, width, height = content.split("|")
-                                width = float(width)
-                                height = float(height)
-                            except ValueError:
-                                img_name = part[7:-1].strip()
-                                width = height = None
-                            img_path = os.path.join(output_image_path, img_name.strip())
-                            if os.path.isfile(img_path):
-                                pic = para.AppendPicture(img_path)
-                                if width and height:
-                                    pic.Width = width
-                                    pic.Height = height
-                                if paragraph_alignment is not None:
-                                    para.Format.HorizontalAlignment = paragraph_alignment
-                        else:
-                            para.AppendText(part)
-            elif isinstance(child, Table):
-                add_table_to_section(section, child)
-            elif isinstance(child, Section):
-                # Avoid traversing headers and footers by enqueueing only the body
-                nodes.put(child.Body)
-            elif isinstance(child, ICompositeObject):
-                # Skip explicit Header and Footer objects
-                doc_type = getattr(child, "DocumentObjectType", None)
-                if doc_type in (DocumentObjectType.Header, DocumentObjectType.Footer):
-                    continue
-                nodes.put(child)
-
-    if is_standalone:
-        output_doc.SaveToFile("word_all_result.docx", FileFormat.Docx)
-    input_doc.Close()
-    print(f"已將所有內容擷取")
+    return {"output_docx": out_path, "section": appended_section}
 
 
 def _normalize_text(value: str) -> str:
@@ -252,170 +262,64 @@ def is_heading_paragraph(paragraph: Paragraph) -> bool:
     return "heading" in style_name.lower()
 
 
-def _split_leading_numbers(text: str) -> list[str]:
-    """Return numeric parts from the leading chapter numbering like '6.13.4'."""
-    match = re.match(r"^\s*(\d+(?:\.\d+)*)", text or "")
-    if not match:
-        return []
-    return match.group(1).split(".")
-
-
 def extract_word_chapter(
     input_file: str,
     target_chapter_section: str,
-    target_title=False,
-    target_title_section="",
-    output_image_path="images",
+    target_title: bool = False,
+    target_title_section: str = "",
+    output_image_path: str | None = None,
     output_doc=None,
     section=None,
+    *,
+    explicit_end_title: str | None = None,
+    subheading_text: str | None = None,
+    subheading_strict_match: bool = True,
+    ignore_header_footer: bool = True,
+    ignore_toc: bool = True,
+    output_docx_path: str | None = None,
 ):
-    if not os.path.exists(output_image_path):
-        os.makedirs(output_image_path)
+    if not os.path.isfile(input_file):
+        raise FileNotFoundError(f"input file not found: {input_file}")
 
-    if target_title and target_title_section:
-        section_pattern = re.compile(rf"^\s*{re.escape(target_title_section)}\s*$", re.IGNORECASE)
-    else:
-        section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
-    # stop_prefix = target_chapter_section.rsplit('.', 1)[0]
-    # stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
-    stop_pattern = re.compile(rf"^\s*(?!{re.escape(target_chapter_section)}(\.|$))\d+(\.\d+)*(\s|$)",re.IGNORECASE)
-    target_prefix = target_chapter_section.rstrip(".")
-    target_parts = _split_leading_numbers(target_prefix)
-    parent_parts = target_parts[:-1]
+    heading_text = target_title_section.strip()
+    if not heading_text and target_title:
+        heading_text = target_chapter_section
 
-    input_doc = Document()
-    input_doc.LoadFromFile(input_file)
+    start_heading = heading_text or target_chapter_section
+    out_path = output_docx_path or _build_output_docx_path(input_file, f"section_{start_heading}")
 
-    if output_doc is None or section is None:
-        output_doc = Document()
-        section = output_doc.AddSection()
-        is_standalone = True
-    else:
-        is_standalone = False
+    subheading_to_use = subheading_text
+    if not subheading_to_use and heading_text:
+        subheading_to_use = heading_text
 
-    def push_children_onto_stack(obj, stack):
-        """Push children in reverse order to keep reading order when popping."""
-        if not hasattr(obj, "ChildObjects"):
-            return
-        for idx in range(obj.ChildObjects.Count - 1, -1, -1):
-            child = obj.ChildObjects.get_Item(idx)
-            if isinstance(child, ICompositeObject):
-                doc_type = getattr(child, "DocumentObjectType", None)
-                if _is_header_or_footer(doc_type):
-                    continue
-            stack.append(child)
+    extract_section_docx_xml(
+        input_docx=input_file,
+        output_docx=out_path,
+        start_heading_text=start_heading,
+        start_number=target_chapter_section,
+        explicit_end_title=(explicit_end_title or None),
+        ignore_header_footer=ignore_header_footer,
+        ignore_toc=ignore_toc,
+        subheading_text=subheading_to_use,
+        subheading_strict_match=subheading_strict_match,
+        subheading_debug=False,
+    )
 
-    stack: list[ICompositeObject] = []
-    push_children_onto_stack(input_doc, stack)
-    image_count = [1]
-    capture_mode = False
-    captured_titles: list[str] = []
+    captured_title = _read_first_paragraph_text(out_path) or start_heading
+    if captured_title:
+        hide_paragraphs_with_text(out_path, [captured_title])
 
-    def add_table_to_section(sec, table):
-        try:
-            cloned = table.Clone()
-            cloned.TableFormat.IsBreakAcrossPages = False
-            for i in range(cloned.Rows.Count):
-                cloned.Rows.get_Item(i).RowFormat.IsBreakAcrossPages = False
-            sec.Tables.Add(cloned)
-            separator_para = sec.AddParagraph()
-            separator_para.AppendText("\u200B")
-        except Exception as e:
-            print("處理表格錯誤:", e)
+    appended_section = None
+    if output_doc is not None:
+        target_section = section or output_doc.AddSection()
+        start_idx = target_section.Body.ChildObjects.Count
+        _append_docx_to_section(out_path, output_doc, target_section)
+        _hide_titles_in_section(target_section, [captured_title], start_index=start_idx)
+        appended_section = target_section
 
-    while stack:
-        child = stack.pop()
-        if isinstance(child, Paragraph):
-            if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
-                continue
-            paragraph_text = child.ListText + " " if child.ListText else ""
-            paragraph_alignment = getattr(child.Format, "HorizontalAlignment", None)
-            for j in range(child.ChildObjects.Count):
-                sub = child.ChildObjects.get_Item(j)
-                if sub.DocumentObjectType == DocumentObjectType.TextRange:
-                    paragraph_text += sub.Text
-                elif sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture) and capture_mode:
-                    file_name = _save_picture_with_original_format(
-                        sub, output_image_path, image_count
-                    )
-                    paragraph_text += (
-                        f"[Image: {file_name}|{sub.Width}|{sub.Height}]"
-                    )
-            paragraph_text = paragraph_text.strip()
-            if section_pattern.match(paragraph_text):
-                capture_mode = True
-                captured_titles.append(paragraph_text)
-                marker_para = section.AddParagraph()
-                text_range = marker_para.AppendText(paragraph_text)
-                if isinstance(text_range, TextRange):
-                    text_range.CharacterFormat.Hidden = True
-                continue
-            elif capture_mode:
-                is_heading_style = is_heading_paragraph(child)
-                list_text_value = (child.ListText or "").strip().rstrip(".")
+    result = {"captured_titles": [captured_title] if captured_title else [], "output_docx": out_path}
+    return result
 
-                def is_stop_candidate(val: str, from_list_text: bool) -> bool:
-                    """Detect the next chapter/section marker to stop capturing."""
-                    if not val:
-                        return False
-                    normalized = val.strip().rstrip(".")
-                    candidate_parts = _split_leading_numbers(normalized)
-                    # Same section or nested under current target: keep capturing
-                    if target_parts and candidate_parts[: len(target_parts)] == target_parts:
-                        return False
-                    if is_heading_style and normalized:
-                        return True
-                    # Plain text numbering that looks like a sibling/higher-level section
-                    if candidate_parts and target_parts:
-                        cand_depth = len(candidate_parts)
-                        target_depth = len(target_parts)
-                        if cand_depth == target_depth:
-                            if not parent_parts or candidate_parts[: len(parent_parts)] == parent_parts:
-                                return True
-                        elif cand_depth < target_depth and parent_parts:
-                            if candidate_parts[: len(parent_parts)] == parent_parts:
-                                return True
-                    return from_list_text and bool(stop_pattern.match(normalized))
-
-                if is_stop_candidate(list_text_value, True) or is_stop_candidate(paragraph_text, False):
-                    print(f"[STOP] list={child.ListText!r} text={paragraph_text!r}")
-                    capture_mode = False
-                    continue
-            if capture_mode:
-                para = section.AddParagraph()
-                if paragraph_text:
-                    for part in re.split(r'(\[Image:.+?\])', paragraph_text):
-                        if part.startswith("[Image:"):
-                            try:
-                                content = part[7:-1]
-                                img_name, width, height = content.split("|")
-                                width = float(width)
-                                height = float(height)
-                            except ValueError:
-                                img_name = part[7:-1].strip()
-                                width = height = None
-                            img_path = os.path.join(output_image_path, img_name.strip())
-                            if os.path.isfile(img_path):
-                                pic = para.AppendPicture(img_path)
-                                if width and height:
-                                    pic.Width = width
-                                    pic.Height = height
-                                if paragraph_alignment is not None:
-                                    para.Format.HorizontalAlignment = paragraph_alignment
-                        else:
-                            para.AppendText(part)
-        elif isinstance(child, Table) and capture_mode:
-            add_table_to_section(section, child)
-        elif isinstance(child, Section):
-            push_children_onto_stack(child.Body, stack)
-        elif isinstance(child, ICompositeObject):
-            push_children_onto_stack(child, stack)
-
-    if is_standalone:
-        output_doc.SaveToFile("word_chapter_result.docx", FileFormat.Docx)
-    input_doc.Close()
-    print(f"以將章節 {target_chapter_section} 擷取")
-    return {"captured_titles": captured_titles}
 
 def is_inline_subtitle_spire(paragraph: Paragraph) -> bool:
     """判斷這個 Spire 段落是不是像 'Device trade name' 這種小標題。

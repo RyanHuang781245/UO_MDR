@@ -27,13 +27,40 @@ SUPPORTED_STEPS = {
     },
     "extract_word_all_content": {
         "label": "擷取 Word 全部內容",
-        "inputs": ["input_file"],
-        "accepts": {"input_file": "file:docx"}
+        "inputs": ["input_file", "ignore_toc_and_before", "ignore_header_footer", "output_docx_path"],
+        "accepts": {
+            "input_file": "file:docx",
+            "ignore_toc_and_before": "bool",
+            "ignore_header_footer": "bool",
+            "output_docx_path": "text"
+        }
     },
     "extract_word_chapter": {
         "label": "擷取 Word 指定章節/標題",
-        "inputs": ["input_file", "target_chapter_section", "target_title", "target_title_section"],
-        "accepts": {"input_file": "file:docx", "target_chapter_section": "text", "target_title": "bool", "target_title_section": "text"}
+        "inputs": [
+            "input_file",
+            "target_chapter_section",
+            "target_title",
+            "target_title_section",
+            "explicit_end_title",
+            "subheading_text",
+            "subheading_strict_match",
+            "ignore_toc",
+            "ignore_header_footer",
+            "output_docx_path"
+        ],
+        "accepts": {
+            "input_file": "file:docx",
+            "target_chapter_section": "text",
+            "target_title": "bool",
+            "target_title_section": "text",
+            "explicit_end_title": "text",
+            "subheading_text": "text",
+            "subheading_strict_match": "bool",
+            "ignore_toc": "bool",
+            "ignore_header_footer": "bool",
+            "output_docx_path": "text"
+        }
     },
     "extract_specific_figure_from_word": {
         "label": "擷取 Word 指定章節/標題的特定圖",
@@ -112,7 +139,18 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
 
             elif stype == "extract_word_all_content":
                 infile = params["input_file"]
-                extract_word_all_content(infile, output_image_path=os.path.join(workdir,"images"), output_doc=output_doc, section=section)
+                ignore_toc = boolish(params.get("ignore_toc_and_before", "true"))
+                ignore_header_footer = boolish(params.get("ignore_header_footer", "true"))
+                result = extract_word_all_content(
+                    infile,
+                    output_doc=output_doc,
+                    section=section,
+                    output_docx_path=params.get("output_docx_path"),
+                    ignore_toc_and_before=ignore_toc,
+                    ignore_header_footer=ignore_header_footer,
+                )
+                if isinstance(result, dict) and result.get("output_docx"):
+                    log[-1]["output_docx"] = result.get("output_docx")
 
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
@@ -124,12 +162,19 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     tsec,
                     target_title=use_title,
                     target_title_section=title_text,
-                    output_image_path=os.path.join(workdir,"images"),
+                    explicit_end_title=params.get("explicit_end_title") or None,
+                    subheading_text=params.get("subheading_text"),
+                    subheading_strict_match=boolish(params.get("subheading_strict_match", "true")),
+                    ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
+                    ignore_toc=boolish(params.get("ignore_toc", "true")),
+                    output_docx_path=params.get("output_docx_path"),
                     output_doc=output_doc,
                     section=section
                 )
                 if isinstance(result, dict):
                     log[-1]["captured_titles"] = result.get("captured_titles", [])
+                    if result.get("output_docx"):
+                        log[-1]["output_docx"] = result.get("output_docx")
 
             elif stype == "extract_specific_figure_from_word":
                 infile = params["input_file"]

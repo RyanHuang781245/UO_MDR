@@ -1274,7 +1274,8 @@ def run_flow(task_id):
     workflow_result = run_workflow(runtime_steps, workdir=job_dir)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-    renumber_figures_tables_file(result_path)
+    # Skip renumber_figures_tables_file to avoid Spire watermark; formatting handled by python-docx helpers.
+    # renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
@@ -1327,7 +1328,8 @@ def execute_flow(task_id, flow_name):
     workflow_result = run_workflow(runtime_steps, workdir=job_dir)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-    renumber_figures_tables_file(result_path)
+    # Skip renumber_figures_tables_file to avoid Spire watermark; formatting handled by python-docx helpers.
+    # renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path, preserve_texts=titles_to_hide)

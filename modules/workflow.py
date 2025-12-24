@@ -1,16 +1,9 @@
 
 import os
 from typing import List, Dict, Any
-from spire.doc import *
-from spire.doc.common import *
-
-from .Edit_Word import (
-    insert_text,
-    insert_numbered_heading,
-    insert_roman_heading,
-    insert_bulleted_heading,
-    renumber_figures_tables,
-)
+from docx import Document as DocxDocument
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.text.paragraph import Paragraph as DocxParagraph
 from .Extract_AllFile_to_FinalWord import (
     extract_pdf_chapter_to_table,
     extract_word_all_content,
@@ -18,6 +11,33 @@ from .Extract_AllFile_to_FinalWord import (
     extract_specific_figure_from_word,
 )
 from .file_copier import copy_files
+from .docx_merger import merge_word_docs
+
+
+def _resolve_fragment_path(workdir: str, user_path: str | None, idx: int) -> str:
+    """Build an absolute path for a fragment DOCX inside workdir."""
+    if user_path:
+        path = user_path if os.path.isabs(user_path) else os.path.join(workdir, user_path)
+    else:
+        path = os.path.join(workdir, f"fragment_{idx}.docx")
+    os.makedirs(os.path.dirname(path) or workdir, exist_ok=True)
+    return path
+
+
+def _new_docx_fragment(path: str) -> DocxDocument:
+    """Return a blank python-docx document ready to save to path."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return DocxDocument()
+
+
+def _set_alignment(paragraph: DocxParagraph, align: str) -> None:
+    align_map = {
+        "left": WD_ALIGN_PARAGRAPH.LEFT,
+        "center": WD_ALIGN_PARAGRAPH.CENTER,
+        "right": WD_ALIGN_PARAGRAPH.RIGHT,
+        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+    }
+    paragraph.alignment = align_map.get(align.lower(), WD_ALIGN_PARAGRAPH.LEFT)
 
 SUPPORTED_STEPS = {
     "extract_pdf_chapter_to_table": {
@@ -64,12 +84,13 @@ SUPPORTED_STEPS = {
     },
     "extract_specific_figure_from_word": {
         "label": "擷取 Word 指定章節/標題的特定圖",
-        "inputs": ["input_file", "target_chapter_section", "target_subtitle", "target_figure_label"],
+        "inputs": ["input_file", "target_chapter_section", "target_subtitle", "target_figure_label", "include_caption"],
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
             "target_subtitle": "text",
             "target_figure_label": "text",
+            "include_caption": "bool",
         }
     },
     "insert_text": {
@@ -115,10 +136,11 @@ SUPPORTED_STEPS = {
 def boolish(v:str)->bool:
     return str(v).lower() in ["1","true","yes","y","on"]
 
+
+
 def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
     log = []
-    output_doc = Document()
-    section = output_doc.AddSection()
+    fragments: list[str] = []
 
     for idx, step in enumerate(steps, start=1):
         stype = step.get("type")
@@ -130,12 +152,16 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 zip_path = params.get("pdf_zip")
                 target = params["target_section"]
                 if not zip_path or not os.path.isfile(zip_path):
-                    raise RuntimeError("未提供 PDF ZIP 檔或路徑錯誤")
+                    raise RuntimeError("Missing or invalid PDF ZIP path")
                 extract_dir = os.path.join(workdir, "pdfs_extracted")
                 os.makedirs(extract_dir, exist_ok=True)
                 with zipfile.ZipFile(zip_path, 'r') as zf:
                     zf.extractall(extract_dir)
-                extract_pdf_chapter_to_table(extract_dir, target, output_doc=output_doc, section=section)
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                doc = DocxDocument()
+                extract_pdf_chapter_to_table(extract_dir, target, output_doc=doc, section=None)
+                doc.save(frag_path)
+                fragments.append(frag_path)
 
             elif stype == "extract_word_all_content":
                 infile = params["input_file"]
@@ -143,14 +169,18 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 ignore_header_footer = boolish(params.get("ignore_header_footer", "true"))
                 result = extract_word_all_content(
                     infile,
-                    output_doc=output_doc,
-                    section=section,
+                    output_doc=None,
+                    section=None,
                     output_docx_path=params.get("output_docx_path"),
                     ignore_toc_and_before=ignore_toc,
                     ignore_header_footer=ignore_header_footer,
                 )
-                if isinstance(result, dict) and result.get("output_docx"):
-                    log[-1]["output_docx"] = result.get("output_docx")
+                out_path = None
+                if isinstance(result, dict):
+                    out_path = result.get("output_docx")
+                    log[-1]["output_docx"] = out_path
+                if out_path:
+                    fragments.append(out_path)
 
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
@@ -168,60 +198,87 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
                     ignore_toc=boolish(params.get("ignore_toc", "true")),
                     output_docx_path=params.get("output_docx_path"),
-                    output_doc=output_doc,
-                    section=section
+                    output_doc=None,
+                    section=None
                 )
+                out_path = None
                 if isinstance(result, dict):
                     log[-1]["captured_titles"] = result.get("captured_titles", [])
-                    if result.get("output_docx"):
-                        log[-1]["output_docx"] = result.get("output_docx")
+                    out_path = result.get("output_docx")
+                    log[-1]["output_docx"] = out_path
+                if out_path:
+                    fragments.append(out_path)
 
             elif stype == "extract_specific_figure_from_word":
                 infile = params["input_file"]
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 result = extract_specific_figure_from_word(
                     infile,
                     params.get("target_chapter_section", ""),
                     params.get("target_figure_label", ""),
                     target_subtitle=params.get("target_subtitle"),
                     output_image_path=os.path.join(workdir, "images"),
-                    output_doc=output_doc,
-                    section=section,
+                    output_doc=None,
+                    section=None,
                 )
+                image_dir = os.path.join(workdir, "images")
+                os.makedirs(image_dir, exist_ok=True)
+                include_caption = boolish(params.get("include_caption", "true"))
+                added = False
+                doc = DocxDocument()
                 if isinstance(result, dict):
-                    log[-1]["image_filename"] = result.get("image_filename")
-                    log[-1]["caption"] = result.get("caption")
+                    image_filename = result.get("image_filename")
+                    caption_text = result.get("caption")
+                    log[-1]["image_filename"] = image_filename
+                    log[-1]["caption"] = caption_text
+                    if image_filename:
+                        img_path = os.path.join(image_dir, image_filename)
+                        if os.path.exists(img_path):
+                            doc.add_picture(img_path)
+                            added = True
+                    if include_caption and caption_text:
+                        doc.add_paragraph(caption_text)
+                        added = True
+                if added:
+                    doc.save(frag_path)
+                    fragments.append(frag_path)
 
             elif stype == "insert_text":
-                insert_text(section,
-                            params.get("text",""),
-                            align=params.get("align","left"),
-                            bold=boolish(params.get("bold","false")),
-                            font_size=float(params.get("font_size",12)),
-                            before_space=float(params.get("before_space",0)),
-                            after_space=float(params.get("after_space",6)),
-                            page_break_before=boolish(params.get("page_break_before","false")))
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                doc = _new_docx_fragment(frag_path)
+                para = doc.add_paragraph(params.get("text",""))
+                para.runs[0].bold = boolish(params.get("bold","false"))
+                para.runs[0].font.size = None
+                _set_alignment(para, params.get("align","left"))
+                para.paragraph_format.space_before = int(float(params.get("before_space",0)))
+                para.paragraph_format.space_after = int(float(params.get("after_space",6)))
+                doc.save(frag_path)
+                fragments.append(frag_path)
 
             elif stype == "insert_numbered_heading":
-                insert_numbered_heading(section,
-                                        params.get("text",""),
-                                        level=int(params.get("level",0)),
-                                        bold=boolish(params.get("bold","true")),
-                                        font_size=float(params.get("font_size",14)))
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                doc = _new_docx_fragment(frag_path)
+                para = doc.add_paragraph(params.get("text",""))
+                para.style = doc.styles["Heading 1"] if "Heading 1" in doc.styles else para.style
+                para.runs[0].bold = boolish(params.get("bold","true"))
+                doc.save(frag_path)
+                fragments.append(frag_path)
 
             elif stype == "insert_roman_heading":
-                insert_roman_heading(section,
-                                     params.get("text",""),
-                                     level=int(params.get("level",0)),
-                                     bold=boolish(params.get("bold","true")),
-                                     font_size=float(params.get("font_size",14)))
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                doc = _new_docx_fragment(frag_path)
+                para = doc.add_paragraph(params.get("text",""))
+                para.runs[0].bold = boolish(params.get("bold","true"))
+                doc.save(frag_path)
+                fragments.append(frag_path)
 
             elif stype == "insert_bulleted_heading":
-                insert_bulleted_heading(section,
-                                        params.get("text",""),
-                                        level=0,
-                                        bullet_char='·',
-                                        bold=True,
-                                        font_size=float(params.get("font_size",14)))
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                doc = _new_docx_fragment(frag_path)
+                para = doc.add_paragraph(f"* {params.get('text','')}")
+                para.runs[0].bold = boolish(params.get("bold","true"))
+                doc.save(frag_path)
+                fragments.append(frag_path)
 
             elif stype == "copy_files":
                 keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
@@ -233,25 +290,28 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 log[-1]["copied_files"] = copied
 
             elif stype == "renumber_figures_tables":
-                renumber_figures_tables(
-                    output_doc,
-                    numbering_scope=params.get("numbering_scope", "global"),
-                    figure_start=int(params.get("figure_start", 1)),
-                    table_start=int(params.get("table_start", 1)),
-                )
+                # Skipped here to avoid Spire save (watermark); can be run externally if licensed.
+                log[-1]["status"] = "skipped"
+                log[-1]["note"] = "renumber_figures_tables skipped to avoid Spire watermark"
+                continue
 
             else:
                 raise RuntimeError(f"Unknown step type: {stype}")
 
-            log[-1]["status"] = "ok"
+            if "status" not in log[-1]:
+                log[-1]["status"] = "ok"
 
         except Exception as e:
             log[-1]["status"] = "error"
             log[-1]["error"] = str(e)
 
+    if not fragments:
+        empty_path = os.path.join(workdir, "result.docx")
+        DocxDocument().save(empty_path)
+        fragments.append(empty_path)
+
     out_docx = os.path.join(workdir, "result.docx")
-    output_doc.SaveToFile(out_docx, FileFormat.Docx)
-    output_doc.Close()
+    merge_word_docs(fragments, out_docx)
 
     out_log = os.path.join(workdir, "log.json")
     with open(out_log, "w", encoding="utf-8") as f:

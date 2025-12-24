@@ -921,12 +921,7 @@ def extract_specific_figure_from_word(
                     continue
                 nodes.put(child)
 
-    if is_standalone_doc:
-        if result is not None:
-            output_doc.SaveToFile("figure_result.docx", FileFormat.Docx)
-        input_doc.Close()
-    else:
-        input_doc.Close()
+    input_doc.Close()
 
     if result is None:
         print("未在指定章節範圍內找到對應的 Figure 圖片。")

@@ -340,6 +340,12 @@ ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
 
 DOCUMENT_FORMAT_PRESETS = {
+    "none": {
+        "label": "無（保留原文件格式）",
+        "western_font": "",
+        "east_asian_font": "",
+        "font_size": 0,
+    },
     "default": {
         "label": "Times New Roman / 新細明體（12 pt）",
         "western_font": "Times New Roman",
@@ -357,14 +363,17 @@ DOCUMENT_FORMAT_PRESETS = {
         "space_after": 6,
     },
 }
+
 DEFAULT_DOCUMENT_FORMAT_KEY = "default"
 DEFAULT_LINE_SPACING = 1.5
 LINE_SPACING_CHOICES = [
+    ("none", "無（保留原行距）"),
     ("1", "單行（1.0）"),
     ("1.15", "1.15 倍行距"),
     ("1.5", "1.5 倍行距"),
     ("2", "雙行（2.0）"),
 ]
+DEFAULT_APPLY_FORMATTING = False
 
 
 def normalize_document_format(key: str) -> str:
@@ -374,6 +383,8 @@ def normalize_document_format(key: str) -> str:
 
 
 def coerce_line_spacing(value) -> float:
+    if isinstance(value, str) and value.strip().lower() == "none":
+        return DEFAULT_LINE_SPACING
     try:
         spacing = float(value)
         if spacing <= 0:
@@ -1135,8 +1146,6 @@ def flow_builder(task_id):
             path = os.path.join(flow_dir, fn)
             created = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
             has_copy = False
-            document_format = DEFAULT_DOCUMENT_FORMAT_KEY
-            line_spacing = DEFAULT_LINE_SPACING
             steps_data = []
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -1144,8 +1153,6 @@ def flow_builder(task_id):
                 if isinstance(data, dict):
                     steps_data = data.get("steps", [])
                     created = data.get("created", created)
-                    document_format = normalize_document_format(data.get("document_format"))
-                    line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
                 elif isinstance(data, list):
                     steps_data = data
                 has_copy = any(
@@ -1154,30 +1161,15 @@ def flow_builder(task_id):
                 )
             except Exception:
                 pass
-            line_spacing_value = f"{line_spacing:g}"
-            spacing_label = next(
-                (label for value, label in LINE_SPACING_CHOICES if value == line_spacing_value),
-                f"自訂（{line_spacing_value}）",
-            )
-            format_spec = DOCUMENT_FORMAT_PRESETS.get(
-                document_format, DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
-            )
             flows.append(
                 {
                     "name": os.path.splitext(fn)[0],
                     "created": created,
                     "has_copy": has_copy,
-                    "document_format": document_format,
-                    "format_label": format_spec.get("label", document_format),
-                    "line_spacing": line_spacing,
-                    "line_spacing_value": line_spacing_value,
-                    "line_spacing_label": spacing_label,
                 }
             )
     preset = None
     center_titles = True
-    document_format = DEFAULT_DOCUMENT_FORMAT_KEY
-    line_spacing = DEFAULT_LINE_SPACING
     loaded_name = request.args.get("flow")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
@@ -1189,8 +1181,6 @@ def flow_builder(task_id):
                 center_titles = data.get("center_titles", True) or any(
                     isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
                 )
-                document_format = normalize_document_format(data.get("document_format"))
-                line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
             else:
                 steps_data = data
                 center_titles = True
@@ -1209,12 +1199,6 @@ def flow_builder(task_id):
         preset=preset,
         loaded_name=loaded_name,
         center_titles=center_titles,
-        format_presets=DOCUMENT_FORMAT_PRESETS,
-        selected_format=document_format,
-        line_spacing_choices=LINE_SPACING_CHOICES,
-        line_spacing_values=[value for value, _ in LINE_SPACING_CHOICES],
-        selected_line_spacing=f"{line_spacing:g}",
-        line_spacing=line_spacing,
         files_tree=tree,
     )
 
@@ -1229,8 +1213,7 @@ def run_flow(task_id):
     flow_name = request.form.get("flow_name", "").strip()
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     center_titles = request.form.get("center_titles") == "on"
-    document_format = normalize_document_format(request.form.get("document_format"))
-    line_spacing = coerce_line_spacing(request.form.get("line_spacing"))
+    apply_formatting = False
     workflow = []
     for sid in ordered_ids:
         sid = sid.strip()
@@ -1265,8 +1248,6 @@ def run_flow(task_id):
             "created": created,
             "steps": workflow,
             "center_titles": center_titles,
-            "document_format": document_format,
-            "line_spacing": line_spacing,
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -1293,20 +1274,11 @@ def run_flow(task_id):
     workflow_result = run_workflow(runtime_steps, workdir=job_dir)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-    renumber_figures_tables_file(result_path)
+    # Skip renumber_figures_tables_file to avoid Spire watermark; formatting handled by python-docx helpers.
+    # renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-    format_spec = DOCUMENT_FORMAT_PRESETS.get(document_format, DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY])
-    apply_basic_style(
-        result_path,
-        western_font=format_spec["western_font"],
-        east_asian_font=format_spec["east_asian_font"],
-        font_size=format_spec["font_size"],
-        line_spacing=line_spacing,
-        space_before=format_spec.get("space_before", 6),
-        space_after=format_spec.get("space_after", 6),
-    )
     hide_paragraphs_with_text(result_path, titles_to_hide)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
@@ -1325,6 +1297,7 @@ def execute_flow(task_id, flow_name):
         data = json.load(f)
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
+    apply_formatting = False
     if isinstance(data, dict):
         workflow = data.get("steps", [])
         center_titles = data.get("center_titles", True) or any(
@@ -1355,20 +1328,11 @@ def execute_flow(task_id, flow_name):
     workflow_result = run_workflow(runtime_steps, workdir=job_dir)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-    renumber_figures_tables_file(result_path)
+    # Skip renumber_figures_tables_file to avoid Spire watermark; formatting handled by python-docx helpers.
+    # renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
     remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-    format_spec = DOCUMENT_FORMAT_PRESETS.get(document_format, DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY])
-    apply_basic_style(
-        result_path,
-        western_font=format_spec["western_font"],
-        east_asian_font=format_spec["east_asian_font"],
-        font_size=format_spec["font_size"],
-        line_spacing=line_spacing,
-        space_before=format_spec.get("space_before", 6),
-        space_after=format_spec.get("space_after", 6),
-    )
     hide_paragraphs_with_text(result_path, titles_to_hide)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
@@ -1383,7 +1347,14 @@ def update_flow_format(task_id, flow_name):
         abort(404)
 
     document_format = normalize_document_format(request.form.get("document_format"))
-    line_spacing = coerce_line_spacing(request.form.get("line_spacing"))
+    line_spacing_raw = request.form.get("line_spacing")
+    line_spacing_value = (line_spacing_raw or f"{DEFAULT_LINE_SPACING:g}").strip()
+    line_spacing_none = line_spacing_value.lower() == "none"
+    line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
+    apply_formatting_param = request.form.get("apply_formatting")
+    apply_formatting = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING)
+    if document_format == "none" or line_spacing_none:
+        apply_formatting = False
 
     try:
         with open(flow_path, "r", encoding="utf-8") as f:
@@ -1400,8 +1371,12 @@ def update_flow_format(task_id, flow_name):
     else:
         payload = {"steps": []}
 
+    current_apply = parse_bool(payload.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+    new_apply = apply_formatting if apply_formatting_param is not None else current_apply
+
     payload["document_format"] = document_format
-    payload["line_spacing"] = line_spacing
+    payload["line_spacing"] = line_spacing_value
+    payload["apply_formatting"] = new_apply
 
     if "created" not in payload:
         created = datetime.fromtimestamp(os.path.getmtime(flow_path)).strftime("%Y-%m-%d %H:%M")

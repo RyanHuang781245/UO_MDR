@@ -1,6 +1,8 @@
 import base64
 from pathlib import Path
 
+import zipfile
+
 from spire.doc import Document, FileFormat
 
 from modules.Extract_AllFile_to_FinalWord import extract_word_all_content
@@ -30,18 +32,15 @@ def test_extract_word_all_content_preserves_image_extensions(tmp_path: Path) -> 
     src.SaveToFile(str(src_path), FileFormat.Docx)
     src.Close()
 
-    out_doc = Document()
-    out_section = out_doc.AddSection()
-    image_dir = tmp_path / "images"
+    result = extract_word_all_content(str(src_path))
+    out_path = Path(result["output_docx"])
+    assert out_path.is_file()
 
-    extract_word_all_content(
-        str(src_path),
-        output_image_path=str(image_dir),
-        output_doc=out_doc,
-        section=out_section,
-    )
-
-    out_doc.Close()
-
-    saved_images = {p.name for p in image_dir.iterdir() if p.is_file()}
-    assert saved_images == {"Image-1.png", "Image-2.jpg"}
+    with zipfile.ZipFile(out_path, "r") as zf:
+        media_suffixes = {
+            Path(name).suffix
+            for name in zf.namelist()
+            if name.startswith("word/media/")
+        }
+    assert ".png" in media_suffixes
+    assert ".jpg" in media_suffixes

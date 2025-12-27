@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module='docxcompose')
 from docx import Document
 from docxcompose.composer import Composer
 from typing import List

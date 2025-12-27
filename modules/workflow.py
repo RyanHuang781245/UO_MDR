@@ -47,12 +47,11 @@ SUPPORTED_STEPS = {
     },
     "extract_word_all_content": {
         "label": "擷取 Word 全部內容",
-        "inputs": ["input_file", "ignore_toc_and_before", "ignore_header_footer", "output_docx_path"],
+        "inputs": ["input_file", "ignore_toc_and_before", "ignore_header_footer"],
         "accepts": {
             "input_file": "file:docx",
             "ignore_toc_and_before": "bool",
-            "ignore_header_footer": "bool",
-            "output_docx_path": "text"
+            "ignore_header_footer": "bool"
         }
     },
     "extract_word_chapter": {
@@ -66,8 +65,7 @@ SUPPORTED_STEPS = {
             "subheading_text",
             "subheading_strict_match",
             "ignore_toc",
-            "ignore_header_footer",
-            "output_docx_path"
+            "ignore_header_footer"
         ],
         "accepts": {
             "input_file": "file:docx",
@@ -78,8 +76,7 @@ SUPPORTED_STEPS = {
             "subheading_text": "text",
             "subheading_strict_match": "bool",
             "ignore_toc": "bool",
-            "ignore_header_footer": "bool",
-            "output_docx_path": "text"
+            "ignore_header_footer": "bool"
         }
     },
     "extract_specific_figure_from_word": {
@@ -167,17 +164,18 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 infile = params["input_file"]
                 ignore_toc = boolish(params.get("ignore_toc_and_before", "true"))
                 ignore_header_footer = boolish(params.get("ignore_header_footer", "true"))
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 result = extract_word_all_content(
                     infile,
                     output_doc=None,
                     section=None,
-                    output_docx_path=params.get("output_docx_path"),
+                    output_docx_path=frag_path,
                     ignore_toc_and_before=ignore_toc,
                     ignore_header_footer=ignore_header_footer,
                 )
                 out_path = None
                 if isinstance(result, dict):
-                    out_path = result.get("output_docx")
+                    out_path = result.get("output_docx") or frag_path
                     log[-1]["output_docx"] = out_path
                 if out_path:
                     fragments.append(out_path)
@@ -187,6 +185,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 tsec = params.get("target_chapter_section","")
                 use_title = boolish(params.get("target_title","false"))
                 title_text = params.get("target_title_section","")
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 result = extract_word_chapter(
                     infile,
                     tsec,
@@ -197,14 +196,14 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     subheading_strict_match=boolish(params.get("subheading_strict_match", "true")),
                     ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
                     ignore_toc=boolish(params.get("ignore_toc", "true")),
-                    output_docx_path=params.get("output_docx_path"),
+                    output_docx_path=frag_path,
                     output_doc=None,
                     section=None
                 )
                 out_path = None
                 if isinstance(result, dict):
                     log[-1]["captured_titles"] = result.get("captured_titles", [])
-                    out_path = result.get("output_docx")
+                    out_path = result.get("output_docx") or frag_path
                     log[-1]["output_docx"] = out_path
                 if out_path:
                     fragments.append(out_path)

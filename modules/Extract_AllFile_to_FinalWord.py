@@ -288,9 +288,8 @@ def extract_word_chapter(
     start_heading = heading_text or target_chapter_section
     out_path = output_docx_path or _build_output_docx_path(input_file, f"section_{start_heading}")
 
-    subheading_to_use = subheading_text
-    if not subheading_to_use and heading_text:
-        subheading_to_use = heading_text
+    # Only trim to a subheading when the caller explicitly requests one.
+    subheading_to_use = subheading_text if subheading_text else None
 
     extract_section_docx_xml(
         input_docx=input_file,

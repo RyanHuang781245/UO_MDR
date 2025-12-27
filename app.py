@@ -469,7 +469,7 @@ def validate_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None):
             continue
         if os.path.exists(candidate):
             return candidate
-    raise FileNotFoundError("找不到指定的路徑，或不在允許的根目錄內")
+    raise FileNotFoundError("找不到指定的路徑，或不在允許的根目錄內，請重新檢查輸入的路徑是否符合格式")
 
 
 def get_configured_nas_roots() -> list[str]:
@@ -502,6 +502,33 @@ def resolve_nas_path_in_root(raw_path: str, root_index: int, allow_recursive=Non
     if os.path.exists(candidate):
         return candidate
     raise FileNotFoundError("Path does not exist in the selected NAS root")
+
+
+def add_nas_root(raw_path: str):
+    """Add a NAS root to the in-memory configuration."""
+    if not raw_path or not raw_path.strip():
+        raise ValueError("請輸入 NAS 根目錄")
+    abs_path = os.path.abspath(raw_path.strip())
+    if not os.path.isdir(abs_path):
+        raise FileNotFoundError("NAS 根目錄不存在或不是資料夾")
+    existing = set(app.config.get("ALLOWED_NAS_ROOTS", []))
+    if abs_path in existing:
+        return False
+    app.config.setdefault("ALLOWED_NAS_ROOTS", []).append(abs_path)
+    app.config.setdefault("NAS_ALLOWED_ROOTS", []).append(abs_path)
+    return True
+
+
+def remove_nas_root(abs_path: str):
+    if not abs_path:
+        raise ValueError("缺少根目錄路徑")
+    removed = False
+    for key in ["ALLOWED_NAS_ROOTS", "NAS_ALLOWED_ROOTS"]:
+        roots = app.config.get(key, [])
+        if abs_path in roots:
+            app.config[key] = [r for r in roots if r != abs_path]
+            removed = True
+    return removed
 
 
 def resolve_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None, root_index=None) -> str:
@@ -1020,6 +1047,47 @@ def delete_task(task_id):
     return redirect(url_for("tasks"))
 
 
+@app.post("/nas/add-root")
+def add_nas_root_route():
+    path = request.form.get("nas_root", "").strip()
+    if not path:
+        flash("請輸入 NAS 根目錄", "danger")
+        return redirect(url_for("tasks"))
+    try:
+        added = add_nas_root(path)
+        if added:
+            flash("已新增 NAS 根目錄", "success")
+        else:
+            flash("NAS 根目錄已存在", "info")
+    except FileNotFoundError as exc:
+        flash(str(exc), "danger")
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    except Exception:
+        app.logger.exception("Failed to add NAS root")
+        flash("新增 NAS 根目錄時發生錯誤", "danger")
+    return redirect(url_for("tasks"))
+
+
+@app.post("/nas/remove-root")
+def remove_nas_root_route():
+    path = request.form.get("nas_root_remove", "").strip()
+    if not path:
+        flash("請選擇要移除的 NAS 根目錄", "danger")
+        return redirect(url_for("tasks"))
+    try:
+        abs_path = os.path.abspath(path)
+        removed = remove_nas_root(abs_path)
+        if removed:
+            flash("已移除 NAS 根目錄", "success")
+        else:
+            flash("找不到指定的 NAS 根目錄", "warning")
+    except Exception:
+        app.logger.exception("Failed to remove NAS root")
+        flash("移除 NAS 根目錄時發生錯誤", "danger")
+    return redirect(url_for("tasks"))
+
+
 @app.post("/tasks/<task_id>/rename")
 def rename_task(task_id):
     new_name = request.form.get("name", "").strip()
@@ -1036,6 +1104,27 @@ def rename_task(task_id):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
     meta["name"] = new_name
+    if "created" not in meta:
+        meta["created"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+    return redirect(url_for("tasks"))
+
+
+@app.post("/tasks/<task_id>/description")
+def update_task_description(task_id):
+    new_desc = request.form.get("description", "").strip()
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    if not os.path.isdir(tdir):
+        abort(404)
+    meta_path = os.path.join(tdir, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    meta["description"] = new_desc
+    if "name" not in meta:
+        meta["name"] = task_id
     if "created" not in meta:
         meta["created"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     with open(meta_path, "w", encoding="utf-8") as f:

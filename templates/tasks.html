@@ -6,7 +6,7 @@
   <div class="row g-3">
     <div class="col-md-5">
       <label class="form-label">任務名稱</label>
-      <input class="form-control" name="task_name" placeholder="輸入任務名稱">
+      <input class="form-control" name="task_name" placeholder="輸入任務名稱 (中英文皆可)">
     </div>
     <div class="col-md-5">
       <label class="form-label">NAS 共享路徑</label>
@@ -29,7 +29,7 @@
     </div>
     <div class="col-md-12">
       <label class="form-label">任務描述</label>
-      <textarea class="form-control" name="task_desc" placeholder="輸入任務描述"></textarea>
+      <textarea class="form-control" name="task_desc" placeholder="輸入任務描述 (選填)"></textarea>
     </div>
     <div class="col-12">
     </div>
@@ -60,7 +60,8 @@
       <td>{{ t.description }}</td>
       <td>{{ t.created }}</td>
       <td>
-        <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameTask('{{ t.id }}', '{{ t.name }}')">重新命名</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'>重新命名</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" onclick='editTaskDesc("{{ t.id }}", {{ (t.description or "")|tojson }})'>修改描述</button>
         <form action="{{ url_for('delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
           <button class="btn btn-sm btn-outline-danger">刪除</button>
         </form>
@@ -87,12 +88,31 @@
         {% else %}
           <div class="row g-3 align-items-end mb-2">
             <div class="col-12">
-              <label class="form-label mb-1">根目錄</label>
+              <label class="form-label mb-1">選擇 NAS 根目錄</label>
               <select class="form-select" id="nasRootSelect">
                 {% for r in allowed_nas_roots %}
                   <option value="{{ loop.index0 }}">{{ r }}</option>
                 {% endfor %}
               </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label mb-1">新增 NAS 根目錄</label>
+              <div class="input-group">
+                <input class="form-control" type="text" id="nasRootAddInput" placeholder="\\nas\\share 或 D:\\Data">
+                <button class="btn btn-outline-primary" type="button" id="nasRootAddBtn">新增</button>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label mb-1">移除 NAS 根目錄</label>
+              <div class="input-group">
+                <select class="form-select" id="nasRootRemoveSelect">
+                  <option value="">選擇要移除的根目錄</option>
+                  {% for r in allowed_nas_roots %}
+                    <option value="{{ r }}">{{ r }}</option>
+                  {% endfor %}
+                </select>
+                <button class="btn btn-outline-danger" type="button" id="nasRootRemoveBtn">移除</button>
+              </div>
             </div>
           </div>
 
@@ -139,6 +159,21 @@ function renameTask(id, current){
   form.submit();
 }
 
+function editTaskDesc(id, currentDesc){
+  const desc = prompt('輸入新的任務描述（可留空）', currentDesc || '');
+  if(desc === null) return;
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = `/tasks/${id}/description`;
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'description';
+  input.value = desc;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+}
+
 const allowedNasRoots = {{ allowed_nas_roots | tojson }};
 const nasModalEl = document.getElementById('nasBrowserModal');
 const nasPathInput = document.getElementById('nasPathInput');
@@ -151,6 +186,46 @@ const nasCurrentPathEl = document.getElementById('nasCurrentPath');
 const nasSelectedPathEl = document.getElementById('nasSelectedPath');
 const nasPickCurrentBtn = document.getElementById('nasPickCurrentBtn');
 const nasApplyBtn = document.getElementById('nasApplyBtn');
+const nasRootAddInput = document.getElementById('nasRootAddInput');
+const nasRootAddBtn = document.getElementById('nasRootAddBtn');
+const nasRootRemoveSelect = document.getElementById('nasRootRemoveSelect');
+const nasRootRemoveBtn = document.getElementById('nasRootRemoveBtn');
+const nasAddUrl = "{{ url_for('add_nas_root_route') }}";
+const nasRemoveUrl = "{{ url_for('remove_nas_root_route') }}";
+const nasRootInputs = [nasRootSelect, nasRootRemoveSelect];
+
+function hasOption(sel, value){
+  if(!sel) return false;
+  return Array.from(sel.options || []).some(o => o.value === value);
+}
+
+function addOptionOnce(value){
+  nasRootInputs.forEach(sel => {
+    if(!sel) return;
+    // remove duplicates first
+    const matches = Array.from(sel.options || []).filter(o => o.value === value);
+    if(matches.length > 1){
+      matches.slice(1).forEach(o => o.remove());
+    }
+    if(!hasOption(sel, value)){
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = value;
+      sel.appendChild(opt);
+    }
+  });
+}
+
+function removeOptionValue(value){
+  nasRootInputs.forEach(sel => {
+    if(!sel) return;
+    Array.from(sel.options || []).forEach(o => {
+      if(o.value === value){
+        o.remove();
+      }
+    });
+  });
+}
 
 const nasState = {
   rootIndex: 0,
@@ -264,6 +339,64 @@ if(nasModalEl){
     updateSelectedPathDisplay();
     loadFolders('');
   });
+}
+
+async function addNasRoot(){
+  if(!nasRootAddInput || !nasRootAddBtn) return;
+  const raw = nasRootAddInput.value.trim();
+  if(!raw){
+    alert('請輸入 NAS 根目錄');
+    return;
+  }
+  nasRootAddBtn.disabled = true;
+  try {
+    const formData = new FormData();
+    formData.append('nas_root', raw);
+    const resp = await fetch(nasAddUrl, { method: 'POST', body: formData });
+    if(!resp.ok){
+      const text = await resp.text();
+      throw new Error(text || '新增失敗');
+    }
+    alert('新增成功，請重新開啟此視窗以刷新根目錄列表。');
+    addOptionOnce(raw);
+  } catch(err){
+    alert(err?.message || '新增失敗');
+  } finally {
+    nasRootAddBtn.disabled = false;
+  }
+}
+
+if(nasRootAddBtn){
+  nasRootAddBtn.addEventListener('click', addNasRoot);
+}
+
+async function removeNasRoot(){
+  if(!nasRootRemoveSelect || !nasRootRemoveBtn) return;
+  const val = nasRootRemoveSelect.value;
+  if(!val){
+    alert('請選擇要移除的根目錄');
+    return;
+  }
+  nasRootRemoveBtn.disabled = true;
+  try {
+    const formData = new FormData();
+    formData.append('nas_root_remove', val);
+    const resp = await fetch(nasRemoveUrl, { method: 'POST', body: formData });
+    if(!resp.ok){
+      const text = await resp.text();
+      throw new Error(text || '移除失敗');
+    }
+    alert('移除成功，請重新開啟此視窗以刷新根目錄列表。');
+    removeOptionValue(val);
+  } catch(err){
+    alert(err?.message || '移除失敗');
+  } finally {
+    nasRootRemoveBtn.disabled = false;
+  }
+}
+
+if(nasRootRemoveBtn){
+  nasRootRemoveBtn.addEventListener('click', removeNasRoot);
 }
 
 if(nasRootSelect){

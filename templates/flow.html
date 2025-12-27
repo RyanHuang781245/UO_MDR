@@ -102,6 +102,80 @@ const TASK_ID = '{{ task.id }}';
 const SUPPORTED_STEPS = {{ steps|tojson }};
 const AVAILABLE_FILES = {{ files|tojson }};
 const PRESET_FLOW = {{ preset|tojson }};
+const BOOL_DEFAULTS = {
+  include_caption: "false",
+  target_title: "false"
+};
+
+const FIELD_META = {
+  pdf_zip: {
+    label: "PDF ZIP 壓縮檔"
+  },
+  target_section: {
+    label: "章節編號",
+    placeholder: "例如 6.12.1"
+  },
+  target_chapter_section: {
+    label: "章節編號",
+    placeholder: "例如 6.12.1"
+  },
+  target_title_section: {
+    label: "章節標題",
+    placeholder: "請輸入完整章節標題"
+  },
+  target_subtitle: {
+    label: "小標題",
+    placeholder: "請完整輸入小標題"
+  },
+  target_figure_label: {
+    label: "目標圖號",
+    placeholder: "例如 Figure 1"
+  },
+  input_file: {
+    label: "輸入檔案",
+    placeholder: "請選擇檔案"
+  },
+  keywords: {
+    label: "關鍵字",
+    placeholder: "以逗號分隔，例如 a,b,c"
+  },
+  target_title: {
+    label: "擷取標題內容"
+  },
+  subheading_text: {
+    label: "小標題",
+    placeholder: "請完整輸入小標題"
+  },
+  explicit_end_title: {
+    label: "強制結束標題",
+    placeholder: "強制指定章節結束，請完整輸入標題"
+  },
+  ignore_toc: {
+    label: "移除目錄"
+  },
+  ignore_toc_and_before: {
+    label: "移除目錄及前言"
+  },
+  ignore_header_footer: {
+    label: "移除頁首頁尾"
+  },
+  text: {
+    label: "輸入文字",
+    placeholder: "請輸入文字內容"
+  },
+  align: {
+    label: "對齊方式"
+  },
+  bold: {
+    label: "粗體"
+  },
+  source_dir: {
+    label: "來源資料夾"
+  },
+  dest_dir: {
+    label: "目的資料夾"
+  },
+};
 
 let isInitialising = true;
 let isDirty = false;
@@ -174,31 +248,22 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
 
   for (const k of spec.inputs){
     const accept = spec.accepts[k];
-    let label = k;
-    if (k === "pdf_zip") label = "PDF ZIP 壓縮檔";
-    if (k === "target_section") label = "章節編號（例如 6.12.1）";
-    if (k === "target_chapter_section") label = "章節編號（例如 6.12.1）";
-    if (k === "target_title_section") label = "章節標題（完整比對）";
-    if (k === "target_subtitle") label = "小標題（完整比對）";
-    if (k === "target_figure_label") label = "目標圖號（例如 Figure 1）";
-    if (k === "input_file") label = "輸入檔案";
-    if (k === "target_title") label = "擷取標題內容";
-    if (k === "text") label = "輸入文字";
-    if (k === "align") label = "對齊方式";
-    if (k === "bold") label = "粗體";
-    if (k === "source_dir") label = "來源資料夾";
-    if (k === "dest_dir") label = "目的資料夾";
-    if (k === "keywords") label = "關鍵字（逗號分隔）";
+    const meta = FIELD_META[k] || {};
+    const label = meta.label || k;
+    const placeholder = meta.placeholder || label;
 
-    const val = preset[k] || "";
+    const rawVal = preset[k];
+    const val = rawVal === undefined || rawVal === null ? "" : String(rawVal);
     if (accept === "text"){
       body += `<div class="col-md-6"><label class="form-label">${label}</label>
-               <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${label}"></div>`;
+               <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
     } else if (accept === "bool"){
+      const boolDefault = BOOL_DEFAULTS[k] || "true";
+      const boolVal = val === "" ? boolDefault : val;
       body += `<div class="col-md-3"><label class="form-label">${label}</label>
                <select class="form-select" name="step_${sid}_${k}">
-                 <option value="false" ${val==="false"?"selected": ""}>否</option>
-                 <option value="true" ${val==="true"?"selected": ""}>是</option>
+                 <option value="false" ${boolVal==="false"?"selected": ""}>否</option>
+                 <option value="true" ${boolVal!=="false"?"selected": ""}>是</option>
                </select>
              </div>`;
     } else if (accept === "int" || accept === "float"){
@@ -239,7 +304,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
                  </select></div>`;
       } else {
         body += `<div class="col-md-3"><label class="form-label">${label}</label>
-                 <input class="form-control" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${label}"></div>`;
+                 <input class="form-control" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
     } else if (accept.startsWith("file")){
       const ext = accept.split(":")[1];

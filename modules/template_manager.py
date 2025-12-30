@@ -174,6 +174,7 @@ def render_template_with_mappings(
 
     used_vars = set()
     var_records: List[Tuple[str, Dict[str, Any]]] = []
+    replaced_once = set()
 
     mappings_sorted = sorted(mappings, key=lambda x: int(x["index"]), reverse=True)
     for mp in mappings_sorted:
@@ -189,6 +190,11 @@ def render_template_with_mappings(
         used_vars.add(var_name)
 
         mode = (mp.get("mode") or "insert_after").strip()
+        if mode == "replace":
+            if idx in replaced_once:
+                mode = "insert_after"
+            else:
+                replaced_once.add(idx)
         doc_xml = add_docxtpl_var_at_paragraph_index(doc_xml, idx, var_name, mode)
         var_records.append((var_name, mp))
 

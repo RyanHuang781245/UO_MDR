@@ -930,7 +930,7 @@ def extract_specific_figure_from_word(
     return result
 
 
-def extract_table_and_save_to_word(
+def extract_specific_table_from_word(
     input_file: str,
     output_file: str | None,      # 另存新檔的路徑，例如 "check_result.docx"
     target_chapter_section: str,   # 章節編號，例如 "2.1.1"

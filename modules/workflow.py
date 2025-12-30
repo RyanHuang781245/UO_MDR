@@ -9,7 +9,7 @@ from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
     extract_word_chapter,
     extract_specific_figure_from_word,
-    extract_table_and_save_to_word,
+    extract_specific_table_from_word,
 )
 from .file_copier import copy_files
 from .docx_merger import merge_word_docs
@@ -116,7 +116,7 @@ SUPPORTED_STEPS = {
             "template_mode": "text",
         }
     },
-    "extract_table_and_save_to_word": {
+    "extract_specific_table_from_word": {
         "label": "擷取 Word 指定章節/標題的特定表格",
         "inputs": [
             "input_file",
@@ -342,10 +342,10 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     doc.save(frag_path)
                     _route_fragment(frag_path, params, stype)
 
-            elif stype == "extract_table_and_save_to_word":
+            elif stype == "extract_specific_table_from_word":
                 infile = params["input_file"]
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
-                extract_table_and_save_to_word(
+                extract_specific_table_from_word(
                     infile,
                     frag_path,
                     params.get("target_chapter_section", ""),

@@ -928,3 +928,112 @@ def extract_specific_figure_from_word(
         print(f"已擷取圖片 {result['image_filename']}，對應 caption: {result['caption']}")
 
     return result
+
+
+def extract_specific_table_from_word(
+    input_file: str,
+    output_file: str | None,      # 另存新檔的路徑，例如 "check_result.docx"
+    target_chapter_section: str,   # 章節編號，例如 "2.1.1"
+    target_table_label: str,       # 表格標題開頭，例如 "Table 1."
+    target_subtitle: str | None = None,
+    *,
+    save_output: bool = True,      # 是否存檔；如不存則僅回傳找到與否
+) -> bool:
+    """
+    擷取指定標題上方的表格，並另存到新的 Word 文件中以便檢查。
+    """
+
+    # 1. 設定匹配邏輯 (Regex)
+    section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
+    stop_prefix = target_chapter_section.rsplit('.', 1)[0]
+    stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+
+    if target_subtitle and target_subtitle.strip():
+        subtitle_pattern = re.compile(rf"^\s*{re.escape(target_subtitle.strip())}\s*$", re.IGNORECASE)
+    else:
+        subtitle_pattern = None
+
+    table_label_pattern = re.compile(rf"^\s*{re.escape(target_table_label)}", re.IGNORECASE)
+
+    # 2. 建立輸入與輸出文件物件
+    input_doc = Document()
+    input_doc.LoadFromFile(input_file)
+
+    output_doc = Document()
+    out_section = output_doc.AddSection()
+
+    nodes = queue.Queue()
+    nodes.put(input_doc)
+
+    in_target_chapter = False
+    in_target_subtitle = (subtitle_pattern is None)
+    is_waiting_for_table = False 
+    saved_caption_text = ""
+    result_found = False
+
+    # 3. 遍歷文件結構
+    while nodes.qsize() > 0 and not result_found:
+        node = nodes.get()
+        for i in range(node.ChildObjects.Count):
+            child = node.ChildObjects.get_Item(i)
+
+            # --- 處理段落：判斷範圍與標題 ---
+            if isinstance(child, Paragraph):
+                paragraph_text = child.ListText + " " if child.ListText else ""
+                for j in range(child.ChildObjects.Count):
+                    sub = child.ChildObjects.get_Item(j)
+                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
+                        paragraph_text += sub.Text
+                
+                text_stripped = paragraph_text.strip()
+
+                # A) 章節與範圍判斷
+                if section_pattern.match(text_stripped):
+                    in_target_chapter = True
+                    in_target_subtitle = (subtitle_pattern is None)
+                    continue
+                if in_target_chapter and child.ListText and stop_pattern.match(child.ListText):
+                    in_target_chapter = False
+                    break
+                if in_target_chapter and subtitle_pattern and subtitle_pattern.match(text_stripped):
+                    in_target_subtitle = True
+                    continue
+
+                # B) 核心邏輯：發現標題 (立旗)
+                if in_target_chapter and in_target_subtitle:
+                    if table_label_pattern.match(text_stripped):
+                        is_waiting_for_table = True
+                        saved_caption_text = text_stripped
+                        continue
+
+            # --- 處理表格：擷取目標 ---
+            elif isinstance(child, Table):
+                if is_waiting_for_table:
+                    # 複製並寫入表格
+                    new_table = child.Clone()
+                    out_section.Body.ChildObjects.Add(new_table)
+
+                    result_found = True
+                    break
+                
+                nodes.put(child)
+
+            # --- 處理其他結構 ---
+            elif isinstance(child, Section):
+                nodes.put(child.Body)
+            elif isinstance(child, ICompositeObject):
+                doc_type = getattr(child, "DocumentObjectType", None)
+                if _is_header_or_footer(doc_type):
+                    continue
+                nodes.put(child)
+
+    # 4. 存檔並關閉
+    if result_found and save_output and output_file:
+        output_doc.SaveToFile(output_file, FileFormat.Docx)
+        print(f"成功！已將表格與標題另存至：{output_file}")
+    elif not result_found:
+        print("搜尋結束，未找到符合條件的表格。")
+
+    input_doc.Close()
+    output_doc.Close()
+    return result_found

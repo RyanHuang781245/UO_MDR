@@ -9,6 +9,7 @@ from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
     extract_word_chapter,
     extract_specific_figure_from_word,
+    extract_table_and_save_to_word,
 )
 from .file_copier import copy_files
 from .docx_merger import merge_word_docs
@@ -111,6 +112,25 @@ SUPPORTED_STEPS = {
             "target_subtitle": "text",
             "target_figure_label": "text",
             "include_caption": "bool",
+            "template_index": "text",
+            "template_mode": "text",
+        }
+    },
+    "extract_table_and_save_to_word": {
+        "label": "擷取標題上方表格",
+        "inputs": [
+            "input_file",
+            "target_chapter_section",
+            "target_table_label",
+            "target_subtitle",
+            "template_index",
+            "template_mode",
+        ],
+        "accepts": {
+            "input_file": "file:docx",
+            "target_chapter_section": "text",
+            "target_table_label": "text",
+            "target_subtitle": "text",
             "template_index": "text",
             "template_mode": "text",
         }
@@ -321,6 +341,21 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 if added:
                     doc.save(frag_path)
                     _route_fragment(frag_path, params, stype)
+
+            elif stype == "extract_table_and_save_to_word":
+                infile = params["input_file"]
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                extract_table_and_save_to_word(
+                    infile,
+                    frag_path,
+                    params.get("target_chapter_section", ""),
+                    params.get("target_table_label", ""),
+                    params.get("target_subtitle") or None,
+                    save_output=True,
+                )
+                if os.path.isfile(frag_path):
+                    _route_fragment(frag_path, params, stype)
+                    log[-1]["output_docx"] = frag_path
 
             elif stype == "insert_text":
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)

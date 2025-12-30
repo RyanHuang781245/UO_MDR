@@ -117,23 +117,52 @@ SUPPORTED_STEPS = {
     },
     "insert_text": {
         "label": "插入純文字段落",
-        "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before"],
-        "accepts": {"text":"text","align":"align","bold":"bool","font_size":"float","before_space":"float","after_space":"float","page_break_before":"bool"}
+        "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "align": "align",
+            "bold": "bool",
+            "font_size": "float",
+            "before_space": "float",
+            "after_space": "float",
+            "page_break_before": "bool",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "insert_numbered_heading": {
         "label": "插入阿拉伯數字標題",
-        "inputs": ["text", "level", "bold", "font_size"],
-        "accepts": {"text":"text","level":"int","bold":"bool","font_size":"float"}
+        "inputs": ["text", "level", "bold", "font_size", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "level": "int",
+            "bold": "bool",
+            "font_size": "float",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "insert_roman_heading": {
         "label": "插入羅馬數字標題",
-        "inputs": ["text", "level", "bold", "font_size"],
-        "accepts": {"text":"text","level":"int","bold":"bool","font_size":"float"}
+        "inputs": ["text", "level", "bold", "font_size", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "level": "int",
+            "bold": "bool",
+            "font_size": "float",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "insert_bulleted_heading": {
         "label": "插入項目符號標題",
-        "inputs": ["text", "font_size"],
-        "accepts": {"text":"text","font_size":"float"}
+        "inputs": ["text", "font_size", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "font_size": "float",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "copy_files": {
         "label": "複製檔案",

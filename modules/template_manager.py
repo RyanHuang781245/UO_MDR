@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Tuple
 from docxtpl import DocxTemplate
 from lxml import etree
 
-from template_file_mapping.template_mapping import (
+from modules.template_mapping import (
     NS,
     parse_paragraph_numbering,
     qn,

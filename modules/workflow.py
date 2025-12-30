@@ -117,7 +117,7 @@ SUPPORTED_STEPS = {
         }
     },
     "extract_table_and_save_to_word": {
-        "label": "擷取標題上方表格",
+        "label": "擷取 Word 指定章節/標題的特定表格",
         "inputs": [
             "input_file",
             "target_chapter_section",

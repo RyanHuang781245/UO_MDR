@@ -12,6 +12,10 @@ from .Extract_AllFile_to_FinalWord import (
 )
 from .file_copier import copy_files
 from .docx_merger import merge_word_docs
+from .template_manager import (
+    parse_template_paragraphs,
+    render_template_with_mappings,
+)
 
 
 def _resolve_fragment_path(workdir: str, user_path: str | None, idx: int) -> str:
@@ -42,16 +46,23 @@ def _set_alignment(paragraph: DocxParagraph, align: str) -> None:
 SUPPORTED_STEPS = {
     "extract_pdf_chapter_to_table": {
         "label": "擷取 PDF 章節至表格（上傳 ZIP）",
-        "inputs": ["pdf_zip", "target_section"],
-        "accepts": {"pdf_zip": "file:zip", "target_section": "text"}
+        "inputs": ["pdf_zip", "target_section", "template_index", "template_mode"],
+        "accepts": {
+            "pdf_zip": "file:zip",
+            "target_section": "text",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "extract_word_all_content": {
         "label": "擷取 Word 全部內容",
-        "inputs": ["input_file", "ignore_toc_and_before", "ignore_header_footer"],
+        "inputs": ["input_file", "ignore_toc_and_before", "ignore_header_footer", "template_index", "template_mode"],
         "accepts": {
             "input_file": "file:docx",
             "ignore_toc_and_before": "bool",
-            "ignore_header_footer": "bool"
+            "ignore_header_footer": "bool",
+            "template_index": "text",
+            "template_mode": "text",
         }
     },
     "extract_word_chapter": {
@@ -65,7 +76,9 @@ SUPPORTED_STEPS = {
             "subheading_text",
             "subheading_strict_match",
             "ignore_toc",
-            "ignore_header_footer"
+            "ignore_header_footer",
+            "template_index",
+            "template_mode",
         ],
         "accepts": {
             "input_file": "file:docx",
@@ -76,39 +89,80 @@ SUPPORTED_STEPS = {
             "subheading_text": "text",
             "subheading_strict_match": "bool",
             "ignore_toc": "bool",
-            "ignore_header_footer": "bool"
+            "ignore_header_footer": "bool",
+            "template_index": "text",
+            "template_mode": "text",
         }
     },
     "extract_specific_figure_from_word": {
         "label": "擷取 Word 指定章節/標題的特定圖",
-        "inputs": ["input_file", "target_chapter_section", "target_subtitle", "target_figure_label", "include_caption"],
+        "inputs": [
+            "input_file",
+            "target_chapter_section",
+            "target_subtitle",
+            "target_figure_label",
+            "include_caption",
+            "template_index",
+            "template_mode",
+        ],
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
             "target_subtitle": "text",
             "target_figure_label": "text",
             "include_caption": "bool",
+            "template_index": "text",
+            "template_mode": "text",
         }
     },
     "insert_text": {
         "label": "插入純文字段落",
-        "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before"],
-        "accepts": {"text":"text","align":"align","bold":"bool","font_size":"float","before_space":"float","after_space":"float","page_break_before":"bool"}
+        "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "align": "align",
+            "bold": "bool",
+            "font_size": "float",
+            "before_space": "float",
+            "after_space": "float",
+            "page_break_before": "bool",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "insert_numbered_heading": {
         "label": "插入阿拉伯數字標題",
-        "inputs": ["text", "level", "bold", "font_size"],
-        "accepts": {"text":"text","level":"int","bold":"bool","font_size":"float"}
+        "inputs": ["text", "level", "bold", "font_size", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "level": "int",
+            "bold": "bool",
+            "font_size": "float",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "insert_roman_heading": {
         "label": "插入羅馬數字標題",
-        "inputs": ["text", "level", "bold", "font_size"],
-        "accepts": {"text":"text","level":"int","bold":"bool","font_size":"float"}
+        "inputs": ["text", "level", "bold", "font_size", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "level": "int",
+            "bold": "bool",
+            "font_size": "float",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "insert_bulleted_heading": {
         "label": "插入項目符號標題",
-        "inputs": ["text", "font_size"],
-        "accepts": {"text":"text","font_size":"float"}
+        "inputs": ["text", "font_size", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "font_size": "float",
+            "template_index": "text",
+            "template_mode": "text",
+        }
     },
     "copy_files": {
         "label": "複製檔案",
@@ -135,9 +189,35 @@ def boolish(v:str)->bool:
 
 
 
-def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
+def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, Any] | None = None) -> Dict[str, Any]:
     log = []
     fragments: list[str] = []
+    template_cfg = template or {}
+    template_mappings: list[Dict[str, Any]] = []
+    template_mode_default = (template_cfg.get("default_mode") or "insert_after").strip()
+    template_paragraphs = template_cfg.get("paragraphs")
+
+    def _route_fragment(path: str, params: Dict[str, Any], stype: str) -> None:
+        t_idx_raw = params.get("template_index")
+        if template_cfg and t_idx_raw not in (None, "", "None"):
+            try:
+                t_idx = int(t_idx_raw)
+            except Exception:
+                fragments.append(path)
+                return
+            mode = (params.get("template_mode") or template_mode_default or "insert_after").strip() or "insert_after"
+            template_mappings.append(
+                {
+                    "index": t_idx,
+                    "mode": mode,
+                    "content_docx_path": path,
+                    "source_step": stype,
+                }
+            )
+            log[-1]["template_index"] = t_idx
+            log[-1]["template_mode"] = mode
+            return
+        fragments.append(path)
 
     for idx, step in enumerate(steps, start=1):
         stype = step.get("type")
@@ -158,7 +238,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 doc = DocxDocument()
                 extract_pdf_chapter_to_table(extract_dir, target, output_doc=doc, section=None)
                 doc.save(frag_path)
-                fragments.append(frag_path)
+                _route_fragment(frag_path, params, stype)
 
             elif stype == "extract_word_all_content":
                 infile = params["input_file"]
@@ -178,7 +258,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     out_path = result.get("output_docx") or frag_path
                     log[-1]["output_docx"] = out_path
                 if out_path:
-                    fragments.append(out_path)
+                    _route_fragment(out_path, params, stype)
 
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
@@ -206,7 +286,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                     out_path = result.get("output_docx") or frag_path
                     log[-1]["output_docx"] = out_path
                 if out_path:
-                    fragments.append(out_path)
+                    _route_fragment(out_path, params, stype)
 
             elif stype == "extract_specific_figure_from_word":
                 infile = params["input_file"]
@@ -240,7 +320,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                         added = True
                 if added:
                     doc.save(frag_path)
-                    fragments.append(frag_path)
+                    _route_fragment(frag_path, params, stype)
 
             elif stype == "insert_text":
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
@@ -252,7 +332,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 para.paragraph_format.space_before = int(float(params.get("before_space",0)))
                 para.paragraph_format.space_after = int(float(params.get("after_space",6)))
                 doc.save(frag_path)
-                fragments.append(frag_path)
+                _route_fragment(frag_path, params, stype)
 
             elif stype == "insert_numbered_heading":
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
@@ -261,7 +341,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 para.style = doc.styles["Heading 1"] if "Heading 1" in doc.styles else para.style
                 para.runs[0].bold = boolish(params.get("bold","true"))
                 doc.save(frag_path)
-                fragments.append(frag_path)
+                _route_fragment(frag_path, params, stype)
 
             elif stype == "insert_roman_heading":
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
@@ -269,7 +349,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 para = doc.add_paragraph(params.get("text",""))
                 para.runs[0].bold = boolish(params.get("bold","true"))
                 doc.save(frag_path)
-                fragments.append(frag_path)
+                _route_fragment(frag_path, params, stype)
 
             elif stype == "insert_bulleted_heading":
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
@@ -277,7 +357,7 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
                 para = doc.add_paragraph(f"* {params.get('text','')}")
                 para.runs[0].bold = boolish(params.get("bold","true"))
                 doc.save(frag_path)
-                fragments.append(frag_path)
+                _route_fragment(frag_path, params, stype)
 
             elif stype == "copy_files":
                 keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
@@ -303,6 +383,50 @@ def run_workflow(steps:List[Dict[str, Any]], workdir:str)->Dict[str, Any]:
         except Exception as e:
             log[-1]["status"] = "error"
             log[-1]["error"] = str(e)
+
+    if template_cfg.get("path") and template_mappings:
+        try:
+            parsed = template_paragraphs or parse_template_paragraphs(template_cfg["path"])
+            template_result_path = os.path.join(workdir, "template_result.docx")
+            render_template_with_mappings(
+                template_cfg["path"],
+                template_result_path,
+                template_mappings,
+                parsed,
+            )
+            log.append(
+                {
+                    "step": len(log) + 1,
+                    "type": "template_merge",
+                    "template_file": template_cfg["path"],
+                    "mappings": [
+                        {
+                            "index": m.get("index"),
+                            "mode": m.get("mode"),
+                            "source_step": m.get("source_step"),
+                        }
+                        for m in template_mappings
+                    ],
+                    "output_docx": template_result_path,
+                    "status": "ok",
+                }
+            )
+            fragments.insert(0, template_result_path)
+        except Exception as e:
+            log.append(
+                {
+                    "step": len(log) + 1,
+                    "type": "template_merge",
+                    "template_file": template_cfg.get("path"),
+                    "mappings": template_mappings,
+                    "status": "error",
+                    "error": str(e),
+                }
+            )
+            for mp in template_mappings:
+                cdoc = mp.get("content_docx_path")
+                if cdoc:
+                    fragments.append(cdoc)
 
     if not fragments:
         empty_path = os.path.join(workdir, "result.docx")

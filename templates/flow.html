@@ -5,6 +5,7 @@
 
 <form id="flow_form" action="{{ url_for('run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
   <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
+  <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
   <div id="steps" class="vstack gap-3"></div>
 
   <div class="row g-3">
@@ -30,9 +31,52 @@
     </div>
       <button class="btn btn-success" type="submit" name="action" value="run">執行流程</button>
       <button class="btn btn-secondary" type="submit" name="action" value="save">保存流程</button>
+      <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">模板解析</button>
       <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
     </div>
+    <div class="small text-muted">目前模板：<code id="currentTemplateLabel">{{ template_file or "未選擇" }}</code></div>
   </form>
+
+<div class="modal fade" id="templateModal" tabindex="-1" aria-labelledby="templateModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="templateModalLabel">模板解析</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="templateStatus" class="text-danger small mb-2"></div>
+        <div class="row g-3 mb-3 align-items-end">
+          <div class="col-md-7">
+            <label class="form-label">選擇現有模板</label>
+            <select class="form-select" id="existingTemplateSelect">
+              <option value="">（從任務檔案選擇）</option>
+              {% for f in files.docx %}
+              <option value="{{ f }}" {% if template_file == f %}selected{% endif %}>{{ f }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3 d-grid">
+            <button class="btn btn-outline-primary" type="button" id="parseExistingBtn">解析選擇檔案</button>
+          </div>
+        </div>
+        <div class="row g-3 mb-3 align-items-end">
+          <div class="col-md-9">
+            <label class="form-label">上傳新模板 (docx)</label>
+            <input type="file" class="form-control" id="templateUploadInput" accept=".docx">
+            <div class="form-text">上傳後會存入任務的 files 目錄，並立即解析段落。</div>
+          </div>
+          <div class="col-md-3 d-grid">
+            <button class="btn btn-primary" type="button" id="uploadTemplateBtn">上傳並解析</button>
+          </div>
+        </div>
+        <div id="templatePreview" class="border rounded p-3 bg-light small">
+          <div class="text-muted">尚未載入模板</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="modal fade" id="filesModal" tabindex="-1" aria-labelledby="filesModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
@@ -102,6 +146,9 @@ const TASK_ID = '{{ task.id }}';
 const SUPPORTED_STEPS = {{ steps|tojson }};
 const AVAILABLE_FILES = {{ files|tojson }};
 const PRESET_FLOW = {{ preset|tojson }};
+const TEMPLATE_PARSE_URL = "{{ url_for('parse_template_doc', task_id=task.id) }}";
+const TEMPLATE_FILE = {{ template_file|tojson }};
+const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
 const BOOL_DEFAULTS = {
   include_caption: "false",
   target_title: "false"
@@ -134,6 +181,12 @@ const FIELD_META = {
   input_file: {
     label: "輸入檔案",
     placeholder: "請選擇檔案"
+  },
+  template_index: {
+    label: "模板段落"
+  },
+  template_mode: {
+    label: "插入方式"
   },
   keywords: {
     label: "關鍵字",
@@ -177,6 +230,91 @@ const FIELD_META = {
   },
 };
 
+const templateFileInput = document.getElementById('template_file_input');
+const currentTemplateLabel = document.getElementById('currentTemplateLabel');
+const templatePreview = document.getElementById('templatePreview');
+const templateStatus = document.getElementById('templateStatus');
+const existingTemplateSelect = document.getElementById('existingTemplateSelect');
+const parseExistingBtn = document.getElementById('parseExistingBtn');
+const templateUploadInput = document.getElementById('templateUploadInput');
+const uploadTemplateBtn = document.getElementById('uploadTemplateBtn');
+
+let templateFile = TEMPLATE_FILE || "";
+let templateParagraphs = TEMPLATE_PARAGRAPHS || [];
+
+function escapeHtml(str){
+  return (str || "").replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[m] || m));
+}
+
+function formatTemplateLabel(p){
+  const disp = (p.display || "").trim();
+  const txt = (p.text || "").trim();
+  const label = [disp, txt].filter(Boolean).join(" ");
+  return `[${p.index}] ${label}`.trim();
+}
+
+function buildTemplateOptions(current){
+  let opts = `<option value="" ${current ? "" : "selected"}>${templateParagraphs.length ? "不插入模板" : "請先解析模板"}</option>`;
+  for (const p of templateParagraphs){
+    const selected = String(p.index) === String(current) ? "selected" : "";
+    opts += `<option value="${p.index}" ${selected}>${escapeHtml(formatTemplateLabel(p))}</option>`;
+  }
+  return opts;
+}
+
+function refreshTemplateSelects(){
+  document.querySelectorAll('select[data-template-select="1"]').forEach(sel => {
+    const current = sel.value;
+    sel.innerHTML = buildTemplateOptions(current);
+    sel.disabled = templateParagraphs.length === 0;
+  });
+}
+
+function renderTemplatePreview(){
+  if (!templatePreview) return;
+  if (!templateFile){
+    templatePreview.innerHTML = '<div class="text-muted">尚未載入模板</div>';
+    if (currentTemplateLabel) currentTemplateLabel.textContent = "未選擇";
+    return;
+  }
+  if (currentTemplateLabel) currentTemplateLabel.textContent = templateFile;
+  const rows = (templateParagraphs || []).map(p => {
+    return `<tr><td class="mono">${p.index}</td><td class="mono">${escapeHtml(p.display || "")}</td><td>${escapeHtml(p.text || "")}</td></tr>`;
+  }).join("") || '<tr><td colspan="3" class="text-center text-muted">尚未解析到段落</td></tr>';
+  templatePreview.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div>當前模板：<code>${escapeHtml(templateFile)}</code></div>
+      <div class="text-muted small">段落總數：${templateParagraphs.length}</div>
+    </div>
+    <div class="table-responsive" style="max-height:320px; overflow:auto;">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light"><tr><th style="width:100px;">index</th><th style="width:140px;">display</th><th>text</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadTemplateFromServer(formData){
+  if (templateStatus) templateStatus.textContent = "";
+  const resp = await fetch(TEMPLATE_PARSE_URL, { method: "POST", body: formData });
+  let data = {};
+  try { data = await resp.json(); } catch (e) { /* ignore */ }
+  if (!resp.ok || !data.ok){
+    const err = data.error || "解析模板失敗，請稍後重試";
+    if (templateStatus) templateStatus.textContent = err;
+    throw new Error(err);
+  }
+  templateFile = data.template_file || "";
+  templateParagraphs = data.paragraphs || [];
+  if (templateFileInput) templateFileInput.value = templateFile;
+  renderTemplatePreview();
+  refreshTemplateSelects();
+  markDirty();
+}
+
 let isInitialising = true;
 let isDirty = false;
 function markDirty(){
@@ -202,11 +340,64 @@ flowForm.addEventListener('submit', (e) => {
       e.preventDefault();
       return;
     }
+    const wantsTemplate = Array.from(flowForm.querySelectorAll('select[data-template-select="1"]'))
+      .some(sel => sel.value);
+    const hasTemplate = (templateFileInput?.value || "").trim().length > 0;
+    if (wantsTemplate && !hasTemplate){
+      e.preventDefault();
+      alert('已選擇模板段落但尚未載入模板，請先解析模板');
+      return;
+    }
   }
   isDirty = false;
 });
 flowForm.addEventListener('input', markDirty);
 flowForm.addEventListener('change', markDirty);
+if (parseExistingBtn){
+  parseExistingBtn.addEventListener('click', async () => {
+    const chosen = existingTemplateSelect?.value || "";
+    if (!chosen){
+      if (templateStatus) templateStatus.textContent = "請先選擇模板檔案";
+      return;
+    }
+    const fd = new FormData();
+    fd.append("template_path", chosen);
+    try {
+      await loadTemplateFromServer(fd);
+    } catch (err) {
+      console.error(err);
+    }
+  });
+}
+if (uploadTemplateBtn){
+  uploadTemplateBtn.addEventListener('click', async () => {
+    const file = templateUploadInput?.files?.[0];
+    if (!file){
+      if (templateStatus) templateStatus.textContent = "請選擇要上傳的模板檔案";
+      return;
+    }
+    const fd = new FormData();
+    fd.append("template_file", file);
+    try {
+      await loadTemplateFromServer(fd);
+      if (existingTemplateSelect && templateFile){
+        if (!Array.from(existingTemplateSelect.options).some(o => o.value === templateFile)){
+          const opt = document.createElement("option");
+          opt.value = templateFile;
+          opt.textContent = templateFile;
+          existingTemplateSelect.appendChild(opt);
+        }
+        existingTemplateSelect.value = templateFile;
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (templateUploadInput) templateUploadInput.value = "";
+    }
+  });
+}
+renderTemplatePreview();
+refreshTemplateSelects();
 function genId(){ return (Date.now().toString(36) + Math.random().toString(36).slice(2,7)); }
 function updateOrder(){
   const ids = Array.from(document.querySelectorAll("#steps .card")).map(el => el.dataset.sid);
@@ -254,6 +445,24 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
 
     const rawVal = preset[k];
     const val = rawVal === undefined || rawVal === null ? "" : String(rawVal);
+    if (k === "template_index"){
+      const disabled = templateParagraphs.length === 0 ? "disabled" : "";
+      body += `<div class="col-md-6"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${disabled}>
+                 ${buildTemplateOptions(val)}
+               </select>
+               <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+             </div>`;
+      continue;
+    } else if (k === "template_mode") {
+      const modeVal = val || "insert_after";
+      body += `<div class="col-md-3"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_template_mode">
+                 <option value="insert_after" ${modeVal==="insert_after"?"selected": ""}>段落後新增</option>
+                 <option value="replace" ${modeVal==="replace"?"selected": ""}>取代該段落</option>
+               </select></div>`;
+      continue;
+    }
     if (accept === "text"){
       body += `<div class="col-md-6"><label class="form-label">${label}</label>
                <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
@@ -345,6 +554,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
   } else {
     container.appendChild(card);
   }
+  refreshTemplateSelects();
   updateOrder();
 }
 function removeStep(sid){

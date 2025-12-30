@@ -64,6 +64,11 @@ except Exception:  # optional dependency (spire.doc) may be missing
     run_workflow = _optional_dependency_stub("Workflow execution")
 
 try:
+    from modules.template_manager import parse_template_paragraphs
+except Exception:
+    parse_template_paragraphs = _optional_dependency_stub("Template parsing")
+
+try:
     from modules.Extract_AllFile_to_FinalWord import (
         center_table_figure_paragraphs,
         apply_basic_style,
@@ -1221,6 +1226,52 @@ def gather_available_files(files_dir):
     return mapping
 
 
+@app.post("/tasks/<task_id>/templates/parse")
+def parse_template_doc(task_id):
+    """Upload or parse an existing template docx and return paragraph metadata."""
+    tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        abort(404)
+
+    upload = request.files.get("template_file")
+    template_rel = ""
+    existing = request.form.get("template_path", "").strip()
+
+    if upload and upload.filename:
+        if not upload.filename.lower().endswith(".docx"):
+            return jsonify({"ok": False, "error": "僅支援 .docx 模板"}), 400
+        safe_name = deduplicate_name(files_dir, secure_filename(upload.filename))
+        save_path = os.path.join(files_dir, safe_name)
+        upload.save(save_path)
+        template_rel = safe_name
+    elif existing:
+        normalized = os.path.normpath(existing)
+        if normalized.startswith("..") or os.path.isabs(normalized):
+            return jsonify({"ok": False, "error": "無效的檔案路徑"}), 400
+        template_rel = normalized
+    else:
+        return jsonify({"ok": False, "error": "請選擇或上傳模板檔案"}), 400
+
+    template_abs = os.path.join(files_dir, template_rel)
+    if not os.path.isfile(template_abs):
+        return jsonify({"ok": False, "error": "找不到模板檔案"}), 404
+
+    try:
+        paragraphs = parse_template_paragraphs(template_abs)
+    except Exception as e:
+        app.logger.exception("Failed to parse template docx")
+        return jsonify({"ok": False, "error": f"解析模板失敗: {e}"}), 400
+
+    return jsonify(
+        {
+            "ok": True,
+            "template_file": template_rel.replace("\\", "/"),
+            "paragraphs": paragraphs,
+        }
+    )
+
+
 @app.get("/tasks/<task_id>/flows")
 def flow_builder(task_id):
     tdir = os.path.join(app.config["TASK_FOLDER"], task_id)
@@ -1259,6 +1310,8 @@ def flow_builder(task_id):
             )
     preset = None
     center_titles = True
+    template_file = None
+    template_paragraphs = []
     loaded_name = request.args.get("flow")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
@@ -1270,6 +1323,7 @@ def flow_builder(task_id):
                 center_titles = data.get("center_titles", True) or any(
                     isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
                 )
+                template_file = data.get("template_file")
             else:
                 steps_data = data
                 center_titles = True
@@ -1277,6 +1331,15 @@ def flow_builder(task_id):
                 s for s in steps_data
                 if isinstance(s, dict) and s.get("type") in SUPPORTED_STEPS
             ]
+    if template_file:
+        tpl_abs = os.path.join(files_dir, template_file)
+        if os.path.exists(tpl_abs):
+            try:
+                template_paragraphs = parse_template_paragraphs(tpl_abs)
+            except Exception:
+                template_paragraphs = []
+        else:
+            template_file = None
     avail = gather_available_files(files_dir)
     tree = build_file_tree(files_dir)
     return render_template(
@@ -1289,6 +1352,8 @@ def flow_builder(task_id):
         loaded_name=loaded_name,
         center_titles=center_titles,
         files_tree=tree,
+        template_file=template_file,
+        template_paragraphs=template_paragraphs,
     )
 
 
@@ -1302,6 +1367,7 @@ def run_flow(task_id):
     flow_name = request.form.get("flow_name", "").strip()
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     center_titles = request.form.get("center_titles") == "on"
+    template_file = request.form.get("template_file", "").strip()
     apply_formatting = False
     workflow = []
     for sid in ordered_ids:
@@ -1337,6 +1403,7 @@ def run_flow(task_id):
             "created": created,
             "steps": workflow,
             "center_titles": center_titles,
+            "template_file": template_file,
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -1357,10 +1424,22 @@ def run_flow(task_id):
                 params[k] = v
         runtime_steps.append({"type": stype, "params": params})
 
+    template_cfg = None
+    if template_file:
+        tpl_abs = os.path.join(files_dir, template_file)
+        if not os.path.isfile(tpl_abs):
+            return "找不到模板檔案，請重新載入", 400
+        try:
+            template_paragraphs = parse_template_paragraphs(tpl_abs)
+        except Exception as e:
+            app.logger.exception("Failed to parse template for run")
+            return f"解析模板失敗: {e}", 400
+        template_cfg = {"path": tpl_abs, "paragraphs": template_paragraphs}
+
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
-    workflow_result = run_workflow(runtime_steps, workdir=job_dir)
+    workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
     # Skip renumber_figures_tables_file to avoid Spire watermark; formatting handled by python-docx helpers.
@@ -1387,6 +1466,8 @@ def execute_flow(task_id, flow_name):
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
     apply_formatting = False
+    template_file = None
+    template_cfg = None
     if isinstance(data, dict):
         workflow = data.get("steps", [])
         center_titles = data.get("center_titles", True) or any(
@@ -1394,9 +1475,20 @@ def execute_flow(task_id, flow_name):
         )
         document_format = normalize_document_format(data.get("document_format"))
         line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
+        template_file = data.get("template_file")
     else:
         workflow = data
         center_titles = True
+    if template_file:
+        tpl_abs = os.path.join(files_dir, template_file)
+        if os.path.isfile(tpl_abs):
+            try:
+                template_paragraphs = parse_template_paragraphs(tpl_abs)
+                template_cfg = {"path": tpl_abs, "paragraphs": template_paragraphs}
+            except Exception as e:
+                app.logger.exception("Failed to parse template for saved flow")
+        else:
+            template_file = None
     runtime_steps = []
     for step in workflow:
         stype = step.get("type")
@@ -1414,7 +1506,7 @@ def execute_flow(task_id, flow_name):
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
-    workflow_result = run_workflow(runtime_steps, workdir=job_dir)
+    workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
     # Skip renumber_figures_tables_file to avoid Spire watermark; formatting handled by python-docx helpers.

@@ -27,6 +27,8 @@ from flask import (
 from werkzeug.utils import secure_filename
 from functools import wraps
 
+SKIP_DOCX_CLEANUP = os.getenv("SKIP_DOCX_CLEANUP", "").strip().lower() in ("1", "true", "yes", "y")
+
 from modules.rbac_store import (
     RBACConfigError,
     ROLE_ADMIN,
@@ -758,9 +760,11 @@ def save_compare_output(
     doc.SaveToFile(os.path.join(target_dir, f"{base_name}.docx"), FileFormat.Docx)
     doc.Close()
     result_docx = os.path.join(target_dir, f"{base_name}.docx")
-    remove_hidden_runs(result_docx, preserve_texts=titles_to_hide)
+    if not SKIP_DOCX_CLEANUP:
+        remove_hidden_runs(result_docx, preserve_texts=titles_to_hide)
     apply_basic_style(result_docx)
-    hide_paragraphs_with_text(result_docx, titles_to_hide)
+    if not SKIP_DOCX_CLEANUP:
+        hide_paragraphs_with_text(result_docx, titles_to_hide)
     return html_path, result_docx
 
 
@@ -1446,8 +1450,9 @@ def run_flow(task_id):
     # renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
-    remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-    hide_paragraphs_with_text(result_path, titles_to_hide)
+    if not SKIP_DOCX_CLEANUP:
+        remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
+        hide_paragraphs_with_text(result_path, titles_to_hide)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -1513,8 +1518,9 @@ def execute_flow(task_id, flow_name):
     # renumber_figures_tables_file(result_path)
     if center_titles:
         center_table_figure_paragraphs(result_path)
-    remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-    hide_paragraphs_with_text(result_path, titles_to_hide)
+    if not SKIP_DOCX_CLEANUP:
+        remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
+        hide_paragraphs_with_text(result_path, titles_to_hide)
     return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
 
 
@@ -1694,7 +1700,8 @@ def task_compare(task_id, job_id):
         doc.HtmlExportOptions.ImageEmbedded = True
         doc.SaveToFile(html_path, FileFormat.Html)
         doc.Close()
-        remove_hidden_runs(docx_path, preserve_texts=titles_to_hide)
+        if not SKIP_DOCX_CLEANUP:
+            remove_hidden_runs(docx_path, preserve_texts=titles_to_hide)
 
     chapter_sources = {}
     source_urls = {}
@@ -1979,7 +1986,8 @@ def task_download(task_id, job_id, kind):
         shutil.copyfile(result_path, download_path)
         if titles_to_remove:
             remove_paragraphs_with_text(download_path, titles_to_remove)
-        remove_hidden_runs(download_path)
+        if not SKIP_DOCX_CLEANUP:
+            remove_hidden_runs(download_path)
         return send_file(
             download_path,
             as_attachment=True,

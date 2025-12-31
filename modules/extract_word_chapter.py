@@ -192,11 +192,9 @@ def find_section_range_children(
 ) -> tuple[int, int]:
     start_idx = None
     start_outline = None
-    start_style = None
-    start_ilvl = None
     found_kind = None  # "exact" | "toc"
-
-    # ---- 找起點 ----
+    
+    # 1. 定位起點
     for i, block in enumerate(body_children):
         for p in iter_paragraphs(block):
             if ignore_toc and is_toc_paragraph(p):
@@ -207,8 +205,6 @@ def find_section_range_children(
             if txt == start_heading_text:
                 start_idx = i
                 start_outline = get_effective_outline_level(p, style_outline, style_based)
-                start_style = get_pStyle(p)
-                start_ilvl = get_ilvl(p)
                 found_kind = "exact"
                 break
 
@@ -216,8 +212,6 @@ def find_section_range_children(
                 if found_kind is None:
                     start_idx = i
                     start_outline = get_effective_outline_level(p, style_outline, style_based)
-                    start_style = get_pStyle(p)
-                    start_ilvl = get_ilvl(p)
                     found_kind = "toc"
 
         if found_kind == "exact":
@@ -226,7 +220,7 @@ def find_section_range_children(
     if start_idx is None:
         raise RuntimeError(f"找不到章節起點：{start_number} / {start_heading_text}")
 
-    # ---- 找終點 ----
+    # 2. 定位終點
     end_idx = len(body_children)
     for j in range(start_idx + 1, len(body_children)):
         block = body_children[j]
@@ -235,24 +229,27 @@ def find_section_range_children(
                 continue
 
             txt = normalize_text(get_all_text(p))
+            if not txt: continue
 
-            if explicit_end_title and txt == explicit_end_title:
-                return start_idx, j
+            # --- 核心邏輯 A：直接比對標題文字 (最高優先級) ---
+            # 只要指定了終點，且目前段落文字「包含」或「等於」該標題，立即截斷
+            if explicit_end_title:
+                if explicit_end_title == txt or explicit_end_title in txt:
+                    return start_idx, j
+                # 如果有指定終點，我們通常會跳過下面的自動層級判定，
+                # 除非你希望兩者並行。這裡建議指定了終點就以終點為準。
+                continue 
 
+            # --- 核心邏輯 B：自動結構判定 (只有在沒指定 explicit_end_title 時執行) ---
             lvl = get_effective_outline_level(p, style_outline, style_based)
-            if start_outline is not None and lvl is not None and lvl <= start_outline:
-                return start_idx, j
-
-            if start_outline is None:
-                style = get_pStyle(p)
-                ilvl = get_ilvl(p)
-                if (
-                    start_style is not None
-                    and style == start_style
-                    and start_ilvl is not None
-                    and ilvl is not None
-                    and ilvl <= start_ilvl
-                ):
+            if start_outline is not None and lvl is not None:
+                # 只有遇到「更高等級」(數值更小) 的標題才截斷 (例如 3.4 遇到 3.0 或 4.0)
+                if lvl < start_outline:
+                    return start_idx, j
+                
+                # 如果層級相同 (例如 3.4 遇到 3.5)，且確定不是 3.4.x 的子章節
+                if lvl == start_outline and start_heading_text not in txt:
+                    # 這裡多加一個保險：如果文字不包含原本的標題，才視為新章節
                     return start_idx, j
 
     return start_idx, end_idx

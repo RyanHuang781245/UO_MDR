@@ -605,7 +605,7 @@ def remove_hidden_runs(
     input_file: str,
     preserve_texts: Optional[Iterable[str]] = None,
 ) -> bool:
-    """Remove runs marked as hidden and drop empty paragraphs without losing images."""
+    """Clear text in hidden runs without removing XML nodes."""
     try:
         doc = DocxDocument(input_file)
         preserve_set = {
@@ -617,25 +617,25 @@ def remove_hidden_runs(
             normalized_para_text = _normalize_text(para.text)
             if preserve_set and normalized_para_text in preserve_set:
                 continue
-            to_remove = [run for run in para.runs if run.font.hidden]
-            for run in to_remove:
-                para._element.remove(run._element)
-            has_image = bool(
-                para._element.xpath(
-                    './/w:drawing | .//w:pict'
-                )
-            )
-            if not para.text.strip() and not has_image:
-                if preserve_set and normalized_para_text in preserve_set:
+            has_image = bool(para._element.xpath('.//w:drawing | .//w:pict'))
+            if has_image:
+                continue
+            in_table = False
+            parent = para._element.getparent()
+            while parent is not None:
+                if parent.tag == qn('w:tc'):
+                    in_table = True
+                    break
+                parent = parent.getparent()
+            if in_table:
+                continue
+            for run in para.runs:
+                if not run.font.hidden:
                     continue
-                parent = para._element.getparent()
-                if parent is not None and parent.tag == qn('w:tc'):
-                    # Ensure each table cell keeps at least one paragraph
-                    paragraph_count = len(parent.findall(qn('w:p')))
-                    if paragraph_count <= 1:
-                        continue
-                p = para._element
-                p.getparent().remove(p)
+                for text_node in run._element.iter(qn('w:t')):
+                    text_node.text = ""
+                for text_node in run._element.iter(qn('w:instrText')):
+                    text_node.text = ""
         doc.save(input_file)
         return True
     except Exception as e:

@@ -47,7 +47,7 @@
                 <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item" href="{{ url_for('tasks') }}">任務管理</a></li>
                 {% if has_permission(PERM_USER_MANAGE) %}
-                  <li><a class="dropdown-item" href="{{ url_for('admin_users') }}">使用者管理</a></li>
+                  <li><a class="dropdown-item" href="{{ url_for('admin.index') }}">管理後台</a></li>
                 {% endif %}
                 <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}">登出</a></li>

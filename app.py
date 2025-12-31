@@ -4,7 +4,9 @@ import uuid
 import json
 import zipfile
 import re
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 from urllib.parse import urlparse
 
 from modules.env_loader import load_dotenv_if_present
@@ -20,34 +22,43 @@ from flask import (
     send_from_directory,
     abort,
     jsonify,
-    session,
-    g,
     flash,
 )
+from flask_admin import Admin, AdminIndexView
+from flask_admin.contrib.sqla import ModelView
+from flask_ldap3_login import LDAP3LoginManager
+from flask_ldap3_login.forms import LDAPLoginForm
+from flask_login import (
+    LoginManager,
+    current_user,
+    login_user,
+    logout_user,
+)
+from ldap3 import BASE, LEVEL, SUBTREE, Connection, Server
+from ldap3.utils.conv import escape_filter_chars
 from werkzeug.utils import secure_filename
-from functools import wraps
-
-SKIP_DOCX_CLEANUP = os.getenv("SKIP_DOCX_CLEANUP", "").strip().lower() in ("1", "true", "yes", "y")
-
-from modules.rbac_store import (
-    RBACConfigError,
+from modules.auth_models import (
+    LDAPProfile,
+    PERM_USER_MANAGE,
     ROLE_ADMIN,
     ROLE_EDITOR,
     ROLE_LABELS_ZH,
-    PERM_USER_MANAGE,
-    authenticate,
-    build_mssql_engine_from_env,
-    create_user,
+    Role,
+    User,
+    UserRole,
+    commit_session,
+    count_admins,
+    db,
     ensure_schema,
     get_user_by_id,
-    get_user_roles,
-    list_users,
-    seed_defaults,
-    set_user_active,
-    set_user_password,
-    set_user_role,
-    user_has_permission,
+    get_user_role_names,
+    seed_roles,
+    sync_user_from_ldap,
+    upsert_user_role,
+    user_has_role,
 )
+
+SKIP_DOCX_CLEANUP = os.getenv("SKIP_DOCX_CLEANUP", "").strip().lower() in ("1", "true", "yes", "y")
 
 def _optional_dependency_stub(feature: str):
     def _stub(*_args, **_kwargs):
@@ -98,6 +109,11 @@ except Exception:
 from modules.file_copier import copy_files
 
 app = Flask(__name__, instance_relative_config=True)
+# import logging
+# logging.basicConfig(level=logging.INFO)  # 或 DEBUG
+# logging.getLogger("ldap3").setLevel(logging.DEBUG)
+# logging.getLogger("flask_ldap3_login").setLevel(logging.DEBUG)
+
 app.config["SECRET_KEY"] = "dev-secret"
 BASE_DIR = os.path.dirname(__file__)
 app.config["OUTPUT_FOLDER"] = os.path.join(BASE_DIR, "output")
@@ -112,33 +128,301 @@ def parse_bool(value, default=False):
 
 
 app.config["AUTH_ENABLED"] = parse_bool(os.environ.get("AUTH_ENABLED"), True)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", app.config["SECRET_KEY"])
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = parse_bool(os.environ.get("SESSION_COOKIE_SECURE"), False)
+
+db_url = os.environ.get("DATABASE_URL") or os.environ.get("RBAC_DATABASE_URL")
+if not db_url:
+    raise RuntimeError("DATABASE_URL is required for MSSQL configuration.")
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
+
+app.config["LDAP_HOST"] = os.environ.get("LDAP_HOST")
+app.config["LDAP_BASE_DN"] = os.environ.get("LDAP_BASE_DN")
+app.config["LDAP_BIND_USER_DN"] = os.environ.get("LDAP_BIND_DN")
+app.config["LDAP_BIND_USER_PASSWORD"] = os.environ.get("LDAP_BIND_PASSWORD")
+app.config["LDAP_USER_LOGIN_ATTR"] = os.environ.get("LDAP_USER_LOGIN_ATTR", "sAMAccountName")
+app.config["LDAP_USER_OBJECT_FILTER"] = os.environ.get(
+    "LDAP_USER_OBJECT_FILTER", "(&(objectClass=user)(!(objectClass=computer)))"
+)
+app.config["LDAP_GROUP_GATE_ENABLED"] = parse_bool(
+    os.environ.get("LDAP_GROUP_GATE_ENABLED"), True
+)
+
+ldap_scope_raw = os.environ.get("LDAP_USER_SEARCH_SCOPE", "SUBTREE").upper()
+ldap_scope_map = {
+    "BASE": BASE,
+    "LEVEL": LEVEL,
+    "SUBTREE": SUBTREE,
+}
+app.config["LDAP_USER_SEARCH_SCOPE"] = ldap_scope_map.get(ldap_scope_raw, SUBTREE)
+app.config["ALLOWED_GROUP_DN"] = os.environ.get("ALLOWED_GROUP_DN")
+
+db.init_app(app)
+login_manager = LoginManager()
+login_manager.login_view = "login"
+login_manager.init_app(app)
+ldap_manager = LDAP3LoginManager(app)
 
 
-def get_rbac_engine():
-    engine = getattr(app, "_rbac_engine", None)
-    if engine is not None:
-        return engine
-    engine = build_mssql_engine_from_env()
-    app._rbac_engine = engine
-    return engine
+@dataclass(frozen=True)
+class LDAPUserInfo:
+    dn: str
+    username: str
+    data: dict
+    memberships: list
 
 
-def permission_required(permission_name: str):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            if not app.config.get("AUTH_ENABLED", True):
-                return func(*args, **kwargs)
-            if not getattr(g, "user", None):
-                abort(401)
-            engine = get_rbac_engine()
-            if not user_has_permission(engine, g.user.id, permission_name):
-                abort(403)
-            return func(*args, **kwargs)
+@ldap_manager.save_user
+def save_ldap_user(dn, username, data, memberships):
+    return LDAPUserInfo(dn=dn, username=username, data=data or {}, memberships=memberships or [])
 
-        return wrapper
 
-    return decorator
+@login_manager.user_loader
+def load_user(user_id: str) -> Optional[User]:
+    try:
+        return get_user_by_id(int(user_id))
+    except Exception:
+        return None
+
+
+def sanitize_next_url(raw_next: Optional[str]) -> Optional[str]:
+    if not raw_next:
+        return None
+    candidate = raw_next.strip()
+    if candidate.endswith("?"):
+        candidate = candidate[:-1]
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return None
+    parsed = urlparse(candidate)
+    if parsed.scheme or parsed.netloc:
+        return None
+    return candidate
+
+
+def user_has_permission(user_id: int, permission_name: str) -> bool:
+    if permission_name == PERM_USER_MANAGE:
+        return user_has_role(user_id, ROLE_ADMIN)
+    return False
+
+
+def user_is_admin(user: User) -> bool:
+    return bool(user and user.is_authenticated and user_has_role(user.id, ROLE_ADMIN))
+
+
+def _normalize_ldap_value(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    if value is None:
+        return None
+    text_value = str(value).strip()
+    return text_value or None
+
+
+def build_ldap_profile(ldap_user: LDAPUserInfo) -> LDAPProfile:
+    data = ldap_user.data or {}
+    display_name = _normalize_ldap_value(
+        data.get("displayName")
+        or data.get("cn")
+        or data.get("name")
+        or data.get("givenName")
+    )
+    email = _normalize_ldap_value(data.get("mail"))
+    return LDAPProfile(username=ldap_user.username, display_name=display_name, email=email)
+
+
+def is_allowed_group_member(user_dn: str) -> bool:
+    if not app.config.get("LDAP_GROUP_GATE_ENABLED", True):
+        return True
+    allowed_group_dn = app.config.get("ALLOWED_GROUP_DN")
+    if not allowed_group_dn:
+        raise ValueError("ALLOWED_GROUP_DN is not configured")
+    host = app.config.get("LDAP_HOST")
+    bind_dn = app.config.get("LDAP_BIND_USER_DN")
+    bind_pw = app.config.get("LDAP_BIND_USER_PASSWORD")
+    if not host or not bind_dn or not bind_pw:
+        raise ValueError("LDAP bind configuration is missing")
+
+    server = Server(host)
+    conn = Connection(server, user=bind_dn, password=bind_pw, auto_bind=True)
+    try:
+        escaped_user_dn = escape_filter_chars(user_dn)
+        search_filter = (
+            "(&(objectClass=group)(member:1.2.840.113556.1.4.1941:="
+            + escaped_user_dn
+            + "))"
+        )
+        conn.search(
+            search_base=allowed_group_dn,
+            search_filter=search_filter,
+            search_scope=BASE,
+            attributes=["distinguishedName"],
+        )
+        return bool(conn.entries)
+    finally:
+        conn.unbind()
+
+
+def bootstrap_admins() -> None:
+    raw = os.environ.get("BOOTSTRAP_ADMIN", "")
+    usernames = [entry.strip() for entry in raw.split(",") if entry.strip()]
+    if not usernames:
+        return
+
+    admin_role = Role.query.filter_by(name=ROLE_ADMIN).first()
+    if not admin_role:
+        admin_role = Role(name=ROLE_ADMIN)
+        db.session.add(admin_role)
+        db.session.flush()
+
+    for username in usernames:
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            user = User(username=username, active=True)
+            db.session.add(user)
+            db.session.flush()
+        upsert_user_role(user, admin_role)
+
+    commit_session()
+
+
+class SecureAdminIndexView(AdminIndexView):
+    def is_accessible(self):
+        return user_is_admin(current_user)
+
+    def inaccessible_callback(self, name, **kwargs):
+        if current_user.is_authenticated:
+            abort(403)
+        return redirect(url_for("login", next=sanitize_next_url(request.full_path)))
+
+
+class SecureModelView(ModelView):
+    def is_accessible(self):
+        return user_is_admin(current_user)
+
+    def inaccessible_callback(self, name, **kwargs):
+        if current_user.is_authenticated:
+            abort(403)
+        return redirect(url_for("login", next=sanitize_next_url(request.full_path)))
+
+
+class UserAdminView(SecureModelView):
+    can_create = False
+    can_delete = False
+    can_edit = True
+    column_list = (
+        "id",
+        "username",
+        "display_name",
+        "email",
+        "active",
+        "created_at",
+        "last_login_at",
+        "role_name",
+    )
+    column_labels = {"active": "is_active", "role_name": "role"}
+    form_columns = ("active",)
+
+    def update_model(self, form, model):
+        try:
+            model.active = bool(form.active.data)
+            commit_session()
+            return True
+        except Exception as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return False
+
+
+class RoleAdminView(SecureModelView):
+    can_create = False
+    can_edit = False
+    can_delete = False
+    column_list = ("id", "name")
+
+
+class UserRoleAdminView(SecureModelView):
+    column_list = ("user", "role")
+    form_columns = ("user", "role")
+
+    def _is_last_admin_change(self, user_id: int, new_role_id: Optional[int], deleting: bool) -> bool:
+        admin_role = Role.query.filter_by(name=ROLE_ADMIN).first()
+        if not admin_role:
+            return False
+        if count_admins() > 1:
+            return False
+        current = UserRole.query.filter_by(user_id=user_id, role_id=admin_role.id).first()
+        if not current:
+            return False
+        if deleting:
+            return True
+        return new_role_id is not None and new_role_id != admin_role.id
+
+    def create_model(self, form):
+        try:
+            user = form.user.data
+            role = form.role.data
+            existing = UserRole.query.filter_by(user_id=user.id).first()
+            if existing:
+                if self._is_last_admin_change(user.id, role.id, deleting=False):
+                    flash("Cannot remove the last admin.", "danger")
+                    return False
+                existing.role_id = role.id
+            else:
+                db.session.add(UserRole(user_id=user.id, role_id=role.id))
+            commit_session()
+            return True
+        except Exception as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return False
+
+    def update_model(self, form, model):
+        try:
+            new_role = form.role.data
+            if self._is_last_admin_change(model.user_id, new_role.id, deleting=False):
+                flash("Cannot remove the last admin.", "danger")
+                return False
+            model.role_id = new_role.id
+            commit_session()
+            return True
+        except Exception as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return False
+
+    def delete_model(self, model):
+        try:
+            if self._is_last_admin_change(model.user_id, model.role_id, deleting=True):
+                flash("Cannot remove the last admin.", "danger")
+                return False
+            db.session.delete(model)
+            commit_session()
+            return True
+        except Exception as exc:
+            db.session.rollback()
+            flash(str(exc), "danger")
+            return False
+
+
+admin = Admin(app, name="Admin", url="/admin", index_view=SecureAdminIndexView())
+admin.add_view(UserAdminView(User, db.session, name="Users"))
+admin.add_view(RoleAdminView(Role, db.session, name="Roles"))
+admin.add_view(UserRoleAdminView(UserRole, db.session, name="User Roles"))
+
+with app.app_context():
+    try:
+        ensure_schema()
+        seed_roles()
+        bootstrap_admins()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Auth initialization failed")
 
 
 @app.context_processor
@@ -146,20 +430,17 @@ def inject_auth_context():
     def _has_perm(perm: str) -> bool:
         if not app.config.get("AUTH_ENABLED", True):
             return True
-        if not getattr(g, "user", None):
+        if not current_user.is_authenticated:
             return False
-        try:
-            return user_has_permission(get_rbac_engine(), g.user.id, perm)
-        except RBACConfigError:
-            return False
+        return user_has_permission(current_user.id, perm)
 
     def _role_labels(role_names: list[str]) -> str:
-        return "、".join(ROLE_LABELS_ZH.get(name, name) for name in role_names)
+        return ", ".join(ROLE_LABELS_ZH.get(name, name) for name in role_names)
 
     return {
         "auth_enabled": app.config.get("AUTH_ENABLED", True),
-        "current_user": getattr(g, "user", None),
-        "current_user_roles": getattr(g, "user_roles", []),
+        "current_user": current_user if current_user.is_authenticated else None,
+        "current_user_roles": get_user_role_names(current_user.id) if current_user.is_authenticated else [],
         "has_permission": _has_perm,
         "role_labels": _role_labels,
         "ROLE_ADMIN": ROLE_ADMIN,
@@ -170,33 +451,20 @@ def inject_auth_context():
 
 @app.before_request
 def enforce_login():
-    g.user = None
-    g.user_roles = []
+    if request.is_secure or request.headers.get("X-Forwarded-Proto", "").lower() == "https":
+        app.config["SESSION_COOKIE_SECURE"] = True
+
     if not app.config.get("AUTH_ENABLED", True):
         return
 
     public_endpoints = {"login", "logout", "static"}
-    if request.endpoint in public_endpoints:
+    if request.endpoint in public_endpoints or request.endpoint is None:
         return
 
-    user_id = session.get("user_id")
-    if user_id:
-        try:
-            engine = get_rbac_engine()
-            user = get_user_by_id(engine, int(user_id))
-            if user and user.is_active:
-                g.user = user
-                g.user_roles = get_user_roles(engine, user.id)
-                return
-        except RBACConfigError:
-            g.user = None
-        except Exception:
-            g.user = None
+    if current_user.is_authenticated:
+        return
 
-    next_url = request.full_path
-    if next_url.endswith("?"):
-        next_url = next_url[:-1]
-    return redirect(url_for("login", next=next_url))
+    return redirect(url_for("login", next=sanitize_next_url(request.full_path)))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -204,121 +472,69 @@ def login():
     if not app.config.get("AUTH_ENABLED", True):
         return redirect(url_for("tasks"))
 
-    if session.get("user_id"):
+    if current_user.is_authenticated:
         return redirect(url_for("tasks"))
 
     error = ""
+    form = LDAPLoginForm()
     if request.method == "POST":
-        username = request.form.get("username", "")
-        password = request.form.get("password", "")
+        # app.logger.debug("LDAP login attempt: username=%s", request.form.get("username"))
+        # app.logger.debug(
+        #     "LDAP config: host=%s base_dn=%s login_attr=%s filter=%s scope=%s allowed_group_dn=%s",
+        #     app.config.get("LDAP_HOST"),
+        #     app.config.get("LDAP_BASE_DN"),
+        #     app.config.get("LDAP_USER_LOGIN_ATTR"),
+        #     app.config.get("LDAP_USER_OBJECT_FILTER"),
+        #     app.config.get("LDAP_USER_SEARCH_SCOPE"),
+        #     app.config.get("ALLOWED_GROUP_DN"),
+        # )
         try:
-            user = authenticate(get_rbac_engine(), username=username, password=password)
-        except RBACConfigError as exc:
-            error = str(exc)
-            user = None
+            if not form.validate_on_submit():
+                app.logger.debug("LDAP form errors: %s", form.errors)
+                error = "Invalid credentials."
+            else:
+                ldap_user = form.user
+                if not ldap_user:
+                    error = "Invalid credentials."
+                else:
+                    if not is_allowed_group_member(ldap_user.dn):
+                        error = "Your account is not in the allowed login group."
+                    else:
+                        profile = build_ldap_profile(ldap_user)
+                        user = sync_user_from_ldap(profile)
+                        if not user.user_role:
+                            editor_role = Role.query.filter_by(name=ROLE_EDITOR).first()
+                            if not editor_role:
+                                raise ValueError("Role editor is missing")
+                            upsert_user_role(user, editor_role)
+                        if not user.is_active:
+                            db.session.rollback()
+                            error = "Your account is disabled."
+                        else:
+                            user.last_login_at = datetime.utcnow()
+                            commit_session()
+                            login_user(user)
+                            next_url = sanitize_next_url(request.args.get("next"))
+                            return redirect(next_url or url_for("tasks"))
         except Exception:
-            app.logger.exception("登入驗證失敗")
-            error = "登入時發生錯誤，請稍後再試或聯絡系統管理員"
-            user = None
+            db.session.rollback()
+            app.logger.exception("Login failed")
+            error = "Login failed. Please contact the administrator."
 
-        if user:
-            session["user_id"] = user.id
-            flash("登入成功", "success")
-            next_url = request.args.get("next")
-            if next_url:
-                parsed = urlparse(next_url)
-                if parsed.scheme or parsed.netloc or not next_url.startswith("/"):
-                    next_url = None
-            return redirect(next_url or url_for("tasks"))
-        if not error:
-            error = "帳號或密碼錯誤，或帳號已停用"
-
-    return render_template("login.html", error=error)
+    return render_template("login.html", error=error, form=form)
 
 
 @app.get("/logout")
 def logout():
-    session.clear()
-    flash("已登出", "info")
+    logout_user()
+    flash("Logged out.", "info")
     return redirect(url_for("login"))
-
-
-@app.route("/admin/users", methods=["GET", "POST"])
-@permission_required(PERM_USER_MANAGE)
-def admin_users():
-    engine = get_rbac_engine()
-
-    message = ""
-    if request.method == "POST":
-        action = request.form.get("action", "")
-        try:
-            if action == "create":
-                username = request.form.get("username", "")
-                password = request.form.get("password", "")
-                role = request.form.get("role", ROLE_EDITOR)
-                ensure_schema(engine)
-                seed_defaults(engine)
-                create_user(engine, username=username, password=password, role=role)
-                message = f"已新增使用者 {username}"
-            elif action == "set_role":
-                user_id = int(request.form.get("user_id", "0"))
-                role = request.form.get("role", ROLE_EDITOR)
-                set_user_role(engine, user_id=user_id, role=role)
-                message = "已更新角色"
-            elif action == "set_active":
-                user_id = int(request.form.get("user_id", "0"))
-                is_active = parse_bool(request.form.get("is_active"), True)
-                set_user_active(engine, user_id=user_id, is_active=is_active)
-                message = "已更新狀態"
-            elif action == "reset_password":
-                user_id = int(request.form.get("user_id", "0"))
-                new_password = request.form.get("new_password", "")
-                if not new_password:
-                    raise ValueError("請輸入新密碼")
-                set_user_password(engine, user_id=user_id, new_password=new_password)
-                message = "已重設密碼"
-        except Exception as exc:
-            message = str(exc)
-
-    ensure_schema(engine)
-    seed_defaults(engine)
-    users_data = list_users(engine)
-    return render_template(
-        "admin_users.html",
-        users=users_data,
-        message=message,
-        role_labels_map=ROLE_LABELS_ZH,
-    )
 
 
 @app.errorhandler(403)
 def forbidden(_exc):
     return render_template("403.html"), 403
 
-
-@app.cli.command("init-rbac")
-def init_rbac_command():
-    """初始化 RBAC 相關資料表並建立預設角色/權限。"""
-    engine = get_rbac_engine()
-    ensure_schema(engine)
-    seed_defaults(engine)
-    print("RBAC schema ready. (roles/permissions seeded)")
-
-
-@app.cli.command("create-user")
-def create_user_command():
-    """互動式建立使用者（需先 init-rbac）。"""
-    import getpass
-
-    engine = get_rbac_engine()
-    ensure_schema(engine)
-    seed_defaults(engine)
-
-    username = input("Username: ").strip()
-    role = input("Role (admin/editor) [editor]: ").strip() or ROLE_EDITOR
-    password = getpass.getpass("Password: ")
-    user_id = create_user(engine, username=username, password=password, role=role)
-    print(f"Created user id={user_id}")
 
 nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS")
 nas_allowed_roots = [

@@ -5,7 +5,7 @@ import json
 import zipfile
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -125,6 +125,17 @@ def parse_bool(value, default=False):
     if value is None:
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+TAIWAN_TZ = timezone(timedelta(hours=8))
+
+
+def format_tw_datetime(value: Optional[datetime], assume_tz: timezone = timezone.utc) -> str:
+    if not value:
+        return "-"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=assume_tz)
+    return value.astimezone(TAIWAN_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 app.config["AUTH_ENABLED"] = parse_bool(os.environ.get("AUTH_ENABLED"), True)
@@ -327,6 +338,10 @@ class UserAdminView(SecureModelView):
     )
     column_labels = {"active": "is_active", "role_name": "role"}
     form_columns = ("active",)
+    column_formatters = {
+        "last_login_at": lambda _view, _context, model, _name: format_tw_datetime(model.last_login_at),
+        "created_at": lambda _view, _context, model, _name: format_tw_datetime(model.created_at, assume_tz=TAIWAN_TZ),
+    }
 
     def update_model(self, form, model):
         try:
@@ -339,11 +354,11 @@ class UserAdminView(SecureModelView):
             return False
 
 
-class RoleAdminView(SecureModelView):
-    can_create = False
-    can_edit = False
-    can_delete = False
-    column_list = ("id", "name")
+# class RoleAdminView(SecureModelView):
+#     can_create = False
+#     can_edit = False
+#     can_delete = False
+#     column_list = ("id", "name")
 
 
 class UserRoleAdminView(SecureModelView):
@@ -412,7 +427,7 @@ class UserRoleAdminView(SecureModelView):
 
 admin = Admin(app, name="Admin", url="/admin", index_view=SecureAdminIndexView())
 admin.add_view(UserAdminView(User, db.session, name="Users"))
-admin.add_view(RoleAdminView(Role, db.session, name="Roles"))
+# admin.add_view(RoleAdminView(Role, db.session, name="Roles"))
 admin.add_view(UserRoleAdminView(UserRole, db.session, name="User Roles"))
 
 with app.app_context():

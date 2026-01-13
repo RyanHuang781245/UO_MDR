@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from app import app, DEFAULT_DOCUMENT_FORMAT_KEY, DOCUMENT_FORMAT_PRESETS
+from app.services.flow_service import DEFAULT_DOCUMENT_FORMAT_KEY, DOCUMENT_FORMAT_PRESETS
 
 
 @pytest.fixture
-def task_env(tmp_path):
+def task_env(tmp_path, app):
     tasks_dir = tmp_path / "tasks"
     output_dir = tmp_path / "output"
     tasks_dir.mkdir(parents=True)
@@ -30,7 +30,7 @@ def _write_json(path, data):
         json.dump(data, fh, ensure_ascii=False, indent=2)
 
 
-def test_update_flow_format_updates_existing_metadata(task_env):
+def test_update_flow_format_updates_existing_metadata(task_env, client):
     task_id = "abc123"
     flow_dir = task_env / task_id / "flows"
     flow_dir.mkdir(parents=True)
@@ -45,11 +45,10 @@ def test_update_flow_format_updates_existing_metadata(task_env):
     }
     _write_json(flow_path, original)
 
-    with app.test_client() as client:
-        response = client.post(
-            f"/tasks/{task_id}/flows/update-format/demo",
-            data={"document_format": "modern", "line_spacing": "2"},
-        )
+    response = client.post(
+        f"/tasks/{task_id}/flows/update-format/demo",
+        data={"document_format": "modern", "line_spacing": "2"},
+    )
 
     assert response.status_code == 302
 
@@ -63,7 +62,7 @@ def test_update_flow_format_updates_existing_metadata(task_env):
     assert updated["steps"] == original["steps"]
 
 
-def test_update_flow_format_converts_legacy_flow_list(task_env):
+def test_update_flow_format_converts_legacy_flow_list(task_env, client):
     task_id = "legacy"
     flow_dir = task_env / task_id / "flows"
     flow_dir.mkdir(parents=True)
@@ -72,14 +71,13 @@ def test_update_flow_format_converts_legacy_flow_list(task_env):
     legacy_steps = [{"type": "insert_title", "params": {"text": "Legacy"}}]
     _write_json(flow_path, legacy_steps)
 
-    with app.test_client() as client:
-        response = client.post(
-            f"/tasks/{task_id}/flows/update-format/legacy",
-            data={
-                "document_format": list(DOCUMENT_FORMAT_PRESETS.keys())[0],
-                "line_spacing": "1.25",
-            },
-        )
+    response = client.post(
+        f"/tasks/{task_id}/flows/update-format/legacy",
+        data={
+            "document_format": list(DOCUMENT_FORMAT_PRESETS.keys())[0],
+            "line_spacing": "1.25",
+        },
+    )
 
     assert response.status_code == 302
 

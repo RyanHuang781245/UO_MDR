@@ -1,10 +1,7 @@
 import pytest
 
-from app import app
 
-
-def test_api_nas_list_dirs_lists_only_directories(tmp_path):
-    client = app.test_client()
+def test_api_nas_list_dirs_lists_only_directories(tmp_path, app, client):
     original_nas_roots = app.config.get("NAS_ALLOWED_ROOTS")
     original_allowed_nas_roots = app.config.get("ALLOWED_NAS_ROOTS")
     original_recursive = app.config.get("NAS_ALLOW_RECURSIVE")
@@ -37,8 +34,7 @@ def test_api_nas_list_dirs_lists_only_directories(tmp_path):
         app.config["NAS_ALLOW_RECURSIVE"] = original_recursive
 
 
-def test_api_nas_list_dirs_respects_recursive_setting(tmp_path):
-    client = app.test_client()
+def test_api_nas_list_dirs_respects_recursive_setting(tmp_path, app, client):
     original_nas_roots = app.config.get("NAS_ALLOWED_ROOTS")
     original_allowed_nas_roots = app.config.get("ALLOWED_NAS_ROOTS")
     original_recursive = app.config.get("NAS_ALLOW_RECURSIVE")
@@ -61,8 +57,7 @@ def test_api_nas_list_dirs_respects_recursive_setting(tmp_path):
         app.config["NAS_ALLOW_RECURSIVE"] = original_recursive
 
 
-def test_api_nas_list_dirs_invalid_root_index(tmp_path):
-    client = app.test_client()
+def test_api_nas_list_dirs_invalid_root_index(tmp_path, app, client):
     original_nas_roots = app.config.get("NAS_ALLOWED_ROOTS")
     original_allowed_nas_roots = app.config.get("ALLOWED_NAS_ROOTS")
 

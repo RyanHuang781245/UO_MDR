@@ -20,7 +20,7 @@ class BaseConfig:
     BASE_DIR = BASE_DIR
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
     OUTPUT_FOLDER = str(BASE_DIR / "output")
-    TASK_FOLDER = str(BASE_DIR / "tasks")
+    TASK_FOLDER = str(BASE_DIR / "task_store")
     ALLOWED_SOURCE_ROOTS = []
 
     AUTH_ENABLED = parse_bool(os.environ.get("AUTH_ENABLED"), True)

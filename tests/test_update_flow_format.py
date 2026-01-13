@@ -7,7 +7,7 @@ from app.services.flow_service import DEFAULT_DOCUMENT_FORMAT_KEY, DOCUMENT_FORM
 
 @pytest.fixture
 def task_env(tmp_path, app):
-    tasks_dir = tmp_path / "tasks"
+    tasks_dir = tmp_path / "task_store"
     output_dir = tmp_path / "output"
     tasks_dir.mkdir(parents=True)
     output_dir.mkdir(parents=True)

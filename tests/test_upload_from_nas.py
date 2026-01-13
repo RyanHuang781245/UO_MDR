@@ -40,7 +40,7 @@ def test_upload_task_file_from_nas(tmp_path, app, client):
     original_task_folder = app.config["TASK_FOLDER"]
     original_roots = app.config.get("ALLOWED_SOURCE_ROOTS")
 
-    task_dir = tmp_path / "tasks"
+    task_dir = tmp_path / "task_store"
     files_dir = task_dir / "task1" / "files"
     files_dir.mkdir(parents=True)
 

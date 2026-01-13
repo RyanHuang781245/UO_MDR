@@ -12,6 +12,7 @@ from modules.auth_models import (
     ROLE_EDITOR,
     commit_session,
     db,
+    get_user,
     sync_user_from_ldap,
     upsert_user_role,
 )
@@ -47,7 +48,15 @@ def login():
                 return render_template("auth/login.html", error=error, form=form)
 
             profile = build_ldap_profile(ldap_user)
-            user = sync_user_from_ldap(profile)
+            user = get_user(profile.username)
+            if not user:
+                error = "Your account is not authorized."
+                return render_template("auth/login.html", error=error, form=form)
+
+            if profile.display_name and user.display_name != profile.display_name:
+                user.display_name = profile.display_name
+            if profile.email and user.email != profile.email:
+                user.email = profile.email
 
             if not user.user_role:
                 editor_role = Role.query.filter_by(name=ROLE_EDITOR).first()

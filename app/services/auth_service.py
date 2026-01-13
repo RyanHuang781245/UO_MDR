@@ -10,6 +10,7 @@ from flask import abort, current_app, flash, redirect, request, url_for
 from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_login import current_user
+from wtforms import SelectField
 from ldap3 import BASE, SUBTREE, Connection, Server
 from ldap3.utils.conv import escape_filter_chars
 
@@ -255,7 +256,7 @@ class UserAdminView(SecureModelView):
     can_delete = True
     can_edit = True
     column_list = (
-        "id",
+        # "id",
         "username",
         "display_name",
         "email",
@@ -265,7 +266,7 @@ class UserAdminView(SecureModelView):
         "role_name",
     )
     column_labels = {
-        "id": "編號",
+        # "id": "編號",
         "username": "工號",
         "display_name": "顯示名稱",
         "email": "Email",
@@ -274,15 +275,52 @@ class UserAdminView(SecureModelView):
         "last_login_at": "最後登入",
         "role_name": "角色",
     }
-    form_columns = ("active",)
+    form_extra_fields = {"role": SelectField("角色", coerce=int)}
+    form_columns = ("active", "role")
     column_formatters = {
         "last_login_at": lambda _view, _context, model, _name: format_tw_datetime(model.last_login_at),
         "created_at": lambda _view, _context, model, _name: format_tw_datetime(model.created_at, assume_tz=TAIWAN_TZ),
     }
 
+    def _load_role_choices(self):
+        roles = Role.query.order_by(Role.name).all()
+        return [(role.id, role.name) for role in roles]
+
+    def create_form(self, obj=None):
+        form = super().create_form(obj)
+        form.role.choices = self._load_role_choices()
+        return form
+
+    def edit_form(self, obj=None):
+        form = super().edit_form(obj)
+        form.role.choices = self._load_role_choices()
+        # if obj and obj.user_role:
+        if obj and obj.user_role and not form.role.raw_data:
+            form.role.data = obj.user_role.role_id
+        return form
+
+    def _is_last_admin_change(self, user: User, new_role: Role) -> bool:
+        admin_role = Role.query.filter_by(name=ROLE_ADMIN).first()
+        if not admin_role or not user:
+            return False
+        if new_role and new_role.id == admin_role.id:
+            return False
+        if not user_has_role(user.id, ROLE_ADMIN):
+            return False
+        return count_admins() <= 1
+
     def update_model(self, form, model):
         try:
             model.active = bool(form.active.data)
+            role_id = form.role.data
+            role = Role.query.get(role_id) if role_id else None
+            if not role:
+                flash("角色不存在", "danger")
+                return False
+            if self._is_last_admin_change(model, role):
+                flash("Cannot remove the last admin.", "danger")
+                return False
+            upsert_user_role(model, role)
             commit_session()
             return True
         except Exception as exc:
@@ -295,6 +333,10 @@ class UserRoleAdminView(SecureModelView):
     can_create = False
     can_delete = False
     column_list = ("user", "role")
+    column_labels = {
+        "user": "使用者",
+        "role": "角色",
+    }
     form_columns = ("role",)
 
     def _is_last_admin_change(self, user_id: int, new_role_id: Optional[int], deleting: bool) -> bool:
@@ -473,7 +515,6 @@ def register_login_enforcement(app) -> None:
 def init_admin(app) -> Admin:
     admin = Admin(app, name="系統管理", url="/admin", index_view=SecureAdminIndexView())
     admin.add_view(UserAdminView(User, db.session, name="使用者列表"))
-    admin.add_view(UserRoleAdminView(UserRole, db.session, name="使用者角色"))
     admin.add_view(ADSearchView(name="帳號搜尋", endpoint="ad_search", url="ad-search"))
     return admin
 

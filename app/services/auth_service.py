@@ -264,7 +264,16 @@ class UserAdminView(SecureModelView):
         "last_login_at",
         "role_name",
     )
-    column_labels = {"active": "is_active", "role_name": "role"}
+    column_labels = {
+        "id": "編號",
+        "username": "工號",
+        "display_name": "顯示名稱",
+        "email": "Email",
+        "active": "狀態",
+        "created_at": "建立時間",
+        "last_login_at": "最後登入",
+        "role_name": "角色",
+    }
     form_columns = ("active",)
     column_formatters = {
         "last_login_at": lambda _view, _context, model, _name: format_tw_datetime(model.last_login_at),
@@ -462,10 +471,10 @@ def register_login_enforcement(app) -> None:
 
 
 def init_admin(app) -> Admin:
-    admin = Admin(app, name="Admin", url="/admin", index_view=SecureAdminIndexView())
-    admin.add_view(UserAdminView(User, db.session, name="Users"))
-    admin.add_view(UserRoleAdminView(UserRole, db.session, name="User Roles"))
-    admin.add_view(ADSearchView(name="AD Search", endpoint="ad_search", url="ad-search"))
+    admin = Admin(app, name="系統管理", url="/admin", index_view=SecureAdminIndexView())
+    admin.add_view(UserAdminView(User, db.session, name="使用者列表"))
+    admin.add_view(UserRoleAdminView(UserRole, db.session, name="使用者角色"))
+    admin.add_view(ADSearchView(name="帳號搜尋", endpoint="ad_search", url="ad-search"))
     return admin
 
 

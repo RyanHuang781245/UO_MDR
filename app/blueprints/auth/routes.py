@@ -15,10 +15,10 @@ auth_bp = Blueprint("auth_bp", __name__, template_folder="templates")
 @auth_bp.route("/login", methods=["GET", "POST"], endpoint="login")
 def login():
     if not current_app.config.get("AUTH_ENABLED", True):
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks_bp.tasks"))
 
     if current_user.is_authenticated:
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks_bp.tasks"))
 
     error = ""
     form = LDAPLoginForm()
@@ -50,7 +50,7 @@ def login():
                             commit_session()
                             login_user(user)
                             next_url = sanitize_next_url(request.args.get("next"))
-                            return redirect(next_url or url_for("tasks"))
+                            return redirect(next_url or url_for("tasks_bp.tasks"))
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Login failed")
@@ -63,4 +63,4 @@ def login():
 def logout():
     logout_user()
     flash("Logged out.", "info")
-    return redirect(url_for("login"))
+    return redirect(url_for("auth_bp.login"))

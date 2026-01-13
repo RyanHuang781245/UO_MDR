@@ -168,7 +168,7 @@ class SecureAdminIndexView(AdminIndexView):
     def inaccessible_callback(self, name, **kwargs):
         if current_user.is_authenticated:
             abort(403)
-        return redirect(url_for("login", next=sanitize_next_url(request.full_path)))
+        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
 
 
 class SecureModelView(ModelView):
@@ -178,7 +178,7 @@ class SecureModelView(ModelView):
     def inaccessible_callback(self, name, **kwargs):
         if current_user.is_authenticated:
             abort(403)
-        return redirect(url_for("login", next=sanitize_next_url(request.full_path)))
+        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
 
 
 class UserAdminView(SecureModelView):
@@ -311,14 +311,14 @@ def register_login_enforcement(app) -> None:
         if not app.config.get("AUTH_ENABLED", True):
             return
 
-        public_endpoints = {"login", "logout", "static", "auth_bp.login", "auth_bp.logout"}
+        public_endpoints = {"auth_bp.login", "auth_bp.logout", "static"}
         if request.endpoint in public_endpoints or request.endpoint is None:
             return
 
         if current_user.is_authenticated:
             return
 
-        return redirect(url_for("login", next=sanitize_next_url(request.full_path)))
+        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
 
 
 def init_admin(app) -> Admin:
@@ -340,7 +340,7 @@ def bootstrap_auth(app) -> None:
 
 
 def init_auth(app) -> None:
-    login_manager.login_view = "login"
+    login_manager.login_view = "auth_bp.login"
     register_ldap_handlers()
     register_auth_context(app)
     register_login_enforcement(app)

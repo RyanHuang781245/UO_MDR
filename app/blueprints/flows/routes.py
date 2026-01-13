@@ -164,7 +164,7 @@ def run_flow(task_id):
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        return redirect(url_for("flow_builder", task_id=task_id))
+        return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
     runtime_steps = []
     for step in workflow:
@@ -206,7 +206,7 @@ def run_flow(task_id):
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
         hide_paragraphs_with_text(result_path, titles_to_hide)
-    return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
+    return redirect(url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/execute/<flow_name>", endpoint="execute_flow")
@@ -274,7 +274,7 @@ def execute_flow(task_id, flow_name):
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
         hide_paragraphs_with_text(result_path, titles_to_hide)
-    return redirect(url_for("task_result", task_id=task_id, job_id=job_id))
+    return redirect(url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/update-format/<flow_name>", endpoint="update_flow_format")
@@ -326,7 +326,7 @@ def update_flow_format(task_id, flow_name):
     with open(flow_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
-    return redirect(url_for("flow_builder", task_id=task_id))
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/delete/<flow_name>", endpoint="delete_flow")
@@ -336,7 +336,7 @@ def delete_flow(task_id, flow_name):
     path = os.path.join(flow_dir, f"{flow_name}.json")
     if os.path.exists(path):
         os.remove(path)
-    return redirect(url_for("flow_builder", task_id=task_id))
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/rename/<flow_name>", endpoint="rename_flow")
@@ -353,7 +353,7 @@ def rename_flow(task_id, flow_name):
     if os.path.exists(new_path):
         return "流程名稱已存在", 400
     os.rename(old_path, new_path)
-    return redirect(url_for("flow_builder", task_id=task_id))
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
 
 @flows_bp.get("/tasks/<task_id>/flows/export/<flow_name>", endpoint="export_flow")
@@ -376,4 +376,4 @@ def import_flow(task_id):
     name = os.path.splitext(secure_filename(f.filename))[0]
     path = os.path.join(flow_dir, f"{name}.json")
     f.save(path)
-    return redirect(url_for("flow_builder", task_id=task_id))
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id))

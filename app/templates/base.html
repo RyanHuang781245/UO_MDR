@@ -13,7 +13,7 @@
   <body>
     <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
       <div class="container d-flex">
-        <a class="navbar-brand fw-bold me-auto d-flex align-items-center" href="{{ url_for('tasks') }}">
+        <a class="navbar-brand fw-bold me-auto d-flex align-items-center" href="{{ url_for('tasks_bp.tasks') }}">
           法規文件轉換平台
           <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="ms-2" style="height:24px;">
         </a>
@@ -45,12 +45,12 @@
                   {% endif %}
                 </li>
                 <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item" href="{{ url_for('tasks') }}">任務管理</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('tasks_bp.tasks') }}">任務管理</a></li>
                 {% if has_permission(PERM_USER_MANAGE) %}
                   <li><a class="dropdown-item" href="{{ url_for('admin.index') }}">管理後台</a></li>
                 {% endif %}
                 <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}">登出</a></li>
+                <li><a class="dropdown-item text-danger" href="{{ url_for('auth_bp.logout') }}">登出</a></li>
               </ul>
             </div>
           {% endif %}

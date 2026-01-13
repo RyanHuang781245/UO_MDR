@@ -22,7 +22,7 @@ def add_nas_root_route():
     path = request.form.get("nas_root", "").strip()
     if not path:
         flash("請輸入 NAS 根目錄", "danger")
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks_bp.tasks"))
     try:
         added = nas_service.add_nas_root(path)
         if added:
@@ -36,7 +36,7 @@ def add_nas_root_route():
     except Exception:
         current_app.logger.exception("Failed to add NAS root")
         flash("新增 NAS 根目錄時發生錯誤", "danger")
-    return redirect(url_for("tasks"))
+    return redirect(url_for("tasks_bp.tasks"))
 
 
 @nas_bp.post("/nas/remove-root", endpoint="remove_nas_root_route")
@@ -44,7 +44,7 @@ def remove_nas_root_route():
     path = request.form.get("nas_root_remove", "").strip()
     if not path:
         flash("請選擇要移除的 NAS 根目錄", "danger")
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks_bp.tasks"))
     try:
         abs_path = os.path.abspath(path)
         removed = nas_service.remove_nas_root(abs_path)
@@ -55,4 +55,4 @@ def remove_nas_root_route():
     except Exception:
         current_app.logger.exception("Failed to remove NAS root")
         flash("移除 NAS 根目錄時發生錯誤", "danger")
-    return redirect(url_for("tasks"))
+    return redirect(url_for("tasks_bp.tasks"))

@@ -7,10 +7,10 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from flask import abort, current_app, flash, redirect, request, url_for
-from flask_admin import Admin, AdminIndexView
+from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_login import current_user
-from ldap3 import BASE, Connection, Server
+from ldap3 import BASE, SUBTREE, Connection, Server
 from ldap3.utils.conv import escape_filter_chars
 
 from app.extensions import ldap_manager, login_manager
@@ -28,6 +28,7 @@ from modules.auth_models import (
     count_admins,
     db,
     ensure_schema,
+    get_user,
     get_user_by_id,
     get_user_role_names,
     seed_roles,
@@ -92,6 +93,74 @@ def _normalize_ldap_value(value: object) -> Optional[str]:
         return None
     text_value = str(value).strip()
     return text_value or None
+
+
+def _get_ldap_search_config() -> dict:
+    host = current_app.config.get("LDAP_HOST")
+    base_dn = current_app.config.get("LDAP_BASE_DN")
+    bind_dn = current_app.config.get("LDAP_BIND_USER_DN")
+    bind_pw = current_app.config.get("LDAP_BIND_USER_PASSWORD")
+    login_attr = current_app.config.get("LDAP_USER_LOGIN_ATTR", "sAMAccountName")
+    obj_filter = current_app.config.get(
+        "LDAP_USER_OBJECT_FILTER", "(&(objectClass=user)(!(objectClass=computer)))"
+    )
+    scope = current_app.config.get("LDAP_USER_SEARCH_SCOPE")
+
+    if not host or not base_dn or not bind_dn or not bind_pw:
+        raise ValueError("LDAP search configuration is missing")
+
+    return {
+        "host": host,
+        "base_dn": base_dn,
+        "bind_dn": bind_dn,
+        "bind_pw": bind_pw,
+        "login_attr": login_attr,
+        "obj_filter": obj_filter,
+        "scope": scope,
+    }
+
+
+def search_ad_users(keyword: str) -> list[dict]:
+    keyword = (keyword or "").strip()
+    if not keyword:
+        return []
+
+    cfg = _get_ldap_search_config()
+    escaped = escape_filter_chars(keyword)
+    pattern = f"*{escaped}*"
+    login_attr = cfg["login_attr"]
+    search_filter = (
+        f"(&{cfg['obj_filter']}(|({login_attr}={pattern})"
+        f"(displayName={pattern})(mail={pattern})))"
+    )
+    attributes = [login_attr, "displayName", "mail", "distinguishedName"]
+
+    server = Server(cfg["host"])
+    conn = Connection(server, user=cfg["bind_dn"], password=cfg["bind_pw"], auto_bind=True)
+    try:
+        conn.search(
+            search_base=cfg["base_dn"],
+            search_filter=search_filter,
+            search_scope=cfg["scope"] or SUBTREE,
+            attributes=attributes,
+        )
+        results = []
+        for entry in conn.entries:
+            data = entry.entry_attributes_as_dict
+            username = _normalize_ldap_value(data.get(login_attr))
+            if not username:
+                continue
+            results.append(
+                {
+                    "username": username,
+                    "display_name": _normalize_ldap_value(data.get("displayName")),
+                    "email": _normalize_ldap_value(data.get("mail")),
+                    "dn": entry.entry_dn,
+                }
+            )
+        return results
+    finally:
+        conn.unbind()
 
 
 def build_ldap_profile(ldap_user: LDAPUserInfo) -> LDAPProfile:
@@ -183,7 +252,7 @@ class SecureModelView(ModelView):
 
 class UserAdminView(SecureModelView):
     can_create = False
-    can_delete = False
+    can_delete = True
     can_edit = True
     column_list = (
         "id",
@@ -214,8 +283,10 @@ class UserAdminView(SecureModelView):
 
 
 class UserRoleAdminView(SecureModelView):
+    can_create = False
+    can_delete = False
     column_list = ("user", "role")
-    form_columns = ("user", "role")
+    form_columns = ("role",)
 
     def _is_last_admin_change(self, user_id: int, new_role_id: Optional[int], deleting: bool) -> bool:
         admin_role = Role.query.filter_by(name=ROLE_ADMIN).first()
@@ -277,6 +348,75 @@ class UserRoleAdminView(SecureModelView):
             return False
 
 
+class ADSearchView(BaseView):
+    def is_accessible(self):
+        return user_is_admin(current_user)
+
+    def inaccessible_callback(self, name, **kwargs):
+        if current_user.is_authenticated:
+            abort(403)
+        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
+
+    @expose("/", methods=["GET", "POST"])
+    def index(self):
+        error = ""
+        results = []
+        roles = Role.query.order_by(Role.name).all()
+
+        if request.method == "POST":
+            username = (request.form.get("username") or "").strip()
+            display_name = (request.form.get("display_name") or "").strip()
+            email = (request.form.get("email") or "").strip()
+            role_name = (request.form.get("role") or "").strip()
+            query = (request.form.get("q") or "").strip()
+
+            if not username:
+                flash("缺少帳號", "danger")
+                return redirect(url_for("ad_search.index", q=query))
+
+            role = Role.query.filter_by(name=role_name).first()
+            if not role:
+                flash("角色不存在", "danger")
+                return redirect(url_for("ad_search.index", q=query))
+
+            profile = LDAPProfile(
+                username=username,
+                display_name=display_name or None,
+                email=email or None,
+            )
+            user = sync_user_from_ldap(profile)
+            upsert_user_role(user, role)
+            try:
+                commit_session()
+                flash("已加入/更新使用者", "success")
+            except Exception as exc:
+                db.session.rollback()
+                flash(str(exc), "danger")
+
+            return redirect(url_for("ad_search.index", q=query))
+
+        query = (request.args.get("q") or "").strip()
+        if query:
+            try:
+                results = search_ad_users(query)
+            except Exception as exc:
+                current_app.logger.exception("AD search failed")
+                error = str(exc)
+
+        for item in results:
+            existing = get_user(item["username"])
+            item["exists"] = bool(existing)
+            item["role_name"] = existing.role_name if existing else None
+
+        return self.render(
+            "admin/ad_search.html",
+            query=query,
+            results=results,
+            roles=roles,
+            error=error,
+        )
+
+
 def register_auth_context(app) -> None:
     @app.context_processor
     def inject_auth_context():
@@ -325,6 +465,7 @@ def init_admin(app) -> Admin:
     admin = Admin(app, name="Admin", url="/admin", index_view=SecureAdminIndexView())
     admin.add_view(UserAdminView(User, db.session, name="Users"))
     admin.add_view(UserRoleAdminView(UserRole, db.session, name="User Roles"))
+    admin.add_view(ADSearchView(name="AD Search", endpoint="ad_search", url="ad-search"))
     return admin
 
 

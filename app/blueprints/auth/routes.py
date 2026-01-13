@@ -7,7 +7,14 @@ from flask_ldap3_login.forms import LDAPLoginForm
 from flask_login import current_user, login_user, logout_user
 
 from app.services.auth_service import build_ldap_profile, is_allowed_group_member, sanitize_next_url
-from modules.auth_models import Role, ROLE_EDITOR, commit_session, db, sync_user_from_ldap, upsert_user_role
+from modules.auth_models import (
+    Role,
+    ROLE_EDITOR,
+    commit_session,
+    db,
+    sync_user_from_ldap,
+    upsert_user_role,
+)
 
 auth_bp = Blueprint("auth_bp", __name__, template_folder="templates")
 
@@ -58,7 +65,7 @@ def login():
             login_user(user)
 
             next_url = sanitize_next_url(request.args.get("next"))
-            return redirect(next_url or url_for("tasks"))
+            return redirect(next_url or url_for("tasks_bp.tasks"))
 
         except Exception:
             db.session.rollback()

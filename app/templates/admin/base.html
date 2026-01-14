@@ -44,17 +44,6 @@
         rel="stylesheet" {{ admin_csp_nonce_attribute }}
       >
 
-      {# 4. Select2 CSS（Flask-Admin vendor 有這些檔案，保留以統一表單樣式）
-         - 若沒有這兩個 CSS 檔，刪掉即可，不影響核心功能 #}
-      <link
-        href="{{ admin_static.url(filename='vendor/select2/select2.min.css', v='4.2.1') }}"
-        rel="stylesheet" {{ admin_csp_nonce_attribute }}
-      >
-      <link
-        href="{{ admin_static.url(filename='vendor/select2/select2-bootstrap4.min.css', v='4.2.1') }}"
-        rel="stylesheet" {{ admin_csp_nonce_attribute }}
-      >
-
       {# 5. Scoped overrides：只修 sidebar 區域，避免影響 content 內的 dropdown #}
       <style>
         /* Sidebar link colors */

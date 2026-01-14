@@ -231,7 +231,11 @@ def bootstrap_admins() -> None:
     commit_session()
 
 
+ADMIN_CUSTOM_CSS = ["/static/admin-custom.css"]
+
+
 class SecureAdminIndexView(AdminIndexView):
+    extra_css = ADMIN_CUSTOM_CSS
     def is_accessible(self):
         return user_is_admin(current_user)
 
@@ -242,6 +246,7 @@ class SecureAdminIndexView(AdminIndexView):
 
 
 class SecureModelView(ModelView):
+    extra_css = ADMIN_CUSTOM_CSS
     def is_accessible(self):
         return user_is_admin(current_user)
 
@@ -400,6 +405,7 @@ class UserRoleAdminView(SecureModelView):
 
 
 class ADSearchView(BaseView):
+    extra_css = ADMIN_CUSTOM_CSS
     def is_accessible(self):
         return user_is_admin(current_user)
 

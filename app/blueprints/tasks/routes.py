@@ -274,58 +274,6 @@ def task_detail(task_id):
     )
 
 
-@tasks_bp.post("/tasks/<task_id>/files", endpoint="upload_task_file")
-def upload_task_file(task_id):
-    """Upload additional files to an existing task."""
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    files_dir = os.path.join(tdir, "files")
-    if not os.path.isdir(files_dir):
-        abort(404)
-
-    nas_input = request.form.get("nas_file_path", "").strip()
-    try:
-        source_path = validate_nas_path(
-            nas_input,
-            allowed_roots=current_app.config.get("ALLOWED_SOURCE_ROOTS", []),
-        )
-        enforce_max_copy_size(source_path)
-    except ValueError as e:
-        return str(e), 400
-    except FileNotFoundError as e:
-        return str(e), 404
-
-    try:
-        source_path = ensure_windows_long_path(source_path)
-        if os.path.isdir(source_path):
-            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
-            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
-            shutil.copytree(source_path, dest_path)
-        else:
-            if not allowed_file(source_path):
-                return "僅支援 DOCX、PDF 或 ZIP 檔案，或複製整個資料夾", 400
-            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
-            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
-            if dest_name.lower().endswith(".zip"):
-                shutil.copy2(source_path, dest_path)
-                with zipfile.ZipFile(dest_path, "r") as zf:
-                    zf.extractall(files_dir)
-                os.remove(dest_path)
-            else:
-                shutil.copy2(source_path, dest_path)
-    except PermissionError:
-        return "沒有足夠的權限讀取或複製指定路徑", 400
-    except FileNotFoundError:
-        return "找不到指定的檔案或資料夾", 404
-    except shutil.Error:
-        current_app.logger.exception("複製檔案時發生錯誤")
-        return "複製檔案時發生錯誤，請稍後再試", 400
-    except Exception:
-        current_app.logger.exception("處理 NAS 檔案時發生未預期錯誤")
-        return "處理檔案時發生錯誤，請稍後再試", 400
-
-    return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
-
-
 @tasks_bp.post("/tasks/<task_id>/templates/parse", endpoint="parse_template_doc")
 def parse_template_doc(task_id):
     """Upload or parse an existing template docx and return paragraph metadata."""

@@ -1,0 +1,13 @@
+.table th,
+.table td {
+  vertical-align: middle;
+  text-align: center;
+}
+
+.table th {
+  white-space: nowrap;
+}
+
+.model-list td.col-display_name {
+  white-space: nowrap;
+}

@@ -134,15 +134,25 @@ def list_tasks():
             name = tid
             description = ""
             created = None
+            creator = ""
             if os.path.exists(meta_path):
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
                     name = meta.get("name", tid)
                     description = meta.get("description", "")
                     created = meta.get("created")
+                    creator = meta.get("creator", "") or ""
             if not created:
                 created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
-            task_list.append({"id": tid, "name": name, "description": description, "created": created})
+            task_list.append(
+                {
+                    "id": tid,
+                    "name": name,
+                    "description": description,
+                    "created": created,
+                    "creator": creator,
+                }
+            )
     task_list.sort(key=lambda x: x["created"], reverse=True)
     return task_list
 

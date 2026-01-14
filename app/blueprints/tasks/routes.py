@@ -6,8 +6,10 @@ import shutil
 import uuid
 import zipfile
 from datetime import datetime
+import re
 
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask_login import current_user
 from werkzeug.utils import secure_filename
 
 from app.services.flow_service import (
@@ -185,13 +187,25 @@ def create_task():
         current_app.logger.exception("複製 NAS 目錄失敗")
         shutil.rmtree(tdir, ignore_errors=True)
         return _fail("複製 NAS 目錄時發生錯誤，請稍後再試")
+    creator = ""
+    if current_user and getattr(current_user, "is_authenticated", False):
+        display_name = (getattr(current_user, "display_name", "") or "").strip()
+        chinese_only = "".join(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf\uF900-\uFAFF]+", display_name))
+        username = (current_user.username or "").strip()
+        if chinese_only:
+            creator = f"{username} {chinese_only}" if username else chinese_only
+        else:
+            creator = display_name or username
+    meta_payload = {
+        "name": task_name,
+        "description": task_desc,
+        "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+    if creator:
+        meta_payload["creator"] = creator
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
         json.dump(
-            {
-                "name": task_name,
-                "description": task_desc,
-                "created" : datetime.now().strftime("%Y-%m-%d %H:%M"),
-            },
+            meta_payload,
             meta,
             ensure_ascii=False,
             indent=2,
@@ -261,15 +275,17 @@ def task_detail(task_id):
     meta_path = os.path.join(tdir, "meta.json")
     name = task_id
     description = ""
+    creator = ""
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
             name = meta.get("name", task_id)
             description = meta.get("description", "")
+            creator = meta.get("creator", "") or ""
     tree = build_file_tree(files_dir)
     return render_template(
         "tasks/task_detail.html",
-        task={"id": task_id, "name": name, "description": description},
+        task={"id": task_id, "name": name, "description": description, "creator": creator},
         files_tree=tree,
     )
 

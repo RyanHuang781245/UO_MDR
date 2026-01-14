@@ -49,6 +49,7 @@
     <tr>
       <th class="text-center">名稱</th>
       <th class="text-center">描述</th>
+      <th class="text-center">建立者</th>
       <th class="text-center">建立時間</th>
       <th class="text-center">操作</th>
     </tr>
@@ -58,6 +59,7 @@
     <tr>
       <td><a href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
       <td>{{ t.description }}</td>
+      <td>{{ t.creator or '-' }}</td>
       <td>{{ t.created }}</td>
       <td>
         <button class="btn btn-sm btn-outline-secondary" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'>重新命名</button>
@@ -68,7 +70,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="4">目前沒有任務</td></tr>
+    <tr><td colspan="5">目前沒有任務</td></tr>
   {% endfor %}
   </tbody>
 </table>

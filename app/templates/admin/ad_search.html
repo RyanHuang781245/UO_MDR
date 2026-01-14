@@ -1,0 +1,115 @@
+﻿{% extends "admin/master.html" %}
+
+{% block body %}
+  <style>
+    .table-ad-search th,
+    .table-ad-search td {
+      vertical-align: middle;
+      text-align: center;
+    }
+    .table-ad-search .status-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #fff;
+    }
+    .table-ad-search .status-exists {
+      background: #6c757d;
+    }
+    .table-ad-search .status-new {
+      background: #198754;
+    }
+    .table-ad-search .ad-action-form {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin: 0;
+    }
+    .table-ad-search .ad-action-btn {
+      border-color: transparent;
+      color: #fff;
+    }
+    .table-ad-search .ad-action-btn.add {
+      background: #0d6efd;
+    }
+    .table-ad-search .ad-action-btn.update {
+      background: #0dcaf0;
+    }
+  </style>
+  <div class="container-fluid">
+    <h3>帳號搜尋</h3>
+
+    <form method="get" class="form-horizontal" style="margin-top: 15px;">
+      <div class="form-group">
+        <label for="adQuery" class="control-label">關鍵字</label>
+        <input
+          id="adQuery"
+          name="q"
+          value="{{ query }}"
+          class="form-control"
+          placeholder="工號 / 顯示名稱 / Email"
+        >
+      </div>
+      <div class="form-group">
+        <button class="btn btn-primary">搜尋</button>
+      </div>
+      {% if error %}
+        <div class="text-danger">{{ error }}</div>
+      {% endif %}
+    </form>
+
+    {% if query %}
+      <div class="text-muted" style="margin-top: 10px;">共 {{ results|length }} 筆</div>
+      <div class="table-responsive" style="margin-top: 10px;">
+        <table class="table table-striped table-bordered table-hover table-condensed table-ad-search">
+          <thead>
+            <tr>
+              <th>工號</th>
+              <th>顯示名稱</th>
+              <th>Email</th>
+              <th>狀態</th>
+              <th>權限</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in results %}
+              <tr>
+                <td>{{ item.username }}</td>
+                <td>{{ item.display_name or "-" }}</td>
+                <td>{{ item.email or "-" }}</td>
+                <td>
+                  {% if item.exists %}
+                    <span class="status-badge status-exists">已存在</span>
+                    {% if item.role_name %}
+                      <div class="text-muted small">{{ item.role_name }}</div>
+                    {% endif %}
+                  {% else %}
+                    <span class="status-badge status-new">可新增</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <form method="post" action="{{ url_for('ad_search.index') }}" class="form-inline ad-action-form">
+                    <input type="hidden" name="q" value="{{ query }}">
+                    <input type="hidden" name="username" value="{{ item.username }}">
+                    <input type="hidden" name="display_name" value="{{ item.display_name or '' }}">
+                    <input type="hidden" name="email" value="{{ item.email or '' }}">
+                    <select name="role" class="form-control input-sm" style="max-width: 160px;">
+                      {% for role in roles %}
+                        <option value="{{ role.name }}" {% if item.role_name == role.name %}selected{% endif %}>{{ role.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <button class="btn btn-sm ad-action-btn {{ 'update' if item.exists else 'add' }}">
+                      {{ "更新" if item.exists else "加入" }}
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

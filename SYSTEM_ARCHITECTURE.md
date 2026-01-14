@@ -5,7 +5,7 @@ UO_MDR is a Flask-based document processing workstation that hosts task-specific
 
 ## Runtime topology
 - **Web layer (Flask, `app.py`)**: Handles task lifecycle (create, rename, delete), file management, workflow execution, translation, and document comparison endpoints. Views render HTML templates for task dashboards, workflow editors, and result viewers.
-- **Task storage (`tasks/`)**: Each task directory contains a `files/` subfolder for uploads, optional `meta.json` descriptors, and per-job subfolders that store workflow outputs, comparison HTML, and versioned copies of edited files. The `output/` directory mirrors downloadable artifacts keyed by task ID.
+- **Task storage (`task_store/`)**: Each task directory contains a `files/` subfolder for uploads, optional `meta.json` descriptors, and per-job subfolders that store workflow outputs, comparison HTML, and versioned copies of edited files. The `output/` directory mirrors downloadable artifacts keyed by task ID.
 - **Workflow engine (`modules/workflow.py`)**: Exposes a registry of supported workflow steps and executes them in order, producing a combined Word document plus a structured log for downstream UI display. Steps include PDF/Word extraction, heading insertion, content insertion, file copying, and figure/table renumbering.
 - **Document processing utilities**: Specialized modules provide focused capabilities:
   - `modules/Extract_AllFile_to_FinalWord.py` supplies extraction helpers and formatting utilities used during workflow runs.
@@ -16,8 +16,8 @@ UO_MDR is a Flask-based document processing workstation that hosts task-specific
 - **Presentation layer (`templates/`, `static/`)**: Bootstrap-flavored HTML templates drive task pages, workflow editors, comparison views, and mapping/copy-file utilities. Static assets support styling and client-side interactions.
 
 ## Request flow highlights
-1. **Task creation**: Users upload a ZIP archive; the server extracts it under `tasks/<id>/files/` and records metadata so the task appears on the landing page. Subsequent uploads or renames update the same folder.
-2. **Workflow execution**: Task-specific flow definitions (stored as JSON under `tasks/<id>/flows/`) are run via `/tasks/<task_id>/flows/run`. The engine streams document edits into a single Word file and writes a `log.json` detailing step parameters, statuses, and captured titles. Results are surfaced under `output/<task_id>/` for download and comparison.
+1. **Task creation**: Users upload a ZIP archive; the server extracts it under `task_store/<id>/files/` and records metadata so the task appears on the landing page. Subsequent uploads or renames update the same folder.
+2. **Workflow execution**: Task-specific flow definitions (stored as JSON under `task_store/<id>/flows/`) are run via `/tasks/<task_id>/flows/run`. The engine streams document edits into a single Word file and writes a `log.json` detailing step parameters, statuses, and captured titles. Results are surfaced under `output/<task_id>/` for download and comparison.
 3. **File utilities**: The copy-files route lets users create directories and copy matched files within a task workspace, while the mapping route processes uploaded Excel mappings against task files and emits packaged outputs.
 4. **Translation**: Uploaded or workflow-generated DOCX/PDF/TXT files can be translated through AWS Bedrock models, with chunked requests and retry logic ensuring robustness against transient failures.
 5. **Comparison and versioning**: When workflows generate comparison HTML, users can clean the content, hide captured titles, and save labeled versions. Saved versions live under the task’s job folder with downloadable ZIP bundles for traceability.

@@ -1,7 +1,7 @@
 __pycache__/
 *.pyc
 output/
-tasks/
+task_store/
 word_all_images/
 images/
 test.ipynb

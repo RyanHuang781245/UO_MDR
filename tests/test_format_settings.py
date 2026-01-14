@@ -1,4 +1,4 @@
-from app import (
+from app.services.flow_service import (
     DOCUMENT_FORMAT_PRESETS,
     DEFAULT_DOCUMENT_FORMAT_KEY,
     DEFAULT_LINE_SPACING,

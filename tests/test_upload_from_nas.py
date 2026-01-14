@@ -1,10 +1,11 @@
 import os
 import pytest
 
-from app import app, deduplicate_name, validate_nas_path
+from app.services.nas_service import validate_nas_path
+from app.services.task_service import deduplicate_name
 
 
-def test_validate_nas_path_rules(tmp_path):
+def test_validate_nas_path_rules(tmp_path, app):
     allowed_root = tmp_path / "nas"
     allowed_root.mkdir()
     target_file = allowed_root / "project" / "doc.docx"
@@ -35,12 +36,11 @@ def test_deduplicate_name(tmp_path):
     assert deduplicate_name(str(base), "folder") == "folder (1)"
 
 
-def test_upload_task_file_from_nas(tmp_path):
-    client = app.test_client()
+def test_upload_task_file_from_nas(tmp_path, app, client):
     original_task_folder = app.config["TASK_FOLDER"]
     original_roots = app.config.get("ALLOWED_SOURCE_ROOTS")
 
-    task_dir = tmp_path / "tasks"
+    task_dir = tmp_path / "task_store"
     files_dir = task_dir / "task1" / "files"
     files_dir.mkdir(parents=True)
 

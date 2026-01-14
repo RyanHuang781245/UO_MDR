@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_file_tree.html" import render_file_tree %}
+{% block content %}
+<h1 class="h4 mb-1">{{ task.name }}</h1>
+{% if task.description %}
+<p class="text-muted mb-3">{{ task.description }}</p>
+{% else %}
+<div class="mb-3"></div>
+{% endif %}
+
+<h2 class="h6">檔案結構</h2>
+<div class="text-muted small mb-2">以目錄樹方式瀏覽，點擊資料夾可展開/收合。</div>
+<div class="file-tree-container">
+  {{ render_file_tree(files_tree) }}
+</div>
+
+<div class="d-flex gap-2 mt-2">
+  <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">管理流程</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">複製檔案</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">上傳 Mapping</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.tasks') }}">任務管理</a>
+</div>
+{% endblock %}
+

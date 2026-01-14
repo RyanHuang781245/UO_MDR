@@ -2,11 +2,10 @@ from pathlib import Path
 
 from spire.doc import Document, FileFormat
 
-from app import app
 from modules.workflow import run_workflow
 
 
-def test_compare_view_includes_titles_to_hide(tmp_path: Path) -> None:
+def test_compare_view_includes_titles_to_hide(tmp_path: Path, app) -> None:
     original_testing = app.config.get("TESTING")
     original_task_folder = app.config.get("TASK_FOLDER")
     app.config["TESTING"] = True

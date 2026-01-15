@@ -29,7 +29,7 @@
     </div>
     <div class="col-md-12">
       <label class="form-label">任務描述</label>
-      <textarea class="form-control" name="task_desc" placeholder="輸入任務描述 (選填)"></textarea>
+      <textarea class="form-control" name="task_desc" placeholder="輸入任務描述 (選填，中英文皆可)"></textarea>
     </div>
     <div class="col-12">
     </div>
@@ -44,24 +44,24 @@
 </div>
 
 <h2 class="h5">現有任務</h2>
-<table class="table table-striped text-center">
+<table class="table table-striped task-table">
   <thead>
     <tr>
-      <th class="text-center">名稱</th>
-      <th class="text-center">描述</th>
-      <th class="text-center">建立者</th>
-      <th class="text-center">建立時間</th>
-      <th class="text-center">操作</th>
+      <th class="text-center task-col-name">名稱</th>
+      <th class="text-center task-col-desc">描述</th>
+      <th class="text-center task-col-creator">建立者</th>
+      <th class="text-center task-col-created">建立時間</th>
+      <th class="text-center task-col-actions">操作</th>
     </tr>
   </thead>
   <tbody>
   {% for t in tasks %}
     <tr>
-      <td><a href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
-      <td>{{ t.description }}</td>
-      <td>{{ t.creator or '-' }}</td>
-      <td>{{ t.created }}</td>
-      <td>
+      <td class="text-center task-col-name"><a href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
+      <td class="text-center task-col-desc">{{ t.description }}</td>
+      <td class="text-center task-col-creator">{{ t.creator or '-' }}</td>
+      <td class="text-center task-col-created">{{ t.created }}</td>
+      <td class="text-center task-col-actions">
         <button class="btn btn-sm btn-outline-secondary" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'>重新命名</button>
         <button class="btn btn-sm btn-outline-secondary" type="button" onclick='editTaskDesc("{{ t.id }}", {{ (t.description or "")|tojson }})'>修改描述</button>
         <form action="{{ url_for('tasks_bp.delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
@@ -471,6 +471,22 @@ if(createTaskForm){
   align-items: center;
   min-width: 260px;
   justify-content: center;
+}
+.task-table {
+  table-layout: fixed;
+}
+.task-table th,
+.task-table td {
+  width: 20%;
+  vertical-align: middle;
+}
+.task-table .task-col-name,
+.task-table .task-col-desc {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.task-table .task-col-actions {
+  white-space: normal;
 }
 </style>
 {% endblock %}

@@ -29,8 +29,8 @@ from modules.auth_models import (
     count_admins,
     db,
     ensure_schema,
-    get_user,
     get_user_by_id,
+    get_user_by_work_id,
     get_user_role_names,
     seed_roles,
     sync_user_from_ldap,
@@ -42,15 +42,19 @@ from modules.auth_models import (
 @dataclass(frozen=True)
 class LDAPUserInfo:
     dn: str
-    username: str
+    work_id: str
     data: dict
     memberships: list
+
+    @property
+    def username(self) -> str:
+        return self.work_id
 
 
 def register_ldap_handlers() -> None:
     @ldap_manager.save_user
     def save_ldap_user(dn, username, data, memberships):
-        return LDAPUserInfo(dn=dn, username=username, data=data or {}, memberships=memberships or [])
+        return LDAPUserInfo(dn=dn, work_id=username, data=data or {}, memberships=memberships or [])
 
 
     @login_manager.user_loader
@@ -148,12 +152,12 @@ def search_ad_users(keyword: str) -> list[dict]:
         results = []
         for entry in conn.entries:
             data = entry.entry_attributes_as_dict
-            username = _normalize_ldap_value(data.get(login_attr))
-            if not username:
+            work_id = _normalize_ldap_value(data.get(login_attr))
+            if not work_id:
                 continue
             results.append(
                 {
-                    "username": username,
+                    "work_id": work_id,
                     "display_name": _normalize_ldap_value(data.get("displayName")),
                     "email": _normalize_ldap_value(data.get("mail")),
                     "dn": entry.entry_dn,
@@ -173,7 +177,7 @@ def build_ldap_profile(ldap_user: LDAPUserInfo) -> LDAPProfile:
         or data.get("givenName")
     )
     email = _normalize_ldap_value(data.get("mail"))
-    return LDAPProfile(username=ldap_user.username, display_name=display_name, email=email)
+    return LDAPProfile(work_id=ldap_user.work_id, display_name=display_name, email=email)
 
 
 def is_allowed_group_member(user_dn: str) -> bool:
@@ -210,8 +214,8 @@ def is_allowed_group_member(user_dn: str) -> bool:
 
 def bootstrap_admins() -> None:
     raw = os.environ.get("BOOTSTRAP_ADMIN", "")
-    usernames = [entry.strip() for entry in raw.split(",") if entry.strip()]
-    if not usernames:
+    work_ids = [entry.strip() for entry in raw.split(",") if entry.strip()]
+    if not work_ids:
         return
 
     admin_role = Role.query.filter_by(name=ROLE_ADMIN).first()
@@ -220,10 +224,10 @@ def bootstrap_admins() -> None:
         db.session.add(admin_role)
         db.session.flush()
 
-    for username in usernames:
-        user = User.query.filter_by(username=username).first()
+    for work_id in work_ids:
+        user = User.query.filter_by(work_id=work_id).first()
         if not user:
-            user = User(username=username, active=True)
+            user = User(work_id=work_id, active=True)
             db.session.add(user)
             db.session.flush()
         upsert_user_role(user, admin_role)
@@ -262,7 +266,7 @@ class UserAdminView(SecureModelView):
     can_edit = True
     column_list = (
         # "id",
-        "username",
+        "work_id",
         "display_name",
         "email",
         "active",
@@ -272,7 +276,7 @@ class UserAdminView(SecureModelView):
     )
     column_labels = {
         # "id": "編號",
-        "username": "工號",
+        "work_id": "工號",
         "display_name": "顯示名稱",
         "email": "Email",
         "active": "狀態",
@@ -421,14 +425,14 @@ class ADSearchView(BaseView):
         roles = Role.query.order_by(Role.name).all()
 
         if request.method == "POST":
-            username = (request.form.get("username") or "").strip()
+            work_id = (request.form.get("work_id") or "").strip()
             display_name = (request.form.get("display_name") or "").strip()
             email = (request.form.get("email") or "").strip()
             role_name = (request.form.get("role") or "").strip()
             query = (request.form.get("q") or "").strip()
 
-            if not username:
-                flash("缺少帳號", "danger")
+            if not work_id:
+                flash("缺少工號", "danger")
                 return redirect(url_for("ad_search.index", q=query))
 
             role = Role.query.filter_by(name=role_name).first()
@@ -437,7 +441,7 @@ class ADSearchView(BaseView):
                 return redirect(url_for("ad_search.index", q=query))
 
             profile = LDAPProfile(
-                username=username,
+                work_id=work_id,
                 display_name=display_name or None,
                 email=email or None,
             )
@@ -461,7 +465,7 @@ class ADSearchView(BaseView):
                 error = str(exc)
 
         for item in results:
-            existing = get_user(item["username"])
+            existing = get_user_by_work_id(item["work_id"])
             item["exists"] = bool(existing)
             item["role_name"] = existing.role_name if existing else None
 

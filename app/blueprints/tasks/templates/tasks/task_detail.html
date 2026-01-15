@@ -3,13 +3,25 @@
 {% block content %}
 <h1 class="h4 mb-1">{{ task.name }}</h1>
 {% if task.creator %}
-<p class="text-muted mb-1">建立者：{{ task.creator }}</p>
+<p class="text-muted mb-1">建立人員：{{ task.creator }}</p>
 {% endif %}
 {% if task.description %}
-<p class="text-muted mb-3">{{ task.description }}</p>
+<p class="text-muted mb-3">任務描述：{{ task.description }}</p>
 {% else %}
 <div class="mb-3"></div>
 {% endif %}
+
+<form action="{{ url_for('tasks_bp.upload_task_file', task_id=task.id) }}" method="post" class="card card-body mb-4">
+  <div class="row g-3">
+    <div class="col-md-9">
+      <input class="form-control" type="text" name="nas_file_path" placeholder="輸入 NAS 路徑，例如：project/files/report.docx" required>
+      <div class="form-text">僅允許位於指定根目錄內的檔案或資料夾，路徑不可包含相對跳脫字元。</div>
+    </div>
+    <div class="col-md-3 d-grid">
+      <button class="btn btn-primary" type="submit">從 NAS 匯入</button>
+    </div>
+  </div>
+</form>
 
 <h2 class="h6">檔案結構</h2>
 <div class="text-muted small mb-2">以目錄樹方式瀏覽，點擊資料夾可展開/收合。</div>

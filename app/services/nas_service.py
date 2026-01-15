@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Optional
 
 from flask import current_app
@@ -67,11 +68,32 @@ def validate_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None):
             return candidate
     raise FileNotFoundError("找不到指定的路徑，或不在允許的根目錄內，請重新檢查輸入的路徑是否符合格式")
 
+def _get_env_platform() -> tuple[str, str]:
+    env = current_app.config.get("APP_ENV") or "development"
+    platform = "windows" if os.name == "nt" else "linux"
+    return env, platform
+
+
+def _guess_platform(path: str) -> Optional[str]:
+    if not path:
+        return None
+    if path.startswith("\\") or re.match(r"^[A-Za-z]:\\", path):
+        return "windows"
+    if path.startswith("/"):
+        return "linux"
+    return None
+
+
 def get_configured_nas_roots() -> list[str]:
     try:
+        env, platform = _get_env_platform()
         roots = (
             db.session.query(NasRoot.path)
-            .filter(or_(NasRoot.active == True, NasRoot.active.is_(None)))
+            .filter(
+                NasRoot.env == env,
+                NasRoot.platform == platform,
+                or_(NasRoot.active == True, NasRoot.active.is_(None)),  # noqa: E712
+            )
             .order_by(NasRoot.id.asc())
             .all()
         )
@@ -116,11 +138,12 @@ def add_nas_root(raw_path: str):
     abs_path = os.path.abspath(raw_path.strip())
     if not os.path.isdir(abs_path):
         raise FileNotFoundError("NAS 根目錄不存在或不是資料夾")
-    existing = NasRoot.query.filter_by(path=abs_path).first()
+    env, platform = _get_env_platform()
+    existing = NasRoot.query.filter_by(path=abs_path, env=env, platform=platform).first()
     if existing:
         return False
     try:
-        db.session.add(NasRoot(path=abs_path, active=True))
+        db.session.add(NasRoot(path=abs_path, env=env, platform=platform, active=True))
         db.session.commit()
         for key in ("ALLOWED_NAS_ROOTS", "NAS_ALLOWED_ROOTS"):
             current_app.config.setdefault(key, [])
@@ -134,7 +157,8 @@ def add_nas_root(raw_path: str):
 def remove_nas_root(abs_path: str):
     if not abs_path:
         raise ValueError("???????")
-    existing = NasRoot.query.filter_by(path=abs_path).first()
+    env, platform = _get_env_platform()
+    existing = NasRoot.query.filter_by(path=abs_path, env=env, platform=platform).first()
     if not existing:
         return False
     try:
@@ -160,7 +184,9 @@ def resolve_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None, ro
 
 
 def init_nas_config(app) -> None:
-    nas_roots_env = os.environ.get("ALLOWED_NAS_ROOTS", "")
+    platform = "windows" if os.name == "nt" else "linux"
+    platform_key = f"ALLOWED_NAS_ROOTS_{platform.upper()}"
+    nas_roots_env = os.environ.get(platform_key) or os.environ.get("ALLOWED_NAS_ROOTS", "")
     nas_allowed_roots = [
         os.path.abspath(p)
         for p in nas_roots_env.split(os.pathsep)
@@ -183,10 +209,27 @@ def init_nas_config(app) -> None:
     with app.app_context():
         try:
             ensure_nas_schema()
-            if nas_allowed_roots and not NasRoot.query.first():
+            env, platform = _get_env_platform()
+            changed = False
+
+            for root in NasRoot.query.all():
+                guess = _guess_platform(root.path)
+                if guess and root.platform != guess:
+                    root.platform = guess
+                    changed = True
+
+            for root in NasRoot.query.filter(or_(NasRoot.env.is_(None), NasRoot.env == "")).all():
+                root.env = env
+                changed = True
+
+            if changed:
+                db.session.commit()
+
+            existing = NasRoot.query.filter_by(env=env, platform=platform).first()
+            if nas_allowed_roots and not existing:
                 for root in nas_allowed_roots:
                     if os.path.isdir(root):
-                        db.session.add(NasRoot(path=root, active=True))
+                        db.session.add(NasRoot(path=root, env=env, platform=platform, active=True))
                 db.session.commit()
         except Exception:
             db.session.rollback()

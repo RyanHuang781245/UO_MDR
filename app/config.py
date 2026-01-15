@@ -22,6 +22,7 @@ class BaseConfig:
     OUTPUT_FOLDER = str(BASE_DIR / "output")
     TASK_FOLDER = str(BASE_DIR / "task_store")
     ALLOWED_SOURCE_ROOTS = []
+    APP_ENV = os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or "development"
 
     AUTH_ENABLED = parse_bool(os.environ.get("AUTH_ENABLED"), True)
     SESSION_COOKIE_HTTPONLY = True

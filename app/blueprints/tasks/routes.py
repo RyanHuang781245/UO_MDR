@@ -195,10 +195,25 @@ def create_task():
             creator = f"{work_id} {chinese_only}" if work_id else chinese_only
         else:
             creator = display_name or work_id
+    display_nas_path = resolved_path
+    if nas_root_index:
+        try:
+            roots = get_configured_nas_roots()
+            idx = int(nas_root_index)
+            if 0 <= idx < len(roots) and not os.path.isabs(nas_path):
+                root = roots[idx]
+                sep = "\\" if "\\" in root else "/"
+                root_clean = re.sub(r"[\\/]+$", "", root)
+                rel = re.sub(r"^[./\\\\]+", "", nas_path).replace("/", sep)
+                display_nas_path = f"{root_clean}{sep}{rel}" if rel else root_clean
+        except (ValueError, TypeError):
+            pass
+
     meta_payload = {
         "name": task_name,
         "description": task_desc,
         "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "nas_path": display_nas_path,
     }
     if creator:
         meta_payload["creator"] = creator
@@ -209,7 +224,7 @@ def create_task():
             ensure_ascii=False,
             indent=2,
         )
-    return redirect(url_for("tasks_bp.task_detail", task_id=tid))
+    return redirect(url_for("tasks_bp.tasks"))
 
 
 @tasks_bp.post("/tasks/<task_id>/delete", endpoint="delete_task")
@@ -333,10 +348,11 @@ def task_detail(task_id):
             name = meta.get("name", task_id)
             description = meta.get("description", "")
             creator = meta.get("creator", "") or ""
+            nas_path = meta.get("nas_path", "") or ""
     tree = build_file_tree(files_dir)
     return render_template(
         "tasks/task_detail.html",
-        task={"id": task_id, "name": name, "description": description, "creator": creator},
+        task={"id": task_id, "name": name, "description": description, "creator": creator, "nas_path": nas_path},
         files_tree=tree,
     )
 

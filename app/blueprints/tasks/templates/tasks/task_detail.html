@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 {% from "_file_tree.html" import render_file_tree %}
 {% block content %}
-<h1 class="h4 mb-1">{{ task.name }}</h1>
+<h1 class="h4 mb-1 fw-bold">{{ task.name }}</h1>
 {% if task.creator %}
 <p class="text-muted mb-1">建立人員：{{ task.creator }}</p>
+{% endif %}
+{% if task.nas_path %}
+<p class="text-muted mb-1">NAS路徑：{{ task.nas_path }}</p>
 {% endif %}
 {% if task.description %}
 <p class="text-muted mb-3">任務描述：{{ task.description }}</p>
@@ -23,7 +26,7 @@
   </div>
 </form>
 
-<h2 class="h6">檔案結構</h2>
+<h2 class="h6 fw-bold">檔案結構</h2>
 <div class="text-muted small mb-2">以目錄樹方式瀏覽，點擊資料夾可展開/收合。</div>
 <div class="file-tree-container">
   {{ render_file_tree(files_tree) }}

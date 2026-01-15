@@ -4,8 +4,11 @@ import os
 from typing import Optional
 
 from flask import current_app
+from sqlalchemy import or_
 
 from app.utils import parse_bool
+from modules.auth_models import db
+from modules.nas_models import NasRoot, ensure_schema as ensure_nas_schema
 
 def load_allowed_roots_from_env():
     roots = []
@@ -20,12 +23,11 @@ def load_allowed_roots_from_env():
     return roots
 
 def ensure_allowed_roots_loaded():
-    if not current_app.config.get("ALLOWED_SOURCE_ROOTS"):
-        loaded_roots = load_allowed_roots_from_env()
-        if loaded_roots:
-            current_app.config["ALLOWED_SOURCE_ROOTS"] = loaded_roots
-        elif current_app.config.get("NAS_ALLOWED_ROOTS"):
-            current_app.config["ALLOWED_SOURCE_ROOTS"] = list(current_app.config["NAS_ALLOWED_ROOTS"])
+    if current_app.config.get("ALLOWED_SOURCE_ROOTS"):
+        return
+    roots = get_configured_nas_roots()
+    if roots:
+        current_app.config["ALLOWED_SOURCE_ROOTS"] = list(roots)
 
 def normalize_relative_path(raw_path: str, allow_recursive: bool) -> str:
     if not raw_path or not raw_path.strip():
@@ -50,12 +52,7 @@ def validate_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None):
         else allow_recursive
     )
     norm_rel = normalize_relative_path(raw_path, allow_recursive)
-    ensure_allowed_roots_loaded()
-    allowed_roots = (
-        allowed_roots
-        or current_app.config.get("NAS_ALLOWED_ROOTS")
-        or current_app.config.get("ALLOWED_SOURCE_ROOTS", [])
-    )
+    allowed_roots = allowed_roots or get_configured_nas_roots()
     if not allowed_roots:
         raise ValueError("尚未設定允許的根目錄，請聯絡系統管理員")
     for root in allowed_roots:
@@ -71,9 +68,21 @@ def validate_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None):
     raise FileNotFoundError("找不到指定的路徑，或不在允許的根目錄內，請重新檢查輸入的路徑是否符合格式")
 
 def get_configured_nas_roots() -> list[str]:
-    ensure_allowed_roots_loaded()
-    roots = current_app.config.get("NAS_ALLOWED_ROOTS") or current_app.config.get("ALLOWED_SOURCE_ROOTS", [])
-    return list(roots) if roots else []
+    try:
+        roots = (
+            db.session.query(NasRoot.path)
+            .filter(or_(NasRoot.active == True, NasRoot.active.is_(None)))
+            .order_by(NasRoot.id.asc())
+            .all()
+        )
+        db_roots = [path for (path,) in roots]
+        if db_roots:
+            return db_roots
+        roots = current_app.config.get("NAS_ALLOWED_ROOTS") or current_app.config.get("ALLOWED_SOURCE_ROOTS", [])
+        return list(roots) if roots else []
+    except Exception:
+        roots = current_app.config.get("NAS_ALLOWED_ROOTS") or current_app.config.get("ALLOWED_SOURCE_ROOTS", [])
+        return list(roots) if roots else []
 
 def resolve_nas_path_in_root(raw_path: str, root_index: int, allow_recursive=None) -> str:
     allow_recursive = (
@@ -101,29 +110,44 @@ def resolve_nas_path_in_root(raw_path: str, root_index: int, allow_recursive=Non
     raise FileNotFoundError("Path does not exist in the selected NAS root")
 
 def add_nas_root(raw_path: str):
-    """Add a NAS root to the in-memory configuration."""
+    """Add a NAS root to the database."""
     if not raw_path or not raw_path.strip():
         raise ValueError("請輸入 NAS 根目錄")
     abs_path = os.path.abspath(raw_path.strip())
     if not os.path.isdir(abs_path):
         raise FileNotFoundError("NAS 根目錄不存在或不是資料夾")
-    existing = set(current_app.config.get("ALLOWED_NAS_ROOTS", []))
-    if abs_path in existing:
+    existing = NasRoot.query.filter_by(path=abs_path).first()
+    if existing:
         return False
-    current_app.config.setdefault("ALLOWED_NAS_ROOTS", []).append(abs_path)
-    current_app.config.setdefault("NAS_ALLOWED_ROOTS", []).append(abs_path)
-    return True
+    try:
+        db.session.add(NasRoot(path=abs_path, active=True))
+        db.session.commit()
+        for key in ("ALLOWED_NAS_ROOTS", "NAS_ALLOWED_ROOTS"):
+            current_app.config.setdefault(key, [])
+            if abs_path not in current_app.config[key]:
+                current_app.config[key].append(abs_path)
+        return True
+    except Exception:
+        db.session.rollback()
+        raise
 
 def remove_nas_root(abs_path: str):
     if not abs_path:
-        raise ValueError("缺少根目錄路徑")
-    removed = False
-    for key in ["ALLOWED_NAS_ROOTS", "NAS_ALLOWED_ROOTS"]:
-        roots = current_app.config.get(key, [])
-        if abs_path in roots:
-            current_app.config[key] = [r for r in roots if r != abs_path]
-            removed = True
-    return removed
+        raise ValueError("???????")
+    existing = NasRoot.query.filter_by(path=abs_path).first()
+    if not existing:
+        return False
+    try:
+        db.session.delete(existing)
+        db.session.commit()
+        for key in ("ALLOWED_NAS_ROOTS", "NAS_ALLOWED_ROOTS"):
+            roots = current_app.config.get(key, [])
+            if abs_path in roots:
+                current_app.config[key] = [r for r in roots if r != abs_path]
+        return True
+    except Exception:
+        db.session.rollback()
+        raise
 
 def resolve_nas_path(raw_path: str, allowed_roots=None, allow_recursive=None, root_index=None) -> str:
     if root_index is None or str(root_index).strip() == "":
@@ -155,6 +179,18 @@ def init_nas_config(app) -> None:
         )
     except ValueError:
         app.config["NAS_MAX_COPY_FILE_SIZE"] = 500 * 1024 * 1024
+
+    with app.app_context():
+        try:
+            ensure_nas_schema()
+            if nas_allowed_roots and not NasRoot.query.first():
+                for root in nas_allowed_roots:
+                    if os.path.isdir(root):
+                        db.session.add(NasRoot(path=root, active=True))
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Failed to initialize NAS roots")
 
 
 def list_nas_dirs(root_index: Optional[int], rel_path_raw: str) -> tuple[dict, int]:

@@ -106,42 +106,42 @@
       </div>
       <div class="modal-body">
         {% if not allowed_nas_roots %}
-          <div class="alert alert-warning mb-0">
-            尚未設定 NAS 根目錄（請在後端設定 `ALLOWED_NAS_ROOTS`）。
+          <div class="alert alert-warning mb-2">
+            NAS roots are not configured yet.
           </div>
-        {% else %}
-                    <div class="row g-3 align-items-end mb-2">
-            <div class="col-12">
-              <label class="form-label mb-1">選擇 NAS 根目錄</label>
-              <select class="form-select" id="nasRootSelect">
+        {% endif %}
+        <div class="row g-3 align-items-end mb-2">
+          <div class="col-12">
+            <label class="form-label mb-1">Select NAS root</label>
+            <select class="form-select" id="nasRootSelect" {% if not allowed_nas_roots %}disabled{% endif %}>
+              {% for r in allowed_nas_roots %}
+                <option value="{{ loop.index0 }}">{{ r }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% if has_permission(PERM_USER_MANAGE) %}
+          <div class="col-12">
+            <label class="form-label mb-1">Add NAS root</label>
+            <div class="input-group">
+              <input class="form-control" type="text" id="nasRootAddInput" placeholder="\nas\share or D:\Data">
+              <button class="btn btn-outline-primary" type="button" id="nasRootAddBtn">Add</button>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label mb-1">Remove NAS root</label>
+            <div class="input-group">
+              <select class="form-select" id="nasRootRemoveSelect" {% if not allowed_nas_roots %}disabled{% endif %}>
+                <option value="">Select a root to remove</option>
                 {% for r in allowed_nas_roots %}
-                  <option value="{{ loop.index0 }}">{{ r }}</option>
+                  <option value="{{ r }}">{{ r }}</option>
                 {% endfor %}
               </select>
+              <button class="btn btn-outline-danger" type="button" id="nasRootRemoveBtn">Remove</button>
             </div>
-            {% if has_permission(PERM_USER_MANAGE) %}
-            <div class="col-12">
-              <label class="form-label mb-1">新增 NAS 根目錄</label>
-              <div class="input-group">
-                <input class="form-control" type="text" id="nasRootAddInput" placeholder="\nas\share 或 D:\Data">
-                <button class="btn btn-outline-primary" type="button" id="nasRootAddBtn">新增</button>
-              </div>
-            </div>
-            <div class="col-12">
-              <label class="form-label mb-1">移除 NAS 根目錄</label>
-              <div class="input-group">
-                <select class="form-select" id="nasRootRemoveSelect">
-                  <option value="">選擇要移除的根目錄</option>
-                  {% for r in allowed_nas_roots %}
-                    <option value="{{ r }}">{{ r }}</option>
-                  {% endfor %}
-                </select>
-                <button class="btn btn-outline-danger" type="button" id="nasRootRemoveBtn">移除</button>
-              </div>
-            </div>
-            {% endif %}
           </div>
-          <div class="border rounded p-2">
+          {% endif %}
+        </div>
+        <div class="border rounded p-2">
             <div class="d-flex align-items-center gap-2 mb-2">
               <button class="btn btn-sm btn-outline-secondary" type="button" id="nasGoUpBtn">上一層</button>
               <div class="small text-muted">
@@ -162,7 +162,6 @@
               <button class="btn btn-primary" type="button" id="nasApplyBtn" data-bs-dismiss="modal">套用</button>
             </div>
           </div>
-        {% endif %}
       </div>
     </div>
   </div>
@@ -219,37 +218,54 @@ const nasAddUrl = "{{ url_for('nas_bp.add_nas_root_route') }}";
 const nasRemoveUrl = "{{ url_for('nas_bp.remove_nas_root_route') }}";
 const nasRootInputs = [nasRootSelect, nasRootRemoveSelect];
 
-function hasOption(sel, value){
-  if(!sel) return false;
-  return Array.from(sel.options || []).some(o => o.value === value);
+function refreshRootSelects(){
+  if(nasRootSelect){
+    const current = nasRootSelect.value;
+    nasRootSelect.innerHTML = '';
+    allowedNasRoots.forEach((root, idx) => {
+      const opt = document.createElement('option');
+      opt.value = String(idx);
+      opt.textContent = root;
+      nasRootSelect.appendChild(opt);
+    });
+    if(allowedNasRoots.length){
+      const keep = parseInt(current || '0', 10);
+      nasRootSelect.value = Number.isNaN(keep) ? '0' : String(Math.min(keep, allowedNasRoots.length - 1));
+      nasRootSelect.disabled = false;
+    } else {
+      nasRootSelect.disabled = true;
+    }
+  }
+
+  if(nasRootRemoveSelect){
+    nasRootRemoveSelect.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Select a root to remove';
+    nasRootRemoveSelect.appendChild(placeholder);
+    allowedNasRoots.forEach(root => {
+      const opt = document.createElement('option');
+      opt.value = root;
+      opt.textContent = root;
+      nasRootRemoveSelect.appendChild(opt);
+    });
+    nasRootRemoveSelect.disabled = !allowedNasRoots.length;
+  }
 }
 
 function addOptionOnce(value){
-  nasRootInputs.forEach(sel => {
-    if(!sel) return;
-    // remove duplicates first
-    const matches = Array.from(sel.options || []).filter(o => o.value === value);
-    if(matches.length > 1){
-      matches.slice(1).forEach(o => o.remove());
-    }
-    if(!hasOption(sel, value)){
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = value;
-      sel.appendChild(opt);
-    }
-  });
+  if(!allowedNasRoots.includes(value)){
+    allowedNasRoots.push(value);
+  }
+  refreshRootSelects();
 }
 
 function removeOptionValue(value){
-  nasRootInputs.forEach(sel => {
-    if(!sel) return;
-    Array.from(sel.options || []).forEach(o => {
-      if(o.value === value){
-        o.remove();
-      }
-    });
-  });
+  const idx = allowedNasRoots.indexOf(value);
+  if(idx >= 0){
+    allowedNasRoots.splice(idx, 1);
+  }
+  refreshRootSelects();
 }
 
 const nasState = {
@@ -382,7 +398,7 @@ async function addNasRoot(){
       const text = await resp.text();
       throw new Error(text || '新增失敗');
     }
-    alert('新增成功，請重新開啟此視窗以刷新根目錄列表。');
+    alert('新增成功。');
     addOptionOnce(raw);
   } catch(err){
     alert(err?.message || '新增失敗');
@@ -411,7 +427,7 @@ async function removeNasRoot(){
       const text = await resp.text();
       throw new Error(text || '移除失敗');
     }
-    alert('移除成功，請重新開啟此視窗以刷新根目錄列表。');
+    alert('移除成功。');
     removeOptionValue(val);
   } catch(err){
     alert(err?.message || '移除失敗');

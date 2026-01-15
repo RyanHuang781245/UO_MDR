@@ -41,7 +41,7 @@ from app.services.task_service import (
     task_name_exists,
 )
 
-from app.services.nas_service import resolve_nas_path, validate_nas_path
+from app.services.nas_service import get_configured_nas_roots, resolve_nas_path, validate_nas_path
 from modules.file_copier import copy_files
 
 tasks_bp = Blueprint("tasks_bp", __name__, template_folder="templates")
@@ -133,7 +133,7 @@ def tasks():
     return render_template(
         "tasks/tasks.html",
         tasks=task_list,
-        allowed_nas_roots=current_app.config.get("ALLOWED_NAS_ROOTS", []),
+        allowed_nas_roots=get_configured_nas_roots(),
     )
 
 
@@ -148,7 +148,6 @@ def create_task():
         nas_root_index = request.form.get("nas_root_index", "").strip()
         resolved_path = resolve_nas_path(
             nas_path,
-            allowed_roots=current_app.config.get("NAS_ALLOWED_ROOTS"),
             allow_recursive=current_app.config.get("NAS_ALLOW_RECURSIVE", True),
             root_index=nas_root_index or None,
         )

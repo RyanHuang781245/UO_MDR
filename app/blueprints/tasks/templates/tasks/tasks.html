@@ -50,7 +50,7 @@
     <tr>
       <th class="text-center task-col-name">名稱</th>
       <th class="text-center task-col-desc">描述</th>
-      <th class="text-center task-col-creator">建立者</th>
+      <th class="text-center task-col-creator">建立人員</th>
       <th class="text-center task-col-created">建立時間</th>
       <th class="text-center task-col-actions">操作</th>
     </tr>
@@ -83,7 +83,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="5">目前沒有任務</td></tr>
+    <tr><td colspan="5" class="text-center">目前沒有任務</td></tr>
   {% endfor %}
   </tbody>
 </table>
@@ -110,7 +110,7 @@
             尚未設定 NAS 根目錄（請在後端設定 `ALLOWED_NAS_ROOTS`）。
           </div>
         {% else %}
-          <div class="row g-3 align-items-end mb-2">
+                    <div class="row g-3 align-items-end mb-2">
             <div class="col-12">
               <label class="form-label mb-1">選擇 NAS 根目錄</label>
               <select class="form-select" id="nasRootSelect">
@@ -119,10 +119,11 @@
                 {% endfor %}
               </select>
             </div>
+            {% if has_permission(PERM_USER_MANAGE) %}
             <div class="col-12">
               <label class="form-label mb-1">新增 NAS 根目錄</label>
               <div class="input-group">
-                <input class="form-control" type="text" id="nasRootAddInput" placeholder="\\nas\\share 或 D:\\Data">
+                <input class="form-control" type="text" id="nasRootAddInput" placeholder="\nas\share 或 D:\Data">
                 <button class="btn btn-outline-primary" type="button" id="nasRootAddBtn">新增</button>
               </div>
             </div>
@@ -138,8 +139,8 @@
                 <button class="btn btn-outline-danger" type="button" id="nasRootRemoveBtn">移除</button>
               </div>
             </div>
+            {% endif %}
           </div>
-
           <div class="border rounded p-2">
             <div class="d-flex align-items-center gap-2 mb-2">
               <button class="btn btn-sm btn-outline-secondary" type="button" id="nasGoUpBtn">上一層</button>

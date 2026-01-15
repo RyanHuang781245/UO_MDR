@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, request, url_for
+from flask_login import current_user
 
 from app.services import nas_service
+from app.services.auth_service import user_is_admin
 
 nas_bp = Blueprint("nas_bp", __name__, template_folder="templates")
 
@@ -19,6 +21,8 @@ def api_nas_list_dirs():
 
 @nas_bp.post("/nas/add-root", endpoint="add_nas_root_route")
 def add_nas_root_route():
+    if not user_is_admin(current_user):
+        return "Permission denied.", 403
     path = request.form.get("nas_root", "").strip()
     if not path:
         flash("請輸入 NAS 根目錄", "danger")
@@ -41,6 +45,8 @@ def add_nas_root_route():
 
 @nas_bp.post("/nas/remove-root", endpoint="remove_nas_root_route")
 def remove_nas_root_route():
+    if not user_is_admin(current_user):
+        return "Permission denied.", 403
     path = request.form.get("nas_root_remove", "").strip()
     if not path:
         flash("請選擇要移除的 NAS 根目錄", "danger")

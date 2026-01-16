@@ -14,14 +14,17 @@ from modules.task_models import TaskRecord, ensure_schema as ensure_task_schema
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
+ALLOWED_EXCEL = {".xlsx", ".xls"}
 
-def allowed_file(filename, kinds=("docx", "pdf", "zip")):
+def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel")):
     ext = os.path.splitext(filename)[1].lower()
     if "docx" in kinds and ext in ALLOWED_DOCX:
         return True
     if "pdf" in kinds and ext in ALLOWED_PDF:
         return True
     if "zip" in kinds and ext in ALLOWED_ZIP:
+        return True
+    if "excel" in kinds and ext in ALLOWED_EXCEL:
         return True
     return False
 

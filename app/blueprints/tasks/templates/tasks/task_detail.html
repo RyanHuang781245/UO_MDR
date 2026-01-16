@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% from "_file_tree.html" import render_file_tree %}
 {% block content %}
 <div class="card mb-3">
@@ -12,6 +12,7 @@
         <p class="text-muted mb-0">-</p>
         {% endif %}
       </div>
+      <div class="text-muted small text-md-end">任務 ID：{{ task.id }}</div>
     </div>
     <hr class="my-3">
     <div class="row g-3 small">
@@ -31,15 +32,15 @@
   </div>
 </div>
 
-<form action="{{ url_for('tasks_bp.upload_task_file', task_id=task.id) }}" method="post" class="card card-body mb-4">
-  <div class="fw-semibold mb-2">NAS 上傳檔案</div>
+<form action="{{ url_for('tasks_bp.upload_task_file', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="card card-body mb-4">
+  <div class="fw-semibold mb-2">本機上傳檔案</div>
   <div class="row g-3">
     <div class="col-md-9">
-      <input class="form-control" type="text" name="nas_file_path" placeholder="輸入 NAS 路徑，例如：project/files/report.docx" required>
-      <div class="form-text">僅允許位於指定根目錄內的檔案或資料夾，路徑不可包含相對跳脫字元。</div>
+      <input class="form-control" type="file" name="upload_files" multiple required>
+      <div class="form-text">支援 DOCX / PDF / Excel / ZIP，ZIP 會自動解壓縮。</div>
     </div>
     <div class="col-md-3 d-grid">
-      <button class="btn btn-primary" type="submit">從 NAS 匯入</button>
+      <button class="btn btn-primary" type="submit">上傳</button>
     </div>
   </div>
 </form>
@@ -47,12 +48,12 @@
 <div class="card">
   <div class="card-body">
     <div class="fw-semibold mb-1">檔案結構</div>
-    <div class="text-muted small mb-2">以目錄樹方式瀏覽，點擊資料夾可展開/收合。點擊流程管理進入文件處理流程操作頁面</div>
+    <div class="text-muted small mb-2">以目錄樹檢視，點擊資料夾可展開內容。</div>
     <div class="file-tree-container">
       {{ render_file_tree(files_tree) }}
     </div>
     <div class="d-flex flex-wrap gap-2 mt-3">
-      <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">流程管理</a>
+      <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">管理流程</a>
       <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">複製檔案</a>
       <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">上傳 Mapping</a>
       <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.tasks') }}">返回任務管理</a>

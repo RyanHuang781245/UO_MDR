@@ -256,7 +256,57 @@ def upload_task_file(task_id):
     if not os.path.isdir(files_dir):
         abort(404)
 
+    uploads = request.files.getlist("upload_files")
+    has_uploads = any(f and f.filename for f in uploads)
+    if has_uploads:
+        records = []
+        for upload in uploads:
+            if not upload or not upload.filename:
+                continue
+            safe_name = secure_filename(upload.filename)
+            if not safe_name:
+                return "檔名不合法", 400
+            if not allowed_file(safe_name):
+                return "僅支援 DOCX、PDF、ZIP 或 Excel 檔案", 400
+            dest_name = deduplicate_name(files_dir, safe_name)
+            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
+            try:
+                if dest_name.lower().endswith(".zip"):
+                    upload.save(dest_path)
+                    with zipfile.ZipFile(dest_path, "r") as zf:
+                        zf.extractall(files_dir)
+                        for info in zf.infolist():
+                            if info.is_dir():
+                                continue
+                            records.append(
+                                {
+                                    "filename": info.filename.replace("\\", "/"),
+                                    "original_name": info.filename,
+                                    "source": "upload_zip",
+                                    "size_bytes": info.file_size,
+                                    "is_dir": False,
+                                }
+                            )
+                    os.remove(dest_path)
+                else:
+                    upload.save(dest_path)
+                    records.append(
+                        {
+                            "filename": dest_name,
+                            "original_name": upload.filename,
+                            "source": "upload",
+                            "size_bytes": os.path.getsize(dest_path),
+                            "is_dir": False,
+                        }
+                    )
+            except Exception:
+                current_app.logger.exception("本機檔案上傳失敗")
+                return "上傳失敗，請稍後再試", 400
+        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
     nas_input = request.form.get("nas_file_path", "").strip()
+    if not nas_input:
+        return "請選擇要上傳的檔案", 400
     try:
         source_path = validate_nas_path(
             nas_input,
@@ -276,7 +326,7 @@ def upload_task_file(task_id):
             shutil.copytree(source_path, dest_path)
         else:
             if not allowed_file(source_path):
-                return "僅支援 DOCX、PDF 或 ZIP 檔案，或複製整個資料夾", 400
+                return "僅支援 DOCX、PDF、ZIP 或 Excel 檔案，或複製整個資料夾", 400
             dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
             dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
             if dest_name.lower().endswith(".zip"):

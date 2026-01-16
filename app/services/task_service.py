@@ -8,6 +8,9 @@ from datetime import datetime
 
 from flask import current_app
 
+from modules.auth_models import commit_session, db
+from modules.task_models import TaskRecord, ensure_schema as ensure_task_schema
+
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
@@ -155,4 +158,53 @@ def list_tasks():
             )
     task_list.sort(key=lambda x: x["created"], reverse=True)
     return task_list
+
+
+def init_task_store(app) -> None:
+    with app.app_context():
+        try:
+            ensure_task_schema()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Task schema initialization failed")
+
+
+def record_task_in_db(
+    task_id: str,
+    name: str | None = None,
+    description: str | None = None,
+    creator: str | None = None,
+    nas_path: str | None = None,
+    created_at: datetime | None = None,
+) -> None:
+    try:
+        task = db.session.get(TaskRecord, task_id)
+        if not task:
+            task = TaskRecord(id=task_id, name=name or task_id)
+            db.session.add(task)
+        if name is not None:
+            task.name = name
+        if description is not None:
+            task.description = description
+        if creator is not None:
+            task.creator = creator
+        if nas_path is not None:
+            task.nas_path = nas_path
+        if created_at and not task.created_at:
+            task.created_at = created_at
+        commit_session()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to record task in DB")
+
+
+def delete_task_record(task_id: str) -> None:
+    try:
+        task = db.session.get(TaskRecord, task_id)
+        if task:
+            db.session.delete(task)
+            commit_session()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to delete task record")
 

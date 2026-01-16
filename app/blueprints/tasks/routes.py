@@ -32,12 +32,14 @@ from app.services.task_service import (
     allowed_file,
     build_file_tree,
     deduplicate_name,
+    delete_task_record,
     enforce_max_copy_size,
     ensure_windows_long_path,
     gather_available_files,
     list_dirs,
     list_files,
     list_tasks,
+    record_task_in_db,
     task_name_exists,
 )
 
@@ -209,10 +211,11 @@ def create_task():
         except (ValueError, TypeError):
             pass
 
+    created_at = datetime.now()
     meta_payload = {
         "name": task_name,
         "description": task_desc,
-        "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "created": created_at.strftime("%Y-%m-%d %H:%M"),
         "nas_path": display_nas_path,
     }
     if creator:
@@ -224,6 +227,14 @@ def create_task():
             ensure_ascii=False,
             indent=2,
         )
+    record_task_in_db(
+        tid,
+        name=task_name,
+        description=task_desc,
+        creator=creator or None,
+        nas_path=display_nas_path or None,
+        created_at=created_at,
+    )
     return redirect(url_for("tasks_bp.tasks"))
 
 
@@ -233,6 +244,7 @@ def delete_task(task_id):
     if os.path.isdir(tdir):
         import shutil
         shutil.rmtree(tdir)
+    delete_task_record(task_id)
     return redirect(url_for("tasks_bp.tasks"))
 
 
@@ -308,6 +320,7 @@ def rename_task(task_id):
         meta["created"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
+    record_task_in_db(task_id, name=new_name)
     return redirect(url_for("tasks_bp.tasks"))
 
 
@@ -329,6 +342,7 @@ def update_task_description(task_id):
         meta["created"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
+    record_task_in_db(task_id, description=new_desc)
     return redirect(url_for("tasks_bp.tasks"))
 
 

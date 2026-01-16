@@ -1,20 +1,38 @@
 {% extends "base.html" %}
 {% from "_file_tree.html" import render_file_tree %}
 {% block content %}
-<h1 class="h4 mb-1 fw-bold">{{ task.name }}</h1>
-{% if task.creator %}
-<p class="text-muted mb-1">建立人員：{{ task.creator }}</p>
-{% endif %}
-{% if task.nas_path %}
-<p class="text-muted mb-1">NAS路徑：{{ task.nas_path }}</p>
-{% endif %}
-{% if task.description %}
-<p class="text-muted mb-3">任務描述：{{ task.description }}</p>
-{% else %}
-<div class="mb-3"></div>
-{% endif %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex flex-column flex-md-row align-items-md-start justify-content-between gap-2">
+      <div>
+        <h1 class="h4 mb-2 fw-bold">{{ task.name }}</h1>
+        {% if task.description %}
+        <p class="text-muted mb-0">{{ task.description }}</p>
+        {% else %}
+        <p class="text-muted mb-0">-</p>
+        {% endif %}
+      </div>
+    </div>
+    <hr class="my-3">
+    <div class="row g-3 small">
+      {% if task.creator %}
+      <div class="col-md-6">
+        <div class="text-muted">建立人員</div>
+        <div class="fw-semibold">{{ task.creator }}</div>
+      </div>
+      {% endif %}
+      {% if task.nas_path %}
+      <div class="col-md-6">
+        <div class="text-muted">NAS 路徑</div>
+        <div class="fw-semibold font-monospace text-break">{{ task.nas_path }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
 
 <form action="{{ url_for('tasks_bp.upload_task_file', task_id=task.id) }}" method="post" class="card card-body mb-4">
+  <div class="fw-semibold mb-2">NAS 上傳檔案</div>
   <div class="row g-3">
     <div class="col-md-9">
       <input class="form-control" type="text" name="nas_file_path" placeholder="輸入 NAS 路徑，例如：project/files/report.docx" required>
@@ -26,17 +44,20 @@
   </div>
 </form>
 
-<h2 class="h6 fw-bold">檔案結構</h2>
-<div class="text-muted small mb-2">以目錄樹方式瀏覽，點擊資料夾可展開/收合。</div>
-<div class="file-tree-container">
-  {{ render_file_tree(files_tree) }}
+<div class="card">
+  <div class="card-body">
+    <div class="fw-semibold mb-1">檔案結構</div>
+    <div class="text-muted small mb-2">以目錄樹方式瀏覽，點擊資料夾可展開/收合。點擊流程管理進入文件處理流程操作頁面</div>
+    <div class="file-tree-container">
+      {{ render_file_tree(files_tree) }}
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">流程管理</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">複製檔案</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">上傳 Mapping</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.tasks') }}">返回任務管理</a>
+    </div>
+  </div>
 </div>
 
-<div class="d-flex gap-2 mt-2">
-  <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">管理流程</a>
-  <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">複製檔案</a>
-  <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">上傳 Mapping</a>
-  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.tasks') }}">任務管理</a>
-</div>
 {% endblock %}
-

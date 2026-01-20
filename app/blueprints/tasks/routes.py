@@ -37,6 +37,7 @@ from app.services.task_service import (
     ensure_windows_long_path,
     gather_available_files,
     list_dirs,
+    list_files,
     list_tasks,
     record_task_in_db,
     task_name_exists,
@@ -322,6 +323,44 @@ def upload_task_file(task_id):
 
     return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
 
+
+@tasks_bp.get("/tasks/<task_id>/nas-diff", endpoint="task_nas_diff")
+def task_nas_diff(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    meta_path = os.path.join(tdir, "meta.json")
+    if not os.path.isdir(files_dir) or not os.path.exists(meta_path):
+        return jsonify({"ok": False, "error": "Task not found"}), 404
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    nas_path = (meta.get("nas_path") or "").strip()
+    if not nas_path:
+        return jsonify({"ok": True, "diff": None, "message": "尚未設定 NAS 路徑"}), 200
+    if not os.path.isdir(nas_path):
+        return jsonify({"ok": True, "diff": None, "message": "NAS 路徑不存在或不是資料夾"}), 200
+
+    try:
+        task_files = {p.replace("\\", "/") for p in list_files(files_dir)}
+        nas_files = {p.replace("\\", "/") for p in list_files(nas_path)}
+        added = sorted(nas_files - task_files)
+        removed = sorted(task_files - nas_files)
+        if not added and not removed:
+            return jsonify({"ok": True, "diff": None, "message": "未偵測到變更"}), 200
+        limit = 5
+        diff = {
+            "added": added[:limit],
+            "removed": removed[:limit],
+            "added_count": len(added),
+            "removed_count": len(removed),
+            "limit": limit,
+        }
+        return jsonify({"ok": True, "diff": diff}), 200
+    except Exception:
+        current_app.logger.exception("Failed to compare NAS files")
+        return jsonify({"ok": False, "error": "Failed to compare NAS files"}), 500
+
+
 @tasks_bp.post("/tasks/<task_id>/sync-nas", endpoint="sync_task_nas")
 def sync_task_nas(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -334,7 +373,7 @@ def sync_task_nas(task_id):
         meta = json.load(f)
     nas_path = (meta.get("nas_path") or "").strip()
     if not nas_path:
-        flash("尚未設定 NAS 路徑，無法同步。", "warning")
+        flash("尚未設定 NAS 路徑，無法更新。", "warning")
         return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
 
     abs_path = os.path.abspath(nas_path)
@@ -371,16 +410,16 @@ def sync_task_nas(task_id):
         if os.path.isdir(files_dir):
             shutil.rmtree(files_dir)
         shutil.move(tmp_dir, files_dir)
-        flash("已同步 NAS 檔案。", "success")
+        flash("已更新 NAS 文件。", "success")
     except PermissionError:
         if os.path.isdir(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
         flash("沒有足夠的權限讀取或複製指定路徑。", "danger")
     except Exception:
-        current_app.logger.exception("同步 NAS 檔案失敗")
+        current_app.logger.exception("更新 NAS 文件失敗")
         if os.path.isdir(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
-        flash("同步 NAS 檔案失敗，請稍後再試。", "danger")
+        flash("更新 NAS 文件失敗，請稍後再試。", "danger")
 
     return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
 
@@ -439,6 +478,7 @@ def task_detail(task_id):
     name = task_id
     description = ""
     creator = ""
+    nas_path = ""
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
@@ -446,10 +486,29 @@ def task_detail(task_id):
             description = meta.get("description", "")
             creator = meta.get("creator", "") or ""
             nas_path = meta.get("nas_path", "") or ""
+    nas_diff = None
+    if nas_path and os.path.isdir(nas_path):
+        try:
+            task_files = {p.replace("\\", "/") for p in list_files(files_dir)}
+            nas_files = {p.replace("\\", "/") for p in list_files(nas_path)}
+            added = sorted(nas_files - task_files)
+            removed = sorted(task_files - nas_files)
+            if added or removed:
+                limit = 5
+                nas_diff = {
+                    "added": added[:limit],
+                    "removed": removed[:limit],
+                    "added_count": len(added),
+                    "removed_count": len(removed),
+                    "limit": limit,
+                }
+        except Exception:
+            current_app.logger.exception("Failed to compare NAS files")
     tree = build_file_tree(files_dir)
     return render_template(
         "tasks/task_detail.html",
         task={"id": task_id, "name": name, "description": description, "creator": creator, "nas_path": nas_path},
+        nas_diff=nas_diff,
         files_tree=tree,
     )
 

@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% from "_file_tree.html" import render_file_tree %}
 {% block content %}
 <div class="card mb-3">
@@ -32,19 +32,6 @@
   </div>
 </div>
 
-<form action="{{ url_for('tasks_bp.upload_task_file', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="card card-body mb-4">
-  <div class="fw-semibold mb-2">本機上傳檔案</div>
-  <div class="row g-3">
-    <div class="col-md-9">
-      <input class="form-control" type="file" name="upload_files" multiple required>
-      <div class="form-text">支援 DOCX / PDF / Excel / ZIP，ZIP 會自動解壓縮。</div>
-    </div>
-    <div class="col-md-3 d-grid">
-      <button class="btn btn-primary" type="submit">上傳</button>
-    </div>
-  </div>
-</form>
-
 <div class="card">
   <div class="card-body">
     <div class="fw-semibold mb-1">檔案結構</div>
@@ -56,6 +43,11 @@
       <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">管理流程</a>
       <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">複製檔案</a>
       <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">上傳 Mapping</a>
+      {% if task.nas_path %}
+      <form action="{{ url_for('tasks_bp.sync_task_nas', task_id=task.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定要同步 NAS 檔案嗎？這會覆蓋目前任務檔案夾內容。')">
+        <button class="btn btn-outline-secondary" type="submit">同步 NAS 檔案</button>
+      </form>
+      {% endif %}
       <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.tasks') }}">返回任務管理</a>
     </div>
   </div>

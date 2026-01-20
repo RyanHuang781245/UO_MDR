@@ -20,7 +20,7 @@
           data-bs-target="#nasBrowserModal"
           id="openNasBrowserBtn"
           {% if not allowed_nas_roots %}disabled{% endif %}
-        >瀏覽</button>
+                >瀏覽</button>
       </div>
       <input type="hidden" name="nas_root_index" id="nasRootIndexInput" value="">
       <!-- <div class="form-text">可填寫的共享根目錄: {{ allowed_nas_roots | join(', ') if allowed_nas_roots else '尚未設定' }}</div> -->
@@ -71,6 +71,7 @@
         {% else %}
           <div class="text-muted">-</div>
         {% endif %}
+              <span class="task-nas-data d-none">{{ t.nas_path or "" }}</span>
       </td>
       <td class="text-center task-col-creator">{{ t.creator or '-' }}</td>
       <td class="text-center task-col-created">{{ t.created }}</td>
@@ -492,13 +493,18 @@ function initTaskDescDrawer(){
   if(!drawer || !backdrop || !bodyEl || !titleEl) return;
   let closeTimer = null;
 
-  function openDrawer(name, desc){
+  function openDrawer(name, desc, nasPath){
     if(closeTimer){
       clearTimeout(closeTimer);
       closeTimer = null;
     }
     titleEl.textContent = name ? `任務描述：${name}` : '任務描述';
-    bodyEl.textContent = desc || '';
+    let bodyText = desc || '';
+    if(nasPath){
+      const prefix = bodyText ? '\n\n' : '';
+      bodyText = `${bodyText}${prefix}NAS 路徑：${nasPath}`;
+    }
+    bodyEl.textContent = bodyText;
     drawer.removeAttribute('hidden');
     backdrop.removeAttribute('hidden');
     const wasOpen = drawer.classList.contains('is-open');
@@ -544,8 +550,9 @@ function initTaskDescDrawer(){
       const row = el.closest('tr');
       const name = row ? row.querySelector('.task-name-link')?.textContent?.trim() : '';
       const desc = row ? row.querySelector('.task-desc-data')?.textContent?.trim() : '';
-      if(!desc) return;
-      openDrawer(name, desc);
+      const nasPath = row ? row.querySelector('.task-nas-data')?.textContent?.trim() : '';
+      if(!desc && !nasPath) return;
+      openDrawer(name, desc, nasPath);
     });
   });
 

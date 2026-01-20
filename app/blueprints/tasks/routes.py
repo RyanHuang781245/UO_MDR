@@ -37,7 +37,6 @@ from app.services.task_service import (
     ensure_windows_long_path,
     gather_available_files,
     list_dirs,
-    list_files,
     list_tasks,
     record_task_in_db,
     task_name_exists,
@@ -47,7 +46,6 @@ from app.services.nas_service import get_configured_nas_roots, resolve_nas_path,
 from modules.file_copier import copy_files
 
 tasks_bp = Blueprint("tasks_bp", __name__, template_folder="templates")
-
 
 @tasks_bp.route("/tasks/<task_id>/copy-files", methods=["GET", "POST"], endpoint="task_copy_files")
 def task_copy_files(task_id):
@@ -92,7 +90,6 @@ def task_copy_files(task_id):
     dirs.insert(0, ".")
     return render_template("tasks/copy_files.html", dirs=dirs, message=message, task_id=task_id)
 
-
 @tasks_bp.route("/tasks/<task_id>/mapping", methods=["GET", "POST"], endpoint="task_mapping")
 def task_mapping(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -119,7 +116,6 @@ def task_mapping(task_id):
     rel_outputs = [os.path.basename(p) for p in outputs]
     return render_template("tasks/mapping.html", task_id=task_id, messages=messages, outputs=rel_outputs)
 
-
 @tasks_bp.get("/tasks/<task_id>/output/<filename>", endpoint="task_download_output")
 def task_download_output(task_id, filename):
     out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
@@ -127,7 +123,6 @@ def task_download_output(task_id, filename):
     if not os.path.isfile(file_path):
         abort(404)
     return send_from_directory(out_dir, filename, as_attachment=True)
-
 
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():
@@ -137,7 +132,6 @@ def tasks():
         tasks=task_list,
         allowed_nas_roots=get_configured_nas_roots(),
     )
-
 
 @tasks_bp.post("/tasks", endpoint="create_task")
 def create_task():
@@ -237,7 +231,6 @@ def create_task():
     )
     return redirect(url_for("tasks_bp.tasks"))
 
-
 @tasks_bp.post("/tasks/<task_id>/delete", endpoint="delete_task")
 def delete_task(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -246,7 +239,6 @@ def delete_task(task_id):
         shutil.rmtree(tdir)
     delete_task_record(task_id)
     return redirect(url_for("tasks_bp.tasks"))
-
 
 @tasks_bp.post("/tasks/<task_id>/files", endpoint="upload_task_file")
 def upload_task_file(task_id):
@@ -259,7 +251,6 @@ def upload_task_file(task_id):
     uploads = request.files.getlist("upload_files")
     has_uploads = any(f and f.filename for f in uploads)
     if has_uploads:
-        records = []
         for upload in uploads:
             if not upload or not upload.filename:
                 continue
@@ -278,27 +269,9 @@ def upload_task_file(task_id):
                         for info in zf.infolist():
                             if info.is_dir():
                                 continue
-                            records.append(
-                                {
-                                    "filename": info.filename.replace("\\", "/"),
-                                    "original_name": info.filename,
-                                    "source": "upload_zip",
-                                    "size_bytes": info.file_size,
-                                    "is_dir": False,
-                                }
-                            )
                     os.remove(dest_path)
                 else:
                     upload.save(dest_path)
-                    records.append(
-                        {
-                            "filename": dest_name,
-                            "original_name": upload.filename,
-                            "source": "upload",
-                            "size_bytes": os.path.getsize(dest_path),
-                            "is_dir": False,
-                        }
-                    )
             except Exception:
                 current_app.logger.exception("本機檔案上傳失敗")
                 return "上傳失敗，請稍後再試", 400
@@ -349,6 +322,68 @@ def upload_task_file(task_id):
 
     return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
 
+@tasks_bp.post("/tasks/<task_id>/sync-nas", endpoint="sync_task_nas")
+def sync_task_nas(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    meta_path = os.path.join(tdir, "meta.json")
+    if not os.path.exists(meta_path):
+        abort(404)
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    nas_path = (meta.get("nas_path") or "").strip()
+    if not nas_path:
+        flash("尚未設定 NAS 路徑，無法同步。", "warning")
+        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    abs_path = os.path.abspath(nas_path)
+    roots = get_configured_nas_roots()
+    if roots:
+        allowed = False
+        for root in roots:
+            root_abs = os.path.abspath(root)
+            try:
+                if os.path.commonpath([root_abs, abs_path]) == root_abs:
+                    allowed = True
+                    break
+            except ValueError:
+                continue
+        if not allowed:
+            flash("NAS 路徑不在允許的根目錄內。", "danger")
+            return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    if not os.path.isdir(abs_path):
+        flash("NAS 路徑不存在或不是資料夾。", "danger")
+        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    try:
+        enforce_max_copy_size(abs_path)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    tmp_dir = os.path.join(tdir, f"files_sync_{uuid.uuid4().hex[:8]}")
+    try:
+        src_dir = ensure_windows_long_path(abs_path)
+        tmp_target = ensure_windows_long_path(tmp_dir)
+        shutil.copytree(src_dir, tmp_target)
+        if os.path.isdir(files_dir):
+            shutil.rmtree(files_dir)
+        shutil.move(tmp_dir, files_dir)
+        flash("已同步 NAS 檔案。", "success")
+    except PermissionError:
+        if os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        flash("沒有足夠的權限讀取或複製指定路徑。", "danger")
+    except Exception:
+        current_app.logger.exception("同步 NAS 檔案失敗")
+        if os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        flash("同步 NAS 檔案失敗，請稍後再試。", "danger")
+
+    return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
 
 @tasks_bp.post("/tasks/<task_id>/rename", endpoint="rename_task")
 def rename_task(task_id):
@@ -373,7 +408,6 @@ def rename_task(task_id):
     record_task_in_db(task_id, name=new_name)
     return redirect(url_for("tasks_bp.tasks"))
 
-
 @tasks_bp.post("/tasks/<task_id>/description", endpoint="update_task_description")
 def update_task_description(task_id):
     new_desc = request.form.get("description", "").strip()
@@ -394,7 +428,6 @@ def update_task_description(task_id):
         json.dump(meta, f, ensure_ascii=False, indent=2)
     record_task_in_db(task_id, description=new_desc)
     return redirect(url_for("tasks_bp.tasks"))
-
 
 @tasks_bp.get("/tasks/<task_id>", endpoint="task_detail")
 def task_detail(task_id):
@@ -419,7 +452,6 @@ def task_detail(task_id):
         task={"id": task_id, "name": name, "description": description, "creator": creator, "nas_path": nas_path},
         files_tree=tree,
     )
-
 
 @tasks_bp.post("/tasks/<task_id>/templates/parse", endpoint="parse_template_doc")
 def parse_template_doc(task_id):
@@ -466,7 +498,6 @@ def parse_template_doc(task_id):
         }
     )
 
-
 @tasks_bp.get("/tasks/<task_id>/result/<job_id>", endpoint="task_result")
 def task_result(task_id, job_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -494,7 +525,6 @@ def task_result(task_id, job_id):
         overall_status=overall_status,
     )
 
-
 @tasks_bp.get("/tasks/<task_id>/translate/<job_id>", endpoint="task_translate")
 def task_translate(task_id, job_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -517,7 +547,6 @@ def task_translate(task_id, job_id):
         as_attachment=True,
         download_name=f"translated_{job_id}.docx",
     )
-
 
 @tasks_bp.get("/tasks/<task_id>/compare/<job_id>", endpoint="task_compare")
 def task_compare(task_id, job_id):
@@ -630,7 +659,6 @@ def task_compare(task_id, job_id):
         versions=versions,
     )
 
-
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/save", endpoint="task_compare_save")
 def task_compare_save(task_id, job_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -645,7 +673,6 @@ def task_compare_save(task_id, job_id):
     html_content = clean_compare_html_content(html_content)
     save_compare_output(job_dir, html_content, titles_to_hide)
     return "OK"
-
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/save-as", endpoint="task_compare_save_as")
 def task_compare_save_as(task_id, job_id):
@@ -720,7 +747,6 @@ def task_compare_save_as(task_id, job_id):
     }
     return jsonify({"status": "ok", "version": version_payload})
 
-
 @tasks_bp.get("/tasks/<task_id>/view/<job_id>/<path:filename>", endpoint="task_view_file")
 def task_view_file(task_id, job_id, filename):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -730,7 +756,6 @@ def task_view_file(task_id, job_id, filename):
     if not os.path.isfile(file_path):
         abort(404)
     return send_from_directory(job_dir, safe_filename)
-
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/restore/<version_id>", endpoint="task_compare_restore_version")
 def task_compare_restore_version(task_id, job_id, version_id):
@@ -752,7 +777,6 @@ def task_compare_restore_version(task_id, job_id, version_id):
     shutil.copyfile(html_src, os.path.join(job_dir, "result.html"))
     shutil.copyfile(docx_src, os.path.join(job_dir, "result.docx"))
     return jsonify({"status": "ok"})
-
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/delete/<version_id>", endpoint="task_compare_delete_version")
 def task_compare_delete_version(task_id, job_id, version_id):
@@ -777,7 +801,6 @@ def task_compare_delete_version(task_id, job_id, version_id):
                 pass
     return jsonify({"status": "ok"})
 
-
 @tasks_bp.get("/tasks/<task_id>/download/<job_id>/version/<version_id>", endpoint="task_download_version")
 def task_download_version(task_id, job_id, version_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -797,7 +820,6 @@ def task_download_version(task_id, job_id, version_id):
     slug = version.get("slug") or version_id
     download_name = f"{slug}_{version_id}.docx"
     return send_file(docx_src, as_attachment=True, download_name=download_name)
-
 
 @tasks_bp.get("/tasks/<task_id>/download/<job_id>/<kind>", endpoint="task_download")
 def task_download(task_id, job_id, kind):

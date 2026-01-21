@@ -1,18 +1,18 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <h1 class="h3 mb-3 fw-bold">任務管理列表</h1>
-<p class="form-text">先輸入任務名稱，再選擇NAS存取路徑，任務描述可選填，設置完成後選擇建立任務</p>
+<p class="form-text">請輸入任務名稱，選擇 NAS 存取路徑，任務描述可選填，設定完成後建立新任務。</p>
 
 <form action="{{ url_for('tasks_bp.create_task') }}" method="post" class="card card-body mb-4" id="createTaskForm">
   <div class="row g-3">
     <div class="col-md-5">
       <label class="form-label fw-bold">任務名稱</label>
-      <input class="form-control" name="task_name" placeholder="輸入任務名稱 (中英文皆可)">
+      <input class="form-control" name="task_name" placeholder="輸入任務名稱 (中英文)">
     </div>
     <div class="col-md-5">
       <label class="form-label fw-bold">NAS 存取路徑</label>
       <div class="input-group">
-        <input class="form-control" type="text" name="nas_path" id="nasPathInput" placeholder="輸入相對路徑，例如 /1-系統開發/補充資料" required>
+        <input class="form-control" type="text" name="nas_path" id="nasPathInput" placeholder="輸入相對路徑，例如 /1-系統開發/測試專案" required>
         <button
           class="btn btn-outline-secondary"
           type="button"
@@ -20,19 +20,16 @@
           data-bs-target="#nasBrowserModal"
           id="openNasBrowserBtn"
           {% if not allowed_nas_roots %}disabled{% endif %}
-                >瀏覽</button>
+        >瀏覽</button>
       </div>
       <input type="hidden" name="nas_root_index" id="nasRootIndexInput" value="">
-      <!-- <div class="form-text">可填寫的共享根目錄: {{ allowed_nas_roots | join(', ') if allowed_nas_roots else '尚未設定' }}</div> -->
     </div>
     <div class="col-md-2 d-grid align-items-end">
       <button class="btn btn-primary" type="submit">建立任務</button>
     </div>
     <div class="col-md-12">
       <label class="form-label fw-bold">任務描述</label>
-      <textarea class="form-control" name="task_desc" placeholder="輸入任務描述 (選填，中英文皆可)"></textarea>
-    </div>
-    <div class="col-12">
+      <textarea class="form-control" name="task_desc" placeholder="輸入任務描述 (可選填，中英文皆可)"></textarea>
     </div>
   </div>
 </form>
@@ -48,8 +45,8 @@
 <table class="table table-striped task-table">
   <thead>
     <tr>
-      <th class="text-center task-col-name">名稱</th>
-      <th class="text-center task-col-desc">描述</th>
+      <th class="text-center task-col-name">任務名稱</th>
+      <th class="text-center task-col-desc">任務描述</th>
       <th class="text-center task-col-creator">建立人員</th>
       <th class="text-center task-col-created">建立時間</th>
       <th class="text-center task-col-actions">操作</th>
@@ -58,29 +55,33 @@
   <tbody>
   {% for t in tasks %}
     <tr>
-      <td class="text-center task-col-name"><a class="task-name-link" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
+      <td class="text-center task-col-name"><a class="task-name-link text-decoration-none" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
       <td class="text-center task-col-desc">
         {% if t.description %}
-          <div
-            class="task-desc-truncate task-desc-trigger"
-            role="button"
-            tabindex="0"
-            aria-label="顯示描述內容"
-          >{{ t.description }}</div>
-          <span class="task-desc-data d-none">{{ t.description }}</span>
+          <div class="task-desc-truncate">{{ t.description }}</div>
         {% else %}
           <div class="text-muted">-</div>
         {% endif %}
-              <span class="task-nas-data d-none">{{ t.nas_path or "" }}</span>
+        <span class="task-desc-data d-none">{{ t.description or "" }}</span>
+        <span class="task-nas-data d-none">{{ t.nas_path or "" }}</span>
+        <span class="task-creator-data d-none">{{ t.creator or "-" }}</span>
+        <span class="task-created-data d-none">{{ t.created }}</span>
+        <span class="task-last-editor-data d-none">{{ t.last_editor or "-" }}</span>
+        <span class="task-last-edited-data d-none">{{ t.last_edited or "-" }}</span>
       </td>
       <td class="text-center task-col-creator">{{ t.creator or '-' }}</td>
       <td class="text-center task-col-created">{{ t.created }}</td>
       <td class="text-center task-col-actions">
-        <button class="btn btn-sm btn-outline-secondary" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'>重新命名</button>
-        <button class="btn btn-sm btn-outline-secondary" type="button" onclick='editTaskDesc("{{ t.id }}", {{ (t.description or "")|tojson }})'>修改描述</button>
+        <button class="btn btn-sm btn-outline-success task-detail-trigger" type="button">查看詳情</button>
+        <button class="btn btn-sm btn-outline-primary" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'>重新命名</button>
+        <button class="btn btn-sm btn-outline-primary" type="button" onclick='editTaskDesc("{{ t.id }}", {{ (t.description or "")|tojson }})'>修改描述</button>
+        {% if t.can_delete %}
         <form action="{{ url_for('tasks_bp.delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
-          <button class="btn btn-sm btn-outline-danger">刪除</button>
+          <button class="btn btn-sm btn-danger">刪除</button>
         </form>
+        {% else %}
+        <button class="btn btn-sm btn-danger" type="button" disabled>刪除</button>
+        {% endif %}
       </td>
     </tr>
   {% else %}
@@ -90,9 +91,9 @@
 </table>
 
 <div class="task-desc-drawer-backdrop" id="taskDescDrawerBackdrop" aria-hidden="true" hidden></div>
-<aside class="task-desc-drawer" id="taskDescDrawer" aria-hidden="true" aria-label="任務描述" hidden>
+<aside class="task-desc-drawer" id="taskDescDrawer" aria-hidden="true" aria-label="任務資訊" hidden>
   <div class="task-desc-drawer-header">
-    <div class="fw-semibold" id="taskDescDrawerTitle">任務描述</div>
+    <div class="fw-semibold" id="taskDescDrawerTitle">任務資訊</div>
     <button class="btn btn-sm btn-outline-secondary" type="button" id="taskDescDrawerClose" aria-label="關閉">關閉</button>
   </div>
   <div class="task-desc-drawer-body" id="taskDescDrawerBody"></div>
@@ -102,7 +103,7 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">瀏覽 NAS 目錄</h5>
+        <h5 class="modal-title">瀏覽 NAS 根目錄</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
@@ -113,7 +114,7 @@
         {% endif %}
         <div class="row g-3 align-items-end mb-2">
           <div class="col-12">
-            <label class="form-label mb-1">Select NAS root</label>
+            <label class="form-label mb-1">選擇 NAS 根目錄</label>
             <select class="form-select" id="nasRootSelect" {% if not allowed_nas_roots %}disabled{% endif %}>
               {% for r in allowed_nas_roots %}
                 <option value="{{ loop.index0 }}">{{ r }}</option>
@@ -132,7 +133,7 @@
             <label class="form-label mb-1">移除 NAS 根目錄</label>
             <div class="input-group">
               <select class="form-select" id="nasRootRemoveSelect" {% if not allowed_nas_roots %}disabled{% endif %}>
-                <option value="">選擇要移除的根目錄</option>
+                <option value="">請選擇要移除的根目錄</option>
                 {% for r in allowed_nas_roots %}
                   <option value="{{ r }}">{{ r }}</option>
                 {% endfor %}
@@ -143,24 +144,22 @@
           {% endif %}
         </div>
         <div class="border rounded p-2">
-            <div class="d-flex align-items-center gap-2 mb-2">
-              <button class="btn btn-sm btn-outline-secondary" type="button" id="nasGoUpBtn" aria-label="上一層" title="上一層">
-                <span aria-hidden="true">&larr;</span>
-              </button>
-              <div class="small text-muted">
-                目前位置：<code id="nasCurrentPath">/</code>
-              </div>
-              <div class="ms-auto text-muted small" id="nasStatus"></div>
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="nasGoUpBtn" aria-label="上一層" title="上一層">
+              <span aria-hidden="true">&larr;</span>
+            </button>
+            <div class="small text-muted">
+              目前位置：<code id="nasCurrentPath">/</code>
             </div>
-
-            <div class="list-group" id="nasFolderList"></div>
-
-            <!-- <hr class="my-3"> -->
-
-            <div class="d-flex justify-content-end gap-2 mt-2">
-              <button class="btn btn-primary" type="button" id="nasApplyBtn" data-bs-dismiss="modal">套用</button>
-            </div>
+            <div class="ms-auto text-muted small" id="nasStatus"></div>
           </div>
+
+          <div class="list-group" id="nasFolderList"></div>
+
+          <div class="d-flex justify-content-end gap-2 mt-2">
+            <button class="btn btn-primary" type="button" id="nasApplyBtn" data-bs-dismiss="modal">套用</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -183,7 +182,7 @@ function renameTask(id, current){
 }
 
 function editTaskDesc(id, currentDesc){
-  const desc = prompt('輸入新的任務描述（可留空）', currentDesc || '');
+  const desc = prompt('輸入新的任務描述（可為空）', currentDesc || '');
   if(desc === null) return;
   const form = document.createElement('form');
   form.method = 'post';
@@ -268,8 +267,8 @@ function removeOptionValue(value){
 
 const nasState = {
   rootIndex: 0,
-  currentRel: '',  // '' means root
-  selectedRel: null // null means not selected; '' means root
+  currentRel: '',
+  selectedRel: null
 };
 
 function setStatus(text){
@@ -334,7 +333,7 @@ function renderFolders(folders){
 
 async function loadFolders(rel = ''){
   if(!allowedNasRoots || !allowedNasRoots.length) return;
-  setStatus('讀取中…');
+  setStatus('讀取中...');
   nasState.currentRel = rel || '';
   updateCurrentPathDisplay();
   const qs = new URLSearchParams({
@@ -395,7 +394,7 @@ async function addNasRoot(){
       const text = await resp.text();
       throw new Error(text || '新增失敗');
     }
-    alert('新增成功。');
+    alert('新增成功');
     addOptionOnce(raw);
   } catch(err){
     alert(err?.message || '新增失敗');
@@ -424,7 +423,7 @@ async function removeNasRoot(){
       const text = await resp.text();
       throw new Error(text || '移除失敗');
     }
-    alert('移除成功。');
+    alert('移除成功');
     removeOptionValue(val);
   } catch(err){
     alert(err?.message || '移除失敗');
@@ -493,18 +492,13 @@ function initTaskDescDrawer(){
   if(!drawer || !backdrop || !bodyEl || !titleEl) return;
   let closeTimer = null;
 
-  function openDrawer(name, desc, nasPath){
+  function openDrawer(title, body){
     if(closeTimer){
       clearTimeout(closeTimer);
       closeTimer = null;
     }
-    titleEl.textContent = name ? `任務描述：${name}` : '任務描述';
-    let bodyText = desc || '';
-    if(nasPath){
-      const prefix = bodyText ? '\n\n' : '';
-      bodyText = `${bodyText}${prefix}NAS 路徑：${nasPath}`;
-    }
-    bodyEl.textContent = bodyText;
+    titleEl.textContent = title || '任務資訊';
+    bodyEl.textContent = body || '';
     drawer.removeAttribute('hidden');
     backdrop.removeAttribute('hidden');
     const wasOpen = drawer.classList.contains('is-open');
@@ -538,21 +532,59 @@ function initTaskDescDrawer(){
     }, 260);
   }
 
-  document.querySelectorAll('.task-desc-trigger').forEach(el => {
-    el.addEventListener('keydown', (event) => {
-      if(event.key === 'Enter' || event.key === ' '){
-        event.preventDefault();
-        el.click();
-      }
-    });
-    el.addEventListener('click', (event) => {
+    function escapeHtml(value){
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderDetailBody(details){
+    const rows = [
+      { label: '建立人員', value: details.creator || '-' },
+      { label: '建立時間', value: details.created || '-' },
+      { label: '最後編輯人員', value: details.lastEditor || '-' },
+      { label: '最後編輯時間', value: details.lastEdited || '-' }
+    ];
+    const rowsHtml = rows.map((row) => (
+      `<div class="task-detail-row">
+        <div class="task-detail-label">${escapeHtml(row.label)}</div>
+        <div class="task-detail-value">${escapeHtml(row.value)}</div>
+      </div>`
+    )).join('');
+    const descHtml = details.desc
+      ? `<div class="task-detail-desc">
+          <div class="task-detail-desc-label">任務描述</div>
+          <div class="task-detail-desc-value">${escapeHtml(details.desc)}</div>
+        </div>`
+      : '';
+    return `<div class="task-detail-list">${rowsHtml}${descHtml}</div>`;
+  }
+
+  document.querySelectorAll('.task-detail-trigger').forEach(btn => {
+    btn.addEventListener('click', (event) => {
       event.preventDefault();
-      const row = el.closest('tr');
+      const row = btn.closest('tr');
       const name = row ? row.querySelector('.task-name-link')?.textContent?.trim() : '';
       const desc = row ? row.querySelector('.task-desc-data')?.textContent?.trim() : '';
+      const creator = row ? row.querySelector('.task-creator-data')?.textContent?.trim() : '';
+      const created = row ? row.querySelector('.task-created-data')?.textContent?.trim() : '';
+      const lastEditor = row ? row.querySelector('.task-last-editor-data')?.textContent?.trim() : '';
+      const lastEdited = row ? row.querySelector('.task-last-edited-data')?.textContent?.trim() : '';
       const nasPath = row ? row.querySelector('.task-nas-data')?.textContent?.trim() : '';
-      if(!desc && !nasPath) return;
-      openDrawer(name, desc, nasPath);
+      const title = name ? `任務詳情 : ${name}` : '任務詳情';
+      const detailHtml = renderDetailBody({
+        creator,
+        created,
+        lastEditor,
+        lastEdited,
+        nasPath,
+        desc
+      });
+      openDrawer(title, '');
+      bodyEl.innerHTML = detailHtml;
     });
   });
 
@@ -599,8 +631,22 @@ if(document.readyState === 'loading'){
 }
 .task-table th,
 .task-table td {
-  width: 20%;
   vertical-align: middle;
+}
+.task-table .task-col-name {
+  width: 16%;
+}
+.task-table .task-col-desc {
+  width: 18%;
+}
+.task-table .task-col-creator {
+  width: 12%;
+}
+.task-table .task-col-created {
+  width: 10%;
+}
+.task-table .task-col-actions {
+  width: 26%;
 }
 .task-table .task-col-name {
   word-break: break-word;
@@ -617,13 +663,6 @@ if(document.readyState === 'loading'){
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.task-desc-trigger {
-  cursor: pointer;
-}
-.task-desc-trigger:focus {
-  outline: 2px solid #0d6efd;
-  outline-offset: 2px;
 }
 .task-desc-drawer-backdrop {
   position: fixed;
@@ -665,10 +704,50 @@ if(document.readyState === 'loading'){
 }
 .task-desc-drawer-body {
   padding: 16px;
-  white-space: pre-wrap;
   word-break: break-word;
   overflow: auto;
   flex: 1;
+}
+.task-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+.task-detail-label {
+  color: #64748b;
+  font-weight: 600;
+  min-width: 90px;
+}
+.task-detail-value {
+  color: #0f172a;
+  text-align: right;
+  flex: 1;
+  word-break: break-word;
+}
+.task-detail-desc {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed #cbd5f5;
+  background: #f8fafc;
+}
+.task-detail-desc-label {
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+.task-detail-desc-value {
+  white-space: pre-wrap;
+  color: #1f2937;
 }
 .task-desc-drawer-open {
   overflow: hidden;

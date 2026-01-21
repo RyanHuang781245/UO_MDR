@@ -141,6 +141,10 @@ def list_tasks():
             description = ""
             created = None
             creator = ""
+            creator_work_id = ""
+            last_editor = ""
+            last_edited = ""
+            nas_path = ""
             if os.path.exists(meta_path):
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
@@ -148,8 +152,16 @@ def list_tasks():
                     description = meta.get("description", "")
                     created = meta.get("created")
                     creator = meta.get("creator", "") or ""
+                    creator_work_id = meta.get("creator_work_id", "") or ""
+                    last_editor = meta.get("last_editor", "") or ""
+                    last_edited = meta.get("last_edited", "") or ""
+                    nas_path = meta.get("nas_path", "") or ""
             if not created:
                 created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
+            if not last_edited:
+                last_edited = created
+            if not last_editor:
+                last_editor = creator
             task_list.append(
                 {
                     "id": tid,
@@ -157,8 +169,12 @@ def list_tasks():
                     "description": description,
                     "created": created,
                     "creator": creator,
-                }
-            )
+                        "creator_work_id": creator_work_id,
+                        "last_editor": last_editor,
+                        "last_edited": last_edited,
+                        "nas_path": nas_path,
+                    }
+                )
     task_list.sort(key=lambda x: x["created"], reverse=True)
     return task_list
 

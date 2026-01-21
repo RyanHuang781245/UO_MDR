@@ -44,9 +44,53 @@ from app.services.task_service import (
 )
 
 from app.services.nas_service import get_configured_nas_roots, resolve_nas_path, validate_nas_path
+from modules.auth_models import ROLE_ADMIN, user_has_role
 from modules.file_copier import copy_files
 
 tasks_bp = Blueprint("tasks_bp", __name__, template_folder="templates")
+
+
+def _get_actor_info():
+    if current_user and getattr(current_user, "is_authenticated", False):
+        display_name = (getattr(current_user, "display_name", "") or "").strip()
+        chinese_only = "".join(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf\uF900-\uFAFF]+", display_name))
+        work_id = (getattr(current_user, "work_id", "") or "").strip()
+        if chinese_only:
+            label = f"{work_id} {chinese_only}" if work_id else chinese_only
+        else:
+            label = display_name or work_id
+        return work_id, label
+    return "", ""
+
+
+def _apply_last_edit(meta: dict) -> None:
+    work_id, label = _get_actor_info()
+    meta["last_edited"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if label:
+        meta["last_editor"] = label
+    if work_id:
+        meta["last_editor_work_id"] = work_id
+
+
+def _get_creator_work_id(meta: dict) -> str:
+    creator_work_id = (meta.get("creator_work_id") or "").strip()
+    if creator_work_id:
+        return creator_work_id
+    creator = (meta.get("creator") or "").strip()
+    if creator:
+        return creator.split()[0]
+    return ""
+
+
+def _can_delete_task(meta: dict) -> bool:
+    if not current_app.config.get("AUTH_ENABLED", True):
+        return True
+    if not current_user or not getattr(current_user, "is_authenticated", False):
+        return False
+    if user_has_role(current_user.id, ROLE_ADMIN):
+        return True
+    creator_work_id = _get_creator_work_id(meta)
+    return bool(creator_work_id) and current_user.work_id == creator_work_id
 
 @tasks_bp.route("/tasks/<task_id>/copy-files", methods=["GET", "POST"], endpoint="task_copy_files")
 def task_copy_files(task_id):
@@ -128,6 +172,12 @@ def task_download_output(task_id, filename):
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():
     task_list = list_tasks()
+    for t in task_list:
+        meta = {
+            "creator_work_id": t.get("creator_work_id", ""),
+            "creator": t.get("creator", ""),
+        }
+        t["can_delete"] = _can_delete_task(meta)
     return render_template(
         "tasks/tasks.html",
         tasks=task_list,
@@ -183,15 +233,7 @@ def create_task():
         current_app.logger.exception("複製 NAS 目錄失敗")
         shutil.rmtree(tdir, ignore_errors=True)
         return _fail("複製 NAS 目錄時發生錯誤，請稍後再試")
-    creator = ""
-    if current_user and getattr(current_user, "is_authenticated", False):
-        display_name = (getattr(current_user, "display_name", "") or "").strip()
-        chinese_only = "".join(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf\uF900-\uFAFF]+", display_name))
-        work_id = (current_user.work_id or "").strip()
-        if chinese_only:
-            creator = f"{work_id} {chinese_only}" if work_id else chinese_only
-        else:
-            creator = display_name or work_id
+    work_id, creator = _get_actor_info()
     display_nas_path = resolved_path
     if nas_root_index:
         try:
@@ -215,6 +257,13 @@ def create_task():
     }
     if creator:
         meta_payload["creator"] = creator
+    if work_id:
+        meta_payload["creator_work_id"] = work_id
+    if creator:
+        meta_payload["last_editor"] = creator
+    if work_id:
+        meta_payload["last_editor_work_id"] = work_id
+    meta_payload["last_edited"] = created_at.strftime("%Y-%m-%d %H:%M")
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
         json.dump(
             meta_payload,
@@ -235,6 +284,13 @@ def create_task():
 @tasks_bp.post("/tasks/<task_id>/delete", endpoint="delete_task")
 def delete_task(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    meta_path = os.path.join(tdir, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    if not _can_delete_task(meta):
+        abort(403)
     if os.path.isdir(tdir):
         import shutil
         shutil.rmtree(tdir)
@@ -410,6 +466,9 @@ def sync_task_nas(task_id):
         if os.path.isdir(files_dir):
             shutil.rmtree(files_dir)
         shutil.move(tmp_dir, files_dir)
+        _apply_last_edit(meta)
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
         flash("已更新 NAS 文件。", "success")
     except PermissionError:
         if os.path.isdir(tmp_dir):

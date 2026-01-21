@@ -72,9 +72,17 @@
       <td class="text-center task-col-creator">{{ t.creator or '-' }}</td>
       <td class="text-center task-col-created">{{ t.created }}</td>
       <td class="text-center task-col-actions">
-        <button class="btn btn-sm btn-outline-success task-detail-trigger" type="button">查看詳情</button>
-        <button class="btn btn-sm btn-outline-primary" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'>重新命名</button>
-        <button class="btn btn-sm btn-outline-primary" type="button" onclick='editTaskDesc("{{ t.id }}", {{ (t.description or "")|tojson }})'>修改描述</button>
+        <div class="btn-group">
+          <button class="btn btn-sm btn-outline-success task-detail-trigger" type="button">查看詳情</button>
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <span class="visually-hidden">更多操作</span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><button class="dropdown-item" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'>重新命名</button></li>
+            <li><button class="dropdown-item" type="button" onclick='editTaskDesc("{{ t.id }}", {{ (t.description or "")|tojson }})'>修改描述</button></li>
+            <li><button class="dropdown-item" type="button" onclick='copyTask("{{ t.id }}", {{ t.name|tojson }})'>複製任務</button></li>
+          </ul>
+        </div>
         {% if t.can_delete %}
         <form action="{{ url_for('tasks_bp.delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
           <button class="btn btn-sm btn-danger">刪除</button>
@@ -191,6 +199,22 @@ function editTaskDesc(id, currentDesc){
   input.type = 'hidden';
   input.name = 'description';
   input.value = desc;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+function copyTask(id, currentName){
+  const defaultName = currentName ? `${currentName} (複製)` : '任務複製';
+  const name = prompt('輸入新任務名稱', defaultName);
+  if(!name) return;
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = `/tasks/${id}/copy`;
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'name';
+  input.value = name;
   form.appendChild(input);
   document.body.appendChild(form);
   form.submit();
@@ -646,7 +670,7 @@ if(document.readyState === 'loading'){
   width: 10%;
 }
 .task-table .task-col-actions {
-  width: 26%;
+  width: 18%;
 }
 .task-table .task-col-name {
   word-break: break-word;

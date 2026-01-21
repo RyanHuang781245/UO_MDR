@@ -281,6 +281,73 @@ def create_task():
     )
     return redirect(url_for("tasks_bp.tasks"))
 
+@tasks_bp.post("/tasks/<task_id>/copy", endpoint="copy_task")
+def copy_task(task_id):
+    def _fail(message: str):
+        flash(message, "danger")
+        return redirect(url_for("tasks_bp.tasks"))
+
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    if not os.path.isdir(tdir):
+        return _fail("找不到任務資料夾")
+
+    new_name = request.form.get("name", "").strip()
+    if not new_name:
+        return _fail("缺少任務名稱")
+    if task_name_exists(new_name):
+        return _fail("任務名稱已存在")
+
+    meta_path = os.path.join(tdir, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+
+    created_at = datetime.now()
+    work_id, creator = _get_actor_info()
+
+    new_id = str(uuid.uuid4())[:8]
+    new_dir = os.path.join(current_app.config["TASK_FOLDER"], new_id)
+    os.makedirs(new_dir, exist_ok=False)
+    try:
+        for subdir in ("files", "flows"):
+            src = os.path.join(tdir, subdir)
+            dest = os.path.join(new_dir, subdir)
+            if os.path.isdir(src):
+                shutil.copytree(ensure_windows_long_path(src), ensure_windows_long_path(dest))
+            elif subdir == "files":
+                os.makedirs(dest, exist_ok=True)
+    except Exception:
+        current_app.logger.exception("複製任務資料夾失敗")
+        shutil.rmtree(new_dir, ignore_errors=True)
+        return _fail("複製任務資料夾失敗，請稍後再試")
+
+    new_meta = {
+        "name": new_name,
+        "description": meta.get("description", ""),
+        "created": created_at.strftime("%Y-%m-%d %H:%M"),
+        "last_edited": created_at.strftime("%Y-%m-%d %H:%M"),
+    }
+    if creator:
+        new_meta["creator"] = creator
+        new_meta["last_editor"] = creator
+    if work_id:
+        new_meta["creator_work_id"] = work_id
+        new_meta["last_editor_work_id"] = work_id
+    with open(os.path.join(new_dir, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(new_meta, f, ensure_ascii=False, indent=2)
+
+    record_task_in_db(
+        new_id,
+        name=new_name,
+        description=new_meta.get("description") or None,
+        creator=creator or None,
+        nas_path=new_meta.get("nas_path") or None,
+        created_at=created_at,
+    )
+    flash("已複製任務", "success")
+    return redirect(url_for("tasks_bp.tasks"))
+
 @tasks_bp.post("/tasks/<task_id>/delete", endpoint="delete_task")
 def delete_task(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)

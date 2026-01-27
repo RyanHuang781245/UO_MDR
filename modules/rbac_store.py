@@ -51,11 +51,11 @@ users = Table(
     "users",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("username", String(100), nullable=False),
+    Column("work_id", String(100), nullable=False),
     Column("password_hash", String(255), nullable=False),
     Column("is_active", Boolean, nullable=False, server_default="1"),
     Column("created_at", DateTime, nullable=False, server_default=func.sysdatetime()),
-    UniqueConstraint("username", name="uq_users_username"),
+    UniqueConstraint("work_id", name="uq_users_work_id"),
 )
 
 roles = Table(
@@ -155,15 +155,15 @@ def build_mssql_engine_from_env() -> Engine:
     if trusted:
         url = URL.create("mssql+pyodbc", host=host, database=database, query=query)
     else:
-        username = os.environ.get("MSSQL_USER") or os.environ.get("MSSQL_USERNAME")
+        db_username = os.environ.get("MSSQL_USER") or os.environ.get("MSSQL_USERNAME")
         password = os.environ.get("MSSQL_PASSWORD")
-        if not username or not password:
+        if not db_username or not password:
             raise RBACConfigError(
                 "MSSQL_USER/MSSQL_PASSWORD 未設定（或改用 MSSQL_TRUSTED_CONNECTION=1）。"
             )
         url = URL.create(
             "mssql+pyodbc",
-            username=username,
+            username=db_username,
             password=password,
             host=host,
             database=database,
@@ -191,6 +191,17 @@ def ensure_schema(engine: Engine) -> None:
         return
 
     with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                IF COL_LENGTH('users', 'work_id') IS NULL AND COL_LENGTH('users', 'username') IS NOT NULL
+                BEGIN
+                    EXEC sp_rename 'users.username', 'work_id', 'COLUMN';
+                END
+                """
+            )
+        )
+
         conn.execute(
             text(
                 """
@@ -249,26 +260,26 @@ def seed_defaults(engine: Engine) -> None:
 @dataclass(frozen=True)
 class UserRecord:
     id: int
-    username: str
+    work_id: str
     is_active: bool
     created_at: Optional[datetime] = None
 
 
-def create_user(engine: Engine, username: str, password: str, role: str) -> int:
-    username = (username or "").strip()
-    if not username:
-        raise ValueError("username 不可為空")
+def create_user(engine: Engine, work_id: str, password: str, role: str) -> int:
+    work_id = (work_id or "").strip()
+    if not work_id:
+        raise ValueError("work_id 不可為空")
     if role not in {ROLE_ADMIN, ROLE_EDITOR}:
         raise ValueError("role 不合法")
 
     password_hash = generate_password_hash(password)
     with Session(engine) as session:
-        existing = session.execute(select(users.c.id).where(users.c.username == username)).scalar_one_or_none()
+        existing = session.execute(select(users.c.id).where(users.c.work_id == work_id)).scalar_one_or_none()
         if existing is not None:
             raise ValueError("使用者已存在")
 
         user_id = session.execute(
-            insert(users).values(username=username, password_hash=password_hash, is_active=True)
+            insert(users).values(work_id=work_id, password_hash=password_hash, is_active=True)
         ).inserted_primary_key[0]
         role_id = _get_or_create_id(session, roles, role)
         session.execute(insert(user_roles).values(user_id=user_id, role_id=role_id))
@@ -301,14 +312,14 @@ def set_user_role(engine: Engine, user_id: int, role: str) -> None:
         session.commit()
 
 
-def authenticate(engine: Engine, username: str, password: str) -> Optional[UserRecord]:
-    username = (username or "").strip()
-    if not username or not password:
+def authenticate(engine: Engine, work_id: str, password: str) -> Optional[UserRecord]:
+    work_id = (work_id or "").strip()
+    if not work_id or not password:
         return None
     with Session(engine) as session:
         row = session.execute(
-            select(users.c.id, users.c.username, users.c.password_hash, users.c.is_active, users.c.created_at).where(
-                users.c.username == username
+            select(users.c.id, users.c.work_id, users.c.password_hash, users.c.is_active, users.c.created_at).where(
+                users.c.work_id == work_id
             )
         ).first()
         if not row:
@@ -318,18 +329,18 @@ def authenticate(engine: Engine, username: str, password: str) -> Optional[UserR
             return None
         if not check_password_hash(password_hash, password):
             return None
-        return UserRecord(id=int(user_id), username=str(uname), is_active=True, created_at=created_at)
+        return UserRecord(id=int(user_id), work_id=str(uname), is_active=True, created_at=created_at)
 
 
 def get_user_by_id(engine: Engine, user_id: int) -> Optional[UserRecord]:
     with Session(engine) as session:
         row = session.execute(
-            select(users.c.id, users.c.username, users.c.is_active, users.c.created_at).where(users.c.id == user_id)
+            select(users.c.id, users.c.work_id, users.c.is_active, users.c.created_at).where(users.c.id == user_id)
         ).first()
         if not row:
             return None
         uid, uname, is_active, created_at = row
-        return UserRecord(id=int(uid), username=str(uname), is_active=bool(is_active), created_at=created_at)
+        return UserRecord(id=int(uid), work_id=str(uname), is_active=bool(is_active), created_at=created_at)
 
 
 def list_users(engine: Engine) -> list[dict]:
@@ -337,7 +348,7 @@ def list_users(engine: Engine) -> list[dict]:
         rows = session.execute(
             select(
                 users.c.id,
-                users.c.username,
+                users.c.work_id,
                 users.c.is_active,
                 users.c.created_at,
             ).order_by(users.c.id.asc())
@@ -352,7 +363,7 @@ def list_users(engine: Engine) -> list[dict]:
             users_data.append(
                 {
                     "id": int(uid),
-                    "username": str(uname),
+                    "work_id": str(uname),
                     "is_active": bool(is_active),
                     "created_at": created_at,
                     "roles": list(role_names),

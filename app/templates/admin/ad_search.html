@@ -76,7 +76,7 @@
           <tbody>
             {% for item in results %}
               <tr>
-                <td>{{ item.username }}</td>
+                <td>{{ item.work_id }}</td>
                 <td>{{ item.display_name or "-" }}</td>
                 <td>{{ item.email or "-" }}</td>
                 <td>
@@ -92,7 +92,7 @@
                 <td>
                   <form method="post" action="{{ url_for('ad_search.index') }}" class="form-inline ad-action-form">
                     <input type="hidden" name="q" value="{{ query }}">
-                    <input type="hidden" name="username" value="{{ item.username }}">
+                    <input type="hidden" name="work_id" value="{{ item.work_id }}">
                     <input type="hidden" name="display_name" value="{{ item.display_name or '' }}">
                     <input type="hidden" name="email" value="{{ item.email or '' }}">
                     <select name="role" class="form-control input-sm" style="max-width: 160px;">

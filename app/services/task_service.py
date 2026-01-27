@@ -8,17 +8,23 @@ from datetime import datetime
 
 from flask import current_app
 
+from modules.auth_models import commit_session, db
+from modules.task_models import TaskRecord, ensure_schema as ensure_task_schema
+
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
+ALLOWED_EXCEL = {".xlsx", ".xls"}
 
-def allowed_file(filename, kinds=("docx", "pdf", "zip")):
+def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel")):
     ext = os.path.splitext(filename)[1].lower()
     if "docx" in kinds and ext in ALLOWED_DOCX:
         return True
     if "pdf" in kinds and ext in ALLOWED_PDF:
         return True
     if "zip" in kinds and ext in ALLOWED_ZIP:
+        return True
+    if "excel" in kinds and ext in ALLOWED_EXCEL:
         return True
     return False
 
@@ -134,15 +140,90 @@ def list_tasks():
             name = tid
             description = ""
             created = None
+            creator = ""
+            creator_work_id = ""
+            last_editor = ""
+            last_edited = ""
+            nas_path = ""
             if os.path.exists(meta_path):
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
                     name = meta.get("name", tid)
                     description = meta.get("description", "")
                     created = meta.get("created")
+                    creator = meta.get("creator", "") or ""
+                    creator_work_id = meta.get("creator_work_id", "") or ""
+                    last_editor = meta.get("last_editor", "") or ""
+                    last_edited = meta.get("last_edited", "") or ""
+                    nas_path = meta.get("nas_path", "") or ""
             if not created:
                 created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
-            task_list.append({"id": tid, "name": name, "description": description, "created": created})
+            if not last_edited:
+                last_edited = created
+            if not last_editor:
+                last_editor = creator
+            task_list.append(
+                {
+                    "id": tid,
+                    "name": name,
+                    "description": description,
+                    "created": created,
+                    "creator": creator,
+                        "creator_work_id": creator_work_id,
+                        "last_editor": last_editor,
+                        "last_edited": last_edited,
+                        "nas_path": nas_path,
+                    }
+                )
     task_list.sort(key=lambda x: x["created"], reverse=True)
     return task_list
+
+
+def init_task_store(app) -> None:
+    with app.app_context():
+        try:
+            ensure_task_schema()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Task schema initialization failed")
+
+
+def record_task_in_db(
+    task_id: str,
+    name: str | None = None,
+    description: str | None = None,
+    creator: str | None = None,
+    nas_path: str | None = None,
+    created_at: datetime | None = None,
+) -> None:
+    try:
+        task = db.session.get(TaskRecord, task_id)
+        if not task:
+            task = TaskRecord(id=task_id, name=name or task_id)
+            db.session.add(task)
+        if name is not None:
+            task.name = name
+        if description is not None:
+            task.description = description
+        if creator is not None:
+            task.creator = creator
+        if nas_path is not None:
+            task.nas_path = nas_path
+        if created_at and not task.created_at:
+            task.created_at = created_at
+        commit_session()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to record task in DB")
+
+
+def delete_task_record(task_id: str) -> None:
+    try:
+        task = db.session.get(TaskRecord, task_id)
+        if task:
+            db.session.delete(task)
+            commit_session()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to delete task record")
 

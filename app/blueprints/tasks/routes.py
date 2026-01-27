@@ -6,8 +6,10 @@ import shutil
 import uuid
 import zipfile
 from datetime import datetime
+import re
 
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask_login import current_user
 from werkzeug.utils import secure_filename
 
 from app.services.flow_service import (
@@ -30,20 +32,65 @@ from app.services.task_service import (
     allowed_file,
     build_file_tree,
     deduplicate_name,
+    delete_task_record,
     enforce_max_copy_size,
     ensure_windows_long_path,
     gather_available_files,
     list_dirs,
     list_files,
     list_tasks,
+    record_task_in_db,
     task_name_exists,
 )
 
-from app.services.nas_service import resolve_nas_path, validate_nas_path
+from app.services.nas_service import get_configured_nas_roots, resolve_nas_path, validate_nas_path
+from modules.auth_models import ROLE_ADMIN, user_has_role
 from modules.file_copier import copy_files
 
 tasks_bp = Blueprint("tasks_bp", __name__, template_folder="templates")
 
+
+def _get_actor_info():
+    if current_user and getattr(current_user, "is_authenticated", False):
+        display_name = (getattr(current_user, "display_name", "") or "").strip()
+        chinese_only = "".join(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf\uF900-\uFAFF]+", display_name))
+        work_id = (getattr(current_user, "work_id", "") or "").strip()
+        if chinese_only:
+            label = f"{work_id} {chinese_only}" if work_id else chinese_only
+        else:
+            label = display_name or work_id
+        return work_id, label
+    return "", ""
+
+
+def _apply_last_edit(meta: dict) -> None:
+    work_id, label = _get_actor_info()
+    meta["last_edited"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if label:
+        meta["last_editor"] = label
+    if work_id:
+        meta["last_editor_work_id"] = work_id
+
+
+def _get_creator_work_id(meta: dict) -> str:
+    creator_work_id = (meta.get("creator_work_id") or "").strip()
+    if creator_work_id:
+        return creator_work_id
+    creator = (meta.get("creator") or "").strip()
+    if creator:
+        return creator.split()[0]
+    return ""
+
+
+def _can_delete_task(meta: dict) -> bool:
+    if not current_app.config.get("AUTH_ENABLED", True):
+        return True
+    if not current_user or not getattr(current_user, "is_authenticated", False):
+        return False
+    if user_has_role(current_user.id, ROLE_ADMIN):
+        return True
+    creator_work_id = _get_creator_work_id(meta)
+    return bool(creator_work_id) and current_user.work_id == creator_work_id
 
 @tasks_bp.route("/tasks/<task_id>/copy-files", methods=["GET", "POST"], endpoint="task_copy_files")
 def task_copy_files(task_id):
@@ -88,7 +135,6 @@ def task_copy_files(task_id):
     dirs.insert(0, ".")
     return render_template("tasks/copy_files.html", dirs=dirs, message=message, task_id=task_id)
 
-
 @tasks_bp.route("/tasks/<task_id>/mapping", methods=["GET", "POST"], endpoint="task_mapping")
 def task_mapping(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -115,7 +161,6 @@ def task_mapping(task_id):
     rel_outputs = [os.path.basename(p) for p in outputs]
     return render_template("tasks/mapping.html", task_id=task_id, messages=messages, outputs=rel_outputs)
 
-
 @tasks_bp.get("/tasks/<task_id>/output/<filename>", endpoint="task_download_output")
 def task_download_output(task_id, filename):
     out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
@@ -124,16 +169,20 @@ def task_download_output(task_id, filename):
         abort(404)
     return send_from_directory(out_dir, filename, as_attachment=True)
 
-
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():
     task_list = list_tasks()
+    for t in task_list:
+        meta = {
+            "creator_work_id": t.get("creator_work_id", ""),
+            "creator": t.get("creator", ""),
+        }
+        t["can_delete"] = _can_delete_task(meta)
     return render_template(
         "tasks/tasks.html",
         tasks=task_list,
-        allowed_nas_roots=current_app.config.get("ALLOWED_NAS_ROOTS", []),
+        allowed_nas_roots=get_configured_nas_roots(),
     )
-
 
 @tasks_bp.post("/tasks", endpoint="create_task")
 def create_task():
@@ -146,7 +195,6 @@ def create_task():
         nas_root_index = request.form.get("nas_root_index", "").strip()
         resolved_path = resolve_nas_path(
             nas_path,
-            allowed_roots=current_app.config.get("NAS_ALLOWED_ROOTS"),
             allow_recursive=current_app.config.get("NAS_ALLOW_RECURSIVE", True),
             root_index=nas_root_index or None,
         )
@@ -185,27 +233,321 @@ def create_task():
         current_app.logger.exception("複製 NAS 目錄失敗")
         shutil.rmtree(tdir, ignore_errors=True)
         return _fail("複製 NAS 目錄時發生錯誤，請稍後再試")
+    work_id, creator = _get_actor_info()
+    display_nas_path = resolved_path
+    if nas_root_index:
+        try:
+            roots = get_configured_nas_roots()
+            idx = int(nas_root_index)
+            if 0 <= idx < len(roots) and not os.path.isabs(nas_path):
+                root = roots[idx]
+                sep = "\\" if "\\" in root else "/"
+                root_clean = re.sub(r"[\\/]+$", "", root)
+                rel = re.sub(r"^[./\\\\]+", "", nas_path).replace("/", sep)
+                display_nas_path = f"{root_clean}{sep}{rel}" if rel else root_clean
+        except (ValueError, TypeError):
+            pass
+
+    created_at = datetime.now()
+    meta_payload = {
+        "name": task_name,
+        "description": task_desc,
+        "created": created_at.strftime("%Y-%m-%d %H:%M"),
+        "nas_path": display_nas_path,
+    }
+    if creator:
+        meta_payload["creator"] = creator
+    if work_id:
+        meta_payload["creator_work_id"] = work_id
+    if creator:
+        meta_payload["last_editor"] = creator
+    if work_id:
+        meta_payload["last_editor_work_id"] = work_id
+    meta_payload["last_edited"] = created_at.strftime("%Y-%m-%d %H:%M")
     with open(os.path.join(tdir, "meta.json"), "w", encoding="utf-8") as meta:
         json.dump(
-            {
-                "name": task_name,
-                "description": task_desc,
-                "created" : datetime.now().strftime("%Y-%m-%d %H:%M"),
-            },
+            meta_payload,
             meta,
             ensure_ascii=False,
             indent=2,
         )
-    return redirect(url_for("tasks_bp.task_detail", task_id=tid))
+    record_task_in_db(
+        tid,
+        name=task_name,
+        description=task_desc,
+        creator=creator or None,
+        nas_path=display_nas_path or None,
+        created_at=created_at,
+    )
+    return redirect(url_for("tasks_bp.tasks"))
 
+@tasks_bp.post("/tasks/<task_id>/copy", endpoint="copy_task")
+def copy_task(task_id):
+    def _fail(message: str):
+        flash(message, "danger")
+        return redirect(url_for("tasks_bp.tasks"))
+
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    if not os.path.isdir(tdir):
+        return _fail("找不到任務資料夾")
+
+    new_name = request.form.get("name", "").strip()
+    if not new_name:
+        return _fail("缺少任務名稱")
+    if task_name_exists(new_name):
+        return _fail("任務名稱已存在")
+
+    meta_path = os.path.join(tdir, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+
+    created_at = datetime.now()
+    work_id, creator = _get_actor_info()
+
+    new_id = str(uuid.uuid4())[:8]
+    new_dir = os.path.join(current_app.config["TASK_FOLDER"], new_id)
+    os.makedirs(new_dir, exist_ok=False)
+    try:
+        for subdir in ("files", "flows"):
+            src = os.path.join(tdir, subdir)
+            dest = os.path.join(new_dir, subdir)
+            if os.path.isdir(src):
+                shutil.copytree(ensure_windows_long_path(src), ensure_windows_long_path(dest))
+            elif subdir == "files":
+                os.makedirs(dest, exist_ok=True)
+    except Exception:
+        current_app.logger.exception("複製任務資料夾失敗")
+        shutil.rmtree(new_dir, ignore_errors=True)
+        return _fail("複製任務資料夾失敗，請稍後再試")
+
+    new_meta = {
+        "name": new_name,
+        "description": meta.get("description", ""),
+        "created": created_at.strftime("%Y-%m-%d %H:%M"),
+        "last_edited": created_at.strftime("%Y-%m-%d %H:%M"),
+    }
+    if creator:
+        new_meta["creator"] = creator
+        new_meta["last_editor"] = creator
+    if work_id:
+        new_meta["creator_work_id"] = work_id
+        new_meta["last_editor_work_id"] = work_id
+    with open(os.path.join(new_dir, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(new_meta, f, ensure_ascii=False, indent=2)
+
+    record_task_in_db(
+        new_id,
+        name=new_name,
+        description=new_meta.get("description") or None,
+        creator=creator or None,
+        nas_path=new_meta.get("nas_path") or None,
+        created_at=created_at,
+    )
+    flash("已複製任務", "success")
+    return redirect(url_for("tasks_bp.tasks"))
 
 @tasks_bp.post("/tasks/<task_id>/delete", endpoint="delete_task")
 def delete_task(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    meta_path = os.path.join(tdir, "meta.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    if not _can_delete_task(meta):
+        abort(403)
     if os.path.isdir(tdir):
         import shutil
         shutil.rmtree(tdir)
+    delete_task_record(task_id)
     return redirect(url_for("tasks_bp.tasks"))
+
+@tasks_bp.post("/tasks/<task_id>/files", endpoint="upload_task_file")
+def upload_task_file(task_id):
+    """Upload additional files to an existing task."""
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        abort(404)
+
+    uploads = request.files.getlist("upload_files")
+    has_uploads = any(f and f.filename for f in uploads)
+    if has_uploads:
+        for upload in uploads:
+            if not upload or not upload.filename:
+                continue
+            safe_name = secure_filename(upload.filename)
+            if not safe_name:
+                return "檔名不合法", 400
+            if not allowed_file(safe_name):
+                return "僅支援 DOCX、PDF、ZIP 或 Excel 檔案", 400
+            dest_name = deduplicate_name(files_dir, safe_name)
+            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
+            try:
+                if dest_name.lower().endswith(".zip"):
+                    upload.save(dest_path)
+                    with zipfile.ZipFile(dest_path, "r") as zf:
+                        zf.extractall(files_dir)
+                        for info in zf.infolist():
+                            if info.is_dir():
+                                continue
+                    os.remove(dest_path)
+                else:
+                    upload.save(dest_path)
+            except Exception:
+                current_app.logger.exception("本機檔案上傳失敗")
+                return "上傳失敗，請稍後再試", 400
+        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    nas_input = request.form.get("nas_file_path", "").strip()
+    if not nas_input:
+        return "請選擇要上傳的檔案", 400
+    try:
+        source_path = validate_nas_path(
+            nas_input,
+            allowed_roots=current_app.config.get("ALLOWED_SOURCE_ROOTS", []),
+        )
+        enforce_max_copy_size(source_path)
+    except ValueError as e:
+        return str(e), 400
+    except FileNotFoundError as e:
+        return str(e), 404
+
+    try:
+        source_path = ensure_windows_long_path(source_path)
+        if os.path.isdir(source_path):
+            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
+            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
+            shutil.copytree(source_path, dest_path)
+        else:
+            if not allowed_file(source_path):
+                return "僅支援 DOCX、PDF、ZIP 或 Excel 檔案，或複製整個資料夾", 400
+            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
+            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
+            if dest_name.lower().endswith(".zip"):
+                shutil.copy2(source_path, dest_path)
+                with zipfile.ZipFile(dest_path, "r") as zf:
+                    zf.extractall(files_dir)
+                os.remove(dest_path)
+            else:
+                shutil.copy2(source_path, dest_path)
+    except PermissionError:
+        return "沒有足夠的權限讀取或複製指定路徑", 400
+    except FileNotFoundError:
+        return "找不到指定的檔案或資料夾", 404
+    except shutil.Error:
+        current_app.logger.exception("複製檔案時發生錯誤")
+        return "複製檔案時發生錯誤，請稍後再試", 400
+    except Exception:
+        current_app.logger.exception("處理 NAS 檔案時發生未預期錯誤")
+        return "處理檔案時發生錯誤，請稍後再試", 400
+
+    return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+
+@tasks_bp.get("/tasks/<task_id>/nas-diff", endpoint="task_nas_diff")
+def task_nas_diff(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    meta_path = os.path.join(tdir, "meta.json")
+    if not os.path.isdir(files_dir) or not os.path.exists(meta_path):
+        return jsonify({"ok": False, "error": "Task not found"}), 404
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    nas_path = (meta.get("nas_path") or "").strip()
+    if not nas_path:
+        return jsonify({"ok": True, "diff": None, "message": "尚未設定 NAS 路徑"}), 200
+    if not os.path.isdir(nas_path):
+        return jsonify({"ok": True, "diff": None, "message": "NAS 路徑不存在或不是資料夾"}), 200
+
+    try:
+        task_files = {p.replace("\\", "/") for p in list_files(files_dir)}
+        nas_files = {p.replace("\\", "/") for p in list_files(nas_path)}
+        added = sorted(nas_files - task_files)
+        removed = sorted(task_files - nas_files)
+        if not added and not removed:
+            return jsonify({"ok": True, "diff": None, "message": "未偵測到變更"}), 200
+        limit = 5
+        diff = {
+            "added": added[:limit],
+            "removed": removed[:limit],
+            "added_count": len(added),
+            "removed_count": len(removed),
+            "limit": limit,
+        }
+        return jsonify({"ok": True, "diff": diff}), 200
+    except Exception:
+        current_app.logger.exception("Failed to compare NAS files")
+        return jsonify({"ok": False, "error": "Failed to compare NAS files"}), 500
+
+
+@tasks_bp.post("/tasks/<task_id>/sync-nas", endpoint="sync_task_nas")
+def sync_task_nas(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    meta_path = os.path.join(tdir, "meta.json")
+    if not os.path.exists(meta_path):
+        abort(404)
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    nas_path = (meta.get("nas_path") or "").strip()
+    if not nas_path:
+        flash("尚未設定 NAS 路徑，無法更新。", "warning")
+        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    abs_path = os.path.abspath(nas_path)
+    roots = get_configured_nas_roots()
+    if roots:
+        allowed = False
+        for root in roots:
+            root_abs = os.path.abspath(root)
+            try:
+                if os.path.commonpath([root_abs, abs_path]) == root_abs:
+                    allowed = True
+                    break
+            except ValueError:
+                continue
+        if not allowed:
+            flash("NAS 路徑不在允許的根目錄內。", "danger")
+            return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    if not os.path.isdir(abs_path):
+        flash("NAS 路徑不存在或不是資料夾。", "danger")
+        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    try:
+        enforce_max_copy_size(abs_path)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
+
+    tmp_dir = os.path.join(tdir, f"files_sync_{uuid.uuid4().hex[:8]}")
+    try:
+        src_dir = ensure_windows_long_path(abs_path)
+        tmp_target = ensure_windows_long_path(tmp_dir)
+        shutil.copytree(src_dir, tmp_target)
+        if os.path.isdir(files_dir):
+            shutil.rmtree(files_dir)
+        shutil.move(tmp_dir, files_dir)
+        _apply_last_edit(meta)
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+        flash("已更新 NAS 文件。", "success")
+    except PermissionError:
+        if os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        flash("沒有足夠的權限讀取或複製指定路徑。", "danger")
+    except Exception:
+        current_app.logger.exception("更新 NAS 文件失敗")
+        if os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        flash("更新 NAS 文件失敗，請稍後再試。", "danger")
+
+    return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
 
 
 @tasks_bp.post("/tasks/<task_id>/rename", endpoint="rename_task")
@@ -228,8 +570,8 @@ def rename_task(task_id):
         meta["created"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
+    record_task_in_db(task_id, name=new_name)
     return redirect(url_for("tasks_bp.tasks"))
-
 
 @tasks_bp.post("/tasks/<task_id>/description", endpoint="update_task_description")
 def update_task_description(task_id):
@@ -249,8 +591,8 @@ def update_task_description(task_id):
         meta["created"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
+    record_task_in_db(task_id, description=new_desc)
     return redirect(url_for("tasks_bp.tasks"))
-
 
 @tasks_bp.get("/tasks/<task_id>", endpoint="task_detail")
 def task_detail(task_id):
@@ -261,18 +603,40 @@ def task_detail(task_id):
     meta_path = os.path.join(tdir, "meta.json")
     name = task_id
     description = ""
+    creator = ""
+    nas_path = ""
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
             name = meta.get("name", task_id)
             description = meta.get("description", "")
+            creator = meta.get("creator", "") or ""
+            nas_path = meta.get("nas_path", "") or ""
+    nas_diff = None
+    if nas_path and os.path.isdir(nas_path):
+        try:
+            task_files = {p.replace("\\", "/") for p in list_files(files_dir)}
+            nas_files = {p.replace("\\", "/") for p in list_files(nas_path)}
+            added = sorted(nas_files - task_files)
+            removed = sorted(task_files - nas_files)
+            if added or removed:
+                limit = 5
+                nas_diff = {
+                    "added": added[:limit],
+                    "removed": removed[:limit],
+                    "added_count": len(added),
+                    "removed_count": len(removed),
+                    "limit": limit,
+                }
+        except Exception:
+            current_app.logger.exception("Failed to compare NAS files")
     tree = build_file_tree(files_dir)
     return render_template(
         "tasks/task_detail.html",
-        task={"id": task_id, "name": name, "description": description},
+        task={"id": task_id, "name": name, "description": description, "creator": creator, "nas_path": nas_path},
+        nas_diff=nas_diff,
         files_tree=tree,
     )
-
 
 @tasks_bp.post("/tasks/<task_id>/templates/parse", endpoint="parse_template_doc")
 def parse_template_doc(task_id):
@@ -319,7 +683,6 @@ def parse_template_doc(task_id):
         }
     )
 
-
 @tasks_bp.get("/tasks/<task_id>/result/<job_id>", endpoint="task_result")
 def task_result(task_id, job_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -347,7 +710,6 @@ def task_result(task_id, job_id):
         overall_status=overall_status,
     )
 
-
 @tasks_bp.get("/tasks/<task_id>/translate/<job_id>", endpoint="task_translate")
 def task_translate(task_id, job_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -370,7 +732,6 @@ def task_translate(task_id, job_id):
         as_attachment=True,
         download_name=f"translated_{job_id}.docx",
     )
-
 
 @tasks_bp.get("/tasks/<task_id>/compare/<job_id>", endpoint="task_compare")
 def task_compare(task_id, job_id):
@@ -483,7 +844,6 @@ def task_compare(task_id, job_id):
         versions=versions,
     )
 
-
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/save", endpoint="task_compare_save")
 def task_compare_save(task_id, job_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -498,7 +858,6 @@ def task_compare_save(task_id, job_id):
     html_content = clean_compare_html_content(html_content)
     save_compare_output(job_dir, html_content, titles_to_hide)
     return "OK"
-
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/save-as", endpoint="task_compare_save_as")
 def task_compare_save_as(task_id, job_id):
@@ -573,7 +932,6 @@ def task_compare_save_as(task_id, job_id):
     }
     return jsonify({"status": "ok", "version": version_payload})
 
-
 @tasks_bp.get("/tasks/<task_id>/view/<job_id>/<path:filename>", endpoint="task_view_file")
 def task_view_file(task_id, job_id, filename):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -583,7 +941,6 @@ def task_view_file(task_id, job_id, filename):
     if not os.path.isfile(file_path):
         abort(404)
     return send_from_directory(job_dir, safe_filename)
-
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/restore/<version_id>", endpoint="task_compare_restore_version")
 def task_compare_restore_version(task_id, job_id, version_id):
@@ -605,7 +962,6 @@ def task_compare_restore_version(task_id, job_id, version_id):
     shutil.copyfile(html_src, os.path.join(job_dir, "result.html"))
     shutil.copyfile(docx_src, os.path.join(job_dir, "result.docx"))
     return jsonify({"status": "ok"})
-
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/delete/<version_id>", endpoint="task_compare_delete_version")
 def task_compare_delete_version(task_id, job_id, version_id):
@@ -630,7 +986,6 @@ def task_compare_delete_version(task_id, job_id, version_id):
                 pass
     return jsonify({"status": "ok"})
 
-
 @tasks_bp.get("/tasks/<task_id>/download/<job_id>/version/<version_id>", endpoint="task_download_version")
 def task_download_version(task_id, job_id, version_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -650,7 +1005,6 @@ def task_download_version(task_id, job_id, version_id):
     slug = version.get("slug") or version_id
     download_name = f"{slug}_{version_id}.docx"
     return send_file(docx_src, as_attachment=True, download_name=download_name)
-
 
 @tasks_bp.get("/tasks/<task_id>/download/<job_id>/<kind>", endpoint="task_download")
 def task_download(task_id, job_id, kind):

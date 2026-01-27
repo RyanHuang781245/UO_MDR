@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 
 from flask import Blueprint, abort, current_app, redirect, render_template, request, send_file, url_for
+from flask_login import current_user
 from werkzeug.utils import secure_filename
 
 from app.services.flow_service import (
@@ -27,6 +29,38 @@ from app.services.task_service import build_file_tree, gather_available_files
 from app.utils import parse_bool
 
 flows_bp = Blueprint("flows_bp", __name__, template_folder="templates")
+
+
+def _get_actor_info():
+    if current_user and getattr(current_user, "is_authenticated", False):
+        display_name = (getattr(current_user, "display_name", "") or "").strip()
+        chinese_only = "".join(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf\uF900-\uFAFF]+", display_name))
+        work_id = (getattr(current_user, "work_id", "") or "").strip()
+        if chinese_only:
+            label = f"{work_id} {chinese_only}" if work_id else chinese_only
+        else:
+            label = display_name or work_id
+        return work_id, label
+    return "", ""
+
+
+def _touch_task_last_edit(task_id: str) -> None:
+    meta_path = os.path.join(current_app.config["TASK_FOLDER"], task_id, "meta.json")
+    if not os.path.exists(meta_path):
+        return
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except Exception:
+        meta = {}
+    work_id, label = _get_actor_info()
+    meta["last_edited"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if label:
+        meta["last_editor"] = label
+    if work_id:
+        meta["last_editor_work_id"] = work_id
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
 
 
 @flows_bp.get("/tasks/<task_id>/flows", endpoint="flow_builder")
@@ -164,6 +198,7 @@ def run_flow(task_id):
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        _touch_task_last_edit(task_id)
         return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
     runtime_steps = []
@@ -206,6 +241,7 @@ def run_flow(task_id):
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
         hide_paragraphs_with_text(result_path, titles_to_hide)
+    _touch_task_last_edit(task_id)
     return redirect(url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id))
 
 
@@ -274,6 +310,7 @@ def execute_flow(task_id, flow_name):
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
         hide_paragraphs_with_text(result_path, titles_to_hide)
+    _touch_task_last_edit(task_id)
     return redirect(url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id))
 
 
@@ -326,6 +363,7 @@ def update_flow_format(task_id, flow_name):
     with open(flow_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
+    _touch_task_last_edit(task_id)
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
 
@@ -336,6 +374,7 @@ def delete_flow(task_id, flow_name):
     path = os.path.join(flow_dir, f"{flow_name}.json")
     if os.path.exists(path):
         os.remove(path)
+        _touch_task_last_edit(task_id)
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
 
@@ -353,6 +392,7 @@ def rename_flow(task_id, flow_name):
     if os.path.exists(new_path):
         return "流程名稱已存在", 400
     os.rename(old_path, new_path)
+    _touch_task_last_edit(task_id)
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
 
@@ -376,4 +416,5 @@ def import_flow(task_id):
     name = os.path.splitext(secure_filename(f.filename))[0]
     path = os.path.join(flow_dir, f"{name}.json")
     f.save(path)
+    _touch_task_last_edit(task_id)
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id))

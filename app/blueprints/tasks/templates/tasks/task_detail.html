@@ -1,24 +1,133 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% from "_file_tree.html" import render_file_tree %}
 {% block content %}
-<h1 class="h4 mb-1">{{ task.name }}</h1>
-{% if task.description %}
-<p class="text-muted mb-3">{{ task.description }}</p>
-{% else %}
-<div class="mb-3"></div>
-{% endif %}
-
-<h2 class="h6">檔案結構</h2>
-<div class="text-muted small mb-2">以目錄樹方式瀏覽，點擊資料夾可展開/收合。</div>
-<div class="file-tree-container">
-  {{ render_file_tree(files_tree) }}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex flex-column flex-md-row align-items-md-start justify-content-between gap-2">
+      <div>
+        <h1 class="h4 mb-2 fw-bold">{{ task.name }}</h1>
+        {% if task.description %}
+        <p class="text-muted mb-0">{{ task.description }}</p>
+        {% else %}
+        <p class="text-muted mb-0">-</p>
+        {% endif %}
+      </div>
+      <div class="text-muted small text-md-end">任務 ID：{{ task.id }}</div>
+    </div>
+    <hr class="my-3">
+    <div class="row g-3 small">
+      {% if task.creator %}
+      <div class="col-md-6">
+        <div class="text-muted">建立人員</div>
+        <div class="fw-semibold">{{ task.creator }}</div>
+      </div>
+      {% endif %}
+      {% if task.nas_path %}
+      <div class="col-md-6">
+        <div class="text-muted">NAS 路徑</div>
+        <div class="fw-semibold font-monospace text-break">{{ task.nas_path }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
 </div>
 
-<div class="d-flex gap-2 mt-2">
-  <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">管理流程</a>
-  <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">複製檔案</a>
-  <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">上傳 Mapping</a>
-  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.tasks') }}">任務管理</a>
+<div class="card">
+  <div class="card-body">
+    <div class="fw-semibold mb-1">檔案結構</div>
+    <div class="text-muted small mb-2">點擊資料夾名稱可展開並檢視資料夾內容，點擊進入流程管理進入文件處理頁面，點擊返回任務管理回到任務管理列表。</div>
+    {% if task.nas_path %}
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <button class="btn btn-sm btn-info" type="button" id="nasDiffBtn" data-diff-url="{{ url_for('tasks_bp.task_nas_diff', task_id=task.id) }}">偵測 NAS 變更</button>
+      <form action="{{ url_for('tasks_bp.sync_task_nas', task_id=task.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定要更新 NAS 文件嗎？這會覆蓋目前任務檔案夾內容。')">
+        <button class="btn btn-sm btn-warning" type="submit">同步 NAS 變更</button>
+      </form>
+      <div class="small text-muted" id="nasDiffStatus"></div>
+    </div>
+    <div class="alert alert-warning py-2 mb-3 {% if not nas_diff %}d-none{% endif %}" id="nasDiffAlert">
+      {% if nas_diff %}
+      <div class="fw-semibold">NAS 檔案有變更</div>
+      <div class="small text-muted">新增 {{ nas_diff.added_count }}、刪除 {{ nas_diff.removed_count }}</div>
+      {% if nas_diff.added %}
+      <div class="small mt-2">新增：</div>
+      <ul class="small mb-1">
+        {% for item in nas_diff.added %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if nas_diff.removed %}
+      <div class="small mt-2">刪除：</div>
+      <ul class="small mb-1">
+        {% for item in nas_diff.removed %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if nas_diff.added_count > nas_diff.added|length or nas_diff.removed_count > nas_diff.removed|length %}
+      <div class="small text-muted">僅顯示前 {{ nas_diff.limit }} 筆</div>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="file-tree-container">
+      {{ render_file_tree(files_tree) }}
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">進入管理流程</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.tasks') }}">返回任務管理</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">複製檔案</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">上傳 Mapping</a>
+    </div>
+  </div>
 </div>
+
+<script>
+const nasDiffBtn = document.getElementById('nasDiffBtn');
+const nasDiffStatus = document.getElementById('nasDiffStatus');
+const nasDiffAlert = document.getElementById('nasDiffAlert');
+
+function renderNasDiff(diff){
+  if(!nasDiffAlert) return;
+  if(!diff){
+    nasDiffAlert.classList.add('d-none');
+    nasDiffAlert.innerHTML = '';
+    return;
+  }
+  const addedList = (diff.added || []).map(item => `<li>${item}</li>`).join('');
+  const removedList = (diff.removed || []).map(item => `<li>${item}</li>`).join('');
+  const showLimit = (diff.added_count > (diff.added || []).length) || (diff.removed_count > (diff.removed || []).length);
+  nasDiffAlert.classList.remove('d-none');
+  nasDiffAlert.innerHTML = `
+    <div class="fw-semibold">NAS 檔案有變更</div>
+    <div class="small text-muted">新增 ${diff.added_count}、刪除 ${diff.removed_count}</div>
+    ${addedList ? `<div class="small mt-2">新增：</div><ul class="small mb-1">${addedList}</ul>` : ''}
+    ${removedList ? `<div class="small mt-2">刪除：</div><ul class="small mb-1">${removedList}</ul>` : ''}
+    ${showLimit ? `<div class="small text-muted">僅顯示前 ${diff.limit} 筆</div>` : ''}
+  `;
+}
+
+if(nasDiffBtn){
+  nasDiffBtn.addEventListener('click', async () => {
+    const url = nasDiffBtn.getAttribute('data-diff-url');
+    if(!url) return;
+    nasDiffBtn.disabled = true;
+    if(nasDiffStatus) nasDiffStatus.textContent = '偵測中...';
+    try{
+      const resp = await fetch(url, {cache: 'no-store'});
+      const data = await resp.json();
+      if(!resp.ok || !data.ok){
+        throw new Error(data.error || '偵測失敗');
+      }
+      if(nasDiffStatus) nasDiffStatus.textContent = data.message || '';
+      renderNasDiff(data.diff);
+    }catch(err){
+      if(nasDiffStatus) nasDiffStatus.textContent = err.message || '偵測失敗';
+    }finally{
+      nasDiffBtn.disabled = false;
+    }
+  });
+}
+</script>
+
 {% endblock %}
-

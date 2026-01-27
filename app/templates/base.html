@@ -24,7 +24,7 @@
 
           {% if current_user %}
             <span class="text-muted small me-2 text-nowrap">
-              {{ current_user.username }}
+              {{ current_user.work_id }}
             </span>
             <div class="dropdown">
               <button
@@ -39,7 +39,7 @@
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
                 <li class="px-3 py-2">
-                  <div class="fw-semibold">{{ current_user.username }}</div>
+                  <div class="fw-semibold">{{ current_user.work_id }}</div>
                   {% if current_user_roles %}
                     <div class="text-muted small">{{ role_labels(current_user_roles) }}</div>
                   {% endif %}

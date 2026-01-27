@@ -12,7 +12,7 @@ from modules.auth_models import (
     ROLE_EDITOR,
     commit_session,
     db,
-    get_user,
+    get_user_by_work_id,
     sync_user_from_ldap,
     upsert_user_role,
 )
@@ -48,7 +48,7 @@ def login():
                 return render_template("auth/login.html", error=error, form=form)
 
             profile = build_ldap_profile(ldap_user)
-            user = get_user(profile.username)
+            user = get_user_by_work_id(profile.work_id)
             if not user:
                 error = "Your account is not authorized."
                 return render_template("auth/login.html", error=error, form=form)

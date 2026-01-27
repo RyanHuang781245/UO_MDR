@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import uuid
 from datetime import datetime
 
@@ -44,7 +45,7 @@ def _get_actor_info():
     return "", ""
 
 
-def _touch_task_last_edit(task_id: str) -> None:
+def _touch_task_last_edit(task_id: str, work_id: str | None = None, label: str | None = None) -> None:
     meta_path = os.path.join(current_app.config["TASK_FOLDER"], task_id, "meta.json")
     if not os.path.exists(meta_path):
         return
@@ -53,7 +54,8 @@ def _touch_task_last_edit(task_id: str) -> None:
             meta = json.load(f)
     except Exception:
         meta = {}
-    work_id, label = _get_actor_info()
+    if work_id is None or label is None:
+        work_id, label = _get_actor_info()
     meta["last_edited"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     if label:
         meta["last_editor"] = label
@@ -61,6 +63,111 @@ def _touch_task_last_edit(task_id: str) -> None:
         meta["last_editor_work_id"] = work_id
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
+
+
+def _batch_status_path(task_id: str, batch_id: str) -> str:
+    return os.path.join(current_app.config["TASK_FOLDER"], task_id, "jobs", "batch", f"{batch_id}.json")
+
+
+def _write_batch_status(task_id: str, batch_id: str, payload: dict) -> None:
+    status_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id, "jobs", "batch")
+    os.makedirs(status_dir, exist_ok=True)
+    path = _batch_status_path(task_id, batch_id)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, path)
+
+
+def _load_batch_status(task_id: str, batch_id: str) -> dict | None:
+    path = _batch_status_path(task_id, batch_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _execute_saved_flow(task_id: str, flow_name: str) -> str:
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        raise FileNotFoundError("Task files not found")
+    flow_path = os.path.join(tdir, "flows", f"{flow_name}.json")
+    if not os.path.exists(flow_path):
+        raise FileNotFoundError("Flow not found")
+    with open(flow_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    document_format = DEFAULT_DOCUMENT_FORMAT_KEY
+    line_spacing = DEFAULT_LINE_SPACING
+    template_file = None
+    template_cfg = None
+    if isinstance(data, dict):
+        workflow = data.get("steps", [])
+        center_titles = data.get("center_titles", True) or any(
+            isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
+        )
+        document_format = normalize_document_format(data.get("document_format"))
+        line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
+        template_file = data.get("template_file")
+    else:
+        workflow = data
+        center_titles = True
+    if template_file:
+        tpl_abs = os.path.join(files_dir, template_file)
+        if os.path.isfile(tpl_abs):
+            template_paragraphs = parse_template_paragraphs(tpl_abs)
+            template_cfg = {"path": tpl_abs, "paragraphs": template_paragraphs}
+    runtime_steps = []
+    for step in workflow:
+        stype = step.get("type")
+        if stype not in SUPPORTED_STEPS:
+            continue
+        schema = SUPPORTED_STEPS.get(stype, {})
+        params = {}
+        for k, v in step.get("params", {}).items():
+            accept = schema.get("accepts", {}).get(k, "text")
+            if accept.startswith("file") and v:
+                params[k] = os.path.join(files_dir, v)
+            else:
+                params[k] = v
+        runtime_steps.append({"type": stype, "params": params})
+    job_id = str(uuid.uuid4())[:8]
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    os.makedirs(job_dir, exist_ok=True)
+    workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
+    result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
+    titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
+    if center_titles:
+        center_table_figure_paragraphs(result_path)
+    if not SKIP_DOCX_CLEANUP:
+        remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
+        hide_paragraphs_with_text(result_path, titles_to_hide)
+    return job_id
+
+
+def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, actor: dict) -> None:
+    with app.app_context():
+        status = _load_batch_status(task_id, batch_id) or {}
+        status.update({"status": "running", "current_index": 0})
+        _write_batch_status(task_id, batch_id, status)
+        results = []
+        for idx, flow_name in enumerate(flow_sequence, start=1):
+            status.update({"current_index": idx, "current_flow": flow_name})
+            _write_batch_status(task_id, batch_id, status)
+            try:
+                job_id = _execute_saved_flow(task_id, flow_name)
+                results.append({"flow": flow_name, "job_id": job_id, "ok": True})
+                _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
+            except Exception as exc:
+                results.append({"flow": flow_name, "ok": False, "error": str(exc)})
+                status.update({"status": "failed", "error": str(exc), "results": results})
+                _write_batch_status(task_id, batch_id, status)
+                return
+        status.update({"status": "completed", "results": results})
+        _write_batch_status(task_id, batch_id, status)
 
 
 @flows_bp.get("/tasks/<task_id>/flows", endpoint="flow_builder")
@@ -104,6 +211,7 @@ def flow_builder(task_id):
     template_file = None
     template_paragraphs = []
     loaded_name = request.args.get("flow")
+    batch_id = request.args.get("batch")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
         if os.path.exists(p):
@@ -141,6 +249,7 @@ def flow_builder(task_id):
         flows=flows,
         preset=preset,
         loaded_name=loaded_name,
+        batch_id=batch_id,
         center_titles=center_titles,
         files_tree=tree,
         template_file=template_file,
@@ -312,6 +421,51 @@ def execute_flow(task_id, flow_name):
         hide_paragraphs_with_text(result_path, titles_to_hide)
     _touch_task_last_edit(task_id)
     return redirect(url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id))
+
+
+@flows_bp.post("/tasks/<task_id>/flows/run-batch", endpoint="run_flow_batch")
+def run_flow_batch(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(tdir, "flows")
+    if not os.path.isdir(flow_dir):
+        abort(404)
+    sequence_raw = request.form.get("flow_sequence", "").strip()
+    if not sequence_raw:
+        return "缺少流程順序", 400
+    flow_sequence = [s.strip() for s in sequence_raw.split(",") if s.strip()]
+    if not flow_sequence:
+        return "缺少流程順序", 400
+    for name in flow_sequence:
+        if not os.path.exists(os.path.join(flow_dir, f"{name}.json")):
+            return f"找不到流程：{name}", 404
+    batch_id = str(uuid.uuid4())[:8]
+    work_id, label = _get_actor_info()
+    status = {
+        "id": batch_id,
+        "status": "queued",
+        "flows": flow_sequence,
+        "current_index": 0,
+        "current_flow": "",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "actor": label or work_id,
+    }
+    _write_batch_status(task_id, batch_id, status)
+    app = current_app._get_current_object()
+    thread = threading.Thread(
+        target=_run_flow_batch,
+        args=(app, task_id, flow_sequence, batch_id, {"work_id": work_id, "label": label}),
+        daemon=True,
+    )
+    thread.start()
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, batch=batch_id))
+
+
+@flows_bp.get("/tasks/<task_id>/flows/batch/<batch_id>/status", endpoint="flow_batch_status")
+def flow_batch_status(task_id, batch_id):
+    status = _load_batch_status(task_id, batch_id)
+    if not status:
+        return {"ok": False, "error": "Batch not found"}, 404
+    return {"ok": True, "status": status}
 
 
 @flows_bp.post("/tasks/<task_id>/flows/update-format/<flow_name>", endpoint="update_flow_format")

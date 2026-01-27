@@ -8,16 +8,32 @@
     <link href="{{ url_for('static', filename='file-tree.css') }}" rel="stylesheet">
     <style>
       .navbar .dropdown-toggle::after { display: none; }
+      .navbar { padding-top: 0; padding-bottom: 0; }
+      .navbar .container-fluid { align-items: stretch; }
+      .navbar .navbar-brand,
+      .navbar .navbar-actions {
+        display: flex;
+        align-items: center;
+        height: 100%;
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
+      }
+      .navbar .dropdown,
+      .navbar .dropdown-toggle {
+        height: 100%;
+        display: flex;
+        align-items: center;
+      }
     </style>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
-      <div class="container d-flex">
+      <div class="container-fluid d-flex justify-content-between">
         <a class="navbar-brand fw-bold me-auto d-flex align-items-center" href="{{ url_for('tasks_bp.tasks') }}">
+          <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="me-2" style="height:30px;">
           法規文件轉換平台
-          <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="ms-2" style="height:24px;">
         </a>
-        <div class="d-flex align-items-center gap-2">
+        <div class="navbar-actions d-flex align-items-center gap-2">
           {% if not auth_enabled %}
             <span class="text-muted small">Auth disabled</span>
           {% endif %}

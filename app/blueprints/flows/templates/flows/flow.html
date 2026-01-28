@@ -2,6 +2,10 @@
 {% block content %}
 {% from "_file_tree.html" import render_file_tree %}
 <h1 class="h3 mb-3 fw-bold">定義流程</h1>
+<div class="d-flex gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">返回任務詳情</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">執行結果</a>
+</div>
 
 <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
   <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
@@ -34,7 +38,6 @@
       <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">模板解析</button>
       <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
       <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">進入排程管理</a>
-      <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">返回任務詳情</a>
     </div>
     <div class="small text-muted">目前模板：<code id="currentTemplateLabel">{{ template_file or "未選擇" }}</code></div>
   </form>

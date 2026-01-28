@@ -90,6 +90,29 @@ def _load_batch_status(task_id: str, batch_id: str) -> dict | None:
         return None
 
 
+def _write_job_meta(job_dir: str, payload: dict) -> None:
+    try:
+        meta_path = os.path.join(job_dir, "meta.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception:
+        current_app.logger.exception("Failed to write job meta")
+
+
+def _read_job_meta(job_dir: str) -> dict:
+    meta_path = os.path.join(job_dir, "meta.json")
+    if not os.path.exists(meta_path):
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        return {}
+    return {}
+
+
 def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     files_dir = os.path.join(tdir, "files")
@@ -137,6 +160,14 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
+    _write_job_meta(
+        job_dir,
+        {
+            "flow_name": flow_name,
+            "mode": "batch",
+            "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
+    )
     workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
@@ -229,6 +260,68 @@ def _load_saved_flows(flow_dir: str) -> list[dict]:
     return flows
 
 
+def _list_flow_runs(task_id: str) -> list[dict]:
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    jobs_dir = os.path.join(tdir, "jobs")
+    if not os.path.isdir(jobs_dir):
+        return []
+    results = []
+    for name in os.listdir(jobs_dir):
+        job_dir = os.path.join(jobs_dir, name)
+        if name == "batch" or not os.path.isdir(job_dir):
+            continue
+        meta = _read_job_meta(job_dir)
+        if meta.get("mode") == "batch":
+            continue
+        flow_name = (meta.get("flow_name") or "").strip() or "未命名流程"
+        started_at = meta.get("started_at")
+        if not started_at:
+            started_at = datetime.fromtimestamp(os.path.getmtime(job_dir)).strftime("%Y-%m-%d %H:%M:%S")
+        result_path = os.path.join(job_dir, "result.docx")
+        log_path = os.path.join(job_dir, "log.json")
+        completed = os.path.exists(result_path)
+        results.append(
+            {
+                "job_id": name,
+                "flow_name": flow_name,
+                "started_at": started_at,
+                "status": "completed" if completed else "pending",
+                "has_result": completed,
+                "has_log": os.path.exists(log_path),
+            }
+        )
+    results.sort(key=lambda r: r["started_at"], reverse=True)
+    return results
+
+
+def _list_batch_statuses(task_id: str) -> list[dict]:
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    status_dir = os.path.join(tdir, "jobs", "batch")
+    if not os.path.isdir(status_dir):
+        return []
+    items = []
+    for fn in os.listdir(status_dir):
+        if not fn.endswith(".json"):
+            continue
+        batch_id = os.path.splitext(fn)[0]
+        status = _load_batch_status(task_id, batch_id) or {}
+        created_at = status.get("created_at")
+        if not created_at:
+            created_at = datetime.fromtimestamp(os.path.getmtime(os.path.join(status_dir, fn))).strftime("%Y-%m-%d %H:%M:%S")
+        items.append(
+            {
+                "id": batch_id,
+                "status": status.get("status") or "unknown",
+                "created_at": created_at,
+                "current_flow": status.get("current_flow") or "",
+                "current_index": status.get("current_index") or 0,
+                "total": len(status.get("flows") or []),
+            }
+        )
+    items.sort(key=lambda r: r["created_at"], reverse=True)
+    return items
+
+
 @flows_bp.get("/tasks/<task_id>/flows", endpoint="flow_builder")
 def flow_builder(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -300,6 +393,46 @@ def flow_batch_page(task_id):
         task={"id": task_id},
         flows=flows,
         batch_id=batch_id,
+    )
+
+
+@flows_bp.get("/tasks/<task_id>/flows/runs", endpoint="flow_runs")
+def flow_runs(task_id):
+    runs = _list_flow_runs(task_id)
+    return render_template(
+        "flows/runs.html",
+        task={"id": task_id},
+        runs=runs,
+    )
+
+
+@flows_bp.get("/tasks/<task_id>/flows/batches", endpoint="flow_batch_list")
+def flow_batch_list(task_id):
+    batches = _list_batch_statuses(task_id)
+    running = [b for b in batches if b["status"] in ("running", "queued")]
+    return render_template(
+        "flows/batch_list.html",
+        task={"id": task_id},
+        batches=batches,
+        running=running,
+    )
+
+
+@flows_bp.get("/tasks/<task_id>/flows/results", endpoint="flow_results")
+def flow_results(task_id):
+    view = (request.args.get("view") or "single").lower()
+    if view not in ("single", "batch"):
+        view = "single"
+    runs = _list_flow_runs(task_id)
+    batches = _list_batch_statuses(task_id)
+    running = [b for b in batches if b["status"] in ("running", "queued")]
+    return render_template(
+        "flows/results.html",
+        task={"id": task_id},
+        view=view,
+        runs=runs,
+        batches=batches,
+        running=running,
     )
 
 
@@ -390,6 +523,14 @@ def run_flow(task_id):
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
+    _write_job_meta(
+        job_dir,
+        {
+            "flow_name": flow_name or "未命名流程",
+            "mode": "single",
+            "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
+    )
     workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
@@ -459,6 +600,14 @@ def execute_flow(task_id, flow_name):
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
+    _write_job_meta(
+        job_dir,
+        {
+            "flow_name": flow_name,
+            "mode": "single",
+            "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
+    )
     workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))

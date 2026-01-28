@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">執行結果</h1>
+
+<div class="d-flex gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">返回流程管理</a>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if view == 'single' %}active{% endif %}"
+       href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single') }}">單次執行</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if view == 'batch' %}active{% endif %}"
+       href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}">批次執行</a>
+  </li>
+</ul>
+
+{% if view == 'single' %}
+  <div class="mb-3">
+    <h2 class="h6">目前執行中</h2>
+    <div class="text-muted">單次流程為同步執行，通常不會顯示執行中。</div>
+  </div>
+  {% if not runs %}
+    <div class="text-muted">尚無執行紀錄</div>
+  {% else %}
+    <div class="table-responsive">
+      <table class="table table-striped align-middle text-center">
+        <thead>
+          <tr>
+            <th class="text-start">流程名稱</th>
+            <th style="width:180px;">開始時間</th>
+            <th style="width:140px;">狀態</th>
+            <th style="width:260px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td class="text-start">{{ r.flow_name }}</td>
+            <td>{{ r.started_at }}</td>
+            <td>
+              {% if r.status == "completed" %}
+                <span class="text-success">完成</span>
+              {% else %}
+                <span class="text-muted">未完成</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="btn-group btn-group-sm" role="group">
+                {% if r.has_result %}
+                  <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}">查看結果</a>
+                  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">下載結果</a>
+                {% endif %}
+                {% if r.has_log %}
+                  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% else %}
+  <div class="mb-3">
+    <h2 class="h6">目前執行中</h2>
+    {% if not running %}
+      <div class="text-muted">目前沒有執行中的批次</div>
+    {% else %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle text-center">
+          <thead>
+            <tr>
+              <th style="width:160px;">批次 ID</th>
+              <th style="width:180px;">狀態</th>
+              <th class="text-start">目前流程</th>
+              <th style="width:180px;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in running %}
+            {% set status_label = "執行中" if b.status == "running" else ("排隊中" if b.status == "queued" else b.status) %}
+            <tr>
+              <td>{{ b.id }}</td>
+              <td>{{ status_label }}</td>
+              <td class="text-start">{{ b.current_flow }}{% if b.total %} ({{ b.current_index }}/{{ b.total }}){% endif %}</td>
+              <td>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=b.id) }}">查看狀態</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <h2 class="h6">已完成/歷史紀錄</h2>
+    {% if not batches %}
+      <div class="text-muted">尚無批次紀錄</div>
+    {% else %}
+      <div class="table-responsive">
+        <table class="table table-striped align-middle text-center">
+          <thead>
+            <tr>
+              <th style="width:160px;">批次 ID</th>
+              <th style="width:180px;">狀態</th>
+              <th style="width:200px;">建立時間</th>
+              <th style="width:200px;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in batches %}
+            {% set status_label = "完成" if b.status == "completed" else ("失敗" if b.status == "failed" else ("執行中" if b.status == "running" else ("排隊中" if b.status == "queued" else b.status))) %}
+            <tr>
+              <td>{{ b.id }}</td>
+              <td>{{ status_label }}</td>
+              <td>{{ b.created_at }}</td>
+              <td>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flows_bp.flow_batch_result', task_id=task.id, batch_id=b.id) }}">查看結果</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

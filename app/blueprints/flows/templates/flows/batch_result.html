@@ -7,7 +7,7 @@
   <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">返回流程編輯</a>
 </div>
 
-<div class="mb-3 text-muted">批次 ID：{{ status.id }}</div>
+<!-- <div class="mb-3 text-muted">批次 ID：{{ status.id }}</div> -->
 
 {% if status.status != "completed" %}
   <div class="alert alert-warning">批次尚未完成：{{ status.status }}</div>

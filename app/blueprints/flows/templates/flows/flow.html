@@ -101,7 +101,7 @@
 <table class="table table-striped text-center align-middle" id="flowTable">
   <thead>
     <tr>
-      <th class="text-start">流程名稱</th>
+      <th class="text-center">流程名稱</th>
       <th class="text-center" style="width:180px;">建立時間</th>
       <th class="text-center" style="width:360px;">操作</th>
     </tr>
@@ -109,7 +109,7 @@
   <tbody id="flowTableBody">
   {% for f in flows %}
     <tr data-flow="{{ f.name }}">
-      <td class="align-middle text-start">{{ f.name }}</td>
+      <td class="align-middle text-center">{{ f.name }}</td>
       <td class="align-middle">{{ f.created }}</td>
       <td class="align-middle">
         <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>

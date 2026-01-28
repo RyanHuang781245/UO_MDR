@@ -201,34 +201,10 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
         _write_batch_status(task_id, batch_id, status)
 
 
-def _flow_order_path(flow_dir: str) -> str:
-    return os.path.join(flow_dir, "order.json")
-
-
-def _load_flow_order(flow_dir: str) -> list[str]:
-    path = _flow_order_path(flow_dir)
-    if not os.path.exists(path):
-        return []
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            return [str(x) for x in data if str(x)]
-    except Exception:
-        return []
-    return []
-
-
-def _save_flow_order(flow_dir: str, order: list[str]) -> None:
-    path = _flow_order_path(flow_dir)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(order, f, ensure_ascii=False, indent=2)
-
-
 def _load_saved_flows(flow_dir: str) -> list[dict]:
     flows = []
     for fn in os.listdir(flow_dir):
-        if fn.endswith(".json"):
+        if fn.endswith(".json") and fn != "order.json":
             path = os.path.join(flow_dir, fn)
             created = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
             has_copy = False
@@ -254,9 +230,7 @@ def _load_saved_flows(flow_dir: str) -> list[dict]:
                     "has_copy": has_copy,
                 }
             )
-    order_list = _load_flow_order(flow_dir)
-    order_index = {name: idx for idx, name in enumerate(order_list)}
-    flows.sort(key=lambda f: (order_index.get(f["name"], 10**6), f["name"]))
+    flows.sort(key=lambda f: f["name"])
     return flows
 
 
@@ -486,10 +460,6 @@ def run_flow(task_id):
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        order = _load_flow_order(flow_dir)
-        if flow_name not in order:
-            order.append(flow_name)
-            _save_flow_order(flow_dir, order)
         _touch_task_last_edit(task_id)
         return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
@@ -682,26 +652,6 @@ def flow_batch_result(task_id, batch_id):
     )
 
 
-@flows_bp.post("/tasks/<task_id>/flows/order", endpoint="update_flow_order")
-def update_flow_order(task_id):
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    flow_dir = os.path.join(tdir, "flows")
-    if not os.path.isdir(flow_dir):
-        abort(404)
-    payload = request.get_json(silent=True) or {}
-    order = payload.get("order")
-    if order is None:
-        order = request.form.get("order", "")
-    if isinstance(order, str):
-        order = [s.strip() for s in order.split(",") if s.strip()]
-    if not isinstance(order, list):
-        return {"ok": False, "error": "Invalid order"}, 400
-    existing = {os.path.splitext(fn)[0] for fn in os.listdir(flow_dir) if fn.endswith(".json")}
-    normalized = [name for name in order if name in existing]
-    _save_flow_order(flow_dir, normalized)
-    return {"ok": True, "order": normalized}
-
-
 @flows_bp.post("/tasks/<task_id>/flows/update-format/<flow_name>", endpoint="update_flow_format")
 def update_flow_format(task_id, flow_name):
     """Update the document formatting metadata for a saved flow."""
@@ -762,10 +712,6 @@ def delete_flow(task_id, flow_name):
     path = os.path.join(flow_dir, f"{flow_name}.json")
     if os.path.exists(path):
         os.remove(path)
-        order = _load_flow_order(flow_dir)
-        if order and flow_name in order:
-            order = [name for name in order if name != flow_name]
-            _save_flow_order(flow_dir, order)
         _touch_task_last_edit(task_id)
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
@@ -784,10 +730,6 @@ def rename_flow(task_id, flow_name):
     if os.path.exists(new_path):
         return "流程名稱已存在", 400
     os.rename(old_path, new_path)
-    order = _load_flow_order(flow_dir)
-    if order and flow_name in order:
-        order = [new_name if name == flow_name else name for name in order]
-        _save_flow_order(flow_dir, order)
     _touch_task_last_edit(task_id)
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
@@ -812,9 +754,5 @@ def import_flow(task_id):
     name = os.path.splitext(secure_filename(f.filename))[0]
     path = os.path.join(flow_dir, f"{name}.json")
     f.save(path)
-    order = _load_flow_order(flow_dir)
-    if name not in order:
-        order.append(name)
-        _save_flow_order(flow_dir, order)
     _touch_task_last_edit(task_id)
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id))

@@ -87,5 +87,5 @@ def login():
 @auth_bp.get("/logout", endpoint="logout")
 def logout():
     logout_user()
-    flash("Logged out.", "info")
+    flash("已登出", "info")
     return redirect(url_for("auth_bp.login"))

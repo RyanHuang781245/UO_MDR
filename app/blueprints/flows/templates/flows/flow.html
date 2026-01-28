@@ -97,73 +97,43 @@
 <div class="mt-3">
 </div>
 <hr>
-<h2 class="h5 mt-4">已保存的流程</h2>
-<table class="table table-striped text-center align-middle">
+<h2 class="h5 mt-4">已保存流程</h2>
+<table class="table table-striped text-center align-middle" id="flowTable">
   <thead>
     <tr>
-      <th class="text-center">名稱</th>
-      <th class="text-center">建立時間</th>
-      <th class="text-center">操作</th>
+      <th class="text-start">流程名稱</th>
+      <th class="text-center" style="width:180px;">建立時間</th>
+      <th class="text-center" style="width:360px;">操作</th>
     </tr>
   </thead>
-  <tbody>
+  <tbody id="flowTableBody">
   {% for f in flows %}
-    <tr>
-      <td class="align-middle">{{ f.name }}</td>
+    <tr data-flow="{{ f.name }}">
+      <td class="align-middle text-start">{{ f.name }}</td>
       <td class="align-middle">{{ f.created }}</td>
       <td class="align-middle">
-        <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('此流程包含複製檔案步驟，確定要執行嗎？');"{% endif %}>
+        <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
           <button class="btn btn-sm btn-outline-success">執行</button>
         </form>
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">編輯</a>
         <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameFlow('{{ f.name }}')">重新命名</button>
-        <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
+        <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('\u78ba\u5b9a\u522a\u9664?')">
           <button class="btn btn-sm btn-outline-danger">刪除</button>
         </form>
-          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a>
-        </td>
-      </tr>
-    {% else %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a>
+      </td>
+    </tr>
+  {% else %}
     <tr><td colspan="3">尚無流程</td></tr>
   {% endfor %}
   </tbody>
-
-<h3 class="h6 mt-4">批次背景執行</h3>
-<form id="batch_flow_form" action="{{ url_for('flows_bp.run_flow_batch', task_id=task.id) }}" method="post" class="card card-body">
-  <input type="hidden" name="flow_sequence" id="flow_sequence" value="">
-  <div class="table-responsive">
-    <table class="table table-sm align-middle text-center mb-2">
-      <thead>
-        <tr>
-          <th style="width:60px;">選取</th>
-          <th style="width:110px;">順序</th>
-          <th class="text-start">流程名稱</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for f in flows %}
-        <tr>
-          <td><input type="checkbox" class="form-check-input batch-flow-check" value="{{ f.name }}"></td>
-          <td><input type="number" min="1" class="form-control form-control-sm batch-flow-order" data-flow="{{ f.name }}" placeholder="順序"></td>
-          <td class="text-start">{{ f.name }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="3" class="text-muted">尚無流程</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <div class="d-flex gap-2 align-items-center">
-    <button class="btn btn-outline-primary" type="submit">背景依序執行</button>
-    <div class="small text-muted">可勾選多個流程並填入順序（數字越小越先執行）。未填順序則依列表順序。</div>
-  </div>
-  {% if batch_id %}
-  <div class="mt-3 small" id="batchStatusBox" data-status-url="{{ url_for('flows_bp.flow_batch_status', task_id=task.id, batch_id=batch_id) }}">
-    <div class="text-muted">批次執行中...</div>
-  </div>
-  {% endif %}
-</form>
 </table>
+
+<div class="mt-3">
+  <a class="btn btn-outline-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">批次背景執行</a>
+</div>
+
+
 
 <form action="{{ url_for('flows_bp.import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="mt-3">
   <div class="row g-3 align-items-end">
@@ -176,6 +146,7 @@
     </div>
   </div>
 </form>
+
 
 <script>
 const TASK_ID = '{{ task.id }}';
@@ -636,83 +607,6 @@ if (PRESET_FLOW){
   }
 }
 isInitialising = false;
-</script>
-
-<script>
-const batchForm = document.getElementById('batch_flow_form');
-const flowSequenceInput = document.getElementById('flow_sequence');
-
-function escapeCss(value){
-  if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
-  return String(value).replace(/[^a-zA-Z0-9_-]/g, '\$&');
-}
-
-if (batchForm && flowSequenceInput){
-  batchForm.addEventListener('submit', (e) => {
-    const checked = Array.from(document.querySelectorAll('.batch-flow-check:checked'));
-    if (!checked.length){
-      e.preventDefault();
-      alert('請選擇要執行的流程');
-      return;
-    }
-    const items = checked.map(ch => {
-      const selector = `.batch-flow-order[data-flow="${escapeCss(ch.value)}"]`;
-      const orderInput = batchForm.querySelector(selector);
-      const raw = orderInput ? parseInt(orderInput.value, 10) : NaN;
-      return {
-        name: ch.value,
-        order: Number.isNaN(raw) ? null : raw,
-      };
-    });
-    items.sort((a, b) => {
-      if (a.order == null && b.order == null) return 0;
-      if (a.order == null) return 1;
-      if (b.order == null) return -1;
-      return a.order - b.order;
-    });
-    flowSequenceInput.value = items.map(i => i.name).join(',');
-  });
-}
-
-const batchStatusBox = document.getElementById('batchStatusBox');
-async function refreshBatchStatus(){
-  if (!batchStatusBox) return;
-  const url = batchStatusBox.getAttribute('data-status-url');
-  if (!url) return;
-  try{
-    const resp = await fetch(url, { cache: 'no-store' });
-    const data = await resp.json();
-    if (!resp.ok || !data.ok){
-      batchStatusBox.innerHTML = `<div class="text-danger">${(data && data.error) || '讀取狀態失敗'}</div>`;
-      return;
-    }
-    const status = data.status || {};
-    const flows = status.flows || [];
-    const current = status.current_flow || '';
-    const idx = status.current_index || 0;
-    const total = flows.length || 0;
-    const label = status.status || 'unknown';
-    let html = `<div class="fw-semibold">批次狀態${label}</div>`;
-    if (current){
-      html += `<div class="text-muted">目前流程${current} (${idx}/${total})</div>`;
-    }
-    if (status.error){
-      html += `<div class="text-danger">錯誤${status.error}</div>`;
-    }
-    if (Array.isArray(status.results) && status.results.length){
-      const rows = status.results.map(r => `<li>${r.flow} - ${r.ok ? '完成' : '失敗'}</li>`).join('');
-      html += `<ul class="mb-0">${rows}</ul>`;
-    }
-    batchStatusBox.innerHTML = html;
-  }catch(e){
-    batchStatusBox.innerHTML = `<div class="text-danger">讀取狀態失敗</div>`;
-  }
-}
-
-if (batchStatusBox){
-  refreshBatchStatus();
-  setInterval(refreshBatchStatus, 3000);
-}
 </script>
 
 {% endblock %}

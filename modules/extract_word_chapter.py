@@ -1,14 +1,11 @@
 import re
 import shutil
-import warnings
 import zipfile
-from collections.abc import Iterator
 from copy import deepcopy
 from lxml import etree
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": W_NS}
-NUMBER_PREFIX_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)")
 
 def qn(tag: str) -> str:
     prefix, local = tag.split(":")
@@ -21,23 +18,6 @@ def normalize_text(t: str) -> str:
 
 def get_all_text(node: etree._Element) -> str:
     return "".join(node.xpath(".//w:t/text()", namespaces=NS)).strip()
-
-def parse_number_parts(text: str) -> list[int] | None:
-    if not text:
-        return None
-    match = NUMBER_PREFIX_RE.match(text)
-    if not match:
-        return None
-    number_text = match.group(1).rstrip(".")
-    parts = number_text.split(".") if number_text else []
-    if not parts or any(not p.isdigit() for p in parts):
-        return None
-    return [int(p) for p in parts]
-
-def is_number_prefix_match(txt: str, start_number: str, start_heading_text: str) -> bool:
-    if not start_number:
-        return False
-    return txt.startswith(start_number) and start_heading_text in txt
 
 def get_pStyle(p: etree._Element) -> str | None:
     pPr = p.find("w:pPr", namespaces=NS)
@@ -59,7 +39,7 @@ def get_ilvl(p: etree._Element) -> int | None:
     v = il.get(qn("w:val"))
     return int(v) if v and v.isdigit() else None
 
-def iter_paragraphs(block: etree._Element) -> Iterator[etree._Element]:
+def iter_paragraphs(block: etree._Element):
     if block.tag == qn("w:p"):
         yield block
     for p in block.xpath(".//w:p", namespaces=NS):
@@ -68,21 +48,21 @@ def iter_paragraphs(block: etree._Element) -> Iterator[etree._Element]:
 # ---------- TOC 偵測（多特徵） ----------
 def is_toc_paragraph(p: etree._Element) -> bool:
     style = (get_pStyle(p) or "").upper()
-    has_toc_style = style.startswith("TOC")
-    if has_toc_style:
+    if style.startswith("TOC"):
         return True
 
     instr = "".join(p.xpath(".//w:instrText/text()", namespaces=NS)).upper()
-    has_instr_toc = "TOC" in instr
-    if has_instr_toc:
+    if "TOC" in instr:
         return True
 
     anchors = p.xpath(".//w:hyperlink/@w:anchor", namespaces=NS)
-    has_toc_anchor = any((a or "").startswith("_Toc") for a in anchors)
-    if has_toc_anchor:
+    if any((a or "").startswith("_Toc") for a in anchors):
         return True
 
-    # Dot leaders alone are too noisy; keep them as auxiliary signals only.
+    leaders = p.xpath(".//w:tab/@w:leader", namespaces=NS)
+    if any(l in ("dot", "middleDot") for l in leaders):
+        return True
+
     return False
 
 # ---------- Header/Footer ----------
@@ -148,7 +128,7 @@ def get_effective_outline_level(p: etree._Element, style_outline: dict[str, int]
 def is_inside_table(p: etree._Element) -> bool:
     return bool(p.xpath("ancestor::w:tbl", namespaces=NS))
 
-def iter_paragraphs_no_table(block: etree._Element) -> Iterator[etree._Element]:
+def iter_paragraphs_no_table(block: etree._Element):
     """
     只 yield 不在表格內的段落，用於小標題起點/終點判斷，避免表格粗體誤觸發。
     """
@@ -164,21 +144,7 @@ def iter_paragraphs_no_table(block: etree._Element) -> Iterator[etree._Element]:
         if not is_inside_table(p):
             yield p
 
-def get_bold_state_from_rPr(rPr: etree._Element | None) -> bool | None:
-    if rPr is None:
-        return None
-    b = rPr.find("w:b", namespaces=NS)
-    if b is None:
-        return None
-    val = b.get(qn("w:val"))
-    if val is None:
-        return True
-    val = val.strip().lower()
-    if val in ("0", "false", "off", "no"):
-        return False
-    return True
-
-# ---------- 小標題（inline subtitle）判斷：Normal + 無顯式非粗體，且至少有粗體提示 ----------
+# ---------- 小標題（inline subtitle）判斷：Normal + 文字 run 全粗體 ----------
 def is_inline_subtitle_xml(p: etree._Element) -> bool:
     style = get_pStyle(p)
     if style not in (None, "Normal"):
@@ -189,7 +155,6 @@ def is_inline_subtitle_xml(p: etree._Element) -> bool:
         return False
 
     has_text = False
-    has_bold_hint = False
     for r in runs:
         texts = r.findall(".//w:t", namespaces=NS)
         if not texts:
@@ -200,15 +165,13 @@ def is_inline_subtitle_xml(p: etree._Element) -> bool:
         has_text = True
 
         rPr = r.find("w:rPr", namespaces=NS)
-        bold_state = get_bold_state_from_rPr(rPr)
-        if bold_state is False:
+        if rPr is None:
             return False
-        if bold_state is True:
-            has_bold_hint = True
-        elif rPr is not None and rPr.find("w:rStyle", namespaces=NS) is not None:
-            has_bold_hint = True
+        b = rPr.find("w:b", namespaces=NS)
+        if b is None:
+            return False
 
-    return has_text and has_bold_hint
+    return has_text
 
 def match_subheading(p: etree._Element, subheading_text: str, strict: bool = True) -> bool:
     txt = normalize_text(get_all_text(p))
@@ -227,41 +190,13 @@ def find_section_range_children(
     explicit_end_title: str | None = None,
     ignore_toc: bool = True,
 ) -> tuple[int, int]:
-    start_idx, start_outline, _ = find_start_index(
-        body_children=body_children,
-        start_heading_text=start_heading_text,
-        start_number=start_number,
-        style_outline=style_outline,
-        style_based=style_based,
-        ignore_toc=ignore_toc,
-    )
-
-    end_idx = find_end_index(
-        body_children=body_children,
-        start_idx=start_idx,
-        start_outline=start_outline,
-        start_heading_text=start_heading_text,
-        start_number=start_number,
-        style_outline=style_outline,
-        style_based=style_based,
-        explicit_end_title=explicit_end_title,
-        ignore_toc=ignore_toc,
-    )
-
-    return start_idx, end_idx
-
-def find_start_index(
-    body_children: list[etree._Element],
-    start_heading_text: str,
-    start_number: str,
-    style_outline: dict[str, int],
-    style_based: dict[str, str],
-    ignore_toc: bool = True,
-) -> tuple[int, int | None, str]:
     start_idx = None
     start_outline = None
-    found_kind = None  # "exact" | "number_prefix_match"
+    start_style = None
+    start_ilvl = None
+    found_kind = None  # "exact" | "toc"
 
+    # ---- 找起點 ----
     for i, block in enumerate(body_children):
         for p in iter_paragraphs(block):
             if ignore_toc and is_toc_paragraph(p):
@@ -272,14 +207,18 @@ def find_start_index(
             if txt == start_heading_text:
                 start_idx = i
                 start_outline = get_effective_outline_level(p, style_outline, style_based)
+                start_style = get_pStyle(p)
+                start_ilvl = get_ilvl(p)
                 found_kind = "exact"
                 break
 
-            if is_number_prefix_match(txt, start_number, start_heading_text):
+            if txt.startswith(start_number) and start_heading_text in txt:
                 if found_kind is None:
                     start_idx = i
                     start_outline = get_effective_outline_level(p, style_outline, style_based)
-                    found_kind = "number_prefix_match"
+                    start_style = get_pStyle(p)
+                    start_ilvl = get_ilvl(p)
+                    found_kind = "toc"
 
         if found_kind == "exact":
             break
@@ -287,23 +226,8 @@ def find_start_index(
     if start_idx is None:
         raise RuntimeError(f"找不到章節起點：{start_number} / {start_heading_text}")
 
-    return start_idx, start_outline, found_kind
-
-def find_end_index(
-    body_children: list[etree._Element],
-    start_idx: int,
-    start_outline: int | None,
-    start_heading_text: str,
-    start_number: str,
-    style_outline: dict[str, int],
-    style_based: dict[str, str],
-    explicit_end_title: str | None = None,
-    ignore_toc: bool = True,
-) -> int:
+    # ---- 找終點 ----
     end_idx = len(body_children)
-    explicit_end_found = False
-    auto_end_idx = None
-    start_number_parts = parse_number_parts(start_number)
     for j in range(start_idx + 1, len(body_children)):
         block = body_children[j]
         for p in iter_paragraphs(block):
@@ -311,44 +235,27 @@ def find_end_index(
                 continue
 
             txt = normalize_text(get_all_text(p))
-            if not txt:
-                continue
 
-            if explicit_end_title:
-                if explicit_end_title == txt or explicit_end_title in txt:
-                    explicit_end_found = True
-                    return j
+            if explicit_end_title and txt == explicit_end_title:
+                return start_idx, j
 
             lvl = get_effective_outline_level(p, style_outline, style_based)
-            if start_outline is not None and lvl is not None:
-                boundary = False
-                if lvl < start_outline:
-                    boundary = True
-                elif lvl == start_outline:
-                    candidate_number_parts = parse_number_parts(txt)
-                    if start_number_parts and candidate_number_parts:
-                        boundary = candidate_number_parts != start_number_parts
-                    elif start_heading_text not in txt:
-                        boundary = True
+            if start_outline is not None and lvl is not None and lvl <= start_outline:
+                return start_idx, j
 
-                if boundary:
-                    if explicit_end_title:
-                        if auto_end_idx is None:
-                            auto_end_idx = j
-                    else:
-                        return j
+            if start_outline is None:
+                style = get_pStyle(p)
+                ilvl = get_ilvl(p)
+                if (
+                    start_style is not None
+                    and style == start_style
+                    and start_ilvl is not None
+                    and ilvl is not None
+                    and ilvl <= start_ilvl
+                ):
+                    return start_idx, j
 
-    if explicit_end_title and not explicit_end_found:
-        if auto_end_idx is not None:
-            warnings.warn(
-                f"explicit_end_title not found; falling back to outline-based end at index {auto_end_idx}."
-            )
-            return auto_end_idx
-        raise RuntimeError(
-            f"explicit_end_title not found after start: {start_number} / {start_heading_text}"
-        )
-
-    return end_idx
+    return start_idx, end_idx
 
 def is_all_bold_paragraph(p: etree._Element) -> bool:
     runs = p.findall(".//w:r", namespaces=NS)
@@ -366,7 +273,10 @@ def is_all_bold_paragraph(p: etree._Element) -> bool:
 
         has_text = True
         rPr = r.find("w:rPr", namespaces=NS)
-        if get_bold_state_from_rPr(rPr) is not True:
+        if rPr is None:
+            return False
+        b = rPr.find("w:b", namespaces=NS)
+        if b is None:
             return False
 
     return has_text
@@ -377,7 +287,8 @@ def has_body_text_after_candidate(
     lookahead_blocks: int = 6,
 ) -> bool:
     """
-    從 candidate_block_index 後面開始，往後找最多 lookahead_blocks 個非空段落（忽略表格）：
+    從 candidate_block_index 後面開始，往後找最多 lookahead_blocks 個 block，
+    只看「非表格」段落且略過空段落：
     - 只要找到一個「不是全粗體」的段落（視為正文），就回 True
     - 都找不到就回 False
     """
@@ -435,10 +346,10 @@ def trim_to_subheading_range(
     for j in range(sub_start + 1, len(section_children)):
         blk = section_children[j]
         for p in iter_paragraphs_no_table(blk):
-            # 候選：inline subtitle 規則（Normal + 粗體提示）
+            # 候選：原本的 inline subtitle 規則（Normal + 全粗體）
             if is_inline_subtitle_xml(p):
                 # 新增：確認它後面真的跟著正文（不是一路粗體）
-                if has_body_text_after_candidate(section_children, j, lookahead_blocks=2):
+                if has_body_text_after_candidate(section_children, j, lookahead_blocks=1):
                     sub_end = j
                     if debug:
                         print("小標題擷取結束於段落（確認為小標題）：", repr(get_all_text(p)))
@@ -452,42 +363,6 @@ def trim_to_subheading_range(
             break
 
     return section_children[sub_start:sub_end]
-
-def extract_body_children(root: etree._Element) -> tuple[list[etree._Element], etree._Element | None]:
-    body = root.find("w:body", namespaces=NS)
-    if body is None:
-        raise RuntimeError("document.xml 找不到 w:body")
-
-    children = list(body)
-    if children and children[-1].tag == qn("w:sectPr"):
-        return children[:-1], children[-1]
-    return children, None
-
-def build_new_document_xml(
-    root: etree._Element,
-    kept_section: list[etree._Element],
-    sectPr: etree._Element | None,
-    ignore_header_footer: bool,
-) -> bytes:
-    body = root.find("w:body", namespaces=NS)
-    if body is None:
-        raise RuntimeError("document.xml 找不到 w:body")
-
-    for ch in list(body):
-        body.remove(ch)
-
-    for ch in kept_section:
-        body.append(deepcopy(ch))
-
-    if sectPr is not None:
-        body.append(deepcopy(sectPr))
-
-    if ignore_header_footer:
-        remove_all_header_footer_references(root)
-
-    return etree.tostring(
-        root, xml_declaration=True, encoding="UTF-8", standalone="yes"
-    )
 
 def extract_section_docx_xml(
     input_docx: str,
@@ -515,7 +390,19 @@ def extract_section_docx_xml(
     style_outline, style_based = build_style_outline_map(file_map["word/styles.xml"])
 
     root = etree.fromstring(file_map["word/document.xml"])
-    content_children, sectPr = extract_body_children(root)
+    body = root.find("w:body", namespaces=NS)
+    if body is None:
+        raise RuntimeError("document.xml 找不到 w:body")
+
+    children = list(body)
+
+    # 保留 body 最後的 sectPr（頁面設定）
+    sectPr = None
+    if children and children[-1].tag == qn("w:sectPr"):
+        sectPr = children[-1]
+        content_children = children[:-1]
+    else:
+        content_children = children
 
     # 1) 先擷取大章節範圍
     start_idx, end_idx = find_section_range_children(
@@ -538,12 +425,22 @@ def extract_section_docx_xml(
             debug=subheading_debug,
         )
 
-    # 3) 重建 document.xml
-    new_doc_xml = build_new_document_xml(
-        root=root,
-        kept_section=kept_section,
-        sectPr=sectPr,
-        ignore_header_footer=ignore_header_footer,
+    # 3) 重建 body：只保留（章節 or 小標題）內容 + sectPr
+    for ch in list(body):
+        body.remove(ch)
+
+    for ch in kept_section:
+        body.append(deepcopy(ch))
+
+    if sectPr is not None:
+        body.append(deepcopy(sectPr))
+
+    # 4) 忽略頁首/頁尾
+    if ignore_header_footer:
+        remove_all_header_footer_references(root)
+
+    new_doc_xml = etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone="yes"
     )
 
     # 5) 重建 zip，只覆蓋 document.xml
@@ -556,14 +453,14 @@ def extract_section_docx_xml(
 
 if __name__ == "__main__":
     extract_section_docx_xml(
-        input_docx=r"c:\Users\ne025\Desktop\Test_File\Section 6.13_Cleaning and Sterilization_v2.docx",
+        input_docx=r"C:\Users\ne025\Desktop\Test_File\Section 1_Device Description_v1.docx",
         output_docx=r"Extract_1.1.1_General_description_knee.docx",
-        start_heading_text="Sterilizing agent",
-        start_number="6.13.2",
-        explicit_end_title="References and documents",
+        start_heading_text="General description",
+        start_number="1.1.1",
+        explicit_end_title=None,
         ignore_header_footer=True,
         ignore_toc=True,
-        subheading_text="",
+        subheading_text="General description",
         subheading_strict_match=True,
         subheading_debug=False,
     )

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">批次執行結果</h1>
+
+<div class="d-flex gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=batch_id) }}">返回批次執行</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">返回流程編輯</a>
+</div>
+
+<div class="mb-3 text-muted">批次 ID：{{ status.id }}</div>
+
+{% if status.status != "completed" %}
+  <div class="alert alert-warning">批次尚未完成：{{ status.status }}</div>
+{% endif %}
+
+<div class="table-responsive">
+  <table class="table table-striped align-middle text-center">
+    <thead>
+      <tr>
+        <th class="text-start">流程名稱</th>
+        <th style="width:140px;">狀態</th>
+        <th style="width:220px;">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in results %}
+      <tr>
+        <td class="text-start">{{ r.flow }}</td>
+        <td>
+          {% if r.ok %}
+            <span class="text-success">完成</span>
+          {% else %}
+            <span class="text-danger">失敗</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if r.ok and r.job_id %}
+            <div class="btn-group btn-group-sm" role="group">
+              <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">下載結果</a>
+              <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>
+            </div>
+          {% else %}
+            <span class="text-muted">{{ r.error or "無結果" }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted">尚無結果</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

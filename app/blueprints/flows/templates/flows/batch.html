@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">批次背景執行</h1>
+
+<div class="d-flex gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">返回流程編輯</a>
+</div>
+
+<form id="batch_flow_form" action="{{ url_for('flows_bp.run_flow_batch', task_id=task.id) }}" method="post" class="card card-body">
+  <input type="hidden" name="flow_sequence" id="flow_sequence" value="">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-8">
+      <label class="form-label">選擇要加入的流程</label>
+      <div class="dropdown">
+        <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+          選擇流程
+        </button>
+        <div class="dropdown-menu p-3" style="min-width: 260px;">
+          <div class="small text-muted mb-2">可勾選多個流程後加入清單</div>
+          {% for f in flows %}
+            <div class="form-check">
+              <input class="form-check-input batch-flow-option" type="checkbox" value="{{ f.name }}" id="batchFlowOpt{{ loop.index }}">
+              <label class="form-check-label" for="batchFlowOpt{{ loop.index }}">{{ f.name }}</label>
+            </div>
+          {% else %}
+            <div class="text-muted">尚無流程</div>
+          {% endfor %}
+          <div class="d-flex gap-2 mt-3">
+            <button class="btn btn-sm btn-primary" type="button" id="batchFlowAddSelectedBtn">加入已勾選</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="batchFlowAddAllBtn">加入全部</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-responsive mt-3">
+    <table class="table table-sm align-middle text-center mb-2">
+      <thead>
+        <tr>
+          <th style="width:120px;">排序</th>
+          <th class="text-start">流程名稱</th>
+          <th style="width:140px;">操作</th>
+        </tr>
+      </thead>
+      <tbody id="batchFlowList">
+        <tr class="text-muted" data-empty="1"><td colspan="3">尚未加入流程</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="d-flex gap-2 align-items-center">
+    <button class="btn btn-outline-primary" type="submit">背景依序執行</button>
+    <div class="small text-muted">可拖曳或用上/下移調整順序</div>
+  </div>
+  {% if batch_id %}
+  <div class="mt-3 small" id="batchStatusBox"
+       data-status-url="{{ url_for('flows_bp.flow_batch_status', task_id=task.id, batch_id=batch_id) }}"
+       data-result-url="{{ url_for('flows_bp.flow_batch_result', task_id=task.id, batch_id=batch_id) }}">
+    <div class="text-muted">批次執行中...</div>
+  </div>
+  {% endif %}
+</form>
+
+<style>
+.batch-flow-handle {
+  cursor: grab;
+  font-size: 1.1rem;
+  letter-spacing: 1px;
+}
+#batchFlowList tr[draggable="true"] {
+  cursor: move;
+}
+</style>
+
+<script>
+const batchForm = document.getElementById('batch_flow_form');
+const flowSequenceInput = document.getElementById('flow_sequence');
+const batchFlowAddSelectedBtn = document.getElementById('batchFlowAddSelectedBtn');
+const batchFlowAddAllBtn = document.getElementById('batchFlowAddAllBtn');
+const batchFlowList = document.getElementById('batchFlowList');
+const batchFlowOptions = () => Array.from(document.querySelectorAll('.batch-flow-option'));
+let batchSelected = [];
+let draggingBatchRow = null;
+
+function escapeHtml(str){
+  return (str || "").replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[m] || m));
+}
+
+function renderBatchList(){
+  if (!batchFlowList) return;
+  if (!batchSelected.length){
+    batchFlowList.innerHTML = '<tr class="text-muted" data-empty="1"><td colspan="3">尚未加入流程</td></tr>';
+    return;
+  }
+  const rows = batchSelected.map((name, idx) => {
+    const safeName = escapeHtml(name);
+    return `
+      <tr data-flow="${safeName}" draggable="true">
+        <td>
+          <div class="d-inline-flex align-items-center gap-2">
+            <span class="batch-flow-handle" title="拖曳排序" aria-hidden="true">⋮⋮</span>
+            <span class="batch-order-label">${idx + 1}</span>
+          </div>
+        </td>
+        <td class="text-start">${safeName}</td>
+        <td>
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-secondary batch-move-up">上移</button>
+            <button type="button" class="btn btn-outline-secondary batch-move-down">下移</button>
+            <button type="button" class="btn btn-outline-danger batch-remove">移除</button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+  batchFlowList.innerHTML = rows;
+}
+
+function updateBatchSequence(){
+  if (flowSequenceInput) flowSequenceInput.value = batchSelected.join(',');
+}
+
+function addFlows(names){
+  names.forEach(name => {
+    if (!batchSelected.includes(name)) batchSelected.push(name);
+  });
+  renderBatchList();
+  updateBatchSequence();
+}
+
+if (batchFlowAddSelectedBtn){
+  batchFlowAddSelectedBtn.addEventListener('click', () => {
+    const selected = batchFlowOptions().filter(opt => opt.checked).map(opt => opt.value);
+    if (!selected.length){
+      alert('請先勾選流程');
+      return;
+    }
+    addFlows(selected);
+  });
+}
+
+if (batchFlowAddAllBtn){
+  batchFlowAddAllBtn.addEventListener('click', () => {
+    const all = batchFlowOptions().map(opt => opt.value);
+    addFlows(all);
+  });
+}
+
+if (batchFlowList){
+  batchFlowList.addEventListener('click', (e) => {
+    const row = e.target.closest('tr[data-flow]');
+    if (!row) return;
+    const name = row.getAttribute('data-flow') || '';
+    const idx = batchSelected.indexOf(name);
+    if (e.target.closest('.batch-remove')){
+      if (idx >= 0) batchSelected.splice(idx, 1);
+    } else if (e.target.closest('.batch-move-up')){
+      if (idx > 0){
+        batchSelected.splice(idx - 1, 0, batchSelected.splice(idx, 1)[0]);
+      }
+    } else if (e.target.closest('.batch-move-down')){
+      if (idx >= 0 && idx < batchSelected.length - 1){
+        batchSelected.splice(idx + 1, 0, batchSelected.splice(idx, 1)[0]);
+      }
+    }
+    renderBatchList();
+    updateBatchSequence();
+  });
+
+  batchFlowList.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('tr[data-flow]');
+    if (!row) return;
+    draggingBatchRow = row;
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  batchFlowList.addEventListener('dragover', (e) => {
+    if (!draggingBatchRow) return;
+    const row = e.target.closest('tr[data-flow]');
+    if (!row || row === draggingBatchRow) return;
+    e.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    if (before){
+      batchFlowList.insertBefore(draggingBatchRow, row);
+    } else {
+      batchFlowList.insertBefore(draggingBatchRow, row.nextSibling);
+    }
+  });
+
+  batchFlowList.addEventListener('dragend', () => {
+    if (!draggingBatchRow) return;
+    draggingBatchRow = null;
+    batchSelected = Array.from(batchFlowList.querySelectorAll('tr[data-flow]')).map(r => r.getAttribute('data-flow'));
+    updateBatchSequence();
+  });
+}
+
+if (batchForm && flowSequenceInput){
+  batchForm.addEventListener('submit', (e) => {
+    if (!batchSelected.length){
+      e.preventDefault();
+      alert('請先加入要執行的流程');
+      return;
+    }
+    updateBatchSequence();
+  });
+}
+
+const batchStatusBox = document.getElementById('batchStatusBox');
+async function refreshBatchStatus(){
+  if (!batchStatusBox) return;
+  const url = batchStatusBox.getAttribute('data-status-url');
+  const resultUrl = batchStatusBox.getAttribute('data-result-url');
+  if (!url) return;
+  try{
+    const resp = await fetch(url, { cache: 'no-store' });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok){
+      batchStatusBox.innerHTML = `<div class="text-danger">${(data && data.error) || '讀取狀態失敗'}</div>`;
+      return;
+    }
+    const status = data.status || {};
+    if (status.status === 'completed' && resultUrl){
+      window.location.href = resultUrl;
+      return;
+    }
+    const flows = status.flows || [];
+    const current = status.current_flow || '';
+    const idx = status.current_index || 0;
+    const total = flows.length || 0;
+    const label = status.status || 'unknown';
+    let html = `<div class="fw-semibold">批次狀態：${label}</div>`;
+    if (current){
+      html += `<div class="text-muted">目前流程：${current} (${idx}/${total})</div>`;
+    }
+    if (status.error){
+      html += `<div class="text-danger">錯誤：${status.error}</div>`;
+    }
+    if (Array.isArray(status.results) && status.results.length){
+      const rows = status.results.map(r => `<li>${r.flow} - ${r.ok ? '完成' : '失敗'}</li>`).join('');
+      html += `<ul class="mb-0">${rows}</ul>`;
+    }
+    batchStatusBox.innerHTML = html;
+  }catch(e){
+    batchStatusBox.innerHTML = `<div class="text-danger">讀取狀態失敗</div>`;
+  }
+}
+
+if (batchStatusBox){
+  refreshBatchStatus();
+  setInterval(refreshBatchStatus, 3000);
+}
+</script>
+{% endblock %}

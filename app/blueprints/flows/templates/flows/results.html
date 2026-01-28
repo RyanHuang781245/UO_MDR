@@ -43,18 +43,30 @@
             <td>
               {% if r.status == "completed" %}
                 <span class="text-success">完成</span>
+              {% elif r.status == "running" %}
+                <span class="text-primary">執行中</span>
+              {% elif r.status == "queued" %}
+                <span class="text-muted">排隊中</span>
+              {% elif r.status == "failed" %}
+                <span class="text-danger">失敗</span>
               {% else %}
                 <span class="text-muted">未完成</span>
               {% endif %}
             </td>
             <td>
-              <div class="btn-group btn-group-sm" role="group">
+              <div class="d-flex flex-wrap gap-1 justify-content-center">
                 {% if r.has_result %}
-                  <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}">查看結果</a>
-                  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">下載結果</a>
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}">查看結果</a>
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">下載結果</a>
                 {% endif %}
                 {% if r.has_log %}
-                  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>
+                {% endif %}
+                <form method="post" action="{{ url_for('flows_bp.delete_flow_run', task_id=task.id, job_id=r.job_id) }}" class="m-0" onsubmit="return confirm('確定刪除這筆執行紀錄？')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
+                </form>
+                {% if r.status == "failed" and r.error %}
+                  <span class="text-danger ms-2" title="{{ r.error }}">錯誤</span>
                 {% endif %}
               </div>
             </td>

@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import threading
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, abort, current_app, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user
 from werkzeug.utils import secure_filename
 
@@ -112,6 +113,11 @@ def _read_job_meta(job_dir: str) -> dict:
         return {}
     return {}
 
+def _update_job_meta(job_dir: str, **fields) -> None:
+    meta = _read_job_meta(job_dir)
+    meta.update(fields)
+    _write_job_meta(job_dir, meta)
+
 
 def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -177,6 +183,40 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
         hide_paragraphs_with_text(result_path, titles_to_hide)
     return job_id
+
+
+def _run_single_job(
+    app,
+    task_id: str,
+    runtime_steps: list[dict],
+    template_cfg: dict | None,
+    center_titles: bool,
+    job_id: str,
+    actor: dict,
+) -> None:
+    with app.app_context():
+        tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+        job_dir = os.path.join(tdir, "jobs", job_id)
+        try:
+            _update_job_meta(job_dir, status="running", started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
+            result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
+            titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
+            if center_titles:
+                center_table_figure_paragraphs(result_path)
+            if not SKIP_DOCX_CLEANUP:
+                remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
+                hide_paragraphs_with_text(result_path, titles_to_hide)
+            _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
+            _update_job_meta(job_dir, status="completed", completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        except Exception as exc:
+            current_app.logger.exception("Single flow execution failed")
+            _update_job_meta(
+                job_dir,
+                status="failed",
+                error=str(exc),
+                completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
 
 
 def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, actor: dict) -> None:
@@ -254,18 +294,37 @@ def _list_flow_runs(task_id: str) -> list[dict]:
         result_path = os.path.join(job_dir, "result.docx")
         log_path = os.path.join(job_dir, "log.json")
         completed = os.path.exists(result_path)
+        status = meta.get("status") or ("completed" if completed else "pending")
+        if completed:
+            status = "completed"
         results.append(
             {
                 "job_id": name,
                 "flow_name": flow_name,
                 "started_at": started_at,
-                "status": "completed" if completed else "pending",
+                "status": status,
                 "has_result": completed,
                 "has_log": os.path.exists(log_path),
+                "error": meta.get("error") or "",
             }
         )
     results.sort(key=lambda r: r["started_at"], reverse=True)
     return results
+
+
+@flows_bp.post("/tasks/<task_id>/flows/runs/<job_id>/delete", endpoint="delete_flow_run")
+def delete_flow_run(task_id, job_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    if not os.path.isdir(job_dir):
+        abort(404)
+    try:
+        shutil.rmtree(job_dir)
+        flash("已刪除執行紀錄。", "success")
+    except Exception:
+        current_app.logger.exception("Failed to delete flow run")
+        flash("刪除失敗，請稍後再試。", "danger")
+    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
 
 
 def _list_batch_statuses(task_id: str) -> list[dict]:
@@ -498,21 +557,19 @@ def run_flow(task_id):
         {
             "flow_name": flow_name or "未命名流程",
             "mode": "single",
+            "status": "queued",
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         },
     )
-    workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
-    result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
-    titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-    # Skip renumber_figures_tables_file to avoid Spire watermark; formatting handled by python-docx helpers.
-    # renumber_figures_tables_file(result_path)
-    if center_titles:
-        center_table_figure_paragraphs(result_path)
-    if not SKIP_DOCX_CLEANUP:
-        remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-        hide_paragraphs_with_text(result_path, titles_to_hide)
-    _touch_task_last_edit(task_id)
-    return redirect(url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id))
+    work_id, label = _get_actor_info()
+    app = current_app._get_current_object()
+    thread = threading.Thread(
+        target=_run_single_job,
+        args=(app, task_id, runtime_steps, template_cfg, center_titles, job_id, {"work_id": work_id, "label": label}),
+        daemon=True,
+    )
+    thread.start()
+    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/execute/<flow_name>", endpoint="execute_flow")
@@ -575,21 +632,19 @@ def execute_flow(task_id, flow_name):
         {
             "flow_name": flow_name,
             "mode": "single",
+            "status": "queued",
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         },
     )
-    workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
-    result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
-    titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-    # Skip renumber_figures_tables_file to avoid Spire watermark; formatting handled by python-docx helpers.
-    # renumber_figures_tables_file(result_path)
-    if center_titles:
-        center_table_figure_paragraphs(result_path)
-    if not SKIP_DOCX_CLEANUP:
-        remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-        hide_paragraphs_with_text(result_path, titles_to_hide)
-    _touch_task_last_edit(task_id)
-    return redirect(url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id))
+    work_id, label = _get_actor_info()
+    app = current_app._get_current_object()
+    thread = threading.Thread(
+        target=_run_single_job,
+        args=(app, task_id, runtime_steps, template_cfg, center_titles, job_id, {"work_id": work_id, "label": label}),
+        daemon=True,
+    )
+    thread.start()
+    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/run-batch", endpoint="run_flow_batch")

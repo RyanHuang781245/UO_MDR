@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="h3 mb-3">執行結果</h1>
+<h1 class="h3 mb-3 fw-bold">執行結果</h1>
 
 <div class="d-flex gap-2 mb-3">
   <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">返回流程管理</a>
@@ -30,7 +30,7 @@
         <thead>
           <tr>
             <th class="text-start">流程名稱</th>
-            <th class="text-center">開始時間</th>
+            <th class="text-center">執行時間</th>
             <th class="text-center">狀態</th>
             <th class="text-center">操作</th>
           </tr>

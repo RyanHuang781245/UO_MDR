@@ -7,6 +7,8 @@
   <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">執行結果</a>
 </div>
 
+<div id="runStatusContainer" class="run-status-container"></div>
+
 <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
   <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
   <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
@@ -142,6 +144,32 @@
 .flow-table td {
   width: 33.3333%;
 }
+.run-status-container {
+  position: fixed;
+  top: 88px;
+  right: 24px;
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.run-status-toast {
+  min-width: 240px;
+  max-width: 360px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #e6e6e2;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+.run-status-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.run-status-body {
+  color: #555;
+  font-size: 0.9rem;
+}
 </style>
 
 <!-- <div class="mt-3">
@@ -256,6 +284,108 @@ const FIELD_META = {
     label: "目的資料夾"
   },
 };
+
+const RUN_JOB_ID = {{ job_id|tojson }};
+const runStatusContainer = document.getElementById("runStatusContainer");
+const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
+
+function loadRunJobs(){
+  try {
+    const raw = localStorage.getItem(runStatusStorageKey);
+    const data = JSON.parse(raw || "[]");
+    return Array.isArray(data) ? data.filter(Boolean) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveRunJobs(list){
+  try {
+    localStorage.setItem(runStatusStorageKey, JSON.stringify(list));
+  } catch (e) {
+    // ignore
+  }
+}
+
+function ensureRunJob(jobId){
+  if (!jobId) return;
+  const list = loadRunJobs();
+  if (!list.includes(jobId)) {
+    list.push(jobId);
+    saveRunJobs(list);
+  }
+}
+
+function removeRunJob(jobId){
+  const list = loadRunJobs().filter(id => id !== jobId);
+  saveRunJobs(list);
+  const node = runStatusContainer?.querySelector(`[data-job-id="${jobId}"]`);
+  if (node) node.remove();
+}
+
+function renderRunToasts(){
+  if (!runStatusContainer) return;
+  const list = loadRunJobs();
+  runStatusContainer.innerHTML = "";
+  list.forEach(jobId => {
+    const toast = document.createElement("div");
+    toast.className = "run-status-toast";
+    toast.dataset.jobId = jobId;
+    toast.dataset.statusUrl = `{{ url_for('flows_bp.flow_run_status', task_id=task.id, job_id='__JOB__') }}`.replace("__JOB__", jobId);
+    toast.innerHTML = `
+      <div class="run-status-title">流程執行中</div>
+      <div class="run-status-body">正在執行：<span class="run-status-name">（讀取中）</span></div>
+    `;
+    runStatusContainer.appendChild(toast);
+  });
+}
+
+async function refreshRunStatus(){
+  if (!runStatusContainer) return;
+  const toasts = Array.from(runStatusContainer.querySelectorAll(".run-status-toast"));
+  for (const toast of toasts){
+    const url = toast.dataset.statusUrl;
+    if (!url) continue;
+    try{
+      const resp = await fetch(url, { cache: "no-store" });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok){
+        removeRunJob(toast.dataset.jobId);
+        continue;
+      }
+      const status = data.status || "unknown";
+      const flowName = data.flow_name || "（未命名）";
+      const titleEl = toast.querySelector(".run-status-title");
+      const bodyEl = toast.querySelector(".run-status-body");
+      const nameEl = toast.querySelector(".run-status-name");
+      if (nameEl) nameEl.textContent = flowName;
+      if (status === "completed"){
+        if (titleEl) titleEl.textContent = "流程已完成";
+        if (bodyEl) bodyEl.textContent = `已完成：${flowName}`;
+        setTimeout(() => removeRunJob(toast.dataset.jobId), 4000);
+        continue;
+      }
+      if (status === "failed"){
+        if (titleEl) titleEl.textContent = "流程失敗";
+        if (bodyEl) bodyEl.textContent = `失敗：${flowName}`;
+        continue;
+      }
+      if (titleEl) titleEl.textContent = status === "queued" ? "流程排隊中" : "流程執行中";
+      if (bodyEl) bodyEl.textContent = `${status === "queued" ? "排隊中" : "正在執行"}：${flowName}`;
+    }catch(e){
+      // ignore
+    }
+  }
+}
+
+if (RUN_JOB_ID){
+  ensureRunJob(RUN_JOB_ID);
+}
+renderRunToasts();
+if (runStatusContainer){
+  refreshRunStatus();
+  setInterval(refreshRunStatus, 3000);
+}
 
 const templateFileInput = document.getElementById('template_file_input');
 const currentTemplateLabel = document.getElementById('currentTemplateLabel');

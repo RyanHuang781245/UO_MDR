@@ -369,6 +369,7 @@ def flow_builder(task_id):
     template_file = None
     template_paragraphs = []
     loaded_name = request.args.get("flow")
+    job_id = request.args.get("job")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
         if os.path.exists(p):
@@ -406,6 +407,7 @@ def flow_builder(task_id):
         flows=flows,
         preset=preset,
         loaded_name=loaded_name,
+        job_id=job_id,
         center_titles=center_titles,
         files_tree=tree,
         template_file=template_file,
@@ -467,6 +469,18 @@ def flow_results(task_id):
         batches=batches,
         running=running,
     )
+
+
+@flows_bp.get("/tasks/<task_id>/flows/runs/<job_id>/status", endpoint="flow_run_status")
+def flow_run_status(task_id, job_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    if not os.path.isdir(job_dir):
+        return {"ok": False, "error": "Run not found"}, 404
+    meta = _read_job_meta(job_dir)
+    status = meta.get("status") or "unknown"
+    flow_name = meta.get("flow_name") or ""
+    return {"ok": True, "status": status, "flow_name": flow_name}
 
 
 @flows_bp.post("/tasks/<task_id>/flows/run", endpoint="run_flow")
@@ -569,7 +583,7 @@ def run_flow(task_id):
         daemon=True,
     )
     thread.start()
-    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/execute/<flow_name>", endpoint="execute_flow")
@@ -644,7 +658,7 @@ def execute_flow(task_id, flow_name):
         daemon=True,
     )
     thread.start()
-    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/run-batch", endpoint="run_flow_batch")

@@ -45,7 +45,7 @@
 <table class="table table-striped task-table">
   <thead>
     <tr>
-      <th class="text-center task-col-name">任務名稱</th>
+      <th class="text-start task-col-name">任務名稱</th>
       <th class="text-center task-col-desc">任務描述</th>
       <th class="text-center task-col-creator">建立人員</th>
       <th class="text-center task-col-created">建立時間</th>
@@ -55,7 +55,7 @@
   <tbody>
   {% for t in tasks %}
     <tr>
-      <td class="text-center task-col-name"><a class="task-name-link text-decoration-none" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
+      <td class="text-start task-col-name"><a class="task-name-link text-decoration-none" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
       <td class="text-center task-col-desc">
         {% if t.description %}
           <div class="task-desc-truncate">{{ t.description }}</div>

@@ -327,6 +327,67 @@ def delete_flow_run(task_id, job_id):
     return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
 
 
+@flows_bp.post("/tasks/<task_id>/flows/runs/delete", endpoint="delete_flow_runs_bulk")
+def delete_flow_runs_bulk(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    jobs_dir = os.path.join(tdir, "jobs")
+    raw = request.form.get("job_ids", "")
+    job_ids = [j.strip() for j in raw.split(",") if j.strip()]
+    if not job_ids:
+        flash("請先選取要刪除的執行紀錄。", "warning")
+        return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
+    deleted = 0
+    for job_id in job_ids:
+        job_dir = os.path.join(jobs_dir, job_id)
+        if not os.path.isdir(job_dir):
+            continue
+        try:
+            shutil.rmtree(job_dir)
+            deleted += 1
+        except Exception:
+            current_app.logger.exception("Failed to delete flow run")
+    if deleted:
+        flash(f"已刪除 {deleted} 筆執行紀錄。", "success")
+    else:
+        flash("沒有可刪除的執行紀錄。", "warning")
+    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
+
+
+@flows_bp.post("/tasks/<task_id>/flows/runs/download", endpoint="download_flow_runs_bulk")
+def download_flow_runs_bulk(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    jobs_dir = os.path.join(tdir, "jobs")
+    kind = request.form.get("kind", "docx")
+    raw = request.form.get("job_ids", "")
+    job_ids = [j.strip() for j in raw.split(",") if j.strip()]
+    if not job_ids:
+        flash("請先選取要下載的執行紀錄。", "warning")
+        return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    zip_name = f"flow_runs_{kind}_{stamp}.zip"
+    zip_path = os.path.join(jobs_dir, zip_name)
+    import zipfile
+    added = 0
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for job_id in job_ids:
+            job_dir = os.path.join(jobs_dir, job_id)
+            if not os.path.isdir(job_dir):
+                continue
+            filename = "result.docx" if kind == "docx" else "log.json"
+            src = os.path.join(job_dir, filename)
+            if not os.path.exists(src):
+                continue
+            arcname = os.path.join(job_id, filename)
+            zf.write(src, arcname=arcname)
+            added += 1
+    if added == 0:
+        flash("沒有可下載的檔案。", "warning")
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
+    return send_file(zip_path, as_attachment=True, download_name=zip_name)
+
+
 def _list_batch_statuses(task_id: str) -> list[dict]:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     status_dir = os.path.join(tdir, "jobs", "batch")

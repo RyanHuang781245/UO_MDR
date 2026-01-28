@@ -18,17 +18,23 @@
 </ul>
 
 {% if view == 'single' %}
-  <div class="mb-3">
-    <h2 class="h6">目前執行中</h2>
-    <div class="text-muted">單次流程為同步執行，通常不會顯示執行中。</div>
-  </div>
   {% if not runs %}
     <div class="text-muted">尚無執行紀錄</div>
   {% else %}
+    <div class="mb-2 d-flex flex-wrap gap-2">
+      <button class="btn btn-sm btn-outline-secondary" id="selectAllRunsBtn" type="button">全部選取</button>
+      <button class="btn btn-sm btn-outline-secondary" id="clearAllRunsBtn" type="button">取消選取</button>
+      <button class="btn btn-sm btn-outline-primary" id="downloadSelectedRunsDocxBtn" type="button">批次下載結果</button>
+      <button class="btn btn-sm btn-outline-secondary" id="downloadSelectedRunsLogBtn" type="button">批次下載紀錄</button>
+      <button class="btn btn-sm btn-outline-danger" id="deleteSelectedRunsBtn" type="button">刪除已選取</button>
+    </div>
     <div class="table-responsive">
       <table class="table table-striped align-middle text-center">
         <thead>
           <tr>
+            <th style="width:60px;">
+              <input type="checkbox" id="selectAllRuns" class="form-check-input">
+            </th>
             <th class="text-start">流程名稱</th>
             <th class="text-center">執行時間</th>
             <th class="text-center">狀態</th>
@@ -38,6 +44,9 @@
         <tbody>
           {% for r in runs %}
           <tr>
+            <td>
+              <input type="checkbox" class="form-check-input run-select" value="{{ r.job_id }}">
+            </td>
             <td class="text-start">{{ r.flow_name }}</td>
             <td>{{ r.started_at }}</td>
             <td>
@@ -62,9 +71,6 @@
                 {% if r.has_log %}
                   <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>
                 {% endif %}
-                <form method="post" action="{{ url_for('flows_bp.delete_flow_run', task_id=task.id, job_id=r.job_id) }}" class="m-0" onsubmit="return confirm('確定刪除這筆執行紀錄？')">
-                  <button type="submit" class="btn btn-sm btn-outline-danger">刪除</button>
-                </form>
                 {% if r.status == "failed" and r.error %}
                   <span class="text-danger ms-2" title="{{ r.error }}">錯誤</span>
                 {% endif %}
@@ -77,41 +83,8 @@
     </div>
   {% endif %}
 {% else %}
-  <div class="mb-3">
-    <h2 class="h6">目前執行中</h2>
-    {% if not running %}
-      <div class="text-muted">目前沒有執行中的批次</div>
-    {% else %}
-      <div class="table-responsive">
-        <table class="table table-sm align-middle text-center">
-          <thead>
-            <tr>
-              <th style="width:160px;">批次 ID</th>
-              <th style="width:180px;">狀態</th>
-              <th class="text-start">目前流程</th>
-              <th style="width:180px;">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for b in running %}
-            {% set status_label = "執行中" if b.status == "running" else ("排隊中" if b.status == "queued" else b.status) %}
-            <tr>
-              <td>{{ b.id }}</td>
-              <td>{{ status_label }}</td>
-              <td class="text-start">{{ b.current_flow }}{% if b.total %} ({{ b.current_index }}/{{ b.total }}){% endif %}</td>
-              <td>
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=b.id) }}">查看狀態</a>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-  </div>
-
   <div>
-    <h2 class="h6">已完成/歷史紀錄</h2>
+    <h2 class="h6">批次執行紀錄</h2>
     {% if not batches %}
       <div class="text-muted">尚無批次紀錄</div>
     {% else %}
@@ -142,5 +115,79 @@
       </div>
     {% endif %}
   </div>
+{% endif %}
+{% if view == 'single' %}
+<script>
+const selectAllRuns = document.getElementById('selectAllRuns');
+const selectAllRunsBtn = document.getElementById('selectAllRunsBtn');
+const clearAllRunsBtn = document.getElementById('clearAllRunsBtn');
+const deleteSelectedRunsBtn = document.getElementById('deleteSelectedRunsBtn');
+const downloadSelectedRunsDocxBtn = document.getElementById('downloadSelectedRunsDocxBtn');
+const downloadSelectedRunsLogBtn = document.getElementById('downloadSelectedRunsLogBtn');
+const runCheckboxes = () => Array.from(document.querySelectorAll('.run-select'));
+
+function setAllRuns(checked){
+  runCheckboxes().forEach(cb => { cb.checked = checked; });
+  if (selectAllRuns) selectAllRuns.checked = checked;
+}
+
+if (selectAllRuns){
+  selectAllRuns.addEventListener('change', () => setAllRuns(selectAllRuns.checked));
+}
+if (selectAllRunsBtn){
+  selectAllRunsBtn.addEventListener('click', () => setAllRuns(true));
+}
+if (clearAllRunsBtn){
+  clearAllRunsBtn.addEventListener('click', () => setAllRuns(false));
+}
+if (deleteSelectedRunsBtn){
+  deleteSelectedRunsBtn.addEventListener('click', () => {
+    const selected = runCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+    if (!selected.length){
+      alert('請先選取要刪除的執行紀錄');
+      return;
+    }
+    if (!confirm(`確定刪除 ${selected.length} 筆執行紀錄？`)) return;
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = `{{ url_for('flows_bp.delete_flow_runs_bulk', task_id=task.id) }}`;
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'job_ids';
+    input.value = selected.join(',');
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+  });
+}
+function submitBulkDownload(kind){
+  const selected = runCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+  if (!selected.length){
+    alert('請先選取要下載的執行紀錄');
+    return;
+  }
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = `{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}`;
+  const ids = document.createElement('input');
+  ids.type = 'hidden';
+  ids.name = 'job_ids';
+  ids.value = selected.join(',');
+  const kindInput = document.createElement('input');
+  kindInput.type = 'hidden';
+  kindInput.name = 'kind';
+  kindInput.value = kind;
+  form.appendChild(ids);
+  form.appendChild(kindInput);
+  document.body.appendChild(form);
+  form.submit();
+}
+if (downloadSelectedRunsDocxBtn){
+  downloadSelectedRunsDocxBtn.addEventListener('click', () => submitBulkDownload('docx'));
+}
+if (downloadSelectedRunsLogBtn){
+  downloadSelectedRunsLogBtn.addEventListener('click', () => submitBulkDownload('log'));
+}
+</script>
 {% endif %}
 {% endblock %}

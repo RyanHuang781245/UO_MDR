@@ -69,6 +69,21 @@ function openWindow(url) {
   window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
 }
 
+function formatVersionName(name) {
+  return name || '未命名';
+}
+
+async function postJson(url, options = {}) {
+  const resp = await fetch(url, Object.assign({method: 'POST'}, options));
+  let data = null;
+  try {
+    data = await resp.json();
+  } catch (err) {
+    data = null;
+  }
+  return {resp, data};
+}
+
 function clearHighlights() {
   highlighted.forEach(el => {
     el.style.backgroundColor = '';
@@ -278,24 +293,20 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
 
 function attachRestoreHandler(btn) {
   if (!btn) return;
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     const url = btn.dataset.restoreUrl;
     if (!url) return;
     const name = btn.dataset.versionName || '';
+    const displayName = formatVersionName(name);
     const message = isSaved
-      ? `確定要恢復版本「${name || '未命名'}」嗎？目前內容將被覆蓋。`
-      : `目前有未保存的變更，確定要恢復版本「${name || '未命名'}」並覆蓋現有內容嗎？`;
+      ? `確定要恢復版本「${displayName}」嗎？目前內容將被覆蓋。`
+      : `目前有未保存的變更，確定要恢復版本「${displayName}」並覆蓋現有內容嗎？`;
     if (!confirm(message)) {
       return;
     }
-    fetch(url, {method: 'POST'}).then(async r => {
-      let data = null;
-      try {
-        data = await r.json();
-      } catch (err) {
-        data = null;
-      }
-      if (!r.ok) {
+    try {
+      const {resp, data} = await postJson(url);
+      if (!resp.ok) {
         const errorMessage = data && data.error ? data.error : '恢復版本失敗';
         alert(errorMessage);
         return;
@@ -310,30 +321,26 @@ function attachRestoreHandler(btn) {
       }
       alert('已恢復指定版本');
       window.location.reload();
-    }).catch(() => {
+    } catch (err) {
       alert('恢復版本失敗');
-    });
+    }
   });
 }
 
 function attachDeleteHandler(btn) {
   if (!btn) return;
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     const url = btn.dataset.deleteUrl;
     if (!url) return;
     const name = btn.dataset.versionName || '';
-    const message = `確定要刪除版本「${name || '未命名'}」嗎？此操作無法復原。`;
+    const displayName = formatVersionName(name);
+    const message = `確定要刪除版本「${displayName}」嗎？此操作無法復原。`;
     if (!confirm(message)) {
       return;
     }
-    fetch(url, {method: 'POST'}).then(async r => {
-      let data = null;
-      try {
-        data = await r.json();
-      } catch (err) {
-        data = null;
-      }
-      if (!r.ok) {
+    try {
+      const {resp, data} = await postJson(url);
+      if (!resp.ok) {
         const errorMessage = data && data.error ? data.error : '刪除版本失敗';
         alert(errorMessage);
         return;
@@ -344,9 +351,9 @@ function attachDeleteHandler(btn) {
       }
       ensureVersionPlaceholder();
       alert('已刪除指定版本');
-    }).catch(() => {
+    } catch (err) {
       alert('刪除版本失敗');
-    });
+    }
   });
 }
 

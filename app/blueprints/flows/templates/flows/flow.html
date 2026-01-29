@@ -290,6 +290,14 @@ const RUN_JOB_ID = {{ job_id|tojson }};
 const runStatusContainer = document.getElementById("runStatusContainer");
 const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
 
+const { submitPostForm, escapeHtml } = window.UiUtils;
+
+function buildInsertMenu(sid, position){
+  return Object.entries(SUPPORTED_STEPS).map(([key, meta]) => (
+    `<li><a class="dropdown-item" href="#" onclick="addStep('${key}', {}, '${sid}', '${position}'); return false;">${meta.label}</a></li>`
+  )).join('');
+}
+
 function loadRunJobs(){
   try {
     const raw = localStorage.getItem(runStatusStorageKey);
@@ -414,12 +422,6 @@ const uploadTemplateBtn = document.getElementById('uploadTemplateBtn');
 
 let templateFile = TEMPLATE_FILE || "";
 let templateParagraphs = TEMPLATE_PARAGRAPHS || [];
-
-function escapeHtml(str){
-  return (str || "").replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[m] || m));
-}
 
 function formatTemplateLabel(p){
   const disp = (p.display || "").trim();
@@ -584,11 +586,8 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
   card.className = "card";
   card.dataset.sid = sid;
 
-  let menuBefore = '', menuAfter = '';
-  for (const [k, m] of Object.entries(SUPPORTED_STEPS)){
-    menuBefore += `<li><a class="dropdown-item" href="#" onclick="addStep('${k}', {}, '${sid}', 'before'); return false;">${m.label}</a></li>`;
-    menuAfter  += `<li><a class="dropdown-item" href="#" onclick="addStep('${k}', {}, '${sid}', 'after'); return false;">${m.label}</a></li>`;
-  }
+  const menuBefore = buildInsertMenu(sid, 'before');
+  const menuAfter = buildInsertMenu(sid, 'after');
 
   let body = `<div class="card-body">
     <div class="d-flex justify-content-between align-items-center">
@@ -735,33 +734,24 @@ function removeStep(sid){
   if (el) el.remove();
   updateOrder();
 }
-function moveUp(sid){
+function moveStep(sid, direction){
   const el = document.querySelector(`.card[data-sid="${sid}"]`);
   if (!el) return;
-  const prev = el.previousElementSibling;
-  if (prev) el.parentNode.insertBefore(el, prev);
+  const sibling = direction === 'up' ? el.previousElementSibling : el.nextElementSibling;
+  if (!sibling) return;
+  if (direction === 'up') {
+    el.parentNode.insertBefore(el, sibling);
+  } else {
+    el.parentNode.insertBefore(sibling, el);
+  }
   updateOrder();
 }
-function moveDown(sid){
-  const el = document.querySelector(`.card[data-sid="${sid}"]`);
-  if (!el) return;
-  const next = el.nextElementSibling;
-  if (next) el.parentNode.insertBefore(next, el);
-  updateOrder();
-}
+function moveUp(sid){ moveStep(sid, 'up'); }
+function moveDown(sid){ moveStep(sid, 'down'); }
 function renameFlow(current){
   const name = prompt('輸入新流程名稱', current);
   if(!name) return;
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = `/tasks/${TASK_ID}/flows/rename/${current}`;
-  const input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'name';
-  input.value = name;
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
+  submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name });
 }
 if (PRESET_FLOW){
   for (const st of PRESET_FLOW){

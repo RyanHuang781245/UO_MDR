@@ -73,6 +73,7 @@
         </div>
       </div>
     </nav>
+    <script src="{{ url_for('static', filename='ui-utils.js') }}"></script>
     <main class="container my-4">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}

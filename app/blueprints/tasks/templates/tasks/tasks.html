@@ -174,50 +174,51 @@
 </div>
 
 <script>
+const { submitPostForm, escapeHtml } = window.UiUtils;
+
+function getRowText(row, selector){
+  return row ? row.querySelector(selector)?.textContent?.trim() : '';
+}
+
+function renderDetailBody(details){
+  const rows = [
+    { label: '建立人員', value: details.creator || '-' },
+    { label: '建立時間', value: details.created || '-' },
+    { label: '最後編輯人員', value: details.lastEditor || '-' },
+    { label: '最後編輯時間', value: details.lastEdited || '-' }
+  ];
+  const rowsHtml = rows.map((row) => (
+    `<div class="task-detail-row">
+      <div class="task-detail-label">${escapeHtml(row.label)}</div>
+      <div class="task-detail-value">${escapeHtml(row.value)}</div>
+    </div>`
+  )).join('');
+  const descHtml = details.desc
+    ? `<div class="task-detail-desc">
+        <div class="task-detail-desc-label">任務描述</div>
+        <div class="task-detail-desc-value">${escapeHtml(details.desc)}</div>
+      </div>`
+    : '';
+  return `<div class="task-detail-list">${rowsHtml}${descHtml}</div>`;
+}
+
 function renameTask(id, current){
   const name = prompt('輸入新名稱', current);
   if(!name) return;
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = `/tasks/${id}/rename`;
-  const input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'name';
-  input.value = name;
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
+  submitPostForm(`/tasks/${id}/rename`, { name });
 }
 
 function editTaskDesc(id, currentDesc){
   const desc = prompt('輸入新的任務描述（可為空）', currentDesc || '');
   if(desc === null) return;
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = `/tasks/${id}/description`;
-  const input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'description';
-  input.value = desc;
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
+  submitPostForm(`/tasks/${id}/description`, { description: desc });
 }
 
 function copyTask(id, currentName){
   const defaultName = currentName ? `${currentName} (複製)` : '任務複製';
   const name = prompt('輸入新任務名稱', defaultName);
   if(!name) return;
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = `/tasks/${id}/copy`;
-  const input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'name';
-  input.value = name;
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
+  submitPostForm(`/tasks/${id}/copy`, { name });
 }
 
 const allowedNasRoots = {{ allowed_nas_roots | tojson }};
@@ -556,48 +557,17 @@ function initTaskDescDrawer(){
     }, 260);
   }
 
-    function escapeHtml(value){
-    return String(value || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function renderDetailBody(details){
-    const rows = [
-      { label: '建立人員', value: details.creator || '-' },
-      { label: '建立時間', value: details.created || '-' },
-      { label: '最後編輯人員', value: details.lastEditor || '-' },
-      { label: '最後編輯時間', value: details.lastEdited || '-' }
-    ];
-    const rowsHtml = rows.map((row) => (
-      `<div class="task-detail-row">
-        <div class="task-detail-label">${escapeHtml(row.label)}</div>
-        <div class="task-detail-value">${escapeHtml(row.value)}</div>
-      </div>`
-    )).join('');
-    const descHtml = details.desc
-      ? `<div class="task-detail-desc">
-          <div class="task-detail-desc-label">任務描述</div>
-          <div class="task-detail-desc-value">${escapeHtml(details.desc)}</div>
-        </div>`
-      : '';
-    return `<div class="task-detail-list">${rowsHtml}${descHtml}</div>`;
-  }
-
   document.querySelectorAll('.task-detail-trigger').forEach(btn => {
     btn.addEventListener('click', (event) => {
       event.preventDefault();
       const row = btn.closest('tr');
-      const name = row ? row.querySelector('.task-name-link')?.textContent?.trim() : '';
-      const desc = row ? row.querySelector('.task-desc-data')?.textContent?.trim() : '';
-      const creator = row ? row.querySelector('.task-creator-data')?.textContent?.trim() : '';
-      const created = row ? row.querySelector('.task-created-data')?.textContent?.trim() : '';
-      const lastEditor = row ? row.querySelector('.task-last-editor-data')?.textContent?.trim() : '';
-      const lastEdited = row ? row.querySelector('.task-last-edited-data')?.textContent?.trim() : '';
-      const nasPath = row ? row.querySelector('.task-nas-data')?.textContent?.trim() : '';
+      const name = getRowText(row, '.task-name-link');
+      const desc = getRowText(row, '.task-desc-data');
+      const creator = getRowText(row, '.task-creator-data');
+      const created = getRowText(row, '.task-created-data');
+      const lastEditor = getRowText(row, '.task-last-editor-data');
+      const lastEdited = getRowText(row, '.task-last-edited-data');
+      const nasPath = getRowText(row, '.task-nas-data');
       const title = name ? `任務詳情 : ${name}` : '任務詳情';
       const detailHtml = renderDetailBody({
         creator,

@@ -27,6 +27,7 @@ from app.services.flow_service import (
     remove_hidden_runs,
     run_workflow,
 )
+from app.services.notification_service import send_batch_notification
 from app.services.task_service import build_file_tree, gather_available_files
 from app.utils import parse_bool
 
@@ -234,11 +235,39 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
                 _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
             except Exception as exc:
                 results.append({"flow": flow_name, "ok": False, "error": str(exc)})
-                status.update({"status": "failed", "error": str(exc), "results": results})
+                completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                status.update(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "results": results,
+                        "completed_at": completed_at,
+                    }
+                )
                 _write_batch_status(task_id, batch_id, status)
+                send_batch_notification(
+                    task_id=task_id,
+                    batch_id=batch_id,
+                    status="failed",
+                    results=results,
+                    actor_work_id=actor.get("work_id", ""),
+                    actor_label=actor.get("label", ""),
+                    completed_at=completed_at,
+                    error=str(exc),
+                )
                 return
-        status.update({"status": "completed", "results": results})
+        completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status.update({"status": "completed", "results": results, "completed_at": completed_at})
         _write_batch_status(task_id, batch_id, status)
+        send_batch_notification(
+            task_id=task_id,
+            batch_id=batch_id,
+            status="completed",
+            results=results,
+            actor_work_id=actor.get("work_id", ""),
+            actor_label=actor.get("label", ""),
+            completed_at=completed_at,
+        )
 
 
 def _load_saved_flows(flow_dir: str) -> list[dict]:

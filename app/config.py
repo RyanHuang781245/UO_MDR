@@ -45,6 +45,10 @@ class BaseConfig:
     LDAP_USER_SEARCH_SCOPE = _resolve_ldap_scope()
     ALLOWED_GROUP_DN = os.environ.get("ALLOWED_GROUP_DN")
 
+    SMTP_HOST = os.environ.get("SMTP_HOST")
+    SMTP_PORT = int(os.environ.get("SMTP_PORT") or 25)
+    SMTP_SENDER = os.environ.get("SMTP_SENDER")
+
 
 class TestingConfig(BaseConfig):
     TESTING = True

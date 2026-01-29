@@ -353,6 +353,32 @@ def delete_flow_runs_bulk(task_id):
     return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
 
 
+@flows_bp.post("/tasks/<task_id>/flows/batches/delete", endpoint="delete_flow_batches_bulk")
+def delete_flow_batches_bulk(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    status_dir = os.path.join(tdir, "jobs", "batch")
+    raw = request.form.get("batch_ids", "")
+    batch_ids = [b.strip() for b in raw.split(",") if b.strip()]
+    if not batch_ids:
+        flash("請先選取要刪除的批次紀錄。", "warning")
+        return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="batch"))
+    deleted = 0
+    for batch_id in batch_ids:
+        path = _batch_status_path(task_id, batch_id)
+        if not os.path.exists(path):
+            continue
+        try:
+            os.remove(path)
+            deleted += 1
+        except Exception:
+            current_app.logger.exception("Failed to delete batch status")
+    if deleted:
+        flash(f"已刪除 {deleted} 筆批次紀錄。", "success")
+    else:
+        flash("沒有可刪除的批次紀錄。", "warning")
+    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="batch"))
+
+
 @flows_bp.post("/tasks/<task_id>/flows/runs/download", endpoint="download_flow_runs_bulk")
 def download_flow_runs_bulk(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)

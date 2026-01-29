@@ -37,6 +37,7 @@ from modules.auth_models import (
     upsert_user_role,
     user_has_role,
 )
+from modules.settings_models import SystemSetting
 
 
 @dataclass(frozen=True)
@@ -478,6 +479,21 @@ class ADSearchView(BaseView):
         )
 
 
+class SystemSettingAdminView(SecureModelView):
+    can_create = False
+    can_delete = False
+    can_edit = True
+    column_list = ("email_batch_notify_enabled", "updated_at")
+    column_labels = {
+        "email_batch_notify_enabled": "批次完成通知 Email",
+        "updated_at": "更新時間",
+    }
+    form_columns = ("email_batch_notify_enabled",)
+    column_formatters = {
+        "updated_at": lambda _view, _context, model, _name: format_tw_datetime(model.updated_at, assume_tz=TAIWAN_TZ),
+    }
+
+
 def register_auth_context(app) -> None:
     @app.context_processor
     def inject_auth_context():
@@ -526,6 +542,7 @@ def init_admin(app) -> Admin:
     admin = Admin(app, name="系統管理", url="/admin", index_view=SecureAdminIndexView())
     admin.add_view(UserAdminView(User, db.session, name="使用者列表"))
     admin.add_view(ADSearchView(name="帳號搜尋", endpoint="ad_search", url="ad-search"))
+    admin.add_view(SystemSettingAdminView(SystemSetting, db.session, name="系統設定"))
     return admin
 
 

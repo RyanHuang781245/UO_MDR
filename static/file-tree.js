@@ -4,11 +4,7 @@
     if (!row || row.dataset.bound === "1") return;
     row.dataset.bound = "1";
 
-    const level = parseInt(dir.dataset.level || "0", 10);
-    if (level === 0) {
-      dir.classList.add("is-open");
-      row.setAttribute("aria-expanded", "true");
-    }
+    row.setAttribute("aria-expanded", "false");
 
     const toggle = () => {
       const open = dir.classList.toggle("is-open");

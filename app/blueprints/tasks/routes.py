@@ -525,26 +525,57 @@ def sync_task_nas(task_id):
         flash(str(exc), "danger")
         return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
 
-    tmp_dir = os.path.join(tdir, f"files_sync_{uuid.uuid4().hex[:8]}")
     try:
         src_dir = ensure_windows_long_path(abs_path)
-        tmp_target = ensure_windows_long_path(tmp_dir)
-        shutil.copytree(src_dir, tmp_target)
-        if os.path.isdir(files_dir):
-            shutil.rmtree(files_dir)
-        shutil.move(tmp_dir, files_dir)
+        dst_dir = ensure_windows_long_path(files_dir)
+        os.makedirs(dst_dir, exist_ok=True)
+        copied = 0
+        updated = 0
+        deleted = 0
+        for root, dirs, files in os.walk(src_dir):
+            rel = os.path.relpath(root, src_dir)
+            dest_root = dst_dir if rel == "." else os.path.join(dst_dir, rel)
+            os.makedirs(dest_root, exist_ok=True)
+            for fname in files:
+                src_file = os.path.join(root, fname)
+                dst_file = os.path.join(dest_root, fname)
+                try:
+                    if not os.path.exists(dst_file):
+                        shutil.copy2(src_file, dst_file)
+                        copied += 1
+                        continue
+                    src_stat = os.stat(src_file)
+                    dst_stat = os.stat(dst_file)
+                    if src_stat.st_size != dst_stat.st_size or int(src_stat.st_mtime) > int(dst_stat.st_mtime):
+                        shutil.copy2(src_file, dst_file)
+                        updated += 1
+                except FileNotFoundError:
+                    continue
+        for root, dirs, files in os.walk(dst_dir, topdown=False):
+            rel = os.path.relpath(root, dst_dir)
+            src_root = src_dir if rel == "." else os.path.join(src_dir, rel)
+            for fname in files:
+                dst_file = os.path.join(root, fname)
+                src_file = os.path.join(src_root, fname)
+                if not os.path.exists(src_file):
+                    try:
+                        os.remove(dst_file)
+                        deleted += 1
+                    except FileNotFoundError:
+                        continue
+            if rel != "." and not os.path.exists(src_root):
+                try:
+                    shutil.rmtree(root)
+                except FileNotFoundError:
+                    pass
         _apply_last_edit(meta)
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
-        flash("已更新 NAS 文件。", "success")
+        flash(f"已更新 NAS 文件（新增 {copied}、更新 {updated}、刪除 {deleted}）。", "success")
     except PermissionError:
-        if os.path.isdir(tmp_dir):
-            shutil.rmtree(tmp_dir, ignore_errors=True)
         flash("沒有足夠的權限讀取或複製指定路徑。", "danger")
     except Exception:
         current_app.logger.exception("更新 NAS 文件失敗")
-        if os.path.isdir(tmp_dir):
-            shutil.rmtree(tmp_dir, ignore_errors=True)
         flash("更新 NAS 文件失敗，請稍後再試。", "danger")
 
     return redirect(url_for("tasks_bp.task_detail", task_id=task_id))

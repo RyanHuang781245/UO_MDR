@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 {% from "_file_tree.html" import render_file_tree %}
-<h1 class="h3 mb-3">定義流程</h1>
+<h1 class="h3 mb-3 fw-bold">定義流程</h1>
+<div class="d-flex gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">返回任務詳情</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">執行結果</a>
+</div>
+
+<div id="runStatusContainer" class="run-status-container"></div>
 
 <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
   <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
@@ -22,7 +28,7 @@
 
   <div class="d-flex gap-2 mt-2">
     <div class="dropdown">
-      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
+      <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
       <ul class="dropdown-menu">
         {% for key, meta in steps.items() %}
         <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
@@ -33,6 +39,7 @@
       <button class="btn btn-secondary" type="submit" name="action" value="save">保存流程</button>
       <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">模板解析</button>
       <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
+      <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">進入排程管理</a>
     </div>
     <div class="small text-muted">目前模板：<code id="currentTemplateLabel">{{ template_file or "未選擇" }}</code></div>
   </form>
@@ -97,39 +104,82 @@
 <div class="mt-3">
 </div>
 <hr>
-<h2 class="h5 mt-4">已保存的流程</h2>
-<table class="table table-striped text-center align-middle">
+<h2 class="h5 mt-4 fw-bold">已保存流程</h2>
+<table class="table table-striped text-center align-middle flow-table" id="flowTable">
   <thead>
     <tr>
-      <th class="text-center">名稱</th>
-      <th class="text-center">建立時間</th>
-      <th class="text-center">操作</th>
+        <th class="text-start">流程名稱</th>
+        <th class="text-center">建立時間</th>
+        <th class="text-center">操作</th>
     </tr>
   </thead>
-  <tbody>
+  <tbody id="flowTableBody">
   {% for f in flows %}
-    <tr>
-      <td class="align-middle">{{ f.name }}</td>
+    <tr data-flow="{{ f.name }}">
+      <td class="align-middle text-start">{{ f.name }}</span></td>
       <td class="align-middle">{{ f.created }}</td>
       <td class="align-middle">
-        <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('此流程包含複製檔案步驟，確定要執行嗎？');"{% endif %}>
+        <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
           <button class="btn btn-sm btn-outline-success">執行</button>
         </form>
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">編輯</a>
         <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameFlow('{{ f.name }}')">重新命名</button>
-        <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
+        <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('\u78ba\u5b9a\u522a\u9664?')">
           <button class="btn btn-sm btn-outline-danger">刪除</button>
         </form>
-          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a>
-        </td>
-      </tr>
-    {% else %}
+        <!-- <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a> -->
+      </td>
+    </tr>
+  {% else %}
     <tr><td colspan="3">尚無流程</td></tr>
   {% endfor %}
   </tbody>
 </table>
+<style>
+.flow-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.flow-table th,
+.flow-table td {
+  width: 33.3333%;
+}
+.run-status-container {
+  position: fixed;
+  top: 88px;
+  right: 24px;
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.run-status-toast {
+  min-width: 240px;
+  max-width: 360px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #e6e6e2;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+.run-status-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.run-status-body {
+  color: #555;
+  font-size: 0.9rem;
+}
+</style>
 
-<form action="{{ url_for('flows_bp.import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="mt-3">
+<!-- <div class="mt-3">
+  <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">進入排程管理</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">返回任務詳細頁</a>
+</div> -->
+
+
+
+<!-- <form action="{{ url_for('flows_bp.import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="mt-3">
   <div class="row g-3 align-items-end">
     <div class="col-md-6">
       <label class="form-label">匯入流程 JSON</label>
@@ -139,7 +189,8 @@
       <button class="btn btn-outline-primary" type="submit">匯入</button>
     </div>
   </div>
-</form>
+</form> -->
+
 
 <script>
 const TASK_ID = '{{ task.id }}';
@@ -149,6 +200,7 @@ const PRESET_FLOW = {{ preset|tojson }};
 const TEMPLATE_PARSE_URL = "{{ url_for('tasks_bp.parse_template_doc', task_id=task.id) }}";
 const TEMPLATE_FILE = {{ template_file|tojson }};
 const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
+const ACTIVE_RUNS_URL = "{{ url_for('flows_bp.flow_run_active', task_id=task.id) }}";
 const BOOL_DEFAULTS = {
   include_caption: "false",
   target_title: "false"
@@ -233,6 +285,123 @@ const FIELD_META = {
     label: "目的資料夾"
   },
 };
+
+const RUN_JOB_ID = {{ job_id|tojson }};
+const runStatusContainer = document.getElementById("runStatusContainer");
+const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
+
+function loadRunJobs(){
+  try {
+    const raw = localStorage.getItem(runStatusStorageKey);
+    const data = JSON.parse(raw || "[]");
+    return Array.isArray(data) ? data.filter(Boolean) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveRunJobs(list){
+  try {
+    localStorage.setItem(runStatusStorageKey, JSON.stringify(list));
+  } catch (e) {
+    // ignore
+  }
+}
+
+function ensureRunJob(jobId){
+  if (!jobId) return;
+  const list = loadRunJobs();
+  if (!list.includes(jobId)) {
+    list.push(jobId);
+    saveRunJobs(list);
+  }
+}
+
+function removeRunJob(jobId){
+  const list = loadRunJobs().filter(id => id !== jobId);
+  saveRunJobs(list);
+  const node = runStatusContainer?.querySelector(`[data-job-id="${jobId}"]`);
+  if (node) node.remove();
+}
+
+function renderRunToasts(){
+  if (!runStatusContainer) return;
+  const list = loadRunJobs();
+  runStatusContainer.innerHTML = "";
+  list.forEach(jobId => {
+    const toast = document.createElement("div");
+    toast.className = "run-status-toast";
+    toast.dataset.jobId = jobId;
+    toast.dataset.statusUrl = `{{ url_for('flows_bp.flow_run_status', task_id=task.id, job_id='__JOB__') }}`.replace("__JOB__", jobId);
+    toast.innerHTML = `
+      <div class="run-status-title">流程執行中</div>
+      <div class="run-status-body">正在執行：<span class="run-status-name">（讀取中）</span></div>
+    `;
+    runStatusContainer.appendChild(toast);
+  });
+}
+
+async function refreshRunStatus(){
+  if (!runStatusContainer) return;
+  const toasts = Array.from(runStatusContainer.querySelectorAll(".run-status-toast"));
+  for (const toast of toasts){
+    const url = toast.dataset.statusUrl;
+    if (!url) continue;
+    try{
+      const resp = await fetch(url, { cache: "no-store" });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok){
+        removeRunJob(toast.dataset.jobId);
+        continue;
+      }
+      const status = data.status || "unknown";
+      const flowName = data.flow_name || "（未命名）";
+      const titleEl = toast.querySelector(".run-status-title");
+      const bodyEl = toast.querySelector(".run-status-body");
+      const nameEl = toast.querySelector(".run-status-name");
+      if (nameEl) nameEl.textContent = flowName;
+      if (status === "completed"){
+        if (titleEl) titleEl.textContent = "流程已完成";
+        if (bodyEl) bodyEl.textContent = `已完成：${flowName}`;
+        setTimeout(() => removeRunJob(toast.dataset.jobId), 4000);
+        continue;
+      }
+      if (status === "failed"){
+        if (titleEl) titleEl.textContent = "流程失敗";
+        if (bodyEl) bodyEl.textContent = `失敗：${flowName}`;
+        continue;
+      }
+      if (titleEl) titleEl.textContent = status === "queued" ? "流程排隊中" : "流程執行中";
+      if (bodyEl) bodyEl.textContent = `${status === "queued" ? "排隊中" : "正在執行"}：${flowName}`;
+    }catch(e){
+      // ignore
+    }
+  }
+}
+
+async function syncActiveRuns(){
+  try{
+    const resp = await fetch(ACTIVE_RUNS_URL, { cache: "no-store" });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) return;
+    const serverRuns = Array.isArray(data.runs) ? data.runs : [];
+    serverRuns.forEach(r => ensureRunJob(r.job_id));
+    renderRunToasts();
+  }catch(e){
+    // ignore
+  }
+}
+
+if (RUN_JOB_ID){
+  ensureRunJob(RUN_JOB_ID);
+}
+renderRunToasts();
+if (runStatusContainer){
+  refreshRunStatus();
+  setInterval(refreshRunStatus, 3000);
+  syncActiveRuns();
+  setInterval(syncActiveRuns, 10000);
+}
 
 const templateFileInput = document.getElementById('template_file_input');
 const currentTemplateLabel = document.getElementById('currentTemplateLabel');
@@ -601,4 +770,5 @@ if (PRESET_FLOW){
 }
 isInitialising = false;
 </script>
+
 {% endblock %}

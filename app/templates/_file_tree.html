@@ -3,7 +3,7 @@
     {%- for dname, dnode in (node.dirs or {}) | dictsort %}
       {%- set current = path ~ ("/" if path else "") ~ dname %}
       <li class="file-tree-item dir" data-level="{{ level }}" data-path="{{ current }}">
-        <div class="file-tree-row" role="button" tabindex="0" aria-expanded="{{ 'true' if level == 0 else 'false' }}">
+        <div class="file-tree-row" role="button" tabindex="0" aria-expanded="false">
           <span class="file-tree-caret" aria-hidden="true"></span>
           <span class="file-tree-label">{{ dname }}</span>
         </div>

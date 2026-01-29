@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">單次流程執行</h1>
+
+<div class="d-flex gap-2 mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">返回流程管理</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_batch_list', task_id=task.id) }}">批次執行列表</a>
+</div>
+
+<div class="mb-3">
+  <h2 class="h6">目前執行中</h2>
+  <div class="text-muted">單次流程為同步執行，通常不會顯示執行中。</div>
+</div>
+
+{% if not runs %}
+  <div class="text-muted">尚無執行紀錄</div>
+{% else %}
+  <div class="table-responsive">
+    <table class="table table-striped align-middle text-center">
+      <thead>
+        <tr>
+          <th class="text-start">流程名稱</th>
+          <th style="width:180px;">開始時間</th>
+          <th style="width:140px;">狀態</th>
+          <th style="width:260px;">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        <tr>
+          <td class="text-start">{{ r.flow_name }}</td>
+          <td>{{ r.started_at }}</td>
+          <td>
+            {% if r.status == "completed" %}
+              <span class="text-success">完成</span>
+            {% elif r.status == "running" %}
+              <span class="text-primary">執行中</span>
+            {% elif r.status == "queued" %}
+              <span class="text-muted">排隊中</span>
+            {% elif r.status == "failed" %}
+              <span class="text-danger">失敗</span>
+            {% else %}
+              <span class="text-muted">未完成</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="btn-group btn-group-sm" role="group">
+              {% if r.has_result %}
+                <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}">查看結果</a>
+                <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">下載結果</a>
+              {% endif %}
+              {% if r.has_log %}
+                <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>
+              {% endif %}
+              {% if r.status == "failed" and r.error %}
+                <span class="text-danger ms-2" title="{{ r.error }}">錯誤</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

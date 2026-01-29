@@ -544,6 +544,19 @@ def flow_run_status(task_id, job_id):
     return {"ok": True, "status": status, "flow_name": flow_name}
 
 
+@flows_bp.get("/tasks/<task_id>/flows/runs/active", endpoint="flow_run_active")
+def flow_run_active(task_id):
+    runs = _list_flow_runs(task_id)
+    active = [r for r in runs if r["status"] in ("queued", "running", "failed")]
+    return {
+        "ok": True,
+        "runs": [
+            {"job_id": r["job_id"], "status": r["status"], "flow_name": r["flow_name"]}
+            for r in active
+        ],
+    }
+
+
 @flows_bp.post("/tasks/<task_id>/flows/run", endpoint="run_flow")
 def run_flow(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)

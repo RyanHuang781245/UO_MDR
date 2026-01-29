@@ -200,6 +200,7 @@ const PRESET_FLOW = {{ preset|tojson }};
 const TEMPLATE_PARSE_URL = "{{ url_for('tasks_bp.parse_template_doc', task_id=task.id) }}";
 const TEMPLATE_FILE = {{ template_file|tojson }};
 const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
+const ACTIVE_RUNS_URL = "{{ url_for('flows_bp.flow_run_active', task_id=task.id) }}";
 const BOOL_DEFAULTS = {
   include_caption: "false",
   target_title: "false"
@@ -378,6 +379,19 @@ async function refreshRunStatus(){
   }
 }
 
+async function syncActiveRuns(){
+  try{
+    const resp = await fetch(ACTIVE_RUNS_URL, { cache: "no-store" });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) return;
+    const serverRuns = Array.isArray(data.runs) ? data.runs : [];
+    serverRuns.forEach(r => ensureRunJob(r.job_id));
+    renderRunToasts();
+  }catch(e){
+    // ignore
+  }
+}
+
 if (RUN_JOB_ID){
   ensureRunJob(RUN_JOB_ID);
 }
@@ -385,6 +399,8 @@ renderRunToasts();
 if (runStatusContainer){
   refreshRunStatus();
   setInterval(refreshRunStatus, 3000);
+  syncActiveRuns();
+  setInterval(syncActiveRuns, 10000);
 }
 
 const templateFileInput = document.getElementById('template_file_input');

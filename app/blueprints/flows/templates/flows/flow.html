@@ -1,48 +1,91 @@
 {% extends "base.html" %}
 {% block content %}
 {% from "_file_tree.html" import render_file_tree %}
-<h1 class="h3 mb-3 fw-bold">定義流程</h1>
-<div class="d-flex gap-2 mb-3">
-  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">返回任務詳情</a>
-  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">執行結果</a>
-</div>
 
 <div id="runStatusContainer" class="run-status-container"></div>
 
-<form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post" class="vstack gap-3">
-  <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
-  <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
-  <div id="steps" class="vstack gap-3"></div>
+<div class="card shadow-sm border mb-4">
+  <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post">
+    <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
+    <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
 
-  <div class="row g-3">
-    <div class="col-md-6">
-      <label class="form-label">流程名稱</label>
-      <input class="form-control" name="flow_name" value="{{ loaded_name or '' }}">
-    </div>
-  </div>
+    <div class="card-body border-bottom">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-3">
+        <h1 class="h4 mb-0 fw-bold">定義流程</h1>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            返回任務詳情
+          </a>
+          <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z"/></svg>
+            執行結果
+          </a>
+        </div>
+      </div>
 
-  <div class="form-check">
-    <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
-    <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
-  </div>
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <label class="form-label text-muted small">流程名稱</label>
+          <input class="form-control" name="flow_name" placeholder="請輸入流程名稱..." value="{{ loaded_name or '' }}">
+        </div>
+        <div class="col-12">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
+            <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
+          </div>
+        </div>
+      </div>
+    </div>
 
-  <div class="d-flex gap-2 mt-2">
-    <div class="dropdown">
-      <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">新增步驟</button>
-      <ul class="dropdown-menu">
-        {% for key, meta in steps.items() %}
-        <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
-        {% endfor %}
-      </ul>
+    <div class="px-4 py-3 bg-light border-bottom">
+      <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+        <div class="d-flex flex-wrap gap-2">
+          <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              新增步驟
+            </button>
+            <ul class="dropdown-menu">
+              {% for key, meta in steps.items() %}
+              <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+          <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
+            模板解析
+          </button>
+          <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/><path d="M12 2v8"/><path d="m16.2 14.2-4.2-4.2"/></svg>
+            檔案結構
+          </button>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          <button class="btn btn-success d-inline-flex align-items-center gap-1" type="submit" name="action" value="run">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m7 4 12 8-12 8V4z"/></svg>
+            執行流程
+          </button>
+          <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1" type="submit" name="action" value="save">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            保存流程
+          </button>
+          <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+            進入排程管理
+          </a>
+        </div>
+      </div>
+      <div class="small text-muted mt-2">
+        目前模板：<code id="currentTemplateLabel">{{ template_file or "未選擇" }}</code>
+      </div>
     </div>
-      <button class="btn btn-success" type="submit" name="action" value="run">執行流程</button>
-      <button class="btn btn-secondary" type="submit" name="action" value="save">保存流程</button>
-      <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">模板解析</button>
-      <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">檔案結構</button>
-      <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">進入排程管理</a>
+
+    <div class="card-body">
+      <div id="steps" class="vstack gap-3"></div>
     </div>
-    <div class="small text-muted">目前模板：<code id="currentTemplateLabel">{{ template_file or "未選擇" }}</code></div>
   </form>
+</div>
 
 <div class="modal fade" id="templateModal" tabindex="-1" aria-labelledby="templateModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl">
@@ -101,40 +144,59 @@
   </div>
 </div>
 
-<div class="mt-3">
+<div class="card shadow-sm border mt-4">
+  <div class="card-header bg-white border-bottom">
+    <h2 class="h5 mb-0 fw-bold">已保存流程</h2>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-striped text-center align-middle flow-table mb-0" id="flowTable">
+        <thead>
+          <tr>
+              <th class="text-start">流程名稱</th>
+              <th class="text-center">建立時間</th>
+              <th class="text-center">操作</th>
+          </tr>
+        </thead>
+        <tbody id="flowTableBody">
+        {% for f in flows %}
+          <tr data-flow="{{ f.name }}">
+            <td class="align-middle text-start">{{ f.name }}</span></td>
+            <td class="align-middle">{{ f.created }}</td>
+            <td class="align-middle">
+              <div class="d-inline-flex flex-wrap gap-1 justify-content-center">
+                <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
+                  <button class="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m7 4 12 8-12 8V4z"/></svg>
+                    執行
+                  </button>
+                </form>
+                <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                  編輯
+                </a>
+                <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" onclick="renameFlow('{{ f.name }}')">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/><path d="M9 11.5 11.5 14 16 9.5"/><rect width="18" height="11" x="3" y="11" rx="2"/></svg>
+                  重新命名
+                </button>
+                <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('\u78ba\u5b9a\u522a\u9664?')">
+                  <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                    刪除
+                  </button>
+                </form>
+              </div>
+              <!-- <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a> -->
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">尚無流程</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
-<hr>
-<h2 class="h5 mt-4 fw-bold">已保存流程</h2>
-<table class="table table-striped text-center align-middle flow-table" id="flowTable">
-  <thead>
-    <tr>
-        <th class="text-start">流程名稱</th>
-        <th class="text-center">建立時間</th>
-        <th class="text-center">操作</th>
-    </tr>
-  </thead>
-  <tbody id="flowTableBody">
-  {% for f in flows %}
-    <tr data-flow="{{ f.name }}">
-      <td class="align-middle text-start">{{ f.name }}</span></td>
-      <td class="align-middle">{{ f.created }}</td>
-      <td class="align-middle">
-        <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
-          <button class="btn btn-sm btn-outline-success">執行</button>
-        </form>
-        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">編輯</a>
-        <button class="btn btn-sm btn-outline-secondary" type="button" onclick="renameFlow('{{ f.name }}')">重新命名</button>
-        <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('\u78ba\u5b9a\u522a\u9664?')">
-          <button class="btn btn-sm btn-outline-danger">刪除</button>
-        </form>
-        <!-- <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a> -->
-      </td>
-    </tr>
-  {% else %}
-    <tr><td colspan="3">尚無流程</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
 <style>
 .flow-table {
   table-layout: fixed;
@@ -290,6 +352,14 @@ const RUN_JOB_ID = {{ job_id|tojson }};
 const runStatusContainer = document.getElementById("runStatusContainer");
 const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
 
+const { submitPostForm, escapeHtml } = window.UiUtils;
+
+function buildInsertMenu(sid, position){
+  return Object.entries(SUPPORTED_STEPS).map(([key, meta]) => (
+    `<li><a class="dropdown-item" href="#" onclick="addStep('${key}', {}, '${sid}', '${position}'); return false;">${meta.label}</a></li>`
+  )).join('');
+}
+
 function loadRunJobs(){
   try {
     const raw = localStorage.getItem(runStatusStorageKey);
@@ -414,12 +484,6 @@ const uploadTemplateBtn = document.getElementById('uploadTemplateBtn');
 
 let templateFile = TEMPLATE_FILE || "";
 let templateParagraphs = TEMPLATE_PARAGRAPHS || [];
-
-function escapeHtml(str){
-  return (str || "").replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[m] || m));
-}
 
 function formatTemplateLabel(p){
   const disp = (p.display || "").trim();
@@ -584,11 +648,8 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
   card.className = "card";
   card.dataset.sid = sid;
 
-  let menuBefore = '', menuAfter = '';
-  for (const [k, m] of Object.entries(SUPPORTED_STEPS)){
-    menuBefore += `<li><a class="dropdown-item" href="#" onclick="addStep('${k}', {}, '${sid}', 'before'); return false;">${m.label}</a></li>`;
-    menuAfter  += `<li><a class="dropdown-item" href="#" onclick="addStep('${k}', {}, '${sid}', 'after'); return false;">${m.label}</a></li>`;
-  }
+  const menuBefore = buildInsertMenu(sid, 'before');
+  const menuAfter = buildInsertMenu(sid, 'after');
 
   let body = `<div class="card-body">
     <div class="d-flex justify-content-between align-items-center">
@@ -735,33 +796,24 @@ function removeStep(sid){
   if (el) el.remove();
   updateOrder();
 }
-function moveUp(sid){
+function moveStep(sid, direction){
   const el = document.querySelector(`.card[data-sid="${sid}"]`);
   if (!el) return;
-  const prev = el.previousElementSibling;
-  if (prev) el.parentNode.insertBefore(el, prev);
+  const sibling = direction === 'up' ? el.previousElementSibling : el.nextElementSibling;
+  if (!sibling) return;
+  if (direction === 'up') {
+    el.parentNode.insertBefore(el, sibling);
+  } else {
+    el.parentNode.insertBefore(sibling, el);
+  }
   updateOrder();
 }
-function moveDown(sid){
-  const el = document.querySelector(`.card[data-sid="${sid}"]`);
-  if (!el) return;
-  const next = el.nextElementSibling;
-  if (next) el.parentNode.insertBefore(next, el);
-  updateOrder();
-}
+function moveUp(sid){ moveStep(sid, 'up'); }
+function moveDown(sid){ moveStep(sid, 'down'); }
 function renameFlow(current){
   const name = prompt('輸入新流程名稱', current);
   if(!name) return;
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = `/tasks/${TASK_ID}/flows/rename/${current}`;
-  const input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'name';
-  input.value = name;
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
+  submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name });
 }
 if (PRESET_FLOW){
   for (const st of PRESET_FLOW){

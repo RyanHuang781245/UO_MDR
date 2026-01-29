@@ -155,6 +155,7 @@ const batchFlowAddAllBtn = document.getElementById('batchFlowAddAllBtn');
 const batchFlowClearAllBtn = document.getElementById('batchFlowClearAllBtn');
 const batchFlowList = document.getElementById('batchFlowList');
 const batchFlowOptions = () => Array.from(document.querySelectorAll('.batch-flow-option'));
+const { escapeHtml } = window.UiUtils;
 let batchSelected = [];
 let draggingBatchRow = null;
 let dragOverRow = null;
@@ -165,12 +166,6 @@ const batchStorageKey = `batchFlowSelection:${BATCH_TASK_ID}`;
 const dropdownWrap = document.querySelector('.batch-dropdown');
 const dropdownMenu = dropdownWrap ? dropdownWrap.querySelector('.dropdown-menu') : null;
 const dropdownToggleBtn = dropdownWrap ? dropdownWrap.querySelector('[data-bs-toggle="dropdown"]') : null;
-
-function escapeHtml(str){
-  return (str || "").replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[m] || m));
-}
 
 function updateDropdownWidth(){
   if (!dropdownMenu) return;
@@ -223,6 +218,12 @@ function updateBatchSequence(){
   if (flowSequenceInput) flowSequenceInput.value = batchSelected.join(',');
 }
 
+function syncBatchList(shouldPersist){
+  renderBatchList();
+  updateBatchSequence();
+  if (shouldPersist) persistBatchSelection();
+}
+
 function persistBatchSelection(){
   try {
     localStorage.setItem(batchStorageKey, JSON.stringify(batchSelected));
@@ -238,8 +239,7 @@ function loadBatchSelection(){
     const saved = JSON.parse(raw);
     if (Array.isArray(saved)) {
       batchSelected = saved.filter(Boolean);
-      renderBatchList();
-      updateBatchSequence();
+      syncBatchList(false);
     }
   } catch (err) {
     // Ignore storage failures
@@ -250,9 +250,11 @@ function addFlows(names){
   names.forEach(name => {
     if (!batchSelected.includes(name)) batchSelected.push(name);
   });
-  renderBatchList();
-  updateBatchSequence();
-  persistBatchSelection();
+  syncBatchList(true);
+}
+
+function setFlowOptionsChecked(checked){
+  batchFlowOptions().forEach(opt => { opt.checked = checked; });
 }
 
 if (batchFlowAddSelectedBtn){
@@ -273,12 +275,12 @@ if (batchFlowAddSelectedBtn){
 
 if (batchFlowAddAllBtn){
   batchFlowAddAllBtn.addEventListener('click', () => {
-    batchFlowOptions().forEach(opt => { opt.checked = true; });
+    setFlowOptionsChecked(true);
   });
 }
 if (batchFlowClearAllBtn){
   batchFlowClearAllBtn.addEventListener('click', () => {
-    batchFlowOptions().forEach(opt => { opt.checked = false; });
+    setFlowOptionsChecked(false);
   });
 }
 
@@ -301,9 +303,7 @@ if (batchFlowList){
         batchSelected.splice(idx + 1, 0, batchSelected.splice(idx, 1)[0]);
       }
     }
-    renderBatchList();
-    updateBatchSequence();
-    persistBatchSelection();
+    syncBatchList(true);
   });
 
   batchFlowList.addEventListener('dragstart', (e) => {
@@ -360,8 +360,7 @@ if (batchFlowList){
     dragOverRow = null;
     dragOverPos = null;
     batchSelected = Array.from(batchFlowList.querySelectorAll('tr[data-flow]')).map(r => r.getAttribute('data-flow'));
-    updateBatchSequence();
-    persistBatchSelection();
+    syncBatchList(true);
   });
 }
 
@@ -372,8 +371,7 @@ if (batchForm && flowSequenceInput){
       alert('請先加入要執行的流程');
       return;
     }
-    updateBatchSequence();
-    persistBatchSelection();
+    syncBatchList(true);
   });
 }
 

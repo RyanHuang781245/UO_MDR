@@ -88,10 +88,18 @@
     {% if not batches %}
       <div class="text-muted">尚無批次紀錄</div>
     {% else %}
+      <div class="mb-2 d-flex flex-wrap gap-2">
+        <button class="btn btn-sm btn-outline-secondary" id="selectAllBatchesBtn" type="button">全部選取</button>
+        <button class="btn btn-sm btn-outline-secondary" id="clearAllBatchesBtn" type="button">取消選取</button>
+        <button class="btn btn-sm btn-outline-danger" id="deleteSelectedBatchesBtn" type="button">刪除已選取</button>
+      </div>
       <div class="table-responsive">
         <table class="table table-striped align-middle text-center">
           <thead>
             <tr>
+              <th style="width:60px;">
+                <input type="checkbox" id="selectAllBatches" class="form-check-input">
+              </th>
               <th style="width:160px;">批次 ID</th>
               <th style="width:180px;">狀態</th>
               <th style="width:200px;">建立時間</th>
@@ -102,6 +110,9 @@
             {% for b in batches %}
             {% set status_label = "完成" if b.status == "completed" else ("失敗" if b.status == "failed" else ("執行中" if b.status == "running" else ("排隊中" if b.status == "queued" else b.status))) %}
             <tr>
+              <td>
+                <input type="checkbox" class="form-check-input batch-select" value="{{ b.id }}">
+              </td>
               <td>{{ b.id }}</td>
               <td>{{ status_label }}</td>
               <td>{{ b.created_at }}</td>
@@ -124,7 +135,9 @@ const clearAllRunsBtn = document.getElementById('clearAllRunsBtn');
 const deleteSelectedRunsBtn = document.getElementById('deleteSelectedRunsBtn');
 const downloadSelectedRunsDocxBtn = document.getElementById('downloadSelectedRunsDocxBtn');
 const downloadSelectedRunsLogBtn = document.getElementById('downloadSelectedRunsLogBtn');
+const { submitPostForm } = window.UiUtils;
 const runCheckboxes = () => Array.from(document.querySelectorAll('.run-select'));
+const getSelectedRunIds = () => runCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
 
 function setAllRuns(checked){
   runCheckboxes().forEach(cb => { cb.checked = checked; });
@@ -142,51 +155,77 @@ if (clearAllRunsBtn){
 }
 if (deleteSelectedRunsBtn){
   deleteSelectedRunsBtn.addEventListener('click', () => {
-    const selected = runCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+    const selected = getSelectedRunIds();
     if (!selected.length){
       alert('請先選取要刪除的執行紀錄');
       return;
     }
     if (!confirm(`確定刪除 ${selected.length} 筆執行紀錄？`)) return;
-    const form = document.createElement('form');
-    form.method = 'post';
-    form.action = `{{ url_for('flows_bp.delete_flow_runs_bulk', task_id=task.id) }}`;
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'job_ids';
-    input.value = selected.join(',');
-    form.appendChild(input);
-    document.body.appendChild(form);
-    form.submit();
+    submitPostForm(`{{ url_for('flows_bp.delete_flow_runs_bulk', task_id=task.id) }}`, {
+      job_ids: selected.join(',')
+    });
   });
 }
 function submitBulkDownload(kind){
-  const selected = runCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+  const selected = getSelectedRunIds();
   if (!selected.length){
     alert('請先選取要下載的執行紀錄');
     return;
   }
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = `{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}`;
-  const ids = document.createElement('input');
-  ids.type = 'hidden';
-  ids.name = 'job_ids';
-  ids.value = selected.join(',');
-  const kindInput = document.createElement('input');
-  kindInput.type = 'hidden';
-  kindInput.name = 'kind';
-  kindInput.value = kind;
-  form.appendChild(ids);
-  form.appendChild(kindInput);
-  document.body.appendChild(form);
-  form.submit();
+  submitPostForm(`{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}`, {
+    job_ids: selected.join(','),
+    kind
+  });
 }
 if (downloadSelectedRunsDocxBtn){
   downloadSelectedRunsDocxBtn.addEventListener('click', () => submitBulkDownload('docx'));
 }
 if (downloadSelectedRunsLogBtn){
   downloadSelectedRunsLogBtn.addEventListener('click', () => submitBulkDownload('log'));
+}
+</script>
+{% endif %}
+{% if view == 'batch' %}
+<script>
+const selectAllBatches = document.getElementById('selectAllBatches');
+const selectAllBatchesBtn = document.getElementById('selectAllBatchesBtn');
+const clearAllBatchesBtn = document.getElementById('clearAllBatchesBtn');
+const deleteSelectedBatchesBtn = document.getElementById('deleteSelectedBatchesBtn');
+const batchCheckboxes = () => Array.from(document.querySelectorAll('.batch-select'));
+
+function setAllBatches(checked){
+  batchCheckboxes().forEach(cb => { cb.checked = checked; });
+  if (selectAllBatches) selectAllBatches.checked = checked;
+}
+
+if (selectAllBatches){
+  selectAllBatches.addEventListener('change', () => setAllBatches(selectAllBatches.checked));
+}
+if (selectAllBatchesBtn){
+  selectAllBatchesBtn.addEventListener('click', () => setAllBatches(true));
+}
+if (clearAllBatchesBtn){
+  clearAllBatchesBtn.addEventListener('click', () => setAllBatches(false));
+}
+if (deleteSelectedBatchesBtn){
+  deleteSelectedBatchesBtn.addEventListener('click', () => {
+    const selected = batchCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+    if (!selected.length){
+      alert('請先選取要刪除的批次紀錄');
+      return;
+    }
+    if (!confirm(`確定刪除 ${selected.length} 筆批次紀錄？`)) return;
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = `{{ url_for('flows_bp.delete_flow_batches_bulk', task_id=task.id) }}`;
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'batch_ids';
+    input.value = selected.join(',');
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+  });
 }
 </script>
 {% endif %}

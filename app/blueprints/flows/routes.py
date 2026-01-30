@@ -16,8 +16,11 @@ from app.services.flow_service import (
     DEFAULT_APPLY_FORMATTING,
     DEFAULT_DOCUMENT_FORMAT_KEY,
     DEFAULT_LINE_SPACING,
+    DOCUMENT_FORMAT_PRESETS,
+    LINE_SPACING_CHOICES,
     SKIP_DOCX_CLEANUP,
     SUPPORTED_STEPS,
+    apply_basic_style,
     center_table_figure_paragraphs,
     collect_titles_to_hide,
     coerce_line_spacing,
@@ -133,6 +136,7 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
     template_file = None
+    apply_formatting = DEFAULT_APPLY_FORMATTING
     template_cfg = None
     if isinstance(data, dict):
         workflow = data.get("steps", [])
@@ -140,7 +144,12 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
             isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
         )
         document_format = normalize_document_format(data.get("document_format"))
-        line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
+        line_spacing_raw = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
+        line_spacing_none = line_spacing_raw.strip().lower() == "none"
+        line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
+        apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        if document_format == "none" or line_spacing_none:
+            apply_formatting = False
         template_file = data.get("template_file")
     else:
         workflow = data
@@ -180,6 +189,17 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
     if center_titles:
         center_table_figure_paragraphs(result_path)
+    if apply_formatting and document_format != "none":
+        preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
+        apply_basic_style(
+            result_path,
+            western_font=preset.get("western_font") or "",
+            east_asian_font=preset.get("east_asian_font") or "",
+            font_size=int(preset.get("font_size") or 12),
+            line_spacing=line_spacing,
+            space_before=int(preset.get("space_before") or 6),
+            space_after=int(preset.get("space_after") or 6),
+        )
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
         hide_paragraphs_with_text(result_path, titles_to_hide)
@@ -192,6 +212,9 @@ def _run_single_job(
     runtime_steps: list[dict],
     template_cfg: dict | None,
     center_titles: bool,
+    document_format: str,
+    line_spacing: float,
+    apply_formatting: bool,
     job_id: str,
     actor: dict,
 ) -> None:
@@ -205,6 +228,17 @@ def _run_single_job(
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
             if center_titles:
                 center_table_figure_paragraphs(result_path)
+            if apply_formatting and document_format != "none":
+                preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
+                apply_basic_style(
+                    result_path,
+                    western_font=preset.get("western_font") or "",
+                    east_asian_font=preset.get("east_asian_font") or "",
+                    font_size=int(preset.get("font_size") or 12),
+                    line_spacing=line_spacing,
+                    space_before=int(preset.get("space_before") or 6),
+                    space_after=int(preset.get("space_after") or 6),
+                )
             if not SKIP_DOCX_CLEANUP:
                 remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
                 hide_paragraphs_with_text(result_path, titles_to_hide)
@@ -484,6 +518,9 @@ def flow_builder(task_id):
     center_titles = True
     template_file = None
     template_paragraphs = []
+    document_format = DEFAULT_DOCUMENT_FORMAT_KEY
+    line_spacing = f"{DEFAULT_LINE_SPACING:g}"
+    apply_formatting = DEFAULT_APPLY_FORMATTING
     loaded_name = request.args.get("flow")
     job_id = request.args.get("job")
     if loaded_name:
@@ -497,6 +534,9 @@ def flow_builder(task_id):
                     isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
                 )
                 template_file = data.get("template_file")
+                document_format = normalize_document_format(data.get("document_format"))
+                line_spacing = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
+                apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
             else:
                 steps_data = data
                 center_titles = True
@@ -528,6 +568,11 @@ def flow_builder(task_id):
         files_tree=tree,
         template_file=template_file,
         template_paragraphs=template_paragraphs,
+        document_format=document_format,
+        line_spacing=line_spacing,
+        apply_formatting=apply_formatting,
+        document_format_presets=DOCUMENT_FORMAT_PRESETS,
+        line_spacing_choices=LINE_SPACING_CHOICES,
     )
 
 
@@ -623,7 +668,15 @@ def run_flow(task_id):
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     center_titles = request.form.get("center_titles") == "on"
     template_file = request.form.get("template_file", "").strip()
-    apply_formatting = False
+    document_format = normalize_document_format(request.form.get("document_format"))
+    line_spacing_raw = request.form.get("line_spacing")
+    line_spacing_value = (line_spacing_raw or f"{DEFAULT_LINE_SPACING:g}").strip()
+    line_spacing_none = line_spacing_value.lower() == "none"
+    line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
+    apply_formatting_param = request.form.get("apply_formatting")
+    apply_formatting = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING)
+    if document_format == "none" or line_spacing_none:
+        apply_formatting = False
     workflow = []
     for sid in ordered_ids:
         sid = sid.strip()
@@ -659,6 +712,9 @@ def run_flow(task_id):
             "steps": workflow,
             "center_titles": center_titles,
             "template_file": template_file,
+            "document_format": document_format,
+            "line_spacing": line_spacing_value,
+            "apply_formatting": apply_formatting,
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -708,7 +764,18 @@ def run_flow(task_id):
     app = current_app._get_current_object()
     thread = threading.Thread(
         target=_run_single_job,
-        args=(app, task_id, runtime_steps, template_cfg, center_titles, job_id, {"work_id": work_id, "label": label}),
+        args=(
+            app,
+            task_id,
+            runtime_steps,
+            template_cfg,
+            center_titles,
+            document_format,
+            line_spacing,
+            apply_formatting,
+            job_id,
+            {"work_id": work_id, "label": label},
+        ),
         daemon=True,
     )
     thread.start()
@@ -729,7 +796,7 @@ def execute_flow(task_id, flow_name):
         data = json.load(f)
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
-    apply_formatting = False
+    apply_formatting = DEFAULT_APPLY_FORMATTING
     template_file = None
     template_cfg = None
     if isinstance(data, dict):
@@ -738,8 +805,13 @@ def execute_flow(task_id, flow_name):
             isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
         )
         document_format = normalize_document_format(data.get("document_format"))
-        line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
+        line_spacing_raw = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
+        line_spacing_none = line_spacing_raw.strip().lower() == "none"
+        line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
         template_file = data.get("template_file")
+        apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        if document_format == "none" or line_spacing_none:
+            apply_formatting = False
     else:
         workflow = data
         center_titles = True
@@ -783,7 +855,18 @@ def execute_flow(task_id, flow_name):
     app = current_app._get_current_object()
     thread = threading.Thread(
         target=_run_single_job,
-        args=(app, task_id, runtime_steps, template_cfg, center_titles, job_id, {"work_id": work_id, "label": label}),
+        args=(
+            app,
+            task_id,
+            runtime_steps,
+            template_cfg,
+            center_titles,
+            document_format,
+            line_spacing,
+            apply_formatting,
+            job_id,
+            {"work_id": work_id, "label": label},
+        ),
         daemon=True,
     )
     thread.start()

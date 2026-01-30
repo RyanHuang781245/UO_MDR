@@ -123,6 +123,7 @@ SUPPORTED_STEPS = {
             "target_chapter_section",
             "target_table_label",
             "target_subtitle",
+            "include_caption",
             "template_index",
             "template_mode",
         ],
@@ -131,6 +132,7 @@ SUPPORTED_STEPS = {
             "target_chapter_section": "text",
             "target_table_label": "text",
             "target_subtitle": "text",
+            "include_caption": "bool",
             "template_index": "text",
             "template_mode": "text",
         }
@@ -351,6 +353,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     params.get("target_chapter_section", ""),
                     params.get("target_table_label", ""),
                     params.get("target_subtitle") or None,
+                    include_caption=boolish(params.get("include_caption", "false")),
                     save_output=True,
                 )
                 if os.path.isfile(frag_path):

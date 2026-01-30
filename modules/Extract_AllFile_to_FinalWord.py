@@ -937,6 +937,7 @@ def extract_specific_table_from_word(
     target_table_label: str,       # 表格標題開頭，例如 "Table 1."
     target_subtitle: str | None = None,
     *,
+    include_caption: bool = True,
     save_output: bool = True,      # 是否存檔；如不存則僅回傳找到與否
 ) -> bool:
     """
@@ -1009,6 +1010,8 @@ def extract_specific_table_from_word(
             # --- 處理表格：擷取目標 ---
             elif isinstance(child, Table):
                 if is_waiting_for_table:
+                    if include_caption and saved_caption_text:
+                        out_section.AddParagraph().AppendText(saved_caption_text)
                     # 複製並寫入表格
                     new_table = child.Clone()
                     out_section.Body.ChildObjects.Add(new_table)

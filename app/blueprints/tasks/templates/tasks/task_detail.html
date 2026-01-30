@@ -1,11 +1,27 @@
 ﻿{% extends "base.html" %}
 {% from "_file_tree.html" import render_file_tree %}
 {% block content %}
+<div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-0 fw-bold">任務詳情</h1>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.tasks') }}">
+      <i class="bi bi-arrow-left"></i>
+      返回任務管理
+    </a>
+    <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
+      <i class="bi bi-diagram-3"></i>
+      進入管理流程
+    </a>
+  </div>
+</div>
+
 <div class="card mb-3">
   <div class="card-body">
     <div class="d-flex flex-column flex-md-row align-items-md-start justify-content-between gap-2">
       <div>
-        <h1 class="h4 mb-2 fw-bold">{{ task.name }}</h1>
+        <h2 class="h5 mb-2 fw-bold">{{ task.name }}</h2>
         {% if task.description %}
         <p class="text-muted mb-0">{{ task.description }}</p>
         {% else %}
@@ -38,9 +54,15 @@
     <div class="text-muted small mb-2">點擊資料夾名稱可展開並檢視資料夾內容，點擊進入流程管理進入文件處理頁面，點擊返回任務管理回到任務管理列表。</div>
     {% if task.nas_path %}
     <div class="d-flex align-items-center gap-2 mb-2">
-      <button class="btn btn-sm btn-info" type="button" id="nasDiffBtn" data-diff-url="{{ url_for('tasks_bp.task_nas_diff', task_id=task.id) }}">偵測 NAS 變更</button>
+      <button class="btn btn-sm btn-info d-inline-flex align-items-center gap-1" type="button" id="nasDiffBtn" data-diff-url="{{ url_for('tasks_bp.task_nas_diff', task_id=task.id) }}">
+        <i class="bi bi-search"></i>
+        偵測 NAS 變更
+      </button>
       <form action="{{ url_for('tasks_bp.sync_task_nas', task_id=task.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定要更新 NAS 文件嗎？這會覆蓋目前任務檔案夾內容。')">
-        <button class="btn btn-sm btn-warning" type="submit">同步 NAS 變更</button>
+        <button class="btn btn-sm btn-warning d-inline-flex align-items-center gap-1" type="submit">
+          <i class="bi bi-arrow-repeat"></i>
+          同步 NAS 變更
+        </button>
       </form>
       <div class="small text-muted" id="nasDiffStatus"></div>
     </div>
@@ -74,10 +96,14 @@
       {{ render_file_tree(files_tree) }}
     </div>
     <div class="d-flex flex-wrap gap-2 mt-3">
-      <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">進入管理流程</a>
-      <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.tasks') }}">返回任務管理</a>
-      <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">複製檔案</a>
-      <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">上傳 Mapping</a>
+      <a class="btn btn-outline-primary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
+        <i class="bi bi-folder-symlink"></i>
+        複製檔案
+      </a>
+      <a class="btn btn-outline-primary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
+        <i class="bi bi-upload"></i>
+        上傳 Mapping
+      </a>
     </div>
   </div>
 </div>

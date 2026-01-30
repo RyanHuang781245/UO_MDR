@@ -19,7 +19,7 @@
           </a>
           <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z"/></svg>
-            執行結果
+            流程執行結果
           </a>
         </div>
       </div>
@@ -153,7 +153,7 @@
       <table class="table table-striped text-center align-middle flow-table mb-0" id="flowTable">
         <thead>
           <tr>
-              <th class="text-start">流程名稱</th>
+              <th class="text-start ps-3">流程名稱</th>
               <th class="text-center">建立時間</th>
               <th class="text-center">操作</th>
           </tr>
@@ -161,26 +161,26 @@
         <tbody id="flowTableBody">
         {% for f in flows %}
           <tr data-flow="{{ f.name }}">
-            <td class="align-middle text-start">{{ f.name }}</span></td>
+            <td class="align-middle text-start ps-3">{{ f.name }}</span></td>
             <td class="align-middle">{{ f.created }}</td>
             <td class="align-middle">
               <div class="d-inline-flex flex-wrap gap-1 justify-content-center">
                 <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
-                  <button class="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1">
+                  <button class="btn btn-sm btn-success d-inline-flex align-items-center gap-1">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m7 4 12 8-12 8V4z"/></svg>
                     執行
                   </button>
                 </form>
-                <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">
+                <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
                   編輯
                 </a>
-                <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" onclick="renameFlow('{{ f.name }}')">
+                <button class="btn btn-sm btn-secondary d-inline-flex align-items-center gap-1" type="button" onclick="renameFlow('{{ f.name }}')">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/><path d="M9 11.5 11.5 14 16 9.5"/><rect width="18" height="11" x="3" y="11" rx="2"/></svg>
                   重新命名
                 </button>
                 <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('\u78ba\u5b9a\u522a\u9664?')">
-                  <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1">
+                  <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
                     刪除
                   </button>
@@ -234,25 +234,6 @@
 }
 </style>
 
-<!-- <div class="mt-3">
-  <a class="btn btn-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">進入排程管理</a>
-  <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">返回任務詳細頁</a>
-</div> -->
-
-
-
-<!-- <form action="{{ url_for('flows_bp.import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="mt-3">
-  <div class="row g-3 align-items-end">
-    <div class="col-md-6">
-      <label class="form-label">匯入流程 JSON</label>
-      <input class="form-control" type="file" name="flow_file" required>
-    </div>
-    <div class="col-md-3">
-      <button class="btn btn-outline-primary" type="submit">匯入</button>
-    </div>
-  </div>
-</form> -->
-
 
 <script>
 const TASK_ID = '{{ task.id }}';
@@ -288,6 +269,9 @@ const FIELD_META = {
     label: "小標題",
     placeholder: "請完整輸入小標題"
   },
+  subheading_strict_match: {
+    label: "小標題精確比對"
+  },
   target_figure_label: {
     label: "目標圖號",
     placeholder: "例如 Figure 1"
@@ -311,7 +295,10 @@ const FIELD_META = {
     placeholder: "以逗號分隔，例如 a,b,c"
   },
   target_title: {
-    label: "擷取標題內容"
+    label: "擷取小標題內容"
+  },
+  page_break_before: {
+    label: "段落前換頁"
   },
   subheading_text: {
     label: "小標題",
@@ -329,6 +316,9 @@ const FIELD_META = {
   },
   ignore_header_footer: {
     label: "移除頁首頁尾"
+  },
+  include_caption: {
+    label: "包含標題"
   },
   text: {
     label: "輸入文字",
@@ -651,6 +641,441 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
   const menuBefore = buildInsertMenu(sid, 'before');
   const menuAfter = buildInsertMenu(sid, 'after');
 
+  const isWordExtractStep = typeKey === "extract_word_chapter";
+
+  const getValue = (key) => {
+    const raw = preset[key];
+    return raw === undefined || raw === null ? "" : String(raw);
+  };
+
+  const getBoolValue = (key) => {
+    const raw = preset[key];
+    return (raw === undefined || raw === null || raw === "") ? (BOOL_DEFAULTS[key] || "true") : String(raw);
+  };
+
+  const renderBoolToggle = (key, label, extraClass = "", colClass = "col-md-4") => {
+    const boolVal = getBoolValue(key);
+    const checked = boolVal !== "false" ? "checked" : "";
+    const hiddenVal = boolVal !== "false" ? "true" : "false";
+    const inputId = `step_${sid}_${key}_chk`;
+    return `
+      <div class="${colClass}">
+        <div class="form-check">
+          <input type="hidden" name="step_${sid}_${key}" value="${hiddenVal}">
+          <input class="form-check-input bool-toggle${extraClass}" type="checkbox" id="${inputId}" data-target="step_${sid}_${key}" ${checked}>
+          <label class="form-check-label" for="${inputId}">${label}</label>
+        </div>
+      </div>`;
+  };
+
+  if (isWordExtractStep){
+    const fileVal = getValue("input_file");
+    const fileAccept = spec.accepts["input_file"] || "file:docx";
+    const fileExt = fileAccept.split(":")[1];
+    const fileOptions = (AVAILABLE_FILES[fileExt] || []).map(f => `<option value="${f}" ${fileVal===f?"selected": ""}>${f}</option>`).join("");
+    const filePlaceholder = fileExt === "dir" ? "選擇資料夾" : "選擇檔案";
+
+    const sectionKey = spec.inputs.includes("target_section") ? "target_section" : "target_chapter_section";
+    const sectionLabel = (FIELD_META[sectionKey] || {}).label || sectionKey;
+    const sectionPlaceholder = (FIELD_META[sectionKey] || {}).placeholder || sectionLabel;
+    const sectionVal = getValue(sectionKey);
+
+    const titleKey = "target_title_section";
+    const titleLabel = (FIELD_META[titleKey] || {}).label || titleKey;
+    const titlePlaceholder = (FIELD_META[titleKey] || {}).placeholder || titleLabel;
+    const titleVal = getValue(titleKey);
+
+    const targetTitleVal = getBoolValue("target_title");
+    const subheadingVal = getValue("subheading_text");
+    const subheadingLabel = (FIELD_META["subheading_text"] || {}).label || "小標題";
+    const subheadingPlaceholder = (FIELD_META["subheading_text"] || {}).placeholder || subheadingLabel;
+    const subheadingHideStyle = targetTitleVal === "false" ? "display: none;" : "";
+
+    const explicitLabel = (FIELD_META["explicit_end_title"] || {}).label || "強制結束標題";
+    const explicitPlaceholder = (FIELD_META["explicit_end_title"] || {}).placeholder || explicitLabel;
+    const explicitVal = getValue("explicit_end_title");
+
+    const tplIndexVal = getValue("template_index");
+    const tplDisabled = templateParagraphs.length === 0 ? "disabled" : "";
+    const tplModeVal = getValue("template_mode") || "insert_after";
+
+    const ignoreTocLabel = (FIELD_META["ignore_toc"] || {}).label || "移除目錄";
+    const ignoreTocBeforeLabel = (FIELD_META["ignore_toc_and_before"] || {}).label || "移除目錄及前言";
+    const ignoreHeaderLabel = (FIELD_META["ignore_header_footer"] || {}).label || "移除頁首頁尾";
+    const strictLabel = (FIELD_META["subheading_strict_match"] || {}).label || "小標題精確比對";
+
+    let body = `<div class="card-body">
+      <div class="d-flex justify-content-between align-items-center">
+        <h2 class="h5 mb-0">${spec.label}</h2>
+        <div class="btn-group">
+          <div class="btn-group">
+            <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
+            <ul class="dropdown-menu">${menuBefore}</ul>
+          </div>
+          <div class="btn-group">
+            <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
+            <ul class="dropdown-menu">${menuAfter}</ul>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
+        </div>
+      </div>
+      <input type="hidden" name="step_${sid}_type" value="${typeKey}">
+
+      <div class="mt-3">
+        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12h3"/><path d="M6 12a4 4 0 1 1 4 4"/><path d="M14 12h7"/></svg>
+          來源與章節設定
+        </div>
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">輸入檔案</label>
+            <select class="form-select" name="step_${sid}_input_file" required>
+              <option value="" disabled ${fileVal ? "" : "selected"}>${filePlaceholder}</option>
+              ${fileOptions}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">${sectionLabel}</label>
+            <input class="form-control" name="step_${sid}_${sectionKey}" value="${sectionVal}" placeholder="${sectionPlaceholder}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label d-flex justify-content-between align-items-center">
+              <span>${titleLabel}</span>
+              <span class="form-check d-flex align-items-center gap-1 m-0">
+                <input type="hidden" name="step_${sid}_target_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
+                <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_target_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+                <span class="small text-muted">擷取小標題內容</span>
+              </span>
+            </label>
+            <input class="form-control" name="step_${sid}_target_title_section" value="${titleVal}" placeholder="${titlePlaceholder}">
+          </div>
+        </div>
+
+        <div class="card bg-light border mt-3 subheading-input" style="${subheadingHideStyle}">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8"/><path d="M8 12h6"/></svg>
+              指定擷取的小標題
+            </div>
+            <input class="form-control" name="step_${sid}_subheading_text" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
+            <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
+          </div>
+        </div>
+
+        <div class="card bg-light border mt-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18"/><path d="M3 12h18"/></svg>
+              擷取規則
+            </div>
+            <div class="row g-2">
+              ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
+              ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-4") : ""}
+              ${spec.inputs.includes("ignore_toc_and_before") ? renderBoolToggle("ignore_toc_and_before", ignoreTocBeforeLabel, "", "col-md-4") : ""}
+              ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-4") : ""}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="mt-4">
+        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10"/><path d="M7 12h6"/></svg>
+          輸出與插入設定
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">模板段落</label>
+            <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${tplDisabled}>
+              ${buildTemplateOptions(tplIndexVal)}
+            </select>
+            <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">插入方式</label>
+            <select class="form-select" name="step_${sid}_template_mode">
+              <option value="insert_after" ${tplModeVal==="insert_after"?"selected": ""}>段落後新增</option>
+              <option value="replace" ${tplModeVal==="replace"?"selected": ""}>取代該段落</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+    card.innerHTML = body;
+    const container = document.getElementById("steps");
+    if (refSid){
+      const ref = document.querySelector(`.card[data-sid="${refSid}"]`);
+      if (ref){
+        if (position === 'before'){
+          container.insertBefore(card, ref);
+        } else {
+          container.insertBefore(card, ref.nextSibling);
+        }
+      } else {
+        container.appendChild(card);
+      }
+    } else {
+      container.appendChild(card);
+    }
+    card.querySelectorAll(".bool-toggle").forEach(toggle => {
+      toggle.addEventListener("change", () => {
+        const target = toggle.dataset.target;
+        const hidden = card.querySelector(`input[type="hidden"][name="${target}"]`);
+        if (hidden) hidden.value = toggle.checked ? "true" : "false";
+      });
+    });
+    const subheadingToggle = card.querySelector(".toggle-subheading");
+    const subheadingInput = card.querySelector(".subheading-input");
+    if (subheadingToggle && subheadingInput) {
+      subheadingToggle.addEventListener("change", () => {
+        subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
+      });
+    }
+    refreshTemplateSelects();
+    updateOrder();
+    return;
+  }
+
+  const targetTitleRaw = preset["target_title"];
+  const targetTitleVal = (targetTitleRaw === undefined || targetTitleRaw === null || targetTitleRaw === "")
+    ? (BOOL_DEFAULTS["target_title"] || "false")
+    : String(targetTitleRaw);
+
+  const templateKeys = new Set(["template_index", "template_mode"]);
+  const basicFields = [];
+  const ruleFields = [];
+  const templateFields = [];
+
+  const subtitleToggleSteps = ["extract_specific_figure_from_word", "extract_specific_table_from_word"];
+    const subtitleToggleLabelMap = {
+      extract_specific_figure_from_word: "擷取小標題內容",
+      extract_specific_table_from_word: "擷取小標題內容",
+    };
+  const renderField = (k) => {
+    const accept = spec.accepts[k];
+    const meta = FIELD_META[k] || {};
+    const label = meta.label || k;
+    const placeholder = meta.placeholder || label;
+    const rawVal = preset[k];
+    const val = rawVal === undefined || rawVal === null ? "" : String(rawVal);
+
+    if (k === "input_file" && subtitleToggleSteps.includes(typeKey)) {
+      const acceptFile = spec.accepts[k] || "file:docx";
+      const ext = acceptFile.split(":")[1];
+      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
+      const filePlaceholder = ext === "dir" ? "選擇資料夾" : "選擇檔案";
+      const selected = val ? "" : "selected";
+      return `<div class="col-12"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_${k}" required>
+                 <option value="" disabled ${selected}>${filePlaceholder}</option>${options}
+               </select></div>`;
+    }
+
+    if (k === "template_index"){
+      const disabled = templateParagraphs.length === 0 ? "disabled" : "";
+      return `<div class="col-md-6"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${disabled}>
+                 ${buildTemplateOptions(val)}
+               </select>
+               <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+             </div>`;
+    }
+    if (k === "template_mode") {
+      const modeVal = val || "insert_after";
+      return `<div class="col-md-3"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_template_mode">
+                 <option value="insert_after" ${modeVal==="insert_after"?"selected": ""}>段落後新增</option>
+                 <option value="replace" ${modeVal==="replace"?"selected": ""}>取代該段落</option>
+               </select></div>`;
+    }
+    if (accept === "text"){
+      if (k === "subheading_text") {
+        const hideStyle = targetTitleVal === "false" ? "display: none;" : "";
+        return `<div class="col-md-9 subheading-input" style="${hideStyle}"><label class="form-label">${label}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+      }
+      if (k === "target_section" || k === "target_chapter_section") {
+        return `<div class="col-md-6"><label class="form-label">${label}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+      }
+        if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
+          const show = val.trim().length > 0;
+          const hideStyle = show ? "" : "display: none;";
+          return `<div class="col-12 subtitle-wrap mt-3" style="${hideStyle}">
+                    <div class="card bg-light border">
+                      <div class="card-body">
+                        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8"/><path d="M8 12h6"/></svg>
+                          指定擷取的小標題
+                        </div>
+                        <input class="form-control subtitle-input" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}">
+                        <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
+                      </div>
+                    </div>
+                  </div>`;
+        }
+        if ((k === "target_figure_label" || k === "target_table_label") && subtitleToggleSteps.includes(typeKey)) {
+          return `<div class="col-md-5"><label class="form-label">${label}</label>
+                   <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+        }
+        return `<div class="col-md-6"><label class="form-label">${label}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+      }
+    if (accept === "bool"){
+      const boolDefault = BOOL_DEFAULTS[k] || "true";
+      const boolVal = val === "" ? boolDefault : val;
+      if (k === "ignore_toc" || k === "ignore_toc_and_before" || k === "ignore_header_footer" || k === "target_title" || k === "subheading_strict_match" || k === "include_caption" || k === "bold" || k === "page_break_before"){
+        const checked = boolVal !== "false" ? "checked" : "";
+        const hiddenVal = boolVal !== "false" ? "true" : "false";
+        const inputId = `step_${sid}_${k}_chk`;
+        const extraClass = k === "target_title" ? " toggle-subheading" : "";
+        const colClass = k === "subheading_strict_match" ? "col-md-12" : "col-md-3";
+        return `<div class="${colClass}">
+                 <div class="form-check">
+                   <input type="hidden" name="step_${sid}_${k}" value="${hiddenVal}">
+                   <input class="form-check-input bool-toggle${extraClass}" type="checkbox" id="${inputId}" data-target="step_${sid}_${k}" ${checked}>
+                   <label class="form-check-label" for="${inputId}">${label}</label>
+                 </div>
+               </div>`;
+      }
+      return `<div class="col-md-3"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_${k}">
+                 <option value="false" ${boolVal==="false"?"selected": ""}>否</option>
+                 <option value="true" ${boolVal!=="false"?"selected": ""}>是</option>
+               </select>
+             </div>`;
+    }
+    if (accept === "int" || accept === "float"){
+      if (k === "level") {
+        let options = "", help = "";
+        if (typeKey === "insert_numbered_heading") {
+          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（1.）</option>
+                     <option value="1" ${val==="1"?"selected": ""}>Level 1（1.1.）</option>
+                     <option value="2" ${val==="2"?"selected": ""}>Level 2（1.1.1.）</option>`;
+          help = "建議僅用到 Level 2；更深層需先擴充樣式。";
+        } else if (typeKey === "insert_roman_heading") {
+          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（I.）</option>`;
+          help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式。";
+        } else {
+          options = `<option value="0" ${val==="0"?"selected": ""}>0</option>`;
+        }
+        return `<div class="col-md-4">
+                 <label class="form-label">level</label>
+                 <select class="form-select" name="step_${sid}_${k}">${options}</select>
+                 <div class="form-text">${help}</div>
+               </div>`;
+      }
+      if (k === "font_size") {
+        return `<div class="col-md-3"><label class="form-label">字體大小</label>
+                 <select class="form-select" name="step_${sid}_${k}">
+                   <option value="12" ${val==="12"?"selected": ""}>12</option>
+                   <option value="13" ${val==="13"?"selected": ""}>13</option>
+                   <option value="14" ${val==="14"?"selected": ""}>14</option>
+                   <option value="16" ${val==="16"?"selected": ""}>16</option>
+                   <option value="18" ${val==="18"?"selected": ""}>18</option>
+                 </select></div>`;
+      }
+      if (k === "before_space" || k === "after_space") {
+        const nice = k === "before_space" ? "段前間距" : "段後間距";
+        return `<div class="col-md-3"><label class="form-label">${nice}</label>
+                 <select class="form-select" name="step_${sid}_${k}">
+                   <option value="0" ${val==="0"?"selected": ""}>0 pt</option>
+                   <option value="6" ${val==="6"?"selected": ""}>6 pt</option>
+                   <option value="12" ${val==="12"?"selected": ""}>12 pt</option>
+                 </select></div>`;
+      }
+      return `<div class="col-md-3"><label class="form-label">${label}</label>
+               <input class="form-control" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+    }
+    if (accept.startsWith("file")){
+      const ext = accept.split(":")[1];
+      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
+      const filePlaceholder = ext === "dir" ? "選擇資料夾" : "選擇檔案";
+      const selected = val ? "" : "selected";
+      return `<div class="col-md-6"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_${k}" required>
+                 <option value="" disabled ${selected}>${filePlaceholder}</option>${options}
+               </select></div>`;
+    }
+    if (k === "align"){
+      return `<div class="col-md-3"><label class="form-label">對齊</label>
+               <select class="form-select" name="step_${sid}_align">
+                 <option value="left" ${val==="left"?"selected": ""}>靠左</option>
+                 <option value="center" ${val==="center"?"selected": ""}>置中</option>
+                 <option value="right" ${val==="right"?"selected": ""}>靠右</option>
+                 <option value="justify" ${val==="justify"?"selected": ""}>左右對齊</option>
+               </select>
+             </div>`;
+    }
+    return "";
+  };
+
+  const subtitleFields = [];
+  const handledKeys = new Set();
+
+  if (subtitleToggleSteps.includes(typeKey)) {
+    if (spec.inputs.includes("input_file")) {
+      basicFields.push(renderField("input_file"));
+      handledKeys.add("input_file");
+    }
+    if (spec.inputs.includes("target_chapter_section")) {
+      const subtitleRaw = preset["target_subtitle"];
+      const subtitleVal = subtitleRaw === undefined || subtitleRaw === null ? "" : String(subtitleRaw);
+      const checked = subtitleVal.trim().length > 0 ? "checked" : "";
+      const toggleId = `step_${sid}_target_subtitle_toggle`;
+      const toggleLabel = subtitleToggleLabelMap[typeKey] || "擷取小標題內容";
+      const targetKey = spec.inputs.includes("target_figure_label") ? "target_figure_label" : "target_table_label";
+      const targetMeta = FIELD_META[targetKey] || {};
+      const targetLabel = targetMeta.label || targetKey;
+      const targetPlaceholder = targetMeta.placeholder || targetLabel;
+      const targetRaw = preset[targetKey];
+      const targetVal = targetRaw === undefined || targetRaw === null ? "" : String(targetRaw);
+      const sectionVal = getValue("target_chapter_section");
+      basicFields.push(`
+        <div class="col-md-6">
+          <label class="form-label d-flex justify-content-between align-items-center">
+            <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
+            <span class="form-check d-flex align-items-center gap-1 m-0">
+              <input class="form-check-input toggle-subtitle" type="checkbox" id="${toggleId}" ${checked}>
+              <span class="small text-muted">${toggleLabel}</span>
+            </span>
+          </label>
+          <input class="form-control" name="step_${sid}_target_chapter_section" value="${sectionVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">${targetLabel}</label>
+          <input class="form-control" name="step_${sid}_${targetKey}" value="${targetVal}" placeholder="${targetPlaceholder}">
+        </div>
+      `);
+      handledKeys.add("target_chapter_section");
+      handledKeys.add(targetKey);
+    }
+  }
+
+  for (const k of spec.inputs){
+    if (handledKeys.has(k)) {
+      continue;
+    }
+    if (templateKeys.has(k)) {
+      templateFields.push(renderField(k));
+      continue;
+    }
+    const accept = spec.accepts[k];
+    if (accept === "bool") {
+      ruleFields.push(renderField(k));
+      continue;
+    }
+    if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
+      subtitleFields.push(renderField(k));
+    } else {
+      basicFields.push(renderField(k));
+    }
+  }
+
   let body = `<div class="card-body">
     <div class="d-flex justify-content-between align-items-center">
       <h2 class="h5 mb-0">${spec.label}</h2>
@@ -669,109 +1094,42 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
       </div>
     </div>
     <input type="hidden" name="step_${sid}_type" value="${typeKey}">
-    <div class="row g-3 mt-1">`;
 
-  for (const k of spec.inputs){
-    const accept = spec.accepts[k];
-    const meta = FIELD_META[k] || {};
-    const label = meta.label || k;
-    const placeholder = meta.placeholder || label;
+    ${basicFields.length ? `
+    <div class="card bg-light border mt-3">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8"/><path d="M8 12h6"/></svg>
+          基本設定
+        </div>
+        <div class="row g-3">${basicFields.join("")}</div>
+      </div>
+    </div>` : ""}
 
-    const rawVal = preset[k];
-    const val = rawVal === undefined || rawVal === null ? "" : String(rawVal);
-    if (k === "template_index"){
-      const disabled = templateParagraphs.length === 0 ? "disabled" : "";
-      body += `<div class="col-md-6"><label class="form-label">${label}</label>
-               <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${disabled}>
-                 ${buildTemplateOptions(val)}
-               </select>
-               <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
-             </div>`;
-      continue;
-    } else if (k === "template_mode") {
-      const modeVal = val || "insert_after";
-      body += `<div class="col-md-3"><label class="form-label">${label}</label>
-               <select class="form-select" name="step_${sid}_template_mode">
-                 <option value="insert_after" ${modeVal==="insert_after"?"selected": ""}>段落後新增</option>
-                 <option value="replace" ${modeVal==="replace"?"selected": ""}>取代該段落</option>
-               </select></div>`;
-      continue;
-    }
-    if (accept === "text"){
-      body += `<div class="col-md-6"><label class="form-label">${label}</label>
-               <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
-    } else if (accept === "bool"){
-      const boolDefault = BOOL_DEFAULTS[k] || "true";
-      const boolVal = val === "" ? boolDefault : val;
-      body += `<div class="col-md-3"><label class="form-label">${label}</label>
-               <select class="form-select" name="step_${sid}_${k}">
-                 <option value="false" ${boolVal==="false"?"selected": ""}>否</option>
-                 <option value="true" ${boolVal!=="false"?"selected": ""}>是</option>
-               </select>
-             </div>`;
-    } else if (accept === "int" || accept === "float"){
-      if (k === "level") {
-        let options = "", help = "";
-        if (typeKey === "insert_numbered_heading") {
-          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（1.）</option>
-                     <option value="1" ${val==="1"?"selected": ""}>Level 1（1.1.）</option>
-                     <option value="2" ${val==="2"?"selected": ""}>Level 2（1.1.1.）</option>`;
-          help = "建議僅用到 Level 2；更深層需先擴充樣式。";
-        } else if (typeKey === "insert_roman_heading") {
-          options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（I.）</option>`;
-          help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式。";
-        } else {
-          options = `<option value="0" ${val==="0"?"selected": ""}>0</option>`;
-        }
-        body += `<div class="col-md-4">
-                   <label class="form-label">level</label>
-                   <select class="form-select" name="step_${sid}_${k}">${options}</select>
-                   <div class="form-text">${help}</div>
-                 </div>`;
-      } else if (k === "font_size") {
-        body += `<div class="col-md-3"><label class="form-label">字體大小</label>
-                 <select class="form-select" name="step_${sid}_${k}">
-                   <option value="12" ${val==="12"?"selected": ""}>12</option>
-                   <option value="13" ${val==="13"?"selected": ""}>13</option>
-                   <option value="14" ${val==="14"?"selected": ""}>14</option>
-                   <option value="16" ${val==="16"?"selected": ""}>16</option>
-                   <option value="18" ${val==="18"?"selected": ""}>18</option>
-                 </select></div>`;
-      } else if (k === "before_space" || k === "after_space") {
-        const nice = k === "before_space" ? "段前間距" : "段後間距";
-        body += `<div class="col-md-3"><label class="form-label">${nice}</label>
-                 <select class="form-select" name="step_${sid}_${k}">
-                   <option value="0" ${val==="0"?"selected": ""}>0 pt</option>
-                   <option value="6" ${val==="6"?"selected": ""}>6 pt</option>
-                   <option value="12" ${val==="12"?"selected": ""}>12 pt</option>
-                 </select></div>`;
-      } else {
-        body += `<div class="col-md-3"><label class="form-label">${label}</label>
-                 <input class="form-control" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
-      }
-    } else if (accept.startsWith("file")){
-      const ext = accept.split(":")[1];
-      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
-      const placeholder = ext === "dir" ? "選擇資料夾" : "選擇檔案";
-      const selected = val ? "" : "selected";
-      body += `<div class="col-md-6"><label class="form-label">${label}</label>
-               <select class="form-select" name="step_${sid}_${k}" required>
-                 <option value="" disabled ${selected}>${placeholder}</option>${options}
-               </select></div>`;
-    } else if (k === "align"){
-      body += `<div class="col-md-3"><label class="form-label">對齊</label>
-               <select class="form-select" name="step_${sid}_align">
-                 <option value="left" ${val==="left"?"selected": ""}>靠左</option>
-                 <option value="center" ${val==="center"?"selected": ""}>置中</option>
-                 <option value="right" ${val==="right"?"selected": ""}>靠右</option>
-                 <option value="justify" ${val==="justify"?"selected": ""}>左右對齊</option>
-               </select>
-               <div class="form-text">一般內文建議使用 左/左右對齊；標題多用 置中。</div>
-             </div>`;
-    }
-  }
+    ${subtitleFields.length ? subtitleFields.join("") : ""}
 
-  body += `</div></div>`;
+    ${ruleFields.length ? `
+    <div class="card bg-light border mt-3">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18"/><path d="M3 12h18"/></svg>
+          選項與規則
+        </div>
+        <div class="row g-3">${ruleFields.join("")}</div>
+      </div>
+    </div>` : ""}
+
+    ${templateFields.length ? `
+    <div class="card bg-light border mt-3">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10"/><path d="M7 12h6"/></svg>
+          輸出與插入設定
+        </div>
+        <div class="row g-3">${templateFields.join("")}</div>
+      </div>
+    </div>` : ""}
+  </div>`;
   card.innerHTML = body;
   const container = document.getElementById("steps");
   if (refSid){
@@ -787,6 +1145,27 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
     }
   } else {
     container.appendChild(card);
+  }
+  card.querySelectorAll(".bool-toggle").forEach(toggle => {
+    toggle.addEventListener("change", () => {
+      const target = toggle.dataset.target;
+      const hidden = card.querySelector(`input[type="hidden"][name="${target}"]`);
+      if (hidden) hidden.value = toggle.checked ? "true" : "false";
+    });
+  });
+  const subheadingToggle = card.querySelector(".toggle-subheading");
+  const subheadingInput = card.querySelector(".subheading-input");
+  if (subheadingToggle && subheadingInput) {
+    subheadingToggle.addEventListener("change", () => {
+      subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
+    });
+  }
+  const subtitleToggle = card.querySelector(".toggle-subtitle");
+  const subtitleWrap = card.querySelector(".subtitle-wrap");
+  if (subtitleToggle && subtitleWrap) {
+    subtitleToggle.addEventListener("change", () => {
+      subtitleWrap.style.display = subtitleToggle.checked ? "" : "none";
+    });
   }
   refreshTemplateSelects();
   updateOrder();

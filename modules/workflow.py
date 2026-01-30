@@ -1,9 +1,13 @@
 
 import os
+import hashlib
+from datetime import datetime
 from typing import List, Dict, Any
 from docx import Document as DocxDocument
+from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.text.paragraph import Paragraph as DocxParagraph
+from docx.oxml.ns import qn
 from .Extract_AllFile_to_FinalWord import (
     extract_pdf_chapter_to_table,
     extract_word_all_content,
@@ -43,6 +47,37 @@ def _set_alignment(paragraph: DocxParagraph, align: str) -> None:
         "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
     }
     paragraph.alignment = align_map.get(align.lower(), WD_ALIGN_PARAGRAPH.LEFT)
+
+
+def _clear_list_formatting(paragraph: DocxParagraph) -> None:
+    ppr = paragraph._p.get_or_add_pPr()
+    num_pr = ppr.find(qn("w:numPr"))
+    if num_pr is not None:
+        ppr.remove(num_pr)
+
+
+def _clear_indent(paragraph: DocxParagraph) -> None:
+    pf = paragraph.paragraph_format
+    pf.left_indent = None
+    pf.first_line_indent = None
+    pf.right_indent = None
+    pf.hanging_indent = None
+
+
+def _to_roman(num: int) -> str:
+    if num <= 0:
+        return ""
+    pairs = [
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ]
+    result = []
+    for value, symbol in pairs:
+        while num >= value:
+            result.append(symbol)
+            num -= value
+    return "".join(result)
 
 SUPPORTED_STEPS = {
     "extract_pdf_chapter_to_table": {
@@ -123,6 +158,7 @@ SUPPORTED_STEPS = {
             "target_chapter_section",
             "target_table_label",
             "target_subtitle",
+            "include_caption",
             "template_index",
             "template_mode",
         ],
@@ -131,20 +167,19 @@ SUPPORTED_STEPS = {
             "target_chapter_section": "text",
             "target_table_label": "text",
             "target_subtitle": "text",
+            "include_caption": "bool",
             "template_index": "text",
             "template_mode": "text",
         }
     },
     "insert_text": {
         "label": "插入純文字段落",
-        "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before", "template_index", "template_mode"],
+        "inputs": ["text", "align", "bold", "font_size", "page_break_before", "template_index", "template_mode"],
         "accepts": {
             "text": "text",
             "align": "align",
             "bold": "bool",
             "font_size": "float",
-            "before_space": "float",
-            "after_space": "float",
             "page_break_before": "bool",
             "template_index": "text",
             "template_mode": "text",
@@ -176,9 +211,10 @@ SUPPORTED_STEPS = {
     },
     "insert_bulleted_heading": {
         "label": "插入項目符號標題",
-        "inputs": ["text", "font_size", "template_index", "template_mode"],
+        "inputs": ["text", "bold", "font_size", "template_index", "template_mode"],
         "accepts": {
             "text": "text",
+            "bold": "bool",
             "font_size": "float",
             "template_index": "text",
             "template_mode": "text",
@@ -210,12 +246,100 @@ def boolish(v:str)->bool:
 
 
 def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def _hash_file(path: str) -> str:
+        sha = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                sha.update(chunk)
+        return sha.hexdigest()
+
+    def _collect_file_metadata(
+        steps_data: List[Dict[str, Any]], template_cfg: Dict[str, Any] | None
+    ) -> List[Dict[str, Any]]:
+        entries: list[Dict[str, Any]] = []
+        seen: set[str] = set()
+
+        def add_path(path_raw: str, kind: str) -> None:
+            if not path_raw:
+                return
+            path = os.path.abspath(path_raw)
+            if path in seen:
+                return
+            seen.add(path)
+            exists = os.path.exists(path)
+            meta = {
+                "name": os.path.basename(path),
+                "source": path,
+                "type": kind,
+                "version": "",
+                "updated_at": "",
+                "size_bytes": None,
+                "exists": exists,
+            }
+            if exists:
+                stat = os.stat(path)
+                meta["updated_at"] = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                if os.path.isfile(path):
+                    meta["size_bytes"] = stat.st_size
+                    try:
+                        meta["version"] = _hash_file(path)
+                    except Exception:
+                        meta["version"] = ""
+            entries.append(meta)
+
+        for step in steps_data:
+            stype = step.get("type")
+            schema = SUPPORTED_STEPS.get(stype, {})
+            accepts = schema.get("accepts", {})
+            params = step.get("params", {}) or {}
+            for key, acc in accepts.items():
+                if not isinstance(acc, str) or not acc.startswith("file"):
+                    continue
+                path_val = params.get(key)
+                if not path_val:
+                    continue
+                kind = "dir" if acc.endswith(":dir") else "file"
+                add_path(str(path_val), kind)
+
+        if template_cfg and template_cfg.get("path"):
+            add_path(str(template_cfg.get("path")), "template")
+
+        return entries
+
     log = []
     fragments: list[str] = []
     template_cfg = template or {}
+    file_metadata = _collect_file_metadata(steps, template_cfg)
+    if file_metadata:
+        log.append({"type": "file_metadata", "files": file_metadata})
     template_mappings: list[Dict[str, Any]] = []
     template_mode_default = (template_cfg.get("default_mode") or "insert_after").strip()
     template_paragraphs = template_cfg.get("paragraphs")
+    arabic_counters: list[int] = [0, 0, 0]
+    roman_counter = 0
+
+    def _next_arabic(level_raw: Any) -> str:
+        try:
+            level = int(level_raw)
+        except Exception:
+            level = 0
+        if level < 0:
+            level = 0
+        if level >= len(arabic_counters):
+            arabic_counters.extend([0] * (level + 1 - len(arabic_counters)))
+        for i in range(level):
+            if arabic_counters[i] == 0:
+                arabic_counters[i] = 1
+        arabic_counters[level] += 1
+        for i in range(level + 1, len(arabic_counters)):
+            arabic_counters[i] = 0
+        parts = [str(arabic_counters[i]) for i in range(level + 1)]
+        return ".".join(parts) + ". "
+
+    def _next_roman() -> str:
+        nonlocal roman_counter
+        roman_counter += 1
+        return _to_roman(roman_counter) + ". "
 
     def _route_fragment(path: str, params: Dict[str, Any], stype: str) -> None:
         t_idx_raw = params.get("template_index")
@@ -351,6 +475,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     params.get("target_chapter_section", ""),
                     params.get("target_table_label", ""),
                     params.get("target_subtitle") or None,
+                    include_caption=boolish(params.get("include_caption", "false")),
                     save_output=True,
                 )
                 if os.path.isfile(frag_path):
@@ -362,35 +487,65 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 doc = _new_docx_fragment(frag_path)
                 para = doc.add_paragraph(params.get("text",""))
                 para.runs[0].bold = boolish(params.get("bold","false"))
-                para.runs[0].font.size = None
+                try:
+                    para.runs[0].font.size = Pt(float(params.get("font_size", 12)))
+                except Exception:
+                    para.runs[0].font.size = None
                 _set_alignment(para, params.get("align","left"))
-                para.paragraph_format.space_before = int(float(params.get("before_space",0)))
-                para.paragraph_format.space_after = int(float(params.get("after_space",6)))
                 doc.save(frag_path)
                 _route_fragment(frag_path, params, stype)
 
             elif stype == "insert_numbered_heading":
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 doc = _new_docx_fragment(frag_path)
-                para = doc.add_paragraph(params.get("text",""))
-                para.style = doc.styles["Heading 1"] if "Heading 1" in doc.styles else para.style
+                heading_text = params.get("text","")
+                prefix = _next_arabic(params.get("level", 0))
+                para = doc.add_paragraph(f"{prefix}{heading_text}")
+                if "Normal" in doc.styles:
+                    para.style = doc.styles["Normal"]
+                _clear_list_formatting(para)
+                _clear_indent(para)
                 para.runs[0].bold = boolish(params.get("bold","true"))
+                try:
+                    para.runs[0].font.size = Pt(float(params.get("font_size", 12)))
+                except Exception:
+                    para.runs[0].font.size = None
                 doc.save(frag_path)
                 _route_fragment(frag_path, params, stype)
 
             elif stype == "insert_roman_heading":
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 doc = _new_docx_fragment(frag_path)
-                para = doc.add_paragraph(params.get("text",""))
+                heading_text = params.get("text","")
+                prefix = _next_roman()
+                para = doc.add_paragraph(f"{prefix}{heading_text}")
+                if "Normal" in doc.styles:
+                    para.style = doc.styles["Normal"]
+                _clear_list_formatting(para)
+                _clear_indent(para)
                 para.runs[0].bold = boolish(params.get("bold","true"))
+                try:
+                    para.runs[0].font.size = Pt(float(params.get("font_size", 12)))
+                except Exception:
+                    para.runs[0].font.size = None
                 doc.save(frag_path)
                 _route_fragment(frag_path, params, stype)
 
             elif stype == "insert_bulleted_heading":
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 doc = _new_docx_fragment(frag_path)
-                para = doc.add_paragraph(f"* {params.get('text','')}")
+                heading_text = params.get("text","")
+                para = doc.add_paragraph(heading_text)
+                if "List Bullet" in doc.styles:
+                    para.style = doc.styles["List Bullet"]
+                else:
+                    para.text = f"• {heading_text}"
+                _clear_indent(para)
                 para.runs[0].bold = boolish(params.get("bold","true"))
+                try:
+                    para.runs[0].font.size = Pt(float(params.get("font_size", 12)))
+                except Exception:
+                    para.runs[0].font.size = None
                 doc.save(frag_path)
                 _route_fragment(frag_path, params, stype)
 

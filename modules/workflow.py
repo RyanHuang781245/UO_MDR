@@ -172,14 +172,12 @@ SUPPORTED_STEPS = {
     },
     "insert_text": {
         "label": "插入純文字段落",
-        "inputs": ["text", "align", "bold", "font_size", "before_space", "after_space", "page_break_before", "template_index", "template_mode"],
+        "inputs": ["text", "align", "bold", "font_size", "page_break_before", "template_index", "template_mode"],
         "accepts": {
             "text": "text",
             "align": "align",
             "bold": "bool",
             "font_size": "float",
-            "before_space": "float",
-            "after_space": "float",
             "page_break_before": "bool",
             "template_index": "text",
             "template_mode": "text",
@@ -429,8 +427,6 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 except Exception:
                     para.runs[0].font.size = None
                 _set_alignment(para, params.get("align","left"))
-                para.paragraph_format.space_before = int(float(params.get("before_space",0)))
-                para.paragraph_format.space_after = int(float(params.get("after_space",6)))
                 doc.save(frag_path)
                 _route_fragment(frag_path, params, stype)
 

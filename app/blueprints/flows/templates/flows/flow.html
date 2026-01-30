@@ -779,11 +779,6 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
           </div>
         </div>
 
-        ${spec.inputs.includes("explicit_end_title") ? `
-        <div class="mt-3">
-          <label class="form-label">${explicitLabel}（選填）</label>
-          <input class="form-control" name="step_${sid}_explicit_end_title" value="${explicitVal}" placeholder="${explicitPlaceholder}">
-        </div>` : ""}
       </div>
 
       <div class="mt-4">

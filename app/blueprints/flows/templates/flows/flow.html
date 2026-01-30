@@ -297,6 +297,9 @@ const FIELD_META = {
   target_title: {
     label: "擷取小標題內容"
   },
+  page_break_before: {
+    label: "段落前換頁"
+  },
   subheading_text: {
     label: "小標題",
     placeholder: "請完整輸入小標題"
@@ -852,6 +855,11 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
   const ruleFields = [];
   const templateFields = [];
 
+  const subtitleToggleSteps = ["extract_specific_figure_from_word", "extract_specific_table_from_word"];
+    const subtitleToggleLabelMap = {
+      extract_specific_figure_from_word: "擷取小標題內容",
+      extract_specific_table_from_word: "擷取小標題內容",
+    };
   const renderField = (k) => {
     const accept = spec.accepts[k];
     const meta = FIELD_META[k] || {};
@@ -859,6 +867,18 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
     const placeholder = meta.placeholder || label;
     const rawVal = preset[k];
     const val = rawVal === undefined || rawVal === null ? "" : String(rawVal);
+
+    if (k === "input_file" && subtitleToggleSteps.includes(typeKey)) {
+      const acceptFile = spec.accepts[k] || "file:docx";
+      const ext = acceptFile.split(":")[1];
+      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
+      const filePlaceholder = ext === "dir" ? "選擇資料夾" : "選擇檔案";
+      const selected = val ? "" : "selected";
+      return `<div class="col-12"><label class="form-label">${label}</label>
+               <select class="form-select" name="step_${sid}_${k}" required>
+                 <option value="" disabled ${selected}>${filePlaceholder}</option>${options}
+               </select></div>`;
+    }
 
     if (k === "template_index"){
       const disabled = templateParagraphs.length === 0 ? "disabled" : "";
@@ -887,13 +907,33 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
         return `<div class="col-md-6"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
-      return `<div class="col-md-6"><label class="form-label">${label}</label>
-               <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
-    }
+        if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
+          const show = val.trim().length > 0;
+          const hideStyle = show ? "" : "display: none;";
+          return `<div class="col-12 subtitle-wrap mt-3" style="${hideStyle}">
+                    <div class="card bg-light border">
+                      <div class="card-body">
+                        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8"/><path d="M8 12h6"/></svg>
+                          指定擷取的小標題
+                        </div>
+                        <input class="form-control subtitle-input" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}">
+                        <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
+                      </div>
+                    </div>
+                  </div>`;
+        }
+        if ((k === "target_figure_label" || k === "target_table_label") && subtitleToggleSteps.includes(typeKey)) {
+          return `<div class="col-md-5"><label class="form-label">${label}</label>
+                   <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+        }
+        return `<div class="col-md-6"><label class="form-label">${label}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+      }
     if (accept === "bool"){
       const boolDefault = BOOL_DEFAULTS[k] || "true";
       const boolVal = val === "" ? boolDefault : val;
-      if (k === "ignore_toc" || k === "ignore_toc_and_before" || k === "ignore_header_footer" || k === "target_title" || k === "subheading_strict_match" || k === "include_caption"){
+      if (k === "ignore_toc" || k === "ignore_toc_and_before" || k === "ignore_header_footer" || k === "target_title" || k === "subheading_strict_match" || k === "include_caption" || k === "bold" || k === "page_break_before"){
         const checked = boolVal !== "false" ? "checked" : "";
         const hiddenVal = boolVal !== "false" ? "true" : "false";
         const inputId = `step_${sid}_${k}_chk`;
@@ -974,13 +1014,57 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
                  <option value="right" ${val==="right"?"selected": ""}>靠右</option>
                  <option value="justify" ${val==="justify"?"selected": ""}>左右對齊</option>
                </select>
-               <div class="form-text">一般內文建議使用 左/左右對齊；標題多用 置中。</div>
              </div>`;
     }
     return "";
   };
 
+  const subtitleFields = [];
+  const handledKeys = new Set();
+
+  if (subtitleToggleSteps.includes(typeKey)) {
+    if (spec.inputs.includes("input_file")) {
+      basicFields.push(renderField("input_file"));
+      handledKeys.add("input_file");
+    }
+    if (spec.inputs.includes("target_chapter_section")) {
+      const subtitleRaw = preset["target_subtitle"];
+      const subtitleVal = subtitleRaw === undefined || subtitleRaw === null ? "" : String(subtitleRaw);
+      const checked = subtitleVal.trim().length > 0 ? "checked" : "";
+      const toggleId = `step_${sid}_target_subtitle_toggle`;
+      const toggleLabel = subtitleToggleLabelMap[typeKey] || "擷取小標題內容";
+      const targetKey = spec.inputs.includes("target_figure_label") ? "target_figure_label" : "target_table_label";
+      const targetMeta = FIELD_META[targetKey] || {};
+      const targetLabel = targetMeta.label || targetKey;
+      const targetPlaceholder = targetMeta.placeholder || targetLabel;
+      const targetRaw = preset[targetKey];
+      const targetVal = targetRaw === undefined || targetRaw === null ? "" : String(targetRaw);
+      const sectionVal = getValue("target_chapter_section");
+      basicFields.push(`
+        <div class="col-md-6">
+          <label class="form-label d-flex justify-content-between align-items-center">
+            <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
+            <span class="form-check d-flex align-items-center gap-1 m-0">
+              <input class="form-check-input toggle-subtitle" type="checkbox" id="${toggleId}" ${checked}>
+              <span class="small text-muted">${toggleLabel}</span>
+            </span>
+          </label>
+          <input class="form-control" name="step_${sid}_target_chapter_section" value="${sectionVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">${targetLabel}</label>
+          <input class="form-control" name="step_${sid}_${targetKey}" value="${targetVal}" placeholder="${targetPlaceholder}">
+        </div>
+      `);
+      handledKeys.add("target_chapter_section");
+      handledKeys.add(targetKey);
+    }
+  }
+
   for (const k of spec.inputs){
+    if (handledKeys.has(k)) {
+      continue;
+    }
     if (templateKeys.has(k)) {
       templateFields.push(renderField(k));
       continue;
@@ -990,7 +1074,11 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
       ruleFields.push(renderField(k));
       continue;
     }
-    basicFields.push(renderField(k));
+    if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
+      subtitleFields.push(renderField(k));
+    } else {
+      basicFields.push(renderField(k));
+    }
   }
 
   let body = `<div class="card-body">
@@ -1022,6 +1110,8 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
         <div class="row g-3">${basicFields.join("")}</div>
       </div>
     </div>` : ""}
+
+    ${subtitleFields.length ? subtitleFields.join("") : ""}
 
     ${ruleFields.length ? `
     <div class="card bg-light border mt-3">
@@ -1073,6 +1163,13 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
   if (subheadingToggle && subheadingInput) {
     subheadingToggle.addEventListener("change", () => {
       subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
+    });
+  }
+  const subtitleToggle = card.querySelector(".toggle-subtitle");
+  const subtitleWrap = card.querySelector(".subtitle-wrap");
+  if (subtitleToggle && subtitleWrap) {
+    subtitleToggle.addEventListener("change", () => {
+      subtitleWrap.style.display = subtitleToggle.checked ? "" : "none";
     });
   }
   refreshTemplateSelects();

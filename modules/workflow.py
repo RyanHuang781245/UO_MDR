@@ -211,9 +211,10 @@ SUPPORTED_STEPS = {
     },
     "insert_bulleted_heading": {
         "label": "插入項目符號標題",
-        "inputs": ["text", "font_size", "template_index", "template_mode"],
+        "inputs": ["text", "bold", "font_size", "template_index", "template_mode"],
         "accepts": {
             "text": "text",
+            "bold": "bool",
             "font_size": "float",
             "template_index": "text",
             "template_mode": "text",

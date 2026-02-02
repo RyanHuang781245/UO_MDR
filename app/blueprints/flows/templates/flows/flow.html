@@ -11,9 +11,13 @@
       <i class="bi bi-arrow-left"></i>
       返回任務詳情
     </a>
-    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
+    <a class="btn btn-sm btn-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
       <i class="bi bi-clipboard-check"></i>
       流程執行結果
+    </a>
+    <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
+      <i class="bi bi-calendar2-week"></i>
+      進入排程管理
     </a>
   </div>
 </div>
@@ -92,10 +96,10 @@
             <i class="bi bi-save"></i>
             保存流程
           </button>
-          <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
+          <!-- <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
             <i class="bi bi-calendar2-week"></i>
             進入排程管理
-          </a>
+          </a> -->
         </div>
       </div>
       <div class="small text-muted mt-2">

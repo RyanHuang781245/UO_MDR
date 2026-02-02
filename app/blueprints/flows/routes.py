@@ -419,6 +419,7 @@ def delete_flow_runs_bulk(task_id):
 @flows_bp.post("/tasks/<task_id>/flows/batches/delete", endpoint="delete_flow_batches_bulk")
 def delete_flow_batches_bulk(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    jobs_dir = os.path.join(tdir, "jobs")
     status_dir = os.path.join(tdir, "jobs", "batch")
     raw = request.form.get("batch_ids", "")
     batch_ids = [b.strip() for b in raw.split(",") if b.strip()]
@@ -431,6 +432,19 @@ def delete_flow_batches_bulk(task_id):
         if not os.path.exists(path):
             continue
         try:
+            status = _load_batch_status(task_id, batch_id) or {}
+            results = status.get("results") or []
+            for r in results:
+                job_id = r.get("job_id")
+                if not job_id:
+                    continue
+                job_dir = os.path.join(jobs_dir, job_id)
+                if os.path.isdir(job_dir):
+                    try:
+                        import shutil
+                        shutil.rmtree(job_dir)
+                    except Exception:
+                        current_app.logger.exception("Failed to delete batch job directory")
             os.remove(path)
             deleted += 1
         except Exception:

@@ -1,12 +1,13 @@
 ﻿from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse
 
-from flask import abort, current_app, flash, redirect, request, url_for
+from flask import abort, current_app, flash, redirect, request, send_file, url_for
 from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_login import current_user
@@ -16,6 +17,7 @@ from ldap3.utils.conv import escape_filter_chars
 
 from app.extensions import ldap_manager, login_manager
 from app.utils import TAIWAN_TZ, format_tw_datetime
+from app.services.task_service import list_tasks
 from modules.auth_models import (
     LDAPProfile,
     PERM_USER_MANAGE,
@@ -494,6 +496,71 @@ class SystemSettingAdminView(SecureModelView):
     }
 
 
+class AuditLogView(BaseView):
+    extra_css = ADMIN_CUSTOM_CSS
+
+    def is_accessible(self):
+        return user_is_admin(current_user)
+
+    def inaccessible_callback(self, name, **kwargs):
+        if current_user.is_authenticated:
+            abort(403)
+        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
+
+    def _load_entries(self, task_id: str, limit: int = 200) -> list[dict]:
+        task_root = current_app.config.get("TASK_FOLDER", "")
+        task_dir = os.path.join(task_root, task_id)
+        log_path = os.path.join(task_dir, "audit.jsonl")
+        if not os.path.isdir(task_dir) or not os.path.exists(log_path):
+            return []
+        entries: list[dict] = []
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        continue
+        except Exception:
+            current_app.logger.exception("Failed to load audit log")
+            return []
+        entries.reverse()
+        if limit and len(entries) > limit:
+            entries = entries[:limit]
+        return entries
+
+    @expose("/", methods=["GET"])
+    def index(self):
+        tasks = list_tasks()
+        task_id = (request.args.get("task_id") or "").strip()
+        entries = self._load_entries(task_id) if task_id else []
+        has_file = False
+        if task_id:
+            task_root = current_app.config.get("TASK_FOLDER", "")
+            log_path = os.path.join(task_root, task_id, "audit.jsonl")
+            has_file = os.path.exists(log_path)
+        return self.render(
+            "admin/audit_logs.html",
+            tasks=tasks,
+            task_id=task_id,
+            entries=entries,
+            has_file=has_file,
+        )
+
+    @expose("/download", methods=["GET"])
+    def download(self):
+        task_id = (request.args.get("task_id") or "").strip()
+        task_root = current_app.config.get("TASK_FOLDER", "")
+        task_dir = os.path.join(task_root, task_id)
+        log_path = os.path.join(task_dir, "audit.jsonl")
+        if not task_id or not os.path.isdir(task_dir) or not os.path.exists(log_path):
+            abort(404)
+        return send_file(log_path, as_attachment=True, download_name=f"audit_{task_id}.jsonl")
+
+
 def register_auth_context(app) -> None:
     @app.context_processor
     def inject_auth_context():
@@ -542,6 +609,7 @@ def init_admin(app) -> Admin:
     admin = Admin(app, name="系統管理", url="/admin", index_view=SecureAdminIndexView())
     admin.add_view(UserAdminView(User, db.session, name="使用者列表"))
     admin.add_view(ADSearchView(name="帳號搜尋", endpoint="ad_search", url="ad-search"))
+    admin.add_view(AuditLogView(name="操作紀錄", endpoint="audit_logs", url="audit-logs"))
     admin.add_view(SystemSettingAdminView(SystemSetting, db.session, name="系統設定"))
     return admin
 

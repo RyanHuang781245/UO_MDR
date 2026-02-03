@@ -406,7 +406,10 @@ async function refreshBatchStatus(){
       html += `<div class="text-danger">錯誤：${status.error}</div>`;
     }
     if (Array.isArray(status.results) && status.results.length){
-      const rows = status.results.map(r => `<li>${r.flow} - ${r.ok ? '完成' : '失敗'}</li>`).join('');
+      const rows = status.results.map(r => {
+        const ok = (r.status === 'completed') || r.ok;
+        return `<li>${r.flow} - ${ok ? '完成' : '失敗'}</li>`;
+      }).join('');
       html += `<ul class="mb-0">${rows}</ul>`;
     }
     batchStatusBox.innerHTML = html;

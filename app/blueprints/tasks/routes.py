@@ -27,6 +27,7 @@ from app.services.flow_service import (
     sanitize_version_slug,
     translate_file,
 )
+from app.services.audit_service import record_audit
 
 from app.services.task_service import (
     allowed_file,
@@ -279,6 +280,12 @@ def create_task():
         nas_path=display_nas_path or None,
         created_at=created_at,
     )
+    record_audit(
+        action="task_create",
+        actor={"work_id": work_id, "label": creator},
+        detail={"task_id": tid, "task_name": task_name, "nas_path": display_nas_path},
+        task_id=tid,
+    )
     return redirect(url_for("tasks_bp.tasks"))
 
 @tasks_bp.post("/tasks/<task_id>/copy", endpoint="copy_task")
@@ -358,6 +365,13 @@ def delete_task(task_id):
             meta = json.load(f)
     if not _can_delete_task(meta):
         abort(403)
+    work_id, label = _get_actor_info()
+    record_audit(
+        action="task_delete",
+        actor={"work_id": work_id, "label": label},
+        detail={"task_id": task_id, "task_name": meta.get("name", "")},
+        task_id=task_id,
+    )
     if os.path.isdir(tdir):
         import shutil
         shutil.rmtree(tdir)
@@ -374,6 +388,7 @@ def upload_task_file(task_id):
 
     uploads = request.files.getlist("upload_files")
     has_uploads = any(f and f.filename for f in uploads)
+    uploaded_names = []
     if has_uploads:
         for upload in uploads:
             if not upload or not upload.filename:
@@ -396,9 +411,18 @@ def upload_task_file(task_id):
                     os.remove(dest_path)
                 else:
                     upload.save(dest_path)
+                uploaded_names.append(dest_name)
             except Exception:
                 current_app.logger.exception("本機檔案上傳失敗")
                 return "上傳失敗，請稍後再試", 400
+        if uploaded_names:
+            work_id, label = _get_actor_info()
+            record_audit(
+                action="task_upload_files",
+                actor={"work_id": work_id, "label": label},
+                detail={"task_id": task_id, "count": len(uploaded_names), "files": uploaded_names},
+                task_id=task_id,
+            )
         return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
 
     nas_input = request.form.get("nas_file_path", "").strip()
@@ -572,6 +596,13 @@ def sync_task_nas(task_id):
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
         flash(f"已更新 NAS 文件（新增 {copied}、更新 {updated}、刪除 {deleted}）。", "success")
+        work_id, label = _get_actor_info()
+        record_audit(
+            action="nas_sync",
+            actor={"work_id": work_id, "label": label},
+            detail={"task_id": task_id, "nas_path": nas_path, "copied": copied, "updated": updated, "deleted": deleted},
+            task_id=task_id,
+        )
     except PermissionError:
         flash("沒有足夠的權限讀取或複製指定路徑。", "danger")
     except Exception:
@@ -602,6 +633,13 @@ def rename_task(task_id):
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     record_task_in_db(task_id, name=new_name)
+    work_id, label = _get_actor_info()
+    record_audit(
+        action="task_rename",
+        actor={"work_id": work_id, "label": label},
+        detail={"task_id": task_id, "name": new_name},
+        task_id=task_id,
+    )
     return redirect(url_for("tasks_bp.tasks"))
 
 @tasks_bp.post("/tasks/<task_id>/description", endpoint="update_task_description")
@@ -623,6 +661,13 @@ def update_task_description(task_id):
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     record_task_in_db(task_id, description=new_desc)
+    work_id, label = _get_actor_info()
+    record_audit(
+        action="task_update_description",
+        actor={"work_id": work_id, "label": label},
+        detail={"task_id": task_id, "description": new_desc},
+        task_id=task_id,
+    )
     return redirect(url_for("tasks_bp.tasks"))
 
 @tasks_bp.get("/tasks/<task_id>", endpoint="task_detail")

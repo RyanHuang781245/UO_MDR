@@ -26,15 +26,16 @@
       {% for r in results %}
       <tr>
         <td class="text-start">{{ r.flow }}</td>
+        {% set is_ok = (r.status == "completed") or (r.ok is defined and r.ok) %}
         <td>
-          {% if r.ok %}
+          {% if is_ok %}
             <span class="text-success">完成</span>
           {% else %}
             <span class="text-danger">失敗</span>
           {% endif %}
         </td>
         <td>
-          {% if r.ok and r.job_id %}
+          {% if is_ok and r.job_id %}
             <div class="btn-group btn-group-sm" role="group">
               <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">下載結果</a>
               <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>

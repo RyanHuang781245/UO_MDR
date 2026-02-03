@@ -1,0 +1,116 @@
+{% extends "admin/base.html" %}
+
+{% block body %}
+<div class="container-fluid">
+  <style>
+    .audit-summary {
+      row-gap: 6px;
+    }
+    .audit-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #f8f9fa;
+      border: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+    }
+    .audit-summary code {
+      background: transparent;
+      padding: 0 4px;
+    }
+    .audit-status {
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.02em;
+    }
+  </style>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="h5 mb-0">操作紀錄</h2>
+    {% if task_id and has_file %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('audit_logs.download', task_id=task_id) }}">下載</a>
+    {% endif %}
+  </div>
+
+  <form class="row g-2 align-items-end mb-3" method="get">
+    <div class="col-sm-6 col-lg-4">
+      <label class="form-label">任務</label>
+      <select class="form-select" name="task_id">
+        <option value="">請選擇任務</option>
+        {% for t in tasks %}
+          <option value="{{ t.id }}" {% if t.id == task_id %}selected{% endif %}>
+            {{ t.name }} ({{ t.id }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary" type="submit">載入</button>
+    </div>
+  </form>
+
+  {% if task_id and not entries %}
+    <div class="alert alert-warning">此任務尚無操作紀錄。</div>
+  {% endif %}
+
+  {% if entries %}
+  <div class="table-responsive">
+    <table class="table table-sm table-striped align-middle audit-table">
+      <style>
+        .audit-table td, .audit-table th { vertical-align: middle !important; }
+      </style>
+      <thead>
+        <tr>
+          <th style="width: 180px;">時間</th>
+          <th style="width: 180px;">動作</th>
+          <th style="width: 200px;">操作者</th>
+          <th>摘要</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for e in entries %}
+        {% set actor = e.get('actor', {}) %}
+        {% set detail = e.get('detail', {}) %}
+        {% set status = detail.get('status', '') %}
+        {% set flow = detail.get('flow', '') %}
+        {% set job_id = detail.get('job_id', '') %}
+        {% set batch_id = detail.get('batch_id', '') %}
+        {% set results = detail.get('results', []) %}
+        <tr>
+          <td>{{ e.get('ts', '') }}</td>
+          <td>{{ e.get('action', '') }}</td>
+          <td>{{ actor.get('label') or actor.get('work_id') }}</td>
+          <td>
+            <div class="audit-summary d-flex flex-wrap align-items-center gap-2">
+              {% if status %}
+                <span class="badge audit-status {% if status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                  {{ status }}
+                </span>
+              {% endif %}
+              {% if flow %}
+                <span class="audit-pill"><span class="text-muted">流程</span> <strong>{{ flow }}</strong></span>
+              {% endif %}
+              {% if job_id %}
+                <span class="audit-pill"><span class="text-muted">Job</span> <code>{{ job_id }}</code></span>
+              {% endif %}
+              {% if batch_id %}
+                <span class="audit-pill"><span class="text-muted">Batch</span> <code>{{ batch_id }}</code></span>
+              {% endif %}
+              {% if results %}
+                <span class="audit-pill"><span class="text-muted">流程數</span> {{ results|length }}</span>
+              {% endif %}
+            </div>
+            <details class="mt-1">
+              <summary class="small text-muted">詳情</summary>
+              <pre class="small mb-0">{{ detail|tojson(indent=2) }}</pre>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -31,6 +31,7 @@ from app.services.flow_service import (
     run_workflow,
 )
 from app.services.notification_service import send_batch_notification
+from app.services.audit_service import record_audit
 from app.services.task_service import build_file_tree, gather_available_files
 from app.utils import parse_bool
 
@@ -217,6 +218,7 @@ def _run_single_job(
     apply_formatting: bool,
     job_id: str,
     actor: dict,
+    flow_name: str | None = None,
 ) -> None:
     with app.app_context():
         tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -244,6 +246,12 @@ def _run_single_job(
                 hide_paragraphs_with_text(result_path, titles_to_hide)
             _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
             _update_job_meta(job_dir, status="completed", completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            record_audit(
+                action="flow_run_single_completed",
+                actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+                detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "completed"},
+                task_id=task_id,
+            )
         except Exception as exc:
             current_app.logger.exception("Single flow execution failed")
             _update_job_meta(
@@ -251,6 +259,12 @@ def _run_single_job(
                 status="failed",
                 error=str(exc),
                 completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            record_audit(
+                action="flow_run_single_failed",
+                actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+                detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "failed", "error": str(exc)},
+                task_id=task_id,
             )
 
 
@@ -265,10 +279,10 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
             _write_batch_status(task_id, batch_id, status)
             try:
                 job_id = _execute_saved_flow(task_id, flow_name)
-                results.append({"flow": flow_name, "job_id": job_id, "ok": True})
+                results.append({"flow": flow_name, "job_id": job_id, "status": "completed"})
                 _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
             except Exception as exc:
-                results.append({"flow": flow_name, "ok": False, "error": str(exc)})
+                results.append({"flow": flow_name, "status": "failed", "error": str(exc)})
                 completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 status.update(
                     {
@@ -279,6 +293,18 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
                     }
                 )
                 _write_batch_status(task_id, batch_id, status)
+                record_audit(
+                    action="flow_batch_failed",
+                    actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+                    detail={
+                        "task_id": task_id,
+                        "batch_id": batch_id,
+                        "status": "failed",
+                        "error": str(exc),
+                        "results": results,
+                    },
+                    task_id=task_id,
+                )
                 send_batch_notification(
                     task_id=task_id,
                     batch_id=batch_id,
@@ -293,6 +319,18 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
         completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         status.update({"status": "completed", "results": results, "completed_at": completed_at})
         _write_batch_status(task_id, batch_id, status)
+        record_audit(
+            action="flow_batch_completed",
+            actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+            detail={
+                "task_id": task_id,
+                "batch_id": batch_id,
+                "status": "completed",
+                "count": len(results),
+                "results": results,
+            },
+            task_id=task_id,
+        )
         send_batch_notification(
             task_id=task_id,
             batch_id=batch_id,
@@ -789,10 +827,17 @@ def run_flow(task_id):
             apply_formatting,
             job_id,
             {"work_id": work_id, "label": label},
+            flow_name,
         ),
         daemon=True,
     )
     thread.start()
+    record_audit(
+        action="flow_run_single",
+        actor={"work_id": work_id, "label": label},
+        detail={"task_id": task_id, "flow": flow_name, "job_id": job_id},
+        task_id=task_id,
+    )
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id))
 
 
@@ -880,6 +925,7 @@ def execute_flow(task_id, flow_name):
             apply_formatting,
             job_id,
             {"work_id": work_id, "label": label},
+            flow_name,
         ),
         daemon=True,
     )
@@ -921,6 +967,12 @@ def run_flow_batch(task_id):
         daemon=True,
     )
     thread.start()
+    record_audit(
+        action="flow_run_batch",
+        actor={"work_id": work_id, "label": label},
+        detail={"task_id": task_id, "batch_id": batch_id, "flows": flow_sequence},
+        task_id=task_id,
+    )
     return redirect(url_for("flows_bp.flow_batch_page", task_id=task_id, batch=batch_id))
 
 

@@ -35,22 +35,22 @@ def login():
         try:
             if not form.validate_on_submit():
                 current_app.logger.debug("LDAP form errors: %s", form.errors)
-                error = "Invalid credentials."
+                error = "憑證無效"
                 return render_template("auth/login.html", error=error, form=form)
 
             ldap_user = form.user
             if not ldap_user:
-                error = "Invalid credentials."
+                error = "憑證無效"
                 return render_template("auth/login.html", error=error, form=form)
 
             if not is_allowed_group_member(ldap_user.dn):
-                error = "Your account is not in the allowed login group."
+                error = "您的帳號不在允許的登入群組中"
                 return render_template("auth/login.html", error=error, form=form)
 
             profile = build_ldap_profile(ldap_user)
             user = get_user_by_work_id(profile.work_id)
             if not user:
-                error = "Your account is not authorized."
+                error = "您的帳號未獲得授權"
                 return render_template("auth/login.html", error=error, form=form)
 
             if profile.display_name and user.display_name != profile.display_name:
@@ -66,7 +66,7 @@ def login():
 
             if not user.is_active:
                 db.session.rollback()
-                error = "Your account is disabled."
+                error = "您的帳號已被停用"
                 return render_template("auth/login.html", error=error, form=form)
 
             user.last_login_at = datetime.utcnow()
@@ -79,7 +79,7 @@ def login():
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Login failed")
-            error = "Login failed. Please contact the administrator."
+            error = "登入失敗。請聯絡管理員"
 
     return render_template("auth/login.html", error=error, form=form)
 

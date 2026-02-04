@@ -31,6 +31,10 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .audit-table-scroll {
+      max-height: 560px;
+      overflow-y: auto;
+    }
   </style>
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h3>操作紀錄</h3>
@@ -64,16 +68,16 @@
   {% endif %}
 
   {% if entries %}
-  <div class="table-responsive">
+  <div class="table-responsive audit-table-scroll">
     <table class="table table-sm table-striped align-middle audit-table">
       <style>
         .audit-table td, .audit-table th { vertical-align: middle !important; }
       </style>
       <thead>
         <tr>
-          <th style="width:200px;">時間</th>
-          <th style="width:200px;">動作</th>
-          <th style="width:200px;">操作者</th>
+          <th style="width:250px;">時間</th>
+          <th style="width:250px;">動作</th>
+          <th style="width:250px;">操作者</th>
           <th>摘要</th>
           <th>詳情</th>
         </tr>
@@ -102,10 +106,10 @@
                 <span class="audit-pill"><span class="text-muted">流程</span> <strong>{{ flow }}</strong></span>
               {% endif %}
               {% if job_id %}
-                <span class="audit-pill"><span class="text-muted">Job_ID</span> <code>{{ job_id }}</code></span>
+                <span class="audit-pill"><span class="text-muted">Job_ID</span>{{ job_id }}</span>
               {% endif %}
               {% if batch_id %}
-                <span class="audit-pill"><span class="text-muted">Batch_ID</span> <code>{{ batch_id }}</code></span>
+                <span class="audit-pill"><span class="text-muted">Batch_ID</span>{{ batch_id }}</span>
               {% endif %}
               {% if results %}
                 <span class="audit-pill"><span class="text-muted">流程數</span> {{ results|length }}</span>

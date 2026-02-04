@@ -13,16 +13,16 @@
                 <a href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}" class="text-decoration-none">執行結果</a>
             </li>
             <li class="breadcrumb-item">
-                <a href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=batch_id) }}" class="text-decoration-none">批次執行</a>
+                <a href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=batch_id) }}" class="text-decoration-none">排程執行</a>
             </li>
-            <li class="breadcrumb-item active" aria-current="page">批次執行結果</li>
+            <li class="breadcrumb-item active" aria-current="page">排程執行結果</li>
         </ol>
     </nav>
 
     <!-- 標題區域 -->
     <div class="d-flex align-items-center justify-content-between mb-4">
         <div>
-            <h1 class="h3 mb-0 fw-bold">批次執行結果</h1>
+            <h1 class="h3 mb-0 fw-bold">排程執行結果</h1>
             <p class="text-muted small mb-0">檢視當前批次的所有任務執行細節</p>
         </div>
         <div>

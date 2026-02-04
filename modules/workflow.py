@@ -311,7 +311,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
     template_cfg = template or {}
     file_metadata = _collect_file_metadata(steps, template_cfg)
     if file_metadata:
-        log.append({"type": "file_metadata", "files": file_metadata})
+        log.append({"type": "file_metadata", "files": file_metadata, "status": "ok"})
     template_mappings: list[Dict[str, Any]] = []
     template_mode_default = (template_cfg.get("default_mode") or "insert_after").strip()
     template_paragraphs = template_cfg.get("paragraphs")

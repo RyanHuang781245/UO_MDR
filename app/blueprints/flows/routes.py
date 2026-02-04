@@ -16,8 +16,11 @@ from app.services.flow_service import (
     DEFAULT_APPLY_FORMATTING,
     DEFAULT_DOCUMENT_FORMAT_KEY,
     DEFAULT_LINE_SPACING,
+    DOCUMENT_FORMAT_PRESETS,
+    LINE_SPACING_CHOICES,
     SKIP_DOCX_CLEANUP,
     SUPPORTED_STEPS,
+    apply_basic_style,
     center_table_figure_paragraphs,
     collect_titles_to_hide,
     coerce_line_spacing,
@@ -28,6 +31,7 @@ from app.services.flow_service import (
     run_workflow,
 )
 from app.services.notification_service import send_batch_notification
+from app.services.audit_service import record_audit
 from app.services.task_service import build_file_tree, gather_available_files
 from app.utils import parse_bool
 
@@ -133,6 +137,7 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
     template_file = None
+    apply_formatting = DEFAULT_APPLY_FORMATTING
     template_cfg = None
     if isinstance(data, dict):
         workflow = data.get("steps", [])
@@ -140,7 +145,12 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
             isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
         )
         document_format = normalize_document_format(data.get("document_format"))
-        line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
+        line_spacing_raw = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
+        line_spacing_none = line_spacing_raw.strip().lower() == "none"
+        line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
+        apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        if document_format == "none" or line_spacing_none:
+            apply_formatting = False
         template_file = data.get("template_file")
     else:
         workflow = data
@@ -180,6 +190,17 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
     if center_titles:
         center_table_figure_paragraphs(result_path)
+    if apply_formatting and document_format != "none":
+        preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
+        apply_basic_style(
+            result_path,
+            western_font=preset.get("western_font") or "",
+            east_asian_font=preset.get("east_asian_font") or "",
+            font_size=int(preset.get("font_size") or 12),
+            line_spacing=line_spacing,
+            space_before=int(preset.get("space_before") or 6),
+            space_after=int(preset.get("space_after") or 6),
+        )
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
         hide_paragraphs_with_text(result_path, titles_to_hide)
@@ -192,8 +213,12 @@ def _run_single_job(
     runtime_steps: list[dict],
     template_cfg: dict | None,
     center_titles: bool,
+    document_format: str,
+    line_spacing: float,
+    apply_formatting: bool,
     job_id: str,
     actor: dict,
+    flow_name: str | None = None,
 ) -> None:
     with app.app_context():
         tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -205,11 +230,28 @@ def _run_single_job(
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
             if center_titles:
                 center_table_figure_paragraphs(result_path)
+            if apply_formatting and document_format != "none":
+                preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
+                apply_basic_style(
+                    result_path,
+                    western_font=preset.get("western_font") or "",
+                    east_asian_font=preset.get("east_asian_font") or "",
+                    font_size=int(preset.get("font_size") or 12),
+                    line_spacing=line_spacing,
+                    space_before=int(preset.get("space_before") or 6),
+                    space_after=int(preset.get("space_after") or 6),
+                )
             if not SKIP_DOCX_CLEANUP:
                 remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
                 hide_paragraphs_with_text(result_path, titles_to_hide)
             _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
             _update_job_meta(job_dir, status="completed", completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            record_audit(
+                action="flow_run_single_completed",
+                actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+                detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "completed"},
+                task_id=task_id,
+            )
         except Exception as exc:
             current_app.logger.exception("Single flow execution failed")
             _update_job_meta(
@@ -217,6 +259,12 @@ def _run_single_job(
                 status="failed",
                 error=str(exc),
                 completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            record_audit(
+                action="flow_run_single_failed",
+                actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+                detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "failed", "error": str(exc)},
+                task_id=task_id,
             )
 
 
@@ -231,10 +279,10 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
             _write_batch_status(task_id, batch_id, status)
             try:
                 job_id = _execute_saved_flow(task_id, flow_name)
-                results.append({"flow": flow_name, "job_id": job_id, "ok": True})
+                results.append({"flow": flow_name, "job_id": job_id, "status": "completed"})
                 _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
             except Exception as exc:
-                results.append({"flow": flow_name, "ok": False, "error": str(exc)})
+                results.append({"flow": flow_name, "status": "failed", "error": str(exc)})
                 completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 status.update(
                     {
@@ -245,6 +293,18 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
                     }
                 )
                 _write_batch_status(task_id, batch_id, status)
+                record_audit(
+                    action="flow_batch_failed",
+                    actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+                    detail={
+                        "task_id": task_id,
+                        "batch_id": batch_id,
+                        "status": "failed",
+                        "error": str(exc),
+                        "results": results,
+                    },
+                    task_id=task_id,
+                )
                 send_batch_notification(
                     task_id=task_id,
                     batch_id=batch_id,
@@ -259,6 +319,18 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
         completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         status.update({"status": "completed", "results": results, "completed_at": completed_at})
         _write_batch_status(task_id, batch_id, status)
+        record_audit(
+            action="flow_batch_completed",
+            actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+            detail={
+                "task_id": task_id,
+                "batch_id": batch_id,
+                "status": "completed",
+                "count": len(results),
+                "results": results,
+            },
+            task_id=task_id,
+        )
         send_batch_notification(
             task_id=task_id,
             batch_id=batch_id,
@@ -385,6 +457,7 @@ def delete_flow_runs_bulk(task_id):
 @flows_bp.post("/tasks/<task_id>/flows/batches/delete", endpoint="delete_flow_batches_bulk")
 def delete_flow_batches_bulk(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    jobs_dir = os.path.join(tdir, "jobs")
     status_dir = os.path.join(tdir, "jobs", "batch")
     raw = request.form.get("batch_ids", "")
     batch_ids = [b.strip() for b in raw.split(",") if b.strip()]
@@ -397,6 +470,19 @@ def delete_flow_batches_bulk(task_id):
         if not os.path.exists(path):
             continue
         try:
+            status = _load_batch_status(task_id, batch_id) or {}
+            results = status.get("results") or []
+            for r in results:
+                job_id = r.get("job_id")
+                if not job_id:
+                    continue
+                job_dir = os.path.join(jobs_dir, job_id)
+                if os.path.isdir(job_dir):
+                    try:
+                        import shutil
+                        shutil.rmtree(job_dir)
+                    except Exception:
+                        current_app.logger.exception("Failed to delete batch job directory")
             os.remove(path)
             deleted += 1
         except Exception:
@@ -484,6 +570,9 @@ def flow_builder(task_id):
     center_titles = True
     template_file = None
     template_paragraphs = []
+    document_format = DEFAULT_DOCUMENT_FORMAT_KEY
+    line_spacing = f"{DEFAULT_LINE_SPACING:g}"
+    apply_formatting = DEFAULT_APPLY_FORMATTING
     loaded_name = request.args.get("flow")
     job_id = request.args.get("job")
     if loaded_name:
@@ -497,6 +586,9 @@ def flow_builder(task_id):
                     isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in steps_data
                 )
                 template_file = data.get("template_file")
+                document_format = normalize_document_format(data.get("document_format"))
+                line_spacing = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
+                apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
             else:
                 steps_data = data
                 center_titles = True
@@ -528,6 +620,11 @@ def flow_builder(task_id):
         files_tree=tree,
         template_file=template_file,
         template_paragraphs=template_paragraphs,
+        document_format=document_format,
+        line_spacing=line_spacing,
+        apply_formatting=apply_formatting,
+        document_format_presets=DOCUMENT_FORMAT_PRESETS,
+        line_spacing_choices=LINE_SPACING_CHOICES,
     )
 
 
@@ -623,7 +720,15 @@ def run_flow(task_id):
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     center_titles = request.form.get("center_titles") == "on"
     template_file = request.form.get("template_file", "").strip()
-    apply_formatting = False
+    document_format = normalize_document_format(request.form.get("document_format"))
+    line_spacing_raw = request.form.get("line_spacing")
+    line_spacing_value = (line_spacing_raw or f"{DEFAULT_LINE_SPACING:g}").strip()
+    line_spacing_none = line_spacing_value.lower() == "none"
+    line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
+    apply_formatting_param = request.form.get("apply_formatting")
+    apply_formatting = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING)
+    if document_format == "none" or line_spacing_none:
+        apply_formatting = False
     workflow = []
     for sid in ordered_ids:
         sid = sid.strip()
@@ -659,6 +764,9 @@ def run_flow(task_id):
             "steps": workflow,
             "center_titles": center_titles,
             "template_file": template_file,
+            "document_format": document_format,
+            "line_spacing": line_spacing_value,
+            "apply_formatting": apply_formatting,
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -708,10 +816,28 @@ def run_flow(task_id):
     app = current_app._get_current_object()
     thread = threading.Thread(
         target=_run_single_job,
-        args=(app, task_id, runtime_steps, template_cfg, center_titles, job_id, {"work_id": work_id, "label": label}),
+        args=(
+            app,
+            task_id,
+            runtime_steps,
+            template_cfg,
+            center_titles,
+            document_format,
+            line_spacing,
+            apply_formatting,
+            job_id,
+            {"work_id": work_id, "label": label},
+            flow_name,
+        ),
         daemon=True,
     )
     thread.start()
+    record_audit(
+        action="flow_run_single",
+        actor={"work_id": work_id, "label": label},
+        detail={"task_id": task_id, "flow": flow_name, "job_id": job_id},
+        task_id=task_id,
+    )
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id))
 
 
@@ -729,7 +855,7 @@ def execute_flow(task_id, flow_name):
         data = json.load(f)
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
-    apply_formatting = False
+    apply_formatting = DEFAULT_APPLY_FORMATTING
     template_file = None
     template_cfg = None
     if isinstance(data, dict):
@@ -738,11 +864,30 @@ def execute_flow(task_id, flow_name):
             isinstance(s, dict) and s.get("type") == "center_table_figure_paragraphs" for s in workflow
         )
         document_format = normalize_document_format(data.get("document_format"))
-        line_spacing = coerce_line_spacing(data.get("line_spacing", DEFAULT_LINE_SPACING))
+        line_spacing_raw = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
+        line_spacing_none = line_spacing_raw.strip().lower() == "none"
+        line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
         template_file = data.get("template_file")
+        apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        if document_format == "none" or line_spacing_none:
+            apply_formatting = False
     else:
         workflow = data
         center_titles = True
+    override_document_format = request.form.get("document_format")
+    override_line_spacing = request.form.get("line_spacing")
+    apply_formatting_param = request.form.get("apply_formatting")
+    if override_document_format is not None:
+        document_format = normalize_document_format(override_document_format)
+    line_spacing_none = False
+    if override_line_spacing is not None:
+        line_spacing_value = (override_line_spacing or f"{DEFAULT_LINE_SPACING:g}").strip()
+        line_spacing_none = line_spacing_value.lower() == "none"
+        line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
+    if apply_formatting_param is not None:
+        apply_formatting = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING)
+    if document_format == "none" or line_spacing_none:
+        apply_formatting = False
     if template_file:
         tpl_abs = os.path.join(files_dir, template_file)
         if os.path.isfile(tpl_abs):
@@ -783,7 +928,19 @@ def execute_flow(task_id, flow_name):
     app = current_app._get_current_object()
     thread = threading.Thread(
         target=_run_single_job,
-        args=(app, task_id, runtime_steps, template_cfg, center_titles, job_id, {"work_id": work_id, "label": label}),
+        args=(
+            app,
+            task_id,
+            runtime_steps,
+            template_cfg,
+            center_titles,
+            document_format,
+            line_spacing,
+            apply_formatting,
+            job_id,
+            {"work_id": work_id, "label": label},
+            flow_name,
+        ),
         daemon=True,
     )
     thread.start()
@@ -824,6 +981,12 @@ def run_flow_batch(task_id):
         daemon=True,
     )
     thread.start()
+    record_audit(
+        action="flow_run_batch",
+        actor={"work_id": work_id, "label": label},
+        detail={"task_id": task_id, "batch_id": batch_id, "flows": flow_sequence},
+        task_id=task_id,
+    )
     return redirect(url_for("flows_bp.flow_batch_page", task_id=task_id, batch=batch_id))
 
 

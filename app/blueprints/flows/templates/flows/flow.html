@@ -4,26 +4,30 @@
 
 <div id="runStatusContainer" class="run-status-container"></div>
 
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-3">
+  <h1 class="h3 mb-0 fw-bold">定義流程</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
+      <i class="bi bi-arrow-left"></i>
+      返回任務詳情
+    </a>
+    <a class="btn btn-sm btn-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
+      <i class="bi bi-clipboard-check"></i>
+      流程執行結果
+    </a>
+    <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
+      <i class="bi bi-calendar2-week"></i>
+      進入排程管理
+    </a>
+  </div>
+</div>
+
 <div class="card shadow-sm border mb-4">
   <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post">
     <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
     <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
 
     <div class="card-body border-bottom">
-      <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-3">
-        <h1 class="h4 mb-0 fw-bold">定義流程</h1>
-        <div class="d-flex gap-2">
-          <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-            返回任務詳情
-          </a>
-          <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z"/></svg>
-            流程執行結果
-          </a>
-        </div>
-      </div>
-
       <div class="row g-3">
         <div class="col-lg-7">
           <label class="form-label text-muted small">流程名稱</label>
@@ -43,7 +47,7 @@
         <div class="d-flex flex-wrap gap-2">
           <div class="dropdown">
             <button class="btn btn-outline-secondary dropdown-toggle d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              <i class="bi bi-plus-lg"></i>
               新增步驟
             </button>
             <ul class="dropdown-menu">
@@ -53,27 +57,23 @@
             </ul>
           </div>
           <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
+            <i class="bi bi-search"></i>
             模板解析
           </button>
           <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/><path d="M12 2v8"/><path d="m16.2 14.2-4.2-4.2"/></svg>
+            <i class="bi bi-folder"></i>
             檔案結構
           </button>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
-          <button class="btn btn-success d-inline-flex align-items-center gap-1" type="submit" name="action" value="run">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m7 4 12 8-12 8V4z"/></svg>
-            執行流程
-          </button>
           <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1" type="submit" name="action" value="save">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <i class="bi bi-save"></i>
             保存流程
           </button>
-          <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+          <!-- <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
+            <i class="bi bi-calendar2-week"></i>
             進入排程管理
-          </a>
+          </a> -->
         </div>
       </div>
       <div class="small text-muted mt-2">
@@ -144,6 +144,43 @@
   </div>
 </div>
 
+
+<div class="modal fade" id="applyFormattingModal" tabindex="-1" aria-labelledby="applyFormattingModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="applyFormattingForm" method="post">
+        <div class="modal-header">
+          <h5 class="modal-title" id="applyFormattingModalLabel">套用字型/行距</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="apply_formatting" value="true">
+          <div class="mb-3">
+            <label class="form-label">字型</label>
+            <select class="form-select" name="document_format">
+              {% for key, preset in document_format_presets.items() %}
+              <option value="{{ key }}" {% if document_format == key %}selected{% endif %}>{{ preset.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">行距</label>
+            <select class="form-select" name="line_spacing">
+              {% for key, label in line_spacing_choices %}
+              <option value="{{ key }}" {% if line_spacing == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">&#21462;&#28040;</button>
+          <button type="submit" class="btn btn-success">套用並執行</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="card shadow-sm border mt-4">
   <div class="card-header bg-white border-bottom">
     <h2 class="h5 mb-0 fw-bold">已保存流程</h2>
@@ -154,8 +191,8 @@
         <thead>
           <tr>
               <th class="text-start ps-3">流程名稱</th>
-              <th class="text-center">建立時間</th>
-              <th class="text-center">操作</th>
+              <th class="text-center" style="width: 200px;">建立時間</th>
+              <th class="text-center" style="width: 300px;">操作</th>
           </tr>
         </thead>
         <tbody id="flowTableBody">
@@ -166,22 +203,33 @@
             <td class="align-middle">
               <div class="d-inline-flex flex-wrap gap-1 justify-content-center">
                 <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
+                  <input type="hidden" name="apply_formatting" value="false">
+                  
                   <button class="btn btn-sm btn-success d-inline-flex align-items-center gap-1">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m7 4 12 8-12 8V4z"/></svg>
+                    <i class="bi bi-play-fill"></i>
                     執行
                   </button>
                 </form>
+                <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 apply-formatting-btn"
+                        type="button"
+                        data-bs-toggle="modal"
+                        data-bs-target="#applyFormattingModal"
+                        data-flow="{{ f.name }}"
+                        data-action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}">
+                  <i class="bi bi-text-paragraph"></i>
+                  &#22871;&#29992;&#23383;&#22411;/&#34892;&#36317;
+                </button>
                 <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                  <i class="bi bi-pencil-square"></i>
                   編輯
                 </a>
                 <button class="btn btn-sm btn-secondary d-inline-flex align-items-center gap-1" type="button" onclick="renameFlow('{{ f.name }}')">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/><path d="M9 11.5 11.5 14 16 9.5"/><rect width="18" height="11" x="3" y="11" rx="2"/></svg>
+                  <i class="bi bi-pencil"></i>
                   重新命名
                 </button>
                 <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('\u78ba\u5b9a\u522a\u9664?')">
                   <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                    <i class="bi bi-trash"></i>
                     刪除
                   </button>
                 </form>
@@ -341,6 +389,21 @@ const FIELD_META = {
 const RUN_JOB_ID = {{ job_id|tojson }};
 const runStatusContainer = document.getElementById("runStatusContainer");
 const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
+const applyFormattingModal = document.getElementById("applyFormattingModal");
+const applyFormattingForm = document.getElementById("applyFormattingForm");
+const applyFormattingTitle = document.getElementById("applyFormattingModalLabel");
+if (applyFormattingModal) {
+  applyFormattingModal.addEventListener("show.bs.modal", (event) => {
+    const btn = event.relatedTarget;
+    if (!btn) return;
+    const action = btn.getAttribute("data-action");
+    const flowName = btn.getAttribute("data-flow");
+    if (applyFormattingForm && action) applyFormattingForm.action = action;
+    if (applyFormattingTitle && flowName) {
+      applyFormattingTitle.textContent = `套用字型/行距 - ${flowName}`;
+    }
+  });
+}
 
 const { submitPostForm, escapeHtml } = window.UiUtils;
 
@@ -725,7 +788,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
 
       <div class="mt-3">
         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12h3"/><path d="M6 12a4 4 0 1 1 4 4"/><path d="M14 12h7"/></svg>
+          <i class="bi bi-diagram-3"></i>
           來源與章節設定
         </div>
         <div class="row g-3">
@@ -756,7 +819,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
         <div class="card bg-light border mt-3 subheading-input" style="${subheadingHideStyle}">
           <div class="card-body">
             <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8"/><path d="M8 12h6"/></svg>
+              <i class="bi bi-card-text"></i>
               指定擷取的小標題
             </div>
             <input class="form-control" name="step_${sid}_subheading_text" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
@@ -767,7 +830,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
         <div class="card bg-light border mt-3">
           <div class="card-body">
             <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18"/><path d="M3 12h18"/></svg>
+              <i class="bi bi-list-check"></i>
               擷取規則
             </div>
             <div class="row g-2">
@@ -783,7 +846,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
 
       <div class="mt-4">
         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10"/><path d="M7 12h6"/></svg>
+          <i class="bi bi-box-arrow-in-down"></i>
           輸出與插入設定
         </div>
         <div class="row g-3">
@@ -909,7 +972,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
                     <div class="card bg-light border">
                       <div class="card-body">
                         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8"/><path d="M8 12h6"/></svg>
+                          <i class="bi bi-card-text"></i>
                           指定擷取的小標題
                         </div>
                         <input class="form-control subtitle-input" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}">
@@ -1099,7 +1162,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
     <div class="card bg-light border mt-3">
       <div class="card-body">
         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8"/><path d="M8 12h6"/></svg>
+          <i class="bi bi-gear"></i>
           基本設定
         </div>
         <div class="row g-3">${basicFields.join("")}</div>
@@ -1112,7 +1175,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
     <div class="card bg-light border mt-3">
       <div class="card-body">
         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18"/><path d="M3 12h18"/></svg>
+          <i class="bi bi-list-check"></i>
           選項與規則
         </div>
         <div class="row g-3">${ruleFields.join("")}</div>
@@ -1123,7 +1186,7 @@ function addStep(typeKey, preset={}, refSid=null, position='end'){
     <div class="card bg-light border mt-3">
       <div class="card-body">
         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10"/><path d="M7 12h6"/></svg>
+          <i class="bi bi-box-arrow-in-down"></i>
           輸出與插入設定
         </div>
         <div class="row g-3">${templateFields.join("")}</div>

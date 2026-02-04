@@ -1,53 +1,104 @@
 {% extends "base.html" %}
+
 {% block content %}
-<h1 class="h3 mb-3">批次執行結果</h1>
+<div class="container-fluid py-3">
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item">
+                <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}" class="text-decoration-none">
+                  <i class="bi bi-diagram-3"></i>流程管理
+                </a>
+            </li>
+            <li class="breadcrumb-item">
+                <a href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}" class="text-decoration-none">執行結果</a>
+            </li>
+            <li class="breadcrumb-item">
+                <a href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=batch_id) }}" class="text-decoration-none">排程執行</a>
+            </li>
+            <li class="breadcrumb-item active" aria-current="page">排程執行結果</li>
+        </ol>
+    </nav>
 
-<div class="d-flex gap-2 mb-3">
-  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=batch_id) }}">返回批次執行</a>
-  <a class="btn btn-outline-secondary" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">返回流程編輯</a>
+    <!-- 標題區域 -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-0 fw-bold">排程執行結果</h1>
+            <p class="text-muted small mb-0">檢視當前批次的所有任務執行細節</p>
+        </div>
+        <div>
+            <!-- 保留一個輔助按鈕或重新整理圖標 -->
+            <button class="btn btn-sm btn-link text-secondary text-decoration-none" onclick="window.location.reload();">
+                <i class="bi bi-arrow-clockwise"></i> 重新整理
+            </button>
+        </div>
+    </div>
+
+    <!-- 狀態警告 -->
+    {% if status.status != "completed" %}
+    <div class="alert alert-warning border-0 shadow-sm d-flex align-items-center" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <div>
+            <strong>批次尚未完成：</strong> 當前狀態為 {{ status.status }}，部分結果可能尚未產出。
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 結果表格 -->
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4" style="border-top: none;">流程名稱</th>
+                        <th class="text-center">狀態</th>
+                        <th class="text-center" style="width:240px; border-top: none;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in results %}
+                    <tr>
+                        <td class="ps-4">
+                            <span class="fw-medium text-dark">{{ r.flow }}</span>
+                        </td>
+                        {% set is_ok = (r.status == "completed") or (r.ok is defined and r.ok) %}
+                        <td class="text-center">
+                            {% if is_ok %}
+                            <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3">
+                                <i class="bi bi-check-circle-fill me-1"></i> 完成
+                            </span>
+                            {% else %}
+                            <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-3">
+                                <i class="bi bi-x-circle-fill me-1"></i> 失敗
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-5">
+                            {% if is_ok and r.job_id %}
+                            <div class="btn-group btn-group-sm shadow-sm" role="group">
+                                <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">
+                                    <i class="bi bi-download"></i> 下載結果
+                                </a>
+                                <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">
+                                    <i class="bi bi-file-earmark-text"></i> 下載Log
+                                </a>
+                            </div>
+                            {% else %}
+                            <span class="text-muted small italic">{{ r.error or "無結果內容" }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                            尚無執行結果
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
-
-<!-- <div class="mb-3 text-muted">批次 ID：{{ status.id }}</div> -->
-
-{% if status.status != "completed" %}
-  <div class="alert alert-warning">批次尚未完成：{{ status.status }}</div>
-{% endif %}
-
-<div class="table-responsive">
-  <table class="table table-striped align-middle text-center">
-    <thead>
-      <tr>
-        <th class="text-start">流程名稱</th>
-        <th style="width:140px;">狀態</th>
-        <th style="width:220px;">操作</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in results %}
-      <tr>
-        <td class="text-start">{{ r.flow }}</td>
-        <td>
-          {% if r.ok %}
-            <span class="text-success">完成</span>
-          {% else %}
-            <span class="text-danger">失敗</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if r.ok and r.job_id %}
-            <div class="btn-group btn-group-sm" role="group">
-              <a class="btn btn-outline-primary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">下載結果</a>
-              <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>
-            </div>
-          {% else %}
-            <span class="text-muted">{{ r.error or "無結果" }}</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="3" class="text-muted">尚無結果</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
 {% endblock %}

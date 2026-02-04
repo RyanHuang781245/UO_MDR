@@ -23,7 +23,7 @@ def record_audit(
         if task_id:
             task_dir = os.path.join(task_root, task_id)
             if os.path.isdir(task_dir):
-                _append_jsonl(os.path.join(task_dir, "audit.jsonl"), payload)
+                _append_jsonl(os.path.join(task_dir, "task_log.jsonl"), payload)
     except Exception:
         current_app.logger.exception("Failed to record audit log")
 

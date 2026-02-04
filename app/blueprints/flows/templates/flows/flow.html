@@ -33,28 +33,6 @@
           <label class="form-label text-muted small">流程名稱</label>
           <input class="form-control" name="flow_name" placeholder="請輸入流程名稱..." value="{{ loaded_name or '' }}">
         </div>
-        <div class="col-md-5">
-          <label class="form-label text-muted small">文件字型</label>
-          <select class="form-select" name="document_format">
-            {% for key, preset in document_format_presets.items() %}
-            <option value="{{ key }}" {% if document_format == key %}selected{% endif %}>{{ preset.label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label text-muted small">行距</label>
-          <select class="form-select" name="line_spacing">
-            {% for key, label in line_spacing_choices %}
-            <option value="{{ key }}" {% if line_spacing == key %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-4 d-flex align-items-end">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="apply_formatting" name="apply_formatting" {% if apply_formatting %}checked{% endif %}>
-            <label class="form-check-label" for="apply_formatting">套用字型與行距</label>
-          </div>
-        </div>
         <div class="col-12">
           <div class="form-check">
             <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>

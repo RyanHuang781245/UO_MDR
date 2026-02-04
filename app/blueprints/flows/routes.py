@@ -874,6 +874,20 @@ def execute_flow(task_id, flow_name):
     else:
         workflow = data
         center_titles = True
+    override_document_format = request.form.get("document_format")
+    override_line_spacing = request.form.get("line_spacing")
+    apply_formatting_param = request.form.get("apply_formatting")
+    if override_document_format is not None:
+        document_format = normalize_document_format(override_document_format)
+    line_spacing_none = False
+    if override_line_spacing is not None:
+        line_spacing_value = (override_line_spacing or f"{DEFAULT_LINE_SPACING:g}").strip()
+        line_spacing_none = line_spacing_value.lower() == "none"
+        line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
+    if apply_formatting_param is not None:
+        apply_formatting = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING)
+    if document_format == "none" or line_spacing_none:
+        apply_formatting = False
     if template_file:
         tpl_abs = os.path.join(files_dir, template_file)
         if os.path.isfile(tpl_abs):

@@ -166,6 +166,43 @@
   </div>
 </div>
 
+
+<div class="modal fade" id="applyFormattingModal" tabindex="-1" aria-labelledby="applyFormattingModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="applyFormattingForm" method="post">
+        <div class="modal-header">
+          <h5 class="modal-title" id="applyFormattingModalLabel">套用字型/行距</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="apply_formatting" value="true">
+          <div class="mb-3">
+            <label class="form-label">字型</label>
+            <select class="form-select" name="document_format">
+              {% for key, preset in document_format_presets.items() %}
+              <option value="{{ key }}" {% if document_format == key %}selected{% endif %}>{{ preset.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">行距</label>
+            <select class="form-select" name="line_spacing">
+              {% for key, label in line_spacing_choices %}
+              <option value="{{ key }}" {% if line_spacing == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">&#21462;&#28040;</button>
+          <button type="submit" class="btn btn-success">套用並執行</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="card shadow-sm border mt-4">
   <div class="card-header bg-white border-bottom">
     <h2 class="h5 mb-0 fw-bold">已保存流程</h2>
@@ -176,8 +213,8 @@
         <thead>
           <tr>
               <th class="text-start ps-3">流程名稱</th>
-              <th class="text-center">建立時間</th>
-              <th class="text-center">操作</th>
+              <th class="text-center" style="width: 200px;">建立時間</th>
+              <th class="text-center" style="width: 300px;">操作</th>
           </tr>
         </thead>
         <tbody id="flowTableBody">
@@ -188,11 +225,22 @@
             <td class="align-middle">
               <div class="d-inline-flex flex-wrap gap-1 justify-content-center">
                 <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
+                  <input type="hidden" name="apply_formatting" value="false">
+                  
                   <button class="btn btn-sm btn-success d-inline-flex align-items-center gap-1">
                     <i class="bi bi-play-fill"></i>
                     執行
                   </button>
                 </form>
+                <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 apply-formatting-btn"
+                        type="button"
+                        data-bs-toggle="modal"
+                        data-bs-target="#applyFormattingModal"
+                        data-flow="{{ f.name }}"
+                        data-action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}">
+                  <i class="bi bi-text-paragraph"></i>
+                  &#22871;&#29992;&#23383;&#22411;/&#34892;&#36317;
+                </button>
                 <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">
                   <i class="bi bi-pencil-square"></i>
                   編輯
@@ -363,6 +411,21 @@ const FIELD_META = {
 const RUN_JOB_ID = {{ job_id|tojson }};
 const runStatusContainer = document.getElementById("runStatusContainer");
 const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
+const applyFormattingModal = document.getElementById("applyFormattingModal");
+const applyFormattingForm = document.getElementById("applyFormattingForm");
+const applyFormattingTitle = document.getElementById("applyFormattingModalLabel");
+if (applyFormattingModal) {
+  applyFormattingModal.addEventListener("show.bs.modal", (event) => {
+    const btn = event.relatedTarget;
+    if (!btn) return;
+    const action = btn.getAttribute("data-action");
+    const flowName = btn.getAttribute("data-flow");
+    if (applyFormattingForm && action) applyFormattingForm.action = action;
+    if (applyFormattingTitle && flowName) {
+      applyFormattingTitle.textContent = `套用字型/行距 - ${flowName}`;
+    }
+  });
+}
 
 const { submitPostForm, escapeHtml } = window.UiUtils;
 

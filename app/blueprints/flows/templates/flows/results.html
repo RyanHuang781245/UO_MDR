@@ -5,7 +5,7 @@
     <h1 class="h3 mb-0 fw-bold">執行結果</h1>
   </div>
   <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
+    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
       <i class="bi bi-arrow-left"></i>
       返回流程管理
     </a>
@@ -19,7 +19,7 @@
   </li>
   <li class="nav-item">
     <a class="nav-link {% if view == 'batch' %}active{% endif %}"
-       href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}">批次執行</a>
+       href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}">排程執行</a>
   </li>
 </ul>
 
@@ -35,16 +35,16 @@
       <button class="btn btn-sm btn-outline-danger" id="deleteSelectedRunsBtn" type="button">刪除已選取</button>
     </div>
     <div class="table-responsive">
-      <table class="table table-striped align-middle text-center">
-        <thead>
+      <table class="table table-hover align-middle mb-0">
+        <thead class="bg-light">
           <tr>
             <th style="width:60px;">
               <input type="checkbox" id="selectAllRuns" class="form-check-input">
             </th>
             <th class="text-start">流程名稱</th>
-            <th class="text-center">執行時間</th>
-            <th class="text-center">狀態</th>
-            <th class="text-center">操作</th>
+            <th class="text-start ps-5">執行時間</th>
+            <th class="text-start ps-4">狀態</th>
+            <th class="text-center" style="width:320px;">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -54,28 +54,42 @@
               <input type="checkbox" class="form-check-input run-select" value="{{ r.job_id }}">
             </td>
             <td class="text-start">{{ r.flow_name }}</td>
-            <td>{{ r.started_at }}</td>
-            <td>
+            <td class="text-cneter pe-5">{{ r.started_at }}</td>
+            <td class="text-cneter pe-5">
               {% if r.status == "completed" %}
-                <span class="text-success">完成</span>
-              {% elif r.status == "running" %}
-                <span class="text-primary">執行中</span>
-              {% elif r.status == "queued" %}
-                <span class="text-muted">排隊中</span>
+                <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3">
+                  <i class="bi bi-check-circle-fill me-1"></i> 完成
+                </span>
               {% elif r.status == "failed" %}
-                <span class="text-danger">失敗</span>
+                <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-3">
+                  <i class="bi bi-x-circle-fill me-1"></i> 失敗
+                </span>
+              {% elif r.status == "running" %}
+                <span class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle px-3">
+                  <i class="bi bi-arrow-repeat me-1"></i> 執行中
+                </span>
+              {% elif r.status == "queued" %}
+                <span class="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle px-3">
+                  <i class="bi bi-hourglass-split me-1"></i> 排隊中
+                </span>
               {% else %}
-                <span class="text-muted">未完成</span>
+                <span class="badge rounded-pill bg-light text-muted border px-3">
+                  <i class="bi bi-question-circle me-1"></i> 未完成
+                </span>
               {% endif %}
             </td>
-            <td>
-              <div class="d-flex flex-wrap gap-1 justify-content-center">
+            <td class="text-end pe-4">
+              <div class="btn-group btn-group-sm shadow-sm" role="group">
                 {% if r.has_result %}
-                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}">查看結果</a>
-                  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">下載結果</a>
+                  <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}">查看結果</a>
+                  <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">
+                    <i class="bi bi-download"></i> 下載結果
+                  </a>
                 {% endif %}
                 {% if r.has_log %}
-                  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">下載紀錄</a>
+                  <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">
+                    <i class="bi bi-file-earmark-text"></i> 下載Log
+                  </a>
                 {% endif %}
                 {% if r.status == "failed" and r.error %}
                   <span class="text-danger ms-2" title="{{ r.error }}">錯誤</span>
@@ -90,7 +104,7 @@
   {% endif %}
 {% else %}
   <div>
-    <h2 class="h6">批次執行紀錄</h2>
+    <!-- <h2 class="h6">批次執行紀錄</h2> -->
     {% if not batches %}
       <div class="text-muted">尚無批次紀錄</div>
     {% else %}
@@ -100,30 +114,53 @@
         <button class="btn btn-sm btn-outline-danger" id="deleteSelectedBatchesBtn" type="button">刪除已選取</button>
       </div>
       <div class="table-responsive">
-        <table class="table table-striped align-middle text-center">
-          <thead>
-            <tr>
-              <th style="width:60px;">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="bg-light">
+                    <tr>
+          <th style="width:60px;">
                 <input type="checkbox" id="selectAllBatches" class="form-check-input">
               </th>
-              <th style="width:160px;">批次 ID</th>
-              <th style="width:180px;">狀態</th>
-              <th style="width:200px;">建立時間</th>
-              <th style="width:200px;">操作</th>
-            </tr>
+          <th style="width:160px;">批次 ID</th>
+          <th class="ps-5" style="width:200px;">建立時間</th>
+          <th class="text-center" style="width:180px;">狀態</th>
+          <th class="text-center" style="width:150px;">操作</th>
+        </tr>
           </thead>
           <tbody>
             {% for b in batches %}
-            {% set status_label = "完成" if b.status == "completed" else ("失敗" if b.status == "failed" else ("執行中" if b.status == "running" else ("排隊中" if b.status == "queued" else b.status))) %}
             <tr>
               <td>
                 <input type="checkbox" class="form-check-input batch-select" value="{{ b.id }}">
               </td>
               <td>{{ b.id }}</td>
-              <td>{{ status_label }}</td>
               <td>{{ b.created_at }}</td>
-              <td>
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flows_bp.flow_batch_result', task_id=task.id, batch_id=b.id) }}">查看結果</a>
+              <td class="text-center">
+                {% if b.status == "completed" %}
+                  <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3">
+                    <i class="bi bi-check-circle-fill me-1"></i> &#23436;&#25104;
+                  </span>
+                {% elif b.status == "failed" %}
+                  <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-3">
+                    <i class="bi bi-x-circle-fill me-1"></i> &#22833;&#25943;
+                  </span>
+                {% elif b.status == "running" %}
+                  <span class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle px-3">
+                    <i class="bi bi-arrow-repeat me-1"></i> &#22519;&#34892;&#20013;
+                  </span>
+                {% elif b.status == "queued" %}
+                  <span class="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle px-3">
+                    <i class="bi bi-hourglass-split me-1"></i> &#25490;&#38538;&#20013;
+                  </span>
+                {% else %}
+                  <span class="badge rounded-pill bg-light text-muted border px-3">
+                    <i class="bi bi-question-circle me-1"></i> {{ b.status }}
+                  </span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                <div class="btn-group btn-group-sm shadow-sm" role="group">
+                  <a class="btn btn-white border" href="{{ url_for('flows_bp.flow_batch_result', task_id=task.id, batch_id=b.id) }}">&#26597;&#30475;&#32080;&#26524;</a>
+                </div>
               </td>
             </tr>
             {% endfor %}

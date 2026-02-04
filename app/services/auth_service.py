@@ -487,7 +487,7 @@ class SystemSettingAdminView(SecureModelView):
     can_edit = True
     column_list = ("email_batch_notify_enabled", "updated_at")
     column_labels = {
-        "email_batch_notify_enabled": "批次完成通知 Email",
+        "email_batch_notify_enabled": "排程完成通知 Email",
         "updated_at": "更新時間",
     }
     form_columns = ("email_batch_notify_enabled",)
@@ -510,7 +510,7 @@ class AuditLogView(BaseView):
     def _load_entries(self, task_id: str, limit: int = 200) -> list[dict]:
         task_root = current_app.config.get("TASK_FOLDER", "")
         task_dir = os.path.join(task_root, task_id)
-        log_path = os.path.join(task_dir, "audit.jsonl")
+        log_path = os.path.join(task_dir, "task_log.jsonl")
         if not os.path.isdir(task_dir) or not os.path.exists(log_path):
             return []
         entries: list[dict] = []
@@ -540,7 +540,7 @@ class AuditLogView(BaseView):
         has_file = False
         if task_id:
             task_root = current_app.config.get("TASK_FOLDER", "")
-            log_path = os.path.join(task_root, task_id, "audit.jsonl")
+            log_path = os.path.join(task_root, task_id, "task_log.jsonl")
             has_file = os.path.exists(log_path)
         return self.render(
             "admin/audit_logs.html",
@@ -555,7 +555,7 @@ class AuditLogView(BaseView):
         task_id = (request.args.get("task_id") or "").strip()
         task_root = current_app.config.get("TASK_FOLDER", "")
         task_dir = os.path.join(task_root, task_id)
-        log_path = os.path.join(task_dir, "audit.jsonl")
+        log_path = os.path.join(task_dir, "task_log.jsonl")
         if not task_id or not os.path.isdir(task_dir) or not os.path.exists(log_path):
             abort(404)
         return send_file(log_path, as_attachment=True, download_name=f"audit_{task_id}.jsonl")

@@ -109,6 +109,16 @@ def add_docxtpl_var_at_paragraph_index(
       - replace: replace the target paragraph content with the placeholder
     """
     root = etree.fromstring(doc_xml_bytes)
+    # Ensure common Word namespaces are declared (attributes like w14:paraId).
+    if "w14" not in (root.nsmap or {}):
+        nsmap = dict(root.nsmap or {})
+        nsmap["w14"] = "http://schemas.microsoft.com/office/word/2010/wordml"
+        new_root = etree.Element(root.tag, nsmap=nsmap)
+        new_root.attrib.update(root.attrib)
+        new_root.text = root.text
+        new_root.tail = root.tail
+        new_root[:] = list(root)
+        root = new_root
     paras = root.xpath("//w:p", namespaces=NS)
     if idx < 0 or idx >= len(paras):
         return doc_xml_bytes

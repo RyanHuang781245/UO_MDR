@@ -145,6 +145,7 @@ def task_mapping(task_id):
     out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
     messages = []
     outputs = []
+    log_file = None
     if request.method == "POST":
         f = request.files.get("mapping_file")
         if not f or not f.filename:
@@ -157,18 +158,29 @@ def task_mapping(task_id):
                 result = process_mapping_excel(path, files_dir, out_dir)
                 messages = result["logs"]
                 outputs = result["outputs"]
+                log_file = result.get("log_file")
             except Exception as e:
                 messages = [str(e)]
-    rel_outputs = [os.path.basename(p) for p in outputs]
-    return render_template("tasks/mapping.html", task_id=task_id, messages=messages, outputs=rel_outputs)
+    rel_outputs = []
+    for p in outputs:
+        rel = os.path.relpath(p, out_dir)
+        rel_outputs.append(rel.replace("\\", "/"))
+    return render_template(
+        "tasks/mapping.html",
+        task_id=task_id,
+        messages=messages,
+        outputs=rel_outputs,
+        log_file=log_file,
+    )
 
-@tasks_bp.get("/tasks/<task_id>/output/<filename>", endpoint="task_download_output")
+@tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
 def task_download_output(task_id, filename):
     out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
-    file_path = os.path.join(out_dir, filename)
+    safe_name = filename.replace("\\", "/")
+    file_path = os.path.join(out_dir, safe_name)
     if not os.path.isfile(file_path):
         abort(404)
-    return send_from_directory(out_dir, filename, as_attachment=True)
+    return send_from_directory(out_dir, safe_name, as_attachment=True)
 
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():

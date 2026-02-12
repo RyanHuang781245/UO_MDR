@@ -1,8 +1,13 @@
-import os
+﻿import os
 import re
+import tempfile
+import uuid
+import shutil
+import json
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
+from docx import Document as DocxDocument
 from spire.doc import Document, FileFormat
 
 from .Edit_Word import (
@@ -14,12 +19,25 @@ from .Edit_Word import (
 from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
     extract_word_chapter,
+    extract_specific_figure_from_word,
+    extract_specific_table_from_word,
     center_table_figure_paragraphs,
     apply_basic_style,
     remove_hidden_runs,
     hide_paragraphs_with_text,
 )
 from .file_copier import copy_files
+from .docx_merger import merge_word_docs
+from .template_manager import parse_template_paragraphs, render_template_with_mappings
+from .workflow import run_workflow
+from app.services.flow_service import (
+    DEFAULT_APPLY_FORMATTING,
+    DEFAULT_DOCUMENT_FORMAT_KEY,
+    DEFAULT_LINE_SPACING,
+    DOCUMENT_FORMAT_PRESETS,
+    SKIP_DOCX_CLEANUP,
+    collect_titles_to_hide,
+)
 
 
 def _find_file(base: str, filename: str) -> str | None:
@@ -69,6 +87,44 @@ def _resolve_input_file(base: str, name: str) -> str | None:
     return None
 
 
+
+
+def _normalize_match(text: str) -> str:
+    cleaned = (text or "").strip().lower()
+    cleaned = re.sub(r"\s+", "", cleaned)
+    return cleaned
+
+
+def _find_header_row(ws, header_names: List[str], max_scan: int = 10) -> int | None:
+    max_row = ws.max_row or 0
+    scan = min(max_row, max_scan)
+    for row_idx in range(1, scan + 1):
+        row_vals = [
+            str(c.value).strip() if c is not None and c.value is not None else ""
+            for c in ws[row_idx]
+        ]
+        if all(h in row_vals for h in header_names):
+            return row_idx
+    return None
+
+
+def _build_template_index_map(parsed: List[Dict[str, Any]]) -> Tuple[Dict[str, int], int | None]:
+    index_map: Dict[str, int] = {}
+    last_idx = None
+    for item in parsed:
+        try:
+            idx = int(item.get("index"))
+        except Exception:
+            continue
+        display = (item.get("display") or "").strip()
+        text_val = (item.get("text") or "").strip()
+        key = _normalize_match(f"{display} {text_val}".strip())
+        if key and key not in index_map:
+            index_map[key] = idx
+        last_idx = idx
+    return index_map, last_idx
+
+
 def insert_title(section, title: str):
     """Insert *title* into *section* with appropriate heading style.
 
@@ -98,20 +154,19 @@ def insert_title(section, title: str):
 def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: str) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
 
-    The spreadsheet must provide columns:
-        A: output Word document name
-        B: heading title to insert
-        C: folder containing the source file
-        D: source file name (if no extension, treated as a subfolder)
-        E: extraction instruction or file-copy keywords
+    New format columns:
+        A: Source file or text
+        B: Section/Operation
+        C: Output path
+        D: Output filename
+        E: Template file
+        F: Insert paragraph
     Returns a dict with keys:
         logs: list of messages
         outputs: list of generated docx paths
     """
     logs: List[str] = []
-    docs: Dict[str, Tuple[Document, any]] = {}
     outputs: List[str] = []
-    hidden_titles: Dict[str, List[str]] = defaultdict(list)
 
     try:
         from openpyxl import load_workbook
@@ -121,125 +176,414 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     wb = load_workbook(mapping_path)
     ws = wb.active
 
-    start_row = 3 if ws.max_row and ws.max_row >= 3 else 2
-    for row in ws.iter_rows(min_row=start_row, values_only=True):
-        raw_out, raw_title, raw_folder, raw_input, raw_instruction = row[:5]
-        out_name = str(raw_out).strip() if raw_out else ""
-        title = str(raw_title).strip() if raw_title else ""
-        folder = str(raw_folder).strip() if raw_folder else ""
-        input_name = str(raw_input).strip() if raw_input else ""
-        instruction = str(raw_instruction).strip() if raw_instruction else ""
-        if not instruction:
+    header_aliases = {
+        "source": ["檔案名稱/資料夾名稱/文字內容", "來源檔案"],
+        "operation": ["擷取段落/操作"],
+        "out_path": ["檔案路徑", "輸出路徑"],
+        "out_name": ["檔案名稱", "輸出檔案名稱"],
+        "template": ["模板文件"],
+        "insert": ["插入段落名稱/目的資料夾名稱", "插入段落"],
+    }
+    header_row = None
+    max_row = ws.max_row or 0
+    scan = min(max_row, 10)
+    for row_idx in range(1, scan + 1):
+        row_vals = [
+            str(c.value).strip() if c is not None and c.value is not None else ""
+            for c in ws[row_idx]
+        ]
+        if all(any(alias in row_vals for alias in aliases) for aliases in header_aliases.values()):
+            header_row = row_idx
+            break
+
+
+    if header_row is None:
+        # Fallback to legacy format
+        start_row = 3 if ws.max_row and ws.max_row >= 3 else 2
+        docs: Dict[str, Tuple[Document, Any]] = {}
+        hidden_titles: Dict[str, List[str]] = defaultdict(list)
+        for row in ws.iter_rows(min_row=start_row, values_only=True):
+            raw_out, raw_title, raw_folder, raw_input, raw_instruction = row[:5]
+            out_name = str(raw_out).strip() if raw_out else ""
+            title = str(raw_title).strip() if raw_title else ""
+            folder = str(raw_folder).strip() if raw_folder else ""
+            input_name = str(raw_input).strip() if raw_input else ""
+            instruction = str(raw_instruction).strip() if raw_instruction else ""
+            if not instruction:
+                continue
+
+            base_dir = task_files_dir
+            if folder:
+                found_dir = _find_directory(task_files_dir, folder)
+                if not found_dir:
+                    logs.append(f"{out_name or '?'}: folder not found {folder}")
+                    continue
+                base_dir = found_dir
+
+            is_all = instruction.lower() == "all"
+            chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
+
+            if is_all or chapter_match:
+                if not input_name:
+                    logs.append(f"{out_name or '?'}: missing source filename")
+                    continue
+                infile = _resolve_input_file(base_dir, input_name)
+                if not infile:
+                    logs.append(f"{out_name or '?'}: file not found {input_name}")
+                    continue
+
+                doc, section = docs.get(out_name, (None, None))
+                if doc is None:
+                    doc = Document()
+                    section = doc.AddSection()
+                    docs[out_name] = (doc, section)
+
+                insert_title(section, title)
+
+                if is_all:
+                    extract_word_all_content(infile, output_doc=doc, section=section)
+                    logs.append(f"Extract {input_name} (all content)")
+                else:
+                    chapter = chapter_match.group(1)
+                    if "," in instruction:
+                        _prefix, after = instruction.split(",", 1)
+                        result = extract_word_chapter(
+                            infile,
+                            chapter,
+                            target_title=True,
+                            target_title_section=after.strip(),
+                            output_doc=doc,
+                            section=section,
+                        )
+                        if isinstance(result, dict):
+                            for captured in result.get("captured_titles", []):
+                                if not isinstance(captured, str):
+                                    continue
+                                trimmed = captured.strip()
+                                if trimmed and trimmed not in hidden_titles[out_name]:
+                                    hidden_titles[out_name].append(trimmed)
+                        logs.append(f"Extract {input_name} (chapter {chapter}, title {after.strip()})")
+                    else:
+                        result = extract_word_chapter(
+                            infile,
+                            chapter,
+                            output_doc=doc,
+                            section=section,
+                        )
+                        if isinstance(result, dict):
+                            for captured in result.get("captured_titles", []):
+                                if not isinstance(captured, str):
+                                    continue
+                                trimmed = captured.strip()
+                                if trimmed and trimmed not in hidden_titles[out_name]:
+                                    hidden_titles[out_name].append(trimmed)
+                        logs.append(f"Extract {input_name} (chapter {chapter})")
+            else:
+                dest = os.path.join(task_files_dir, out_name or "output")
+                if title:
+                    dest = os.path.join(dest, title)
+
+                search_root = base_dir
+                if input_name:
+                    if "." in os.path.basename(input_name):
+                        found = _resolve_input_file(base_dir, input_name)
+                        if found:
+                            search_root = os.path.dirname(found)
+                    else:
+                        dir_path = _find_directory(base_dir, input_name)
+                        if dir_path:
+                            search_root = dir_path
+
+                keywords = [k.strip() for k in re.split(r"[,\u3001，]+", instruction) if k.strip()]
+                try:
+                    copied = copy_files(search_root, dest, keywords)
+                    kw_display = ", ".join(keywords)
+                    logs.append(
+                        f"Copied {len(copied)} files to {os.path.relpath(dest, task_files_dir)}"
+                        f" (keywords {kw_display})"
+                    )
+                except Exception as e:
+                    logs.append(f"Copy failed: {e}")
+
+        os.makedirs(output_dir, exist_ok=True)
+        for name, (doc, _section) in docs.items():
+            out_path = os.path.join(output_dir, f"{name}.docx")
+            doc.SaveToFile(out_path, FileFormat.Docx)
+            doc.Close()
+            titles = hidden_titles.get(name, [])
+            remove_hidden_runs(out_path, preserve_texts=titles)
+            renumber_figures_tables_file(out_path)
+            center_table_figure_paragraphs(out_path)
+            apply_basic_style(out_path)
+            hide_paragraphs_with_text(out_path, titles)
+            outputs.append(out_path)
+        return {"logs": logs, "outputs": outputs}
+
+    # New format processing
+    header_vals = [str(c.value).strip() if c is not None and c.value is not None else "" for c in ws[header_row]]
+    col_idx = {}
+    for key, aliases in header_aliases.items():
+        for alias in aliases:
+            if alias in header_vals:
+                col_idx[key] = header_vals.index(alias)
+                break
+    parsed_cache: Dict[str, Tuple[List[Dict[str, Any]], Dict[str, int], int | None]] = {}
+    groups: Dict[Tuple[str, str | None], Dict[str, Any]] = {}
+    run_logs: List[Dict[str, Any]] = []
+
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        if not row or all(v is None or str(v).strip() == "" for v in row):
+            continue
+        def _cell(idx: int) -> str:
+            return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else ""
+
+        src_name = _cell(col_idx.get("source", 0))
+        instruction = _cell(col_idx.get("operation", 1))
+        out_rel = _cell(col_idx.get("out_path", 2))
+        out_name = _cell(col_idx.get("out_name", 3))
+        template_name = _cell(col_idx.get("template", 4))
+        insert_label = _cell(col_idx.get("insert", 5))
+
+        if not out_name:
+            logs.append("Missing output filename")
             continue
 
-        base_dir = task_files_dir
-        if folder:
-            found_dir = _find_directory(task_files_dir, folder)
-            if not found_dir:
-                logs.append(f"{out_name or '未命名'}: 找不到資料夾 {folder}")
+        template_path = None
+        if template_name:
+            template_path = _find_file(task_files_dir, template_name)
+            if not template_path:
+                logs.append(f"Template not found: {template_name}")
                 continue
-            base_dir = found_dir
+
+        if template_path:
+            if template_path not in parsed_cache:
+                parsed = parse_template_paragraphs(template_path)
+                index_map, last_idx = _build_template_index_map(parsed)
+                parsed_cache[template_path] = (parsed, index_map, last_idx)
+            parsed, index_map, last_idx = parsed_cache[template_path]
+        else:
+            parsed, index_map, last_idx = [], {}, None
+
+        target_idx = None
+        if template_path:
+            target_key = _normalize_match(insert_label)
+            target_idx = index_map.get(target_key)
+            if target_idx is None:
+                if insert_label:
+                    if last_idx is not None:
+                        target_idx = last_idx
+                        logs.append(f"Insert paragraph '{insert_label}' not found; appended to end")
+                    else:
+                        target_idx = 0
+                        logs.append(f"Insert paragraph '{insert_label}' not found; appended to end")
+                else:
+                    target_idx = last_idx if last_idx is not None else 0
+
+        output_dir_full = os.path.join(output_dir, out_rel) if out_rel else output_dir
+        output_path = os.path.join(output_dir_full, out_name)
+
+        group_key = (output_path, template_path)
+        if group_key not in groups:
+            groups[group_key] = {"steps": [], "parsed": parsed, "template": template_path}
+
+        if instruction.lower() == "add text":
+            if not src_name:
+                logs.append("Add Text requires text content")
+                continue
+            params = {"text": src_name}
+            if template_path is not None:
+                params["template_index"] = target_idx
+                params["template_mode"] = "insert_after"
+            groups[group_key]["steps"].append({"type": "insert_text", "params": params})
+            logs.append(f"Insert text into {out_name} (paragraph {insert_label})" if template_path else f"Append text into {out_name}")
+            continue
+
+        tf_kind = None
+        tf_subtitle = None
+        tf_label = None
+        tf_chapter = ""
+        chapter_token = re.compile(r"^\d+(?:\.\d+)*\.?$")
+        label_match = re.search(r"\b(Table|Figure)\b.*", instruction, re.IGNORECASE)
+        if label_match:
+            tf_label = instruction[label_match.start():].strip()
+            tf_kind = "table" if tf_label.lower().startswith("table") else "figure"
+            head = instruction[:label_match.start()].strip().strip(",，\u3001")
+            if head:
+                head_parts = [p.strip() for p in re.split(r"[\\/]+", head) if p.strip()]
+                if not head_parts:
+                    head_parts = [head.strip()]
+                inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", head_parts[0])
+                if inline_match:
+                    tf_chapter = inline_match.group(1).rstrip(".")
+                    subtitle_raw = (inline_match.group(2) or "").strip()
+                    if subtitle_raw:
+                        tf_subtitle = subtitle_raw
+                    elif len(head_parts) > 1:
+                        tf_subtitle = " ".join(head_parts[1:]).strip() or None
+                    else:
+                        tf_subtitle = None
+                else:
+                    tf_subtitle = " ".join(head_parts).strip()
+
+        if tf_kind:
+            infile = _resolve_input_file(task_files_dir, src_name)
+            if not infile:
+                logs.append(f"Source file not found: {src_name}")
+                continue
+            params = {
+                "input_file": infile,
+                "target_chapter_section": tf_chapter,
+                "include_caption": True,
+            }
+            if tf_subtitle:
+                params["target_subtitle"] = tf_subtitle
+            if tf_kind == "table":
+                params["target_table_label"] = tf_label
+                step_type = "extract_specific_table_from_word"
+                logs.append(f"Extract table: {src_name} ({tf_label})")
+            else:
+                params["target_figure_label"] = tf_label
+                step_type = "extract_specific_figure_from_word"
+                logs.append(f"Extract figure: {src_name} ({tf_label})")
+            if template_path is not None:
+                params["template_index"] = target_idx
+                params["template_mode"] = "insert_after"
+            groups[group_key]["steps"].append({"type": step_type, "params": params})
+            continue
 
         is_all = instruction.lower() == "all"
         chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
+        if not is_all and not chapter_match:
+            logs.append(f"Unsupported operation: {instruction}")
+            continue
 
-        if is_all or chapter_match:
-            if not input_name:
-                logs.append(f"{out_name or '未命名'}: 未提供輸入檔案名稱")
-                continue
-            infile = _resolve_input_file(base_dir, input_name)
-            if not infile:
-                logs.append(f"{out_name or '未命名'}: 找不到檔案 {input_name}")
-                continue
+        infile = _resolve_input_file(task_files_dir, src_name)
+        if not infile:
+            logs.append(f"Source file not found: {src_name}")
+            continue
 
-            doc, section = docs.get(out_name, (None, None))
-            if doc is None:
-                doc = Document()
-                section = doc.AddSection()
-                docs[out_name] = (doc, section)
-
-            insert_title(section, title)
-
-            if is_all:
-                extract_word_all_content(infile, output_doc=doc, section=section)
-                logs.append(f"擷取 {input_name} (全部內容)")
-            else:
-                chapter = chapter_match.group(1)
-                if "," in instruction:
-                    _prefix, after = instruction.split(",", 1)
-                    result = extract_word_chapter(
-                        infile,
-                        chapter,
-                        target_title=True,
-                        target_title_section=after.strip(),
-                        output_doc=doc,
-                        section=section,
-                    )
-                    if isinstance(result, dict):
-                        for captured in result.get("captured_titles", []):
-                            if not isinstance(captured, str):
-                                continue
-                            trimmed = captured.strip()
-                            if trimmed and trimmed not in hidden_titles[out_name]:
-                                hidden_titles[out_name].append(trimmed)
-                    logs.append(f"擷取 {input_name} (章節: {chapter} 標題: {after.strip()})")
-                else:
-                    result = extract_word_chapter(
-                        infile,
-                        chapter,
-                        output_doc=doc,
-                        section=section,
-                    )
-                    if isinstance(result, dict):
-                        for captured in result.get("captured_titles", []):
-                            if not isinstance(captured, str):
-                                continue
-                            trimmed = captured.strip()
-                            if trimmed and trimmed not in hidden_titles[out_name]:
-                                hidden_titles[out_name].append(trimmed)
-                    logs.append(f"擷取 {input_name} (章節: {chapter})")
+        if is_all:
+            params = {"input_file": infile}
+            step_type = "extract_word_all_content"
+            logs.append(f"Extract all: {src_name}")
         else:
-            dest = os.path.join(task_files_dir, out_name or "output")
-            if title:
-                dest = os.path.join(dest, title)
+            chapter = chapter_match.group(1)
+            params = {"input_file": infile, "target_chapter_section": chapter}
+            # Align with flow defaults
+            params["ignore_toc"] = True
+            params["ignore_header_footer"] = True
+            params["subheading_strict_match"] = True
+            params["explicit_end_title"] = ""
 
-            search_root = base_dir
-            if input_name:
-                if "." in os.path.basename(input_name):
-                    found = _resolve_input_file(base_dir, input_name)
-                    if found:
-                        search_root = os.path.dirname(found)
+            split_pattern = r"[\\/]+"
+            has_split = re.search(split_pattern, instruction)
+            if has_split:
+                first, after = re.split(split_pattern, instruction, maxsplit=1)
+                first = first.strip()
+                after = after.strip()
+                first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", first)
+                title_inline = ""
+                if first_match:
+                    chapter = first_match.group(1)
+                    params["target_chapter_section"] = chapter
+                    title_inline = (first_match.group(2) or "").strip()
+                if after:
+                    if title_inline:
+                        params["target_title_section"] = title_inline
+                    params["target_title"] = True
+                    params["subheading_text"] = after
+                    if title_inline:
+                        logs.append(
+                            f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline}, subheading {after})"
+                        )
+                    else:
+                        logs.append(f"Extract chapter: {src_name} (chapter {chapter}, subheading {after})")
                 else:
-                    dir_path = _find_directory(base_dir, input_name)
-                    if dir_path:
-                        search_root = dir_path
+                    if title_inline:
+                        logs.append(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})")
+                    else:
+                        logs.append(f"Extract chapter: {src_name} (chapter {chapter})")
+                if "target_title" not in params:
+                    params["target_title"] = False
+            else:
+                inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", instruction.strip())
+                title_inline = ""
+                if inline_match:
+                    chapter = inline_match.group(1)
+                    params["target_chapter_section"] = chapter
+                    title_inline = (inline_match.group(2) or "").strip()
+                params["target_title"] = False
+                if title_inline:
+                    params["target_title_section"] = title_inline
+                    logs.append(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})")
+                else:
+                    logs.append(f"Extract chapter: {src_name} (chapter {chapter})")
+            step_type = "extract_word_chapter"
+        if template_path is not None:
+            params["template_index"] = target_idx
+            params["template_mode"] = "insert_after"
+        groups[group_key]["steps"].append({"type": step_type, "params": params})
 
-            keywords = [
-                k.strip()
-                for k in re.split(r"[,，]+", instruction)
-                if k.strip()
-            ]
-            try:
-                copied = copy_files(search_root, dest, keywords)
-                kw_display = ", ".join(keywords)
-                logs.append(
-                    f"複製 {len(copied)} 個檔案至 {os.path.relpath(dest, task_files_dir)} (關鍵字: {kw_display})"
+    for (output_path, template_path), payload in groups.items():
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        workdir = os.path.join(tempfile.gettempdir(), f"mapping_{uuid.uuid4().hex[:8]}")
+        os.makedirs(workdir, exist_ok=True)
+        template_cfg = None
+        if template_path:
+            template_cfg = {
+                "path": template_path,
+                "paragraphs": payload.get("parsed") or [],
+                "default_mode": "insert_after",
+            }
+        try:
+            workflow_result = run_workflow(payload.get("steps", []), workdir=workdir, template=template_cfg)
+            result_path = workflow_result.get("result_docx") or os.path.join(workdir, "result.docx")
+            titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
+            center_table_figure_paragraphs(result_path)
+            if DEFAULT_APPLY_FORMATTING and DEFAULT_DOCUMENT_FORMAT_KEY != "none":
+                preset = DOCUMENT_FORMAT_PRESETS.get(DEFAULT_DOCUMENT_FORMAT_KEY) or DOCUMENT_FORMAT_PRESETS.get("default", {})
+                apply_basic_style(
+                    result_path,
+                    western_font=preset.get("western_font") or "",
+                    east_asian_font=preset.get("east_asian_font") or "",
+                    font_size=int(preset.get("font_size") or 12),
+                    line_spacing=DEFAULT_LINE_SPACING,
+                    space_before=int(preset.get("space_before") or 6),
+                    space_after=int(preset.get("space_after") or 6),
                 )
-            except Exception as e:
-                logs.append(f"複製檔案失敗: {e}")
+            if not SKIP_DOCX_CLEANUP:
+                remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
+                hide_paragraphs_with_text(result_path, titles_to_hide)
+            shutil.copyfile(result_path, output_path)
+            outputs.append(output_path)
+            run_logs.append(
+                {
+                    "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
+                    "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
+                    "steps": payload.get("steps", []),
+                    "workflow_log": workflow_result.get("log_json", []),
+                    "status": "ok",
+                }
+            )
+        except Exception as e:
+            logs.append(f"Output failed: {os.path.basename(output_path)} ({e})")
+            run_logs.append(
+                {
+                    "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
+                    "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
+                    "steps": payload.get("steps", []),
+                    "status": "error",
+                    "error": str(e),
+                }
+            )
 
-    os.makedirs(output_dir, exist_ok=True)
-    for name, (doc, _section) in docs.items():
-        out_path = os.path.join(output_dir, f"{name}.docx")
-        doc.SaveToFile(out_path, FileFormat.Docx)
-        doc.Close()
-        titles = hidden_titles.get(name, [])
-        remove_hidden_runs(out_path, preserve_texts=titles)
-        renumber_figures_tables_file(out_path)
-        center_table_figure_paragraphs(out_path)
-        apply_basic_style(out_path)
-        hide_paragraphs_with_text(out_path, titles)
-        outputs.append(out_path)
-        # logs.append(f"產生文件 {out_path}")
+    log_file = None
+    if run_logs:
+        os.makedirs(output_dir, exist_ok=True)
+        log_filename = f"mapping_log_{uuid.uuid4().hex[:8]}.json"
+        log_path = os.path.join(output_dir, log_filename)
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump({"messages": logs, "runs": run_logs}, f, ensure_ascii=False, indent=2)
+        log_file = log_filename
 
-    return {"logs": logs, "outputs": outputs}
+    return {"logs": logs, "outputs": outputs, "log_file": log_file}

@@ -10,6 +10,10 @@
       <i class="bi bi-arrow-left"></i>
       返回任務管理
     </a>
+    <a class="btn btn-sm btn-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
+      <i class="bi bi-diagram-3-fill"></i>
+      Mapping生成
+    </a>
     <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
       <i class="bi bi-diagram-3"></i>
       進入流程管理
@@ -99,10 +103,6 @@
       <a class="btn btn-outline-primary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
         <i class="bi bi-folder-symlink"></i>
         複製檔案
-      </a>
-      <a class="btn btn-outline-primary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
-        <i class="bi bi-upload"></i>
-        上傳 Mapping
       </a>
     </div>
   </div>

@@ -3,9 +3,13 @@
 <!-- <h1 class="h4 mb-3">上傳 Mapping 檔案</h1> -->
 <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
   <div>
-    <h1 class="h3 mb-0 fw-bold">上傳 Mapping 檔案</h1>
+    <h1 class="h3 mb-0 fw-bold">Mapping 生成文件</h1>
   </div>
   <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_detail', task_id=task_id) }}">
+      <i class="bi bi-arrow-left"></i>
+      返回任務詳情
+    </a>
     <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task_id) }}">
       <i class="bi bi-diagram-3"></i>
       進入流程管理
@@ -42,5 +46,4 @@
 {% if log_file %}
 <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=log_file) }}">下載 log</a>
 {% endif %}
-<a class="btn btn-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task_id) }}">返回任務</a>
 {% endblock %}

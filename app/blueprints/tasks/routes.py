@@ -146,6 +146,44 @@ def task_mapping(task_id):
     messages = []
     outputs = []
     log_file = None
+    step_runs = []
+
+    def _format_step_label(entry: dict) -> str:
+        stype = entry.get("type") or ""
+        params = entry.get("params") or {}
+
+        def _base(path: str) -> str:
+            return os.path.basename(path) if path else "?"
+
+        if stype == "extract_word_chapter":
+            src = _base(params.get("input_file", ""))
+            chapter = params.get("target_chapter_section", "")
+            title = params.get("target_title_section", "")
+            sub = params.get("subheading_text", "")
+            parts = [f"chapter {chapter}"] if chapter else []
+            if title:
+                parts.append(f"title {title}")
+            if sub:
+                parts.append(f"subheading {sub}")
+            detail = ", ".join(parts)
+            return f"Extract chapter: {src}" + (f" ({detail})" if detail else "")
+        if stype == "extract_word_all_content":
+            src = _base(params.get("input_file", ""))
+            return f"Extract all: {src}"
+        if stype == "extract_specific_table_from_word":
+            src = _base(params.get("input_file", ""))
+            label = params.get("target_table_label", "")
+            return f"Extract table: {src} ({label})" if label else f"Extract table: {src}"
+        if stype == "extract_specific_figure_from_word":
+            src = _base(params.get("input_file", ""))
+            label = params.get("target_figure_label", "")
+            return f"Extract figure: {src} ({label})" if label else f"Extract figure: {src}"
+        if stype == "insert_text":
+            return "Append text"
+        if stype == "template_merge":
+            tpl = _base(entry.get("template_file", ""))
+            return f"Template merge: {tpl}" if tpl else "Template merge"
+        return stype or "step"
     if request.method == "POST":
         f = request.files.get("mapping_file")
         if not f or not f.filename:
@@ -161,6 +199,30 @@ def task_mapping(task_id):
                 log_file = result.get("log_file")
             except Exception as e:
                 messages = [str(e)]
+    if log_file:
+        log_path = os.path.join(out_dir, log_file)
+        if os.path.isfile(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    log_data = json.load(f)
+                for run in log_data.get("runs", []):
+                    for entry in run.get("workflow_log", []):
+                        if "step" not in entry:
+                            continue
+                        step_runs.append(
+                            {
+                                "label": _format_step_label(entry),
+                                "status": entry.get("status") or "ok",
+                                "error": entry.get("error") or "",
+                            }
+                        )
+                if step_runs:
+                    messages = [m for m in messages if not (m or "").startswith("ERROR:")]
+            except Exception as e:
+                messages.append(f"ERROR: failed to read log file ({e})")
+    has_error = any("ERROR" in (m or "") for m in messages) or any(
+        step.get("status") == "error" for step in step_runs
+    )
     rel_outputs = []
     for p in outputs:
         rel = os.path.relpath(p, out_dir)
@@ -171,6 +233,8 @@ def task_mapping(task_id):
         messages=messages,
         outputs=rel_outputs,
         log_file=log_file,
+        has_error=has_error,
+        step_runs=step_runs,
     )
 
 @tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")

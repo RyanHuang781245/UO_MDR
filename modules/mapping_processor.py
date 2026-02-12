@@ -560,6 +560,12 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
             }
         try:
             workflow_result = run_workflow(payload.get("steps", []), workdir=workdir, template=template_cfg)
+            for entry in workflow_result.get("log_json", []):
+                if entry.get("status") == "error":
+                    step_type = entry.get("type") or "step"
+                    logs.append(
+                        f"ERROR: {os.path.basename(output_path)} {step_type}: {entry.get('error') or 'unknown error'}"
+                    )
             result_path = workflow_result.get("result_docx") or os.path.join(workdir, "result.docx")
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
             center_table_figure_paragraphs(result_path)

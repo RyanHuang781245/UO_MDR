@@ -27,11 +27,55 @@
     </div>
   </div>
 </form>
-{% if messages %}
-<h2 class="h6">處理狀態</h2>
+
+{% if messages or outputs %}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <span class="fw-semibold">處理狀態</span>
+  {% if not step_runs %}
+  {% if has_error %}
+  <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+  {% else %}
+  <i class="bi bi-check-circle-fill text-success"></i>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+{% if step_runs %}
+<ul class="list-group mb-3">
+  {% for step in step_runs %}
+  <li class="list-group-item">
+    {% if step.status == "error" %}
+    <details>
+      <summary class="d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+        <span>{{ step.label }}</span>
+      </summary>
+      <div class="mt-2 small text-danger">{{ step.error }}</div>
+    </details>
+    {% else %}
+    {{ step.label }}
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if messages and not step_runs %}
 <ul class="list-group mb-3">
   {% for m in messages %}
-  <li class="list-group-item">{{ m }}</li>
+  <li class="list-group-item">
+    {% if m.startswith("ERROR:") %}
+    <details>
+      <summary class="d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+        <span>錯誤</span>
+      </summary>
+      <div class="mt-2 small text-danger">{{ m }}</div>
+    </details>
+    {% else %}
+    {{ m }}
+    {% endif %}
+  </li>
   {% endfor %}
 </ul>
 {% endif %}
@@ -43,6 +87,7 @@
   {% endfor %}
 </ul>
 {% endif %}
+
 {% if log_file %}
 <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=log_file) }}">下載 log</a>
 {% endif %}

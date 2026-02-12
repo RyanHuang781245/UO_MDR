@@ -330,8 +330,16 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     parsed_cache: Dict[str, Tuple[List[Dict[str, Any]], Dict[str, int], int | None]] = {}
     groups: Dict[Tuple[str, str | None], Dict[str, Any]] = {}
     run_logs: List[Dict[str, Any]] = []
+    output_template_map: Dict[str, str | None] = {}
 
-    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+    def _log(level: str, message: str, row_num: int | None = None) -> None:
+        prefix = f"Row {row_num}: " if row_num else ""
+        logs.append(f"{level.upper()}: {prefix}{message}")
+
+    for row_num, row in enumerate(
+        ws.iter_rows(min_row=header_row + 1, values_only=True),
+        start=header_row + 1,
+    ):
         if not row or all(v is None or str(v).strip() == "" for v in row):
             continue
         def _cell(idx: int) -> str:
@@ -344,15 +352,29 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         template_name = _cell(col_idx.get("template", 4))
         insert_label = _cell(col_idx.get("insert", 5))
 
-        if not out_name:
-            logs.append("Missing output filename")
+        if not instruction:
+            _log("error", "missing operation", row_num)
             continue
+        if not out_rel:
+            _log("error", "missing output path", row_num)
+            continue
+        if not out_name:
+            _log("error", "missing output filename", row_num)
+            continue
+        if instruction.lower() != "add text" and not src_name:
+            _log("error", "missing source filename", row_num)
+            continue
+        if instruction.lower() == "add text" and not src_name:
+            _log("error", "Add Text requires text content", row_num)
+            continue
+        if insert_label and not template_name:
+            _log("warn", "insert paragraph ignored because template is empty", row_num)
 
         template_path = None
         if template_name:
             template_path = _find_file(task_files_dir, template_name)
             if not template_path:
-                logs.append(f"Template not found: {template_name}")
+                _log("error", f"template not found: {template_name}", row_num)
                 continue
 
         if template_path:
@@ -381,15 +403,16 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
 
         output_dir_full = os.path.join(output_dir, out_rel) if out_rel else output_dir
         output_path = os.path.join(output_dir_full, out_name)
+        if output_path in output_template_map and output_template_map[output_path] != template_path:
+            _log("error", f"output uses different templates: {out_name}", row_num)
+            continue
+        output_template_map[output_path] = template_path
 
         group_key = (output_path, template_path)
         if group_key not in groups:
             groups[group_key] = {"steps": [], "parsed": parsed, "template": template_path}
 
         if instruction.lower() == "add text":
-            if not src_name:
-                logs.append("Add Text requires text content")
-                continue
             params = {"text": src_name}
             if template_path is not None:
                 params["template_index"] = target_idx
@@ -454,7 +477,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         is_all = instruction.lower() == "all"
         chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
         if not is_all and not chapter_match:
-            logs.append(f"Unsupported operation: {instruction}")
+            _log("error", f"unsupported operation: {instruction}", row_num)
             continue
 
         infile = _resolve_input_file(task_files_dir, src_name)

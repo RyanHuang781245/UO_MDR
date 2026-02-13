@@ -148,7 +148,7 @@ def task_mapping(task_id):
     log_file = None
     step_runs = []
 
-    def _format_step_label(entry: dict) -> str:
+    def _format_step_label(entry: dict) -> tuple[str, str]:
         stype = entry.get("type") or ""
         params = entry.get("params") or {}
 
@@ -166,24 +166,27 @@ def task_mapping(task_id):
             if sub:
                 parts.append(f"subheading {sub}")
             detail = ", ".join(parts)
-            return f"Extract chapter: {src}" + (f" ({detail})" if detail else "")
+            suffix = f" ({detail})" if detail else ""
+            return "Extract chapter", f"{src}{suffix}".strip()
         if stype == "extract_word_all_content":
             src = _base(params.get("input_file", ""))
-            return f"Extract all: {src}"
+            return "Extract all", src
         if stype == "extract_specific_table_from_word":
             src = _base(params.get("input_file", ""))
             label = params.get("target_table_label", "")
-            return f"Extract table: {src} ({label})" if label else f"Extract table: {src}"
+            detail = f"{src} ({label})" if label else src
+            return "Extract table", detail
         if stype == "extract_specific_figure_from_word":
             src = _base(params.get("input_file", ""))
             label = params.get("target_figure_label", "")
-            return f"Extract figure: {src} ({label})" if label else f"Extract figure: {src}"
+            detail = f"{src} ({label})" if label else src
+            return "Extract figure", detail
         if stype == "insert_text":
-            return "Append text"
+            return "Append text", ""
         if stype == "template_merge":
             tpl = _base(entry.get("template_file", ""))
-            return f"Template merge: {tpl}" if tpl else "Template merge"
-        return stype or "step"
+            return "Template merge", tpl
+        return stype or "step", ""
     if request.method == "POST":
         f = request.files.get("mapping_file")
         if not f or not f.filename:
@@ -209,9 +212,11 @@ def task_mapping(task_id):
                     for entry in run.get("workflow_log", []):
                         if "step" not in entry:
                             continue
+                        action, detail = _format_step_label(entry)
                         step_runs.append(
                             {
-                                "label": _format_step_label(entry),
+                                "action": action,
+                                "detail": detail,
                                 "status": entry.get("status") or "ok",
                                 "error": entry.get("error") or "",
                             }

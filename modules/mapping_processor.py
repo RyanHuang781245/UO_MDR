@@ -151,7 +151,12 @@ def insert_title(section, title: str):
 
     return insert_numbered_heading(section, title, level=0, bold=True, font_size=12)
 
-def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: str) -> Dict[str, List[str]]:
+def process_mapping_excel(
+    mapping_path: str,
+    task_files_dir: str,
+    output_dir: str,
+    log_dir: str | None = None,
+) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
 
     New format columns:
@@ -700,9 +705,10 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
 
     log_file = None
     if run_logs:
-        os.makedirs(output_dir, exist_ok=True)
+        target_log_dir = log_dir or output_dir
+        os.makedirs(target_log_dir, exist_ok=True)
         log_filename = f"mapping_log_{uuid.uuid4().hex[:8]}.json"
-        log_path = os.path.join(output_dir, log_filename)
+        log_path = os.path.join(target_log_dir, log_filename)
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump({"messages": logs, "runs": run_logs}, f, ensure_ascii=False, indent=2)
         log_file = log_filename

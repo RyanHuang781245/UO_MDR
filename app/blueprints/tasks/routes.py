@@ -142,7 +142,8 @@ def task_mapping(task_id):
     if not os.path.isdir(tdir):
         abort(404)
     files_dir = os.path.join(tdir, "files")
-    out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
+    out_dir = os.path.join(tdir, "mapping_job")
+    log_dir = os.path.join(tdir, "mapping_logs")
     messages = []
     outputs = []
     log_file = None
@@ -205,15 +206,19 @@ def task_mapping(task_id):
             f.save(path)
             try:
                 from modules.mapping_processor import process_mapping_excel
-                result = process_mapping_excel(path, files_dir, out_dir)
+                result = process_mapping_excel(path, files_dir, out_dir, log_dir=log_dir)
                 messages = result["logs"]
                 outputs = result["outputs"]
                 log_file = result.get("log_file")
             except Exception as e:
                 messages = [str(e)]
     if log_file:
-        log_path = os.path.join(out_dir, log_file)
-        if os.path.isfile(log_path):
+        log_candidates = [
+            os.path.join(log_dir, log_file),
+            os.path.join(out_dir, log_file),
+        ]
+        log_path = next((p for p in log_candidates if os.path.isfile(p)), None)
+        if log_path:
             try:
                 with open(log_path, "r", encoding="utf-8") as f:
                     log_data = json.load(f)
@@ -305,12 +310,17 @@ def task_mapping(task_id):
 
 @tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
 def task_download_output(task_id, filename):
-    out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
     safe_name = filename.replace("\\", "/")
-    file_path = os.path.join(out_dir, safe_name)
-    if not os.path.isfile(file_path):
-        abort(404)
-    return send_from_directory(out_dir, safe_name, as_attachment=True)
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    mapping_job_dir = os.path.join(tdir, "mapping_job")
+    mapping_log_dir = os.path.join(tdir, "mapping_logs")
+    legacy_out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
+
+    for base_dir in (mapping_job_dir, mapping_log_dir, legacy_out_dir):
+        file_path = os.path.join(base_dir, safe_name)
+        if os.path.isfile(file_path):
+            return send_from_directory(base_dir, safe_name, as_attachment=True)
+    abort(404)
 
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():

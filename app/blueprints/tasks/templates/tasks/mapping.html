@@ -66,9 +66,6 @@
         <div class="text-muted small">{{ step.detail_short if step.detail_long else step.detail }}</div>
         {% endif %}
       </summary>
-      {% if step.detail_long %}
-      <div class="mt-2 small text-muted">{{ step.detail }}</div>
-      {% endif %}
       <div class="mt-2 small text-danger">{{ step.error }}</div>
     </details>
     {% else %}
@@ -94,11 +91,10 @@
 </ul>
 {% endif %}
 
-{% if messages and not step_runs %}
+{% if error_messages and not step_runs %}
 <ul class="list-group mb-3">
-  {% for m in messages %}
+  {% for m in error_messages %}
   <li class="list-group-item">
-    {% if m.startswith("ERROR:") %}
     <details>
       <summary class="d-flex align-items-center gap-2">
         <i class="bi bi-exclamation-triangle-fill text-danger"></i>
@@ -106,9 +102,6 @@
       </summary>
       <div class="mt-2 small text-danger">{{ m }}</div>
     </details>
-    {% else %}
-    {{ m }}
-    {% endif %}
   </li>
   {% endfor %}
 </ul>

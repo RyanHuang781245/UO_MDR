@@ -232,12 +232,46 @@ def task_mapping(task_id):
                             }
                         )
                 if step_runs:
-                    messages = [m for m in messages if not (m or "").startswith("ERROR:")]
+                    messages = [m for m in messages if not (m or "").startswith("WF_ERROR:")]
             except Exception as e:
                 messages.append(f"ERROR: failed to read log file ({e})")
     has_error = any("ERROR" in (m or "") for m in messages) or any(
         step.get("status") == "error" for step in step_runs
     )
+    error_messages = [m for m in messages if (m or "").startswith("ERROR:")]
+    if error_messages and step_runs:
+        error_steps = []
+        for msg in error_messages:
+            raw = (msg or "").replace("ERROR:", "", 1).strip()
+            raw = re.sub(r"^Row\s+\d+\s*:\s*", "", raw, flags=re.IGNORECASE)
+            action = raw
+            detail = ""
+            error_text = raw
+            if "::" in raw:
+                parts = [p.strip() for p in raw.split("::", 2)]
+                if len(parts) >= 2:
+                    action = parts[0] or action
+                    detail = parts[1]
+                if len(parts) == 3:
+                    error_text = parts[2]
+            elif ":" in raw:
+                head, tail = raw.split(":", 1)
+                action = head.strip() or raw
+                detail = tail.strip()
+            display_detail = detail or error_text
+            detail_short, detail_long = _truncate_detail(display_detail)
+            error_steps.append(
+                {
+                    "action": action,
+                    "detail": display_detail,
+                    "detail_short": detail_short,
+                    "detail_long": detail_long,
+                    "status": "error",
+                    "error": error_text,
+                }
+            )
+        step_runs = error_steps + step_runs
+        error_messages = []
     step_ok_count = sum(1 for step in step_runs if step.get("status") != "error")
     step_error_count = sum(1 for step in step_runs if step.get("status") == "error")
     rel_outputs = []
@@ -254,6 +288,7 @@ def task_mapping(task_id):
         step_runs=step_runs,
         step_ok_count=step_ok_count,
         step_error_count=step_error_count,
+        error_messages=error_messages,
     )
 
 @tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")

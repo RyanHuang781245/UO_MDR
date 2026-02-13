@@ -332,9 +332,85 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
     run_logs: List[Dict[str, Any]] = []
     output_template_map: Dict[str, str | None] = {}
 
-    def _log(level: str, message: str, row_num: int | None = None) -> None:
+    def _log(
+        level: str,
+        message: str,
+        row_num: int | None = None,
+        action: str | None = None,
+        detail: str | None = None,
+    ) -> None:
         prefix = f"Row {row_num}: " if row_num else ""
-        logs.append(f"{level.upper()}: {prefix}{message}")
+        if level.lower() == "error" and action:
+            if detail:
+                logs.append(f"{level.upper()}: {action} :: {detail} :: {prefix}{message}")
+            else:
+                logs.append(f"{level.upper()}: {action}: {prefix}{message}")
+        else:
+            logs.append(f"{level.upper()}: {prefix}{message}")
+
+    def _guess_action(instruction: str) -> str:
+        ins = (instruction or "").strip()
+        if not ins:
+            return "Mapping"
+        low = ins.lower()
+        if low == "add text":
+            return "Append text"
+        label_match = re.search(r"\b(Table|Figure)\b", ins, re.IGNORECASE)
+        if label_match:
+            return "Extract table" if label_match.group(1).lower() == "table" else "Extract figure"
+        if low == "all":
+            return "Extract all"
+        if re.match(r"^\d+(?:\.\d+)*", ins):
+            return "Extract chapter"
+        return "Mapping"
+
+    def _parse_chapter_parts(text: str) -> tuple[str, str, str]:
+        chapter = ""
+        title = ""
+        subheading = ""
+        if not text:
+            return chapter, title, subheading
+        if "/" in text or "\\" in text:
+            first, after = re.split(r"[\\/]+", text, maxsplit=1)
+            first = first.strip()
+            after = after.strip()
+            first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", first)
+            if first_match:
+                chapter = first_match.group(1)
+                title = (first_match.group(2) or "").strip()
+            if after:
+                subheading = after
+        else:
+            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", text.strip())
+            if inline_match:
+                chapter = inline_match.group(1)
+                title = (inline_match.group(2) or "").strip()
+        return chapter, title, subheading
+
+    def _build_detail(action: str, src: str, instruction: str) -> str:
+        src_base = os.path.basename(src) if src else ""
+        if action == "Append text":
+            return src
+        if action == "Extract chapter":
+            chapter, title, subheading = _parse_chapter_parts(instruction)
+            parts = [f"chapter {chapter}"] if chapter else []
+            if title:
+                parts.append(f"title {title}")
+            if subheading:
+                parts.append(f"subheading {subheading}")
+            suffix = f" ({', '.join(parts)})" if parts else ""
+            return f"{src_base}{suffix}".strip()
+        if action == "Extract figure":
+            label_match = re.search(r"\b(Figure)\b.*", instruction, re.IGNORECASE)
+            label = label_match.group(0).strip() if label_match else ""
+            return f"{src_base} ({label})".strip() if label else src_base
+        if action == "Extract table":
+            label_match = re.search(r"\b(Table)\b.*", instruction, re.IGNORECASE)
+            label = label_match.group(0).strip() if label_match else ""
+            return f"{src_base} ({label})".strip() if label else src_base
+        if action == "Extract all":
+            return src_base
+        return src_base or instruction
 
     for row_num, row in enumerate(
         ws.iter_rows(min_row=header_row + 1, values_only=True),
@@ -352,20 +428,22 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         template_name = _cell(col_idx.get("template", 4))
         insert_label = _cell(col_idx.get("insert", 5))
 
+        action_label = _guess_action(instruction)
+        detail_label = _build_detail(action_label, src_name, instruction)
         if not instruction:
-            _log("error", "missing operation", row_num)
+            _log("error", "missing operation", row_num, action_label, detail_label)
             continue
         if not out_rel:
-            _log("error", "missing output path", row_num)
+            _log("error", "missing output path", row_num, action_label, detail_label)
             continue
         if not out_name:
-            _log("error", "missing output filename", row_num)
+            _log("error", "missing output filename", row_num, action_label, detail_label)
             continue
         if instruction.lower() != "add text" and not src_name:
-            _log("error", "missing source filename", row_num)
+            _log("error", "missing source filename", row_num, action_label, detail_label)
             continue
         if instruction.lower() == "add text" and not src_name:
-            _log("error", "Add Text requires text content", row_num)
+            _log("error", "Add Text requires text content", row_num, action_label, detail_label)
             continue
         if insert_label and not template_name:
             _log("warn", "insert paragraph ignored because template is empty", row_num)
@@ -374,7 +452,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         if template_name:
             template_path = _find_file(task_files_dir, template_name)
             if not template_path:
-                _log("error", f"template not found: {template_name}", row_num)
+                _log("error", f"template not found: {template_name}", row_num, action_label, detail_label)
                 continue
 
         if template_path:
@@ -404,7 +482,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         output_dir_full = os.path.join(output_dir, out_rel) if out_rel else output_dir
         output_path = os.path.join(output_dir_full, out_name)
         if output_path in output_template_map and output_template_map[output_path] != template_path:
-            _log("error", f"output uses different templates: {out_name}", row_num)
+            _log("error", f"output uses different templates: {out_name}", row_num, action_label, detail_label)
             continue
         output_template_map[output_path] = template_path
 
@@ -477,12 +555,12 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         is_all = instruction.lower() == "all"
         chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
         if not is_all and not chapter_match:
-            _log("error", f"unsupported operation: {instruction}", row_num)
+            _log("error", f"unsupported operation: {instruction}", row_num, action_label, detail_label)
             continue
 
         infile = _resolve_input_file(task_files_dir, src_name)
         if not infile:
-            logs.append(f"Source file not found: {src_name}")
+            _log("error", f"source file not found: {src_name}", row_num, action_label, detail_label)
             continue
 
         if is_all:
@@ -564,7 +642,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                 if entry.get("status") == "error":
                     step_type = entry.get("type") or "step"
                     logs.append(
-                        f"ERROR: {os.path.basename(output_path)} {step_type}: {entry.get('error') or 'unknown error'}"
+                        f"WF_ERROR: {os.path.basename(output_path)} {step_type}: {entry.get('error') or 'unknown error'}"
                     )
             result_path = workflow_result.get("result_docx") or os.path.join(workdir, "result.docx")
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))

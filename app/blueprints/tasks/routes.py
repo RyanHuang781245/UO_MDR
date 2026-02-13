@@ -188,6 +188,12 @@ def task_mapping(task_id):
             tpl = _base(entry.get("template_file", ""))
             return "Template merge", tpl
         return stype or "step", ""
+
+    def _truncate_detail(text: str, limit: int = 160) -> tuple[str, bool]:
+        if len(text) <= limit:
+            return text, False
+        trimmed = text[: max(0, limit - 1)].rstrip()
+        return f"{trimmed}…", True
     if request.method == "POST":
         f = request.files.get("mapping_file")
         if not f or not f.filename:
@@ -214,10 +220,13 @@ def task_mapping(task_id):
                         if "step" not in entry:
                             continue
                         action, detail = _format_step_label(entry)
+                        detail_short, detail_long = _truncate_detail(detail) if detail else ("", False)
                         step_runs.append(
                             {
                                 "action": action,
                                 "detail": detail,
+                                "detail_short": detail_short,
+                                "detail_long": detail_long,
                                 "status": entry.get("status") or "ok",
                                 "error": entry.get("error") or "",
                             }

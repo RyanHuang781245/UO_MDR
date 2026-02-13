@@ -23,7 +23,7 @@
       <input class="form-control" type="file" name="mapping_file" required>
     </div>
     <div class="col-md-3 d-grid">
-      <button class="btn btn-primary" type="submit">開始處理</button>
+      <button class="btn btn-primary" type="submit">生成文件</button>
     </div>
   </div>
 </form>
@@ -51,8 +51,13 @@
           <i class="bi bi-exclamation-triangle-fill text-danger"></i>
           <span class="fw-semibold">{{ step.action }}</span>
         </div>
-        <div class="text-muted small">{{ step.detail }}</div>
+        {% if step.detail %}
+        <div class="text-muted small">{{ step.detail_short if step.detail_long else step.detail }}</div>
+        {% endif %}
       </summary>
+      {% if step.detail_long %}
+      <div class="mt-2 small text-muted">{{ step.detail }}</div>
+      {% endif %}
       <div class="mt-2 small text-danger">{{ step.error }}</div>
     </details>
     {% else %}
@@ -61,7 +66,16 @@
         <i class="bi bi-check-circle-fill text-success"></i>
         <span class="fw-semibold">{{ step.action }}</span>
       </div>
+      {% if step.detail %}
+      {% if step.detail_long %}
+      <details class="text-muted small">
+        <summary>{{ step.detail_short }}</summary>
+        <div class="mt-1">{{ step.detail }}</div>
+      </details>
+      {% else %}
       <div class="text-muted small">{{ step.detail }}</div>
+      {% endif %}
+      {% endif %}
     </div>
     {% endif %}
   </li>

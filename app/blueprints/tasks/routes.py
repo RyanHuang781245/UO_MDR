@@ -182,7 +182,8 @@ def task_mapping(task_id):
             detail = f"{src} ({label})" if label else src
             return "Extract figure", detail
         if stype == "insert_text":
-            return "Append text", ""
+            text_val = (params.get("text") or "").strip()
+            return "Append text", text_val
         if stype == "template_merge":
             tpl = _base(entry.get("template_file", ""))
             return "Template merge", tpl

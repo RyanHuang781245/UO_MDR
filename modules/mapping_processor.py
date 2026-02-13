@@ -339,13 +339,14 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         action: str | None = None,
         detail: str | None = None,
     ) -> None:
-        prefix = f"Row {row_num}: " if row_num else ""
+        row_tag = f"(Row {row_num}) " if row_num else ""
         if level.lower() == "error" and action:
             if detail:
-                logs.append(f"{level.upper()}: {action} :: {detail} :: {prefix}{message}")
+                logs.append(f"{level.upper()}: {row_tag}{action} :: {detail} :: {message}")
             else:
-                logs.append(f"{level.upper()}: {action}: {prefix}{message}")
+                logs.append(f"{level.upper()}: {row_tag}{action}: {message}")
         else:
+            prefix = f"Row {row_num}: " if row_num else ""
             logs.append(f"{level.upper()}: {prefix}{message}")
 
     def _guess_action(instruction: str) -> str:
@@ -495,6 +496,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = "insert_after"
+            params["mapping_row"] = row_num
             groups[group_key]["steps"].append({"type": "insert_text", "params": params})
             logs.append(f"Insert text into {out_name} (paragraph {insert_label})" if template_path else f"Append text into {out_name}")
             continue
@@ -549,6 +551,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = "insert_after"
+            params["mapping_row"] = row_num
             groups[group_key]["steps"].append({"type": step_type, "params": params})
             continue
 
@@ -623,6 +626,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         if template_path is not None:
             params["template_index"] = target_idx
             params["template_mode"] = "insert_after"
+        params["mapping_row"] = row_num
         groups[group_key]["steps"].append({"type": step_type, "params": params})
 
     for (output_path, template_path), payload in groups.items():

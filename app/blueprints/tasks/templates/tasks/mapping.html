@@ -57,31 +57,31 @@
   <li class="list-group-item">
     {% if step.status == "error" %}
     <details>
-      <summary class="d-flex align-items-start gap-3">
-        <div class="d-flex align-items-center gap-2 flex-shrink-0" style="min-width: 180px;">
+      <summary class="d-grid align-items-start" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
+        <div class="d-flex align-items-center gap-2 flex-shrink-0 text-nowrap">
           <i class="bi bi-exclamation-triangle-fill text-danger"></i>
           <span class="fw-semibold">{{ step.action }}</span>
         </div>
         {% if step.detail %}
-        <div class="text-muted small">{{ step.detail_short if step.detail_long else step.detail }}</div>
+        <div class="text-muted small text-start" style="min-width: 0; overflow: hidden;">{{ step.detail_short if step.detail_long else step.detail }}</div>
         {% endif %}
       </summary>
       <div class="mt-2 small text-danger">{{ step.error }}</div>
     </details>
     {% else %}
-    <div class="d-flex align-items-start gap-3">
-      <div class="d-flex align-items-center gap-2 flex-shrink-0" style="min-width: 180px;">
+    <div class="d-grid align-items-start" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
+      <div class="d-flex align-items-center gap-2 flex-shrink-0 text-nowrap">
         <i class="bi bi-check-circle-fill text-success"></i>
         <span class="fw-semibold">{{ step.action }}</span>
       </div>
       {% if step.detail %}
       {% if step.detail_long %}
-      <details class="text-muted small">
-        <summary>{{ step.detail_short }}</summary>
+      <details class="text-muted small text-start" style="width: 100%; min-width: 0;">
+        <summary style="display: block; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ step.detail_short }}</summary>
         <div class="mt-1">{{ step.detail }}</div>
       </details>
       {% else %}
-      <div class="text-muted small">{{ step.detail }}</div>
+      <div class="text-muted small text-start" style="min-width: 0; overflow: hidden;">{{ step.detail }}</div>
       {% endif %}
       {% endif %}
     </div>

@@ -155,6 +155,8 @@ def task_mapping(task_id):
         def _base(path: str) -> str:
             return os.path.basename(path) if path else "?"
 
+        row_no = params.get("mapping_row")
+        row_prefix = f"(Row {row_no}) " if row_no not in (None, "", "None") else ""
         if stype == "extract_word_chapter":
             src = _base(params.get("input_file", ""))
             chapter = params.get("target_chapter_section", "")
@@ -167,26 +169,26 @@ def task_mapping(task_id):
                 parts.append(f"subheading {sub}")
             detail = ", ".join(parts)
             suffix = f" ({detail})" if detail else ""
-            return "Extract chapter", f"{src}{suffix}".strip()
+            return f"{row_prefix}Extract chapter", f"{src}{suffix}".strip()
         if stype == "extract_word_all_content":
             src = _base(params.get("input_file", ""))
-            return "Extract all", src
+            return f"{row_prefix}Extract all", src.strip()
         if stype == "extract_specific_table_from_word":
             src = _base(params.get("input_file", ""))
             label = params.get("target_table_label", "")
             detail = f"{src} ({label})" if label else src
-            return "Extract table", detail
+            return f"{row_prefix}Extract table", detail.strip()
         if stype == "extract_specific_figure_from_word":
             src = _base(params.get("input_file", ""))
             label = params.get("target_figure_label", "")
             detail = f"{src} ({label})" if label else src
-            return "Extract figure", detail
+            return f"{row_prefix}Extract figure", detail.strip()
         if stype == "insert_text":
             text_val = (params.get("text") or "").strip()
-            return "Append text", text_val
+            return f"{row_prefix}Append text", text_val
         if stype == "template_merge":
             tpl = _base(entry.get("template_file", ""))
-            return "Template merge", tpl
+            return f"{row_prefix}Template merge", tpl.strip()
         return stype or "step", ""
 
     def _truncate_detail(text: str, limit: int = 160) -> tuple[str, bool]:
@@ -247,16 +249,26 @@ def task_mapping(task_id):
             action = raw
             detail = ""
             error_text = raw
+            row_match = re.search(r"Row\s+(\d+)", msg or "", re.IGNORECASE)
+            row_prefix = f"(Row {row_match.group(1)}) " if row_match else ""
             if "::" in raw:
                 parts = [p.strip() for p in raw.split("::", 2)]
                 if len(parts) >= 2:
-                    action = parts[0] or action
+                    base_action = parts[0] or action
+                    if base_action.startswith("(Row "):
+                        action = base_action
+                    else:
+                        action = f"{row_prefix}{base_action}".strip()
                     detail = parts[1]
                 if len(parts) == 3:
                     error_text = parts[2]
             elif ":" in raw:
                 head, tail = raw.split(":", 1)
-                action = head.strip() or raw
+                base_action = head.strip() or raw
+                if base_action.startswith("(Row "):
+                    action = base_action
+                else:
+                    action = f"{row_prefix}{base_action}".strip()
                 detail = tail.strip()
             display_detail = detail or error_text
             detail_short, detail_long = _truncate_detail(display_detail)

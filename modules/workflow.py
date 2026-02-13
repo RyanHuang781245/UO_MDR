@@ -135,6 +135,7 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_title",
             "target_subtitle",
             "target_figure_label",
             "include_caption",
@@ -144,6 +145,7 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_title": "text",
             "target_subtitle": "text",
             "target_figure_label": "text",
             "include_caption": "bool",
@@ -156,6 +158,7 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_title",
             "target_table_label",
             "target_subtitle",
             "include_caption",
@@ -165,6 +168,7 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_title": "text",
             "target_table_label": "text",
             "target_subtitle": "text",
             "include_caption": "bool",
@@ -440,6 +444,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     params.get("target_chapter_section", ""),
                     params.get("target_figure_label", ""),
                     target_subtitle=params.get("target_subtitle"),
+                    target_chapter_title=params.get("target_chapter_title"),
                     output_image_path=os.path.join(workdir, "images"),
                     output_doc=None,
                     section=None,
@@ -475,6 +480,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     params.get("target_chapter_section", ""),
                     params.get("target_table_label", ""),
                     params.get("target_subtitle") or None,
+                    target_chapter_title=params.get("target_chapter_title"),
                     include_caption=boolish(params.get("include_caption", "false")),
                     save_output=True,
                 )

@@ -505,6 +505,7 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
         tf_subtitle = None
         tf_label = None
         tf_chapter = ""
+        tf_chapter_title = None
         chapter_token = re.compile(r"^\d+(?:\.\d+)*\.?$")
         label_match = re.search(r"\b(Table|Figure)\b.*", instruction, re.IGNORECASE)
         if label_match:
@@ -518,13 +519,20 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                 inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", head_parts[0])
                 if inline_match:
                     tf_chapter = inline_match.group(1).rstrip(".")
-                    subtitle_raw = (inline_match.group(2) or "").strip()
-                    if subtitle_raw:
-                        tf_subtitle = subtitle_raw
-                    elif len(head_parts) > 1:
-                        tf_subtitle = " ".join(head_parts[1:]).strip() or None
+                    inline_title = (inline_match.group(2) or "").strip()
+                    if inline_title:
+                        tf_chapter_title = inline_title
+                        if len(head_parts) > 1:
+                            tf_subtitle = " ".join(head_parts[1:]).strip() or None
+                        else:
+                            tf_subtitle = None
                     else:
-                        tf_subtitle = None
+                        if len(head_parts) > 1:
+                            tf_chapter_title = head_parts[1].strip() or None
+                        if len(head_parts) > 2:
+                            tf_subtitle = " ".join(head_parts[2:]).strip() or None
+                        else:
+                            tf_subtitle = None
                 else:
                     tf_subtitle = " ".join(head_parts).strip()
 
@@ -538,6 +546,8 @@ def process_mapping_excel(mapping_path: str, task_files_dir: str, output_dir: st
                 "target_chapter_section": tf_chapter,
                 "include_caption": True,
             }
+            if tf_chapter_title:
+                params["target_chapter_title"] = tf_chapter_title
             if tf_subtitle:
                 params["target_subtitle"] = tf_subtitle
             if tf_kind == "table":

@@ -96,6 +96,7 @@ def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, outp
     lower_ratio = 0.9
 
     stop_pattern = re.compile(
+
         r"^\s*(?:\d+\.\d+\.\d+|\d+\.\d+|[A-Z]\.|圖\s*\d+|Fig\.?\s*\d+|Figure\s+\d+)",
         re.IGNORECASE | re.MULTILINE
     )
@@ -384,6 +385,7 @@ def extract_word_subsection(
     stop_prefix = outer_chapter_section.rsplit(".", 1)[0]
     chapter_stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
 
+
     # 小節標題：整行比對文字
     subsection_pattern = re.compile(rf"^\s*{re.escape(subsection_title.strip())}\s*$", re.IGNORECASE)
 
@@ -461,7 +463,7 @@ def extract_word_subsection(
 
                 # 3) 在 1.1.1 內，尚未進入小節 → 尋找目標小節標題
                 if in_chapter and not in_subsection:
-                    if subsection_pattern.match(paragraph_text_stripped) and is_inline_subtitle_spire(child):
+                    if is_inline_subtitle_spire(child) and _normalize_text(paragraph_text_stripped) == _normalize_text(subsection_title):
                         in_subsection = True
                         skip_first_line_after_title = True
                     continue
@@ -749,12 +751,28 @@ def _is_header_or_footer(doc_type) -> bool:
     header_footer = getattr(DocumentObjectType, "HeaderFooter", None)
     return doc_type in (header, footer, header_footer)
 
+def _normalize_space(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+
+def _match_chapter_start(text: str, chapter_section: str, chapter_title: str | None = None) -> bool:
+    if not chapter_section:
+        return False
+    pattern = re.compile(rf"^\s*{re.escape(chapter_section)}(\s|$)", re.IGNORECASE)
+    if not pattern.match(text):
+        return False
+    if chapter_title:
+        tail = pattern.sub("", text, count=1)
+        return _normalize_space(chapter_title) in _normalize_space(tail)
+    return True
+
 
 def extract_specific_figure_from_word(
     input_file: str,
     target_chapter_section: str,   # 例如 "2.1.1"
     target_figure_label: str,      # 例如 "Figure 1."
     target_subtitle: str | None = None,  # 可選，有就填，沒有就 None
+    target_chapter_title: str | None = None,
     output_image_path: str = "figure_output",
     output_doc=None,
     section=None,
@@ -798,6 +816,7 @@ def extract_specific_figure_from_word(
         os.makedirs(output_image_path)
 
     use_chapter = bool(target_chapter_section.strip())
+    chapter_title = (target_chapter_title or "").strip()
     if use_chapter:
         # ?????????
         section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
@@ -853,7 +872,7 @@ def extract_specific_figure_from_word(
                 paragraph_text_stripped = paragraph_text.strip()
 
                 # 1) 章節開頭
-                if use_chapter and section_pattern.match(paragraph_text_stripped):
+                if use_chapter and _match_chapter_start(paragraph_text_stripped, target_chapter_section, chapter_title):
                     in_target_chapter = True
                     recent_pictures.clear()
                     # 若沒有指定 subtitle，整個章節都視為有效範圍
@@ -880,7 +899,7 @@ def extract_specific_figure_from_word(
                 # 4) 若有 subtitle，就簡單用「看起來像新標題」來判斷離開小節
                 if use_chapter and in_target_chapter and subtitle_pattern is not None and in_target_subtitle:
                     if paragraph_text_stripped and (
-                        section_pattern.match(paragraph_text_stripped)
+                        _match_chapter_start(paragraph_text_stripped, target_chapter_section, chapter_title)
                         or re.match(r'^\s*\d+(\.\d+)*\s+', paragraph_text_stripped)
                     ):
                         in_target_subtitle = False
@@ -952,6 +971,7 @@ def extract_specific_table_from_word(
     target_chapter_section: str,   # 章節編號，例如 "2.1.1"
     target_table_label: str,       # 表格標題開頭，例如 "Table 1."
     target_subtitle: str | None = None,
+    target_chapter_title: str | None = None,
     *,
     include_caption: bool = True,
     save_output: bool = True,      # 是否存檔；如不存則僅回傳找到與否
@@ -962,6 +982,7 @@ def extract_specific_table_from_word(
     """
 
     use_chapter = bool(target_chapter_section.strip())
+    chapter_title = (target_chapter_title or "").strip()
     if use_chapter:
         # 1. ????????? (Regex)
         section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
@@ -1009,7 +1030,7 @@ def extract_specific_table_from_word(
                 text_stripped = paragraph_text.strip()
 
                 # A) 章節與範圍判斷
-                if use_chapter and section_pattern.match(text_stripped):
+                if use_chapter and _match_chapter_start(text_stripped, target_chapter_section, chapter_title):
                     in_target_chapter = True
                     in_target_subtitle = (subtitle_pattern is None)
                     continue

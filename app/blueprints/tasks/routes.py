@@ -227,6 +227,7 @@ def task_mapping(task_id):
                         if "step" not in entry:
                             continue
                         action, detail = _format_step_label(entry)
+                        row_no = (entry.get("params") or {}).get("mapping_row")
                         detail_short, detail_long = _truncate_detail(detail) if detail else ("", False)
                         step_runs.append(
                             {
@@ -234,6 +235,7 @@ def task_mapping(task_id):
                                 "detail": detail,
                                 "detail_short": detail_short,
                                 "detail_long": detail_long,
+                                "row_no": row_no,
                                 "status": entry.get("status") or "ok",
                                 "error": entry.get("error") or "",
                             }
@@ -283,12 +285,18 @@ def task_mapping(task_id):
                     "detail": display_detail,
                     "detail_short": detail_short,
                     "detail_long": detail_long,
+                    "row_no": int(row_match.group(1)) if row_match else None,
                     "status": "error",
                     "error": error_text,
                 }
             )
         step_runs = error_steps + step_runs
         error_messages = []
+    if step_runs:
+        step_runs = sorted(
+            step_runs,
+            key=lambda s: (s.get("row_no") is None, s.get("row_no") or 10**9),
+        )
     step_ok_count = sum(1 for step in step_runs if step.get("status") != "error")
     step_error_count = sum(1 for step in step_runs if step.get("status") == "error")
     rel_outputs = []

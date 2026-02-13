@@ -478,10 +478,10 @@ def process_mapping_excel(
                 if insert_label:
                     if last_idx is not None:
                         target_idx = last_idx
-                        logs.append(f"Insert paragraph '{insert_label}' not found; appended to end")
+                        _log("error", f"insert paragraph '{insert_label}' not found; appended to end", row_num, action_label, detail_label)
                     else:
                         target_idx = 0
-                        logs.append(f"Insert paragraph '{insert_label}' not found; appended to end")
+                        _log("error", f"insert paragraph '{insert_label}' not found; appended to end", row_num, action_label, detail_label)
                 else:
                     target_idx = last_idx if last_idx is not None else 0
 
@@ -503,7 +503,7 @@ def process_mapping_excel(
                 params["template_mode"] = "insert_after"
             params["mapping_row"] = row_num
             groups[group_key]["steps"].append({"type": "insert_text", "params": params})
-            logs.append(f"Insert text into {out_name} (paragraph {insert_label})" if template_path else f"Append text into {out_name}")
+            _log("info", f"append text into {out_name}", row_num)
             continue
 
         tf_kind = None
@@ -544,7 +544,7 @@ def process_mapping_excel(
         if tf_kind:
             infile = _resolve_input_file(task_files_dir, src_name)
             if not infile:
-                logs.append(f"Source file not found: {src_name}")
+                _log("error", f"source file not found: {src_name}", row_num, action_label, detail_label)
                 continue
             params = {
                 "input_file": infile,
@@ -558,11 +558,11 @@ def process_mapping_excel(
             if tf_kind == "table":
                 params["target_table_label"] = tf_label
                 step_type = "extract_specific_table_from_word"
-                logs.append(f"Extract table: {src_name} ({tf_label})")
+                _log("info", f"extract table: {src_name} ({tf_label})", row_num)
             else:
                 params["target_figure_label"] = tf_label
                 step_type = "extract_specific_figure_from_word"
-                logs.append(f"Extract figure: {src_name} ({tf_label})")
+                _log("info", f"extract figure: {src_name} ({tf_label})", row_num)
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = "insert_after"
@@ -584,7 +584,7 @@ def process_mapping_excel(
         if is_all:
             params = {"input_file": infile}
             step_type = "extract_word_all_content"
-            logs.append(f"Extract all: {src_name}")
+            _log("info", f"extract all: {src_name}", row_num)
         else:
             chapter = chapter_match.group(1)
             params = {"input_file": infile, "target_chapter_section": chapter}
@@ -612,16 +612,17 @@ def process_mapping_excel(
                     params["target_title"] = True
                     params["subheading_text"] = after
                     if title_inline:
-                        logs.append(
+                        _log(
                             f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline}, subheading {after})"
+                            , row_num
                         )
                     else:
-                        logs.append(f"Extract chapter: {src_name} (chapter {chapter}, subheading {after})")
+                        _log(f"Extract chapter: {src_name} (chapter {chapter}, subheading {after})", row_num)
                 else:
                     if title_inline:
-                        logs.append(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})")
+                        _log(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})", row_num)
                     else:
-                        logs.append(f"Extract chapter: {src_name} (chapter {chapter})")
+                        _log(f"Extract chapter: {src_name} (chapter {chapter})", row_num)
                 if "target_title" not in params:
                     params["target_title"] = False
             else:
@@ -634,9 +635,9 @@ def process_mapping_excel(
                 params["target_title"] = False
                 if title_inline:
                     params["target_title_section"] = title_inline
-                    logs.append(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})")
+                    _log(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})", row_num)
                 else:
-                    logs.append(f"Extract chapter: {src_name} (chapter {chapter})")
+                    _log(f"Extract chapter: {src_name} (chapter {chapter})", row_num)
             step_type = "extract_word_chapter"
         if template_path is not None:
             params["template_index"] = target_idx

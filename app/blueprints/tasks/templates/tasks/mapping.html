@@ -31,13 +31,24 @@
 {% if messages or outputs %}
 <div class="d-flex align-items-center gap-2 mb-2">
   <span class="fw-semibold">處理狀態</span>
-  {% if not step_runs %}
-  {% if has_error %}
-  <i class="bi bi-exclamation-triangle-fill text-danger"></i>
-  {% else %}
-  <i class="bi bi-check-circle-fill text-success"></i>
-  {% endif %}
-  {% endif %}
+  <div class="ms-auto d-flex align-items-center gap-3">
+    {% if step_runs %}
+    <span class="d-inline-flex align-items-center gap-1 text-success">
+      <i class="bi bi-check-circle-fill"></i>
+      <span>{{ step_ok_count }}</span>
+    </span>
+    <span class="d-inline-flex align-items-center gap-1 text-danger">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span>{{ step_error_count }}</span>
+    </span>
+    {% else %}
+    {% if has_error %}
+    <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+    {% else %}
+    <i class="bi bi-check-circle-fill text-success"></i>
+    {% endif %}
+    {% endif %}
+  </div>
 </div>
 {% endif %}
 {% if step_runs %}

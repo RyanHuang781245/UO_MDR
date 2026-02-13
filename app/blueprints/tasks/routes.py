@@ -238,6 +238,8 @@ def task_mapping(task_id):
     has_error = any("ERROR" in (m or "") for m in messages) or any(
         step.get("status") == "error" for step in step_runs
     )
+    step_ok_count = sum(1 for step in step_runs if step.get("status") != "error")
+    step_error_count = sum(1 for step in step_runs if step.get("status") == "error")
     rel_outputs = []
     for p in outputs:
         rel = os.path.relpath(p, out_dir)
@@ -250,6 +252,8 @@ def task_mapping(task_id):
         log_file=log_file,
         has_error=has_error,
         step_runs=step_runs,
+        step_ok_count=step_ok_count,
+        step_error_count=step_error_count,
     )
 
 @tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")

@@ -437,28 +437,28 @@ def process_mapping_excel(
         action_label = _guess_action(instruction)
         detail_label = _build_detail(action_label, src_name, instruction)
         if not instruction:
-            _log("error", "missing operation", row_num, action_label, detail_label)
+            _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
         if not out_rel:
-            _log("error", "missing output path", row_num, action_label, detail_label)
+            _log("error", "缺少輸出路徑", row_num, action_label, detail_label)
             continue
         if not out_name:
-            _log("error", "missing output filename", row_num, action_label, detail_label)
+            _log("error", "缺少輸出文件檔名", row_num, action_label, detail_label)
             continue
         if instruction.lower() != "add text" and not src_name:
-            _log("error", "missing source filename", row_num, action_label, detail_label)
+            _log("error", "缺少輸入文件檔名", row_num, action_label, detail_label)
             continue
         if instruction.lower() == "add text" and not src_name:
-            _log("error", "Add Text requires text content", row_num, action_label, detail_label)
+            _log("error", "Add Text 需要文字內容", row_num, action_label, detail_label)
             continue
         if insert_label and not template_name:
-            _log("warn", "insert paragraph ignored because template is empty", row_num)
+            _log("warn", "由於模板文件為空，插入段落將被忽略。", row_num)
 
         template_path = None
         if template_name:
             template_path = _find_file(task_files_dir, template_name)
             if not template_path:
-                _log("error", f"template not found: {template_name}", row_num, action_label, detail_label)
+                _log("error", f"未找到模板文件: {template_name}", row_num, action_label, detail_label)
                 continue
 
         if template_path:
@@ -478,10 +478,10 @@ def process_mapping_excel(
                 if insert_label:
                     if last_idx is not None:
                         target_idx = last_idx
-                        _log("error", f"insert paragraph '{insert_label}' not found; appended to end", row_num, action_label, detail_label)
+                        _log("error", f"插入段落 '{insert_label}' 未找到；已添加到文件末尾", row_num, action_label, detail_label)
                     else:
                         target_idx = 0
-                        _log("error", f"insert paragraph '{insert_label}' not found; appended to end", row_num, action_label, detail_label)
+                        _log("error", f"插入段落 '{insert_label}' 未找到；已添加到文件末尾", row_num, action_label, detail_label)
                 else:
                     target_idx = last_idx if last_idx is not None else 0
 
@@ -544,7 +544,7 @@ def process_mapping_excel(
         if tf_kind:
             infile = _resolve_input_file(task_files_dir, src_name)
             if not infile:
-                _log("error", f"source file not found: {src_name}", row_num, action_label, detail_label)
+                _log("error", f"未找到輸入檔案: {src_name}", row_num, action_label, detail_label)
                 continue
             params = {
                 "input_file": infile,
@@ -578,7 +578,7 @@ def process_mapping_excel(
 
         infile = _resolve_input_file(task_files_dir, src_name)
         if not infile:
-            _log("error", f"source file not found: {src_name}", row_num, action_label, detail_label)
+            _log("error", f"未找到輸入檔案: {src_name}", row_num, action_label, detail_label)
             continue
 
         if is_all:

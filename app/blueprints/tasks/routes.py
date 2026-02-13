@@ -297,6 +297,23 @@ def task_mapping(task_id):
             step_runs,
             key=lambda s: (s.get("row_no") is None, s.get("row_no") or 10**9),
         )
+        row_has_error = {}
+        for step in step_runs:
+            row_no = step.get("row_no")
+            if row_no is None:
+                continue
+            if step.get("status") == "error":
+                row_has_error[row_no] = True
+            else:
+                row_has_error.setdefault(row_no, False)
+        if row_has_error:
+            step_runs = [
+                step
+                for step in step_runs
+                if step.get("row_no") is None
+                or not row_has_error.get(step.get("row_no"))
+                or step.get("status") == "error"
+            ]
     step_ok_count = sum(1 for step in step_runs if step.get("status") != "error")
     step_error_count = sum(1 for step in step_runs if step.get("status") == "error")
     rel_outputs = []

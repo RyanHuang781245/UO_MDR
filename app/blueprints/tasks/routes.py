@@ -7,6 +7,7 @@ import uuid
 import zipfile
 from datetime import datetime
 import re
+from pathlib import Path
 
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
 from flask_login import current_user
@@ -174,6 +175,16 @@ def task_mapping(task_id):
     outputs = []
     log_file = None
     step_runs = []
+    last_mapping_marker = os.path.join(tdir, "mapping_last.txt")
+    last_mapping_file = None
+    if os.path.isfile(last_mapping_marker):
+        try:
+            cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
+            cached_path = os.path.join(tdir, cached_name)
+            if cached_name and os.path.isfile(cached_path):
+                last_mapping_file = cached_name
+        except Exception:
+            last_mapping_file = None
 
     def _format_step_label(entry: dict) -> tuple[str, str]:
         stype = entry.get("type") or ""
@@ -232,17 +243,31 @@ def task_mapping(task_id):
         trimmed = text[: max(0, limit - 1)].rstrip()
         return f"{trimmed}…", True
     if request.method == "POST":
-        f = request.files.get("mapping_file")
         action = request.form.get("action") or "run"
-        if not f or not f.filename:
-            messages.append("請選擇檔案")
+        mapping_path = None
+        if action == "run_cached":
+            if not last_mapping_file:
+                messages.append("找不到上次檢查的檔案，請重新上傳。")
+            else:
+                mapping_path = os.path.join(tdir, last_mapping_file)
         else:
-            path = os.path.join(tdir, secure_filename(f.filename))
-            f.save(path)
+            f = request.files.get("mapping_file")
+            if not f or not f.filename:
+                messages.append("請選擇檔案")
+            else:
+                filename = secure_filename(f.filename)
+                mapping_path = os.path.join(tdir, filename)
+                f.save(mapping_path)
+                try:
+                    Path(last_mapping_marker).write_text(filename, encoding="utf-8")
+                    last_mapping_file = filename
+                except Exception:
+                    pass
+        if mapping_path:
             try:
                 from modules.mapping_processor import process_mapping_excel
                 result = process_mapping_excel(
-                    path,
+                    mapping_path,
                     files_dir,
                     out_dir,
                     log_dir=log_dir,
@@ -288,6 +313,15 @@ def task_mapping(task_id):
     has_error = any("ERROR" in (m or "") for m in messages) or any(
         step.get("status") == "error" for step in step_runs
     )
+    warning_messages = [m for m in messages if (m or "").startswith("WARN:") or (m or "").startswith("WARNING:")]
+    has_warning = bool(warning_messages)
+    warning_confirm = None
+    if has_warning:
+        trimmed = []
+        for m in warning_messages[:3]:
+            trimmed.append(m.replace("WARN:", "").replace("WARNING:", "").strip())
+        warning_confirm = "Warnings found. Run anyway?\n" + "\n".join(trimmed)
+
     error_messages = [m for m in messages if (m or "").startswith("ERROR:")]
     if error_messages and step_runs:
         error_steps = []
@@ -369,10 +403,18 @@ def task_mapping(task_id):
         outputs=rel_outputs,
         log_file=log_file,
         has_error=has_error,
+        has_warning=has_warning,
+        warning_confirm=warning_confirm,
         step_runs=step_runs,
         step_ok_count=step_ok_count,
         step_error_count=step_error_count,
         error_messages=error_messages,
+        allow_direct_run=bool(
+            last_mapping_file
+            and request.method == "POST"
+            and (request.form.get("action") == "check")
+            and not has_error
+        ),
     )
 
 @tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")

@@ -84,7 +84,7 @@
       <div class="row">
         {% if show_sidebar %}
         <nav class="col-md-auto d-md-block bg-light border-end sidebar-width" style="min-height: calc(100vh - 56px);">
-          <div class="position-sticky pt-1" style="top: 56px; height: calc(100vh - 56px); overflow-y: auto;">
+          <div class="position-sticky pt-3" style="top: 56px; height: calc(100vh - 56px); overflow-y: auto;">
             {% block sidebar %}
               <ul class="nav flex-column">
                 <li class="nav-item">
@@ -98,7 +98,7 @@
                   </a>
                   <a class="nav-link link-dark" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
                     <i class="bi bi-diagram-3-fill me-2"></i>
-                    Mapping 生成
+                    Mapping
                   </a>
                   <a class="nav-link link-dark" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
                     <i class="bi bi-diagram-3 me-2"></i>

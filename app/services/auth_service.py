@@ -509,31 +509,48 @@ class ADSearchView(BaseView):
         )
 
 
-class SystemSettingAdminView(SecureModelView):
-    can_create = False
-    can_delete = False
-    can_edit = True
-    column_list = ("email_batch_notify_enabled", "nas_max_copy_file_size_mb", "updated_at")
-    column_labels = {
-        "email_batch_notify_enabled": "排程完成通知 Email",
-        "nas_max_copy_file_size_mb": "NAS 上傳大小限制 (MB)",
-        "updated_at": "更新時間",
-    }
-    form_columns = ("email_batch_notify_enabled", "nas_max_copy_file_size_mb")
-    column_formatters = {
-        "updated_at": lambda _view, _context, model, _name: format_tw_datetime(model.updated_at, assume_tz=TAIWAN_TZ),
-    }
-    form_widget_args = {
-        "email_batch_notify_enabled": {
-            "class": "toggle-switch",
-            "role": "switch",
-        },
-        "nas_max_copy_file_size_mb": {
-            "min": 0,
-            "step": 1,
-            "placeholder": "空白=使用預設值",
-        },
-    }
+class SystemSettingView(BaseView):
+    extra_css = ADMIN_CUSTOM_CSS
+
+    def is_accessible(self):
+        return user_is_admin(current_user)
+
+    def inaccessible_callback(self, name, **kwargs):
+        if current_user.is_authenticated:
+            abort(403)
+        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
+
+    @expose("/", methods=["GET", "POST"])
+    def index(self):
+        setting = SystemSetting.query.first()
+        if not setting:
+            setting = SystemSetting()
+            db.session.add(setting)
+            db.session.commit()
+
+        if request.method == "POST":
+            try:
+                # Email Notification
+                setting.email_batch_notify_enabled = request.form.get("email_batch_notify_enabled") == "on"
+
+                # NAS Size Limit
+                nas_limit = request.form.get("nas_max_copy_file_size_mb")
+                if nas_limit and nas_limit.strip():
+                    setting.nas_max_copy_file_size_mb = int(nas_limit)
+                else:
+                    setting.nas_max_copy_file_size_mb = None
+
+                commit_session()
+                flash("系統設定已更新", "success")
+            except ValueError:
+                flash("數值格式錯誤", "danger")
+            except Exception as e:
+                db.session.rollback()
+                flash(f"更新失敗: {str(e)}", "danger")
+            return redirect(url_for("system_settings.index"))
+
+        last_updated = format_tw_datetime(setting.updated_at, assume_tz=TAIWAN_TZ) if setting.updated_at else "-"
+        return self.render("admin/system_settings.html", setting=setting, last_updated=last_updated)
 
 
 class AuditLogView(BaseView):
@@ -647,10 +664,10 @@ def register_login_enforcement(app) -> None:
 
 def init_admin(app) -> Admin:
     admin = Admin(app, name="系統管理", url="/admin", index_view=SecureAdminIndexView())
+    admin.add_view(SystemSettingView(name="系統設定", endpoint="system_settings", url="system-settings"))
     admin.add_view(UserAdminView(User, db.session, name="使用者列表"))
     admin.add_view(ADSearchView(name="帳號搜尋", endpoint="ad_search", url="ad-search"))
     admin.add_view(AuditLogView(name="操作紀錄", endpoint="audit_logs", url="audit-logs"))
-    admin.add_view(SystemSettingAdminView(SystemSetting, db.session, name="系統設定"))
     return admin
 
 

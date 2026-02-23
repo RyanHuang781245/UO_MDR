@@ -255,8 +255,8 @@ def process_mapping_excel(
                         result = extract_word_chapter(
                             infile,
                             chapter,
-                            target_title=True,
-                            target_title_section=after.strip(),
+                            use_chapter_title=True,
+                            target_chapter_title=after.strip(),
                             output_doc=doc,
                             section=section,
                         )
@@ -556,11 +556,11 @@ def process_mapping_excel(
             if tf_subtitle:
                 params["target_subtitle"] = tf_subtitle
             if tf_kind == "table":
-                params["target_table_label"] = tf_label
+                params["target_caption_label"] = tf_label
                 step_type = "extract_specific_table_from_word"
                 _log("info", f"extract table: {src_name} ({tf_label})", row_num)
             else:
-                params["target_figure_label"] = tf_label
+                params["target_caption_label"] = tf_label
                 step_type = "extract_specific_figure_from_word"
                 _log("info", f"extract figure: {src_name} ({tf_label})", row_num)
             if template_path is not None:
@@ -608,9 +608,9 @@ def process_mapping_excel(
                     title_inline = (first_match.group(2) or "").strip()
                 if after:
                     if title_inline:
-                        params["target_title_section"] = title_inline
-                    params["target_title"] = True
-                    params["subheading_text"] = after
+                        params["target_chapter_title"] = title_inline
+                    params["use_chapter_title"] = True
+                    params["target_subtitle"] = after
                     if title_inline:
                         _log(
                             f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline}, subheading {after})"
@@ -623,8 +623,8 @@ def process_mapping_excel(
                         _log(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})", row_num)
                     else:
                         _log(f"Extract chapter: {src_name} (chapter {chapter})", row_num)
-                if "target_title" not in params:
-                    params["target_title"] = False
+                if "use_chapter_title" not in params:
+                    params["use_chapter_title"] = False
             else:
                 inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", instruction.strip())
                 title_inline = ""
@@ -632,9 +632,9 @@ def process_mapping_excel(
                     chapter = inline_match.group(1)
                     params["target_chapter_section"] = chapter
                     title_inline = (inline_match.group(2) or "").strip()
-                params["target_title"] = False
+                params["use_chapter_title"] = False
                 if title_inline:
-                    params["target_title_section"] = title_inline
+                    params["target_chapter_title"] = title_inline
                     _log(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})", row_num)
                 else:
                     _log(f"Extract chapter: {src_name} (chapter {chapter})", row_num)

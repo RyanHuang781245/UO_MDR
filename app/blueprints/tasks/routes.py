@@ -93,6 +93,26 @@ def _can_delete_task(meta: dict) -> bool:
     creator_work_id = _get_creator_work_id(meta)
     return bool(creator_work_id) and current_user.work_id == creator_work_id
 
+def _load_task_context(task_id: str) -> dict:
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    meta_path = os.path.join(tdir, "meta.json")
+    task = {"id": task_id}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            task.update(
+                {
+                    "name": meta.get("name", task_id),
+                    "description": meta.get("description", ""),
+                    "creator": meta.get("creator", "") or "",
+                    "nas_path": meta.get("nas_path", "") or "",
+                }
+            )
+        except Exception:
+            pass
+    return task
+
 @tasks_bp.route("/tasks/<task_id>/copy-files", methods=["GET", "POST"], endpoint="task_copy_files")
 def task_copy_files(task_id):
     base = os.path.join(current_app.config["TASK_FOLDER"], task_id, "files")
@@ -134,7 +154,13 @@ def task_copy_files(task_id):
                     message = str(e)
     dirs = list_dirs(base)
     dirs.insert(0, ".")
-    return render_template("tasks/copy_files.html", dirs=dirs, message=message, task_id=task_id)
+    return render_template(
+        "tasks/copy_files.html",
+        dirs=dirs,
+        message=message,
+        task_id=task_id,
+        task=_load_task_context(task_id),
+    )
 
 @tasks_bp.route("/tasks/<task_id>/mapping", methods=["GET", "POST"], endpoint="task_mapping")
 def task_mapping(task_id):
@@ -161,8 +187,8 @@ def task_mapping(task_id):
         if stype == "extract_word_chapter":
             src = _base(params.get("input_file", ""))
             chapter = params.get("target_chapter_section", "")
-            title = params.get("target_title_section", "")
-            sub = params.get("subheading_text", "")
+            title = params.get("target_chapter_title") or params.get("target_title_section", "")
+            sub = params.get("target_subtitle") or params.get("subheading_text", "")
             parts = [f"chapter {chapter}"] if chapter else []
             if title:
                 parts.append(f"title {title}")
@@ -176,12 +202,20 @@ def task_mapping(task_id):
             return f"{row_prefix}Extract all", src.strip()
         if stype == "extract_specific_table_from_word":
             src = _base(params.get("input_file", ""))
-            label = params.get("target_table_label", "")
+            label = (
+                params.get("target_caption_label")
+                or params.get("target_table_label", "")
+                or params.get("target_figure_label", "")
+            )
             detail = f"{src} ({label})" if label else src
             return f"{row_prefix}Extract table", detail.strip()
         if stype == "extract_specific_figure_from_word":
             src = _base(params.get("input_file", ""))
-            label = params.get("target_figure_label", "")
+            label = (
+                params.get("target_caption_label")
+                or params.get("target_figure_label", "")
+                or params.get("target_table_label", "")
+            )
             detail = f"{src} ({label})" if label else src
             return f"{row_prefix}Extract figure", detail.strip()
         if stype == "insert_text":
@@ -323,6 +357,7 @@ def task_mapping(task_id):
     return render_template(
         "tasks/mapping.html",
         task_id=task_id,
+        task=_load_task_context(task_id),
         messages=messages,
         outputs=rel_outputs,
         log_file=log_file,
@@ -953,6 +988,7 @@ def task_result(task_id, job_id):
             overall_status = "error"
     return render_template(
         "tasks/run.html",
+        task=_load_task_context(task_id),
         job_id=job_id,
         docx_path=url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx"),
         log_path=url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="log"),
@@ -1037,8 +1073,8 @@ def task_compare(task_id, job_id):
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
             sec = params.get("target_chapter_section", "")
-            use_title = str(params.get("target_title", "")).lower() in ["1", "true", "yes", "on"]
-            title = params.get("target_title_section", "") if use_title else ""
+            use_title = str(params.get("use_chapter_title", params.get("target_title", ""))).lower() in ["1", "true", "yes", "on"]
+            title = params.get("target_chapter_title") or params.get("target_title_section", "")
             info = base
             if sec:
                 info += f" 章節 {sec}"
@@ -1085,6 +1121,7 @@ def task_compare(task_id, job_id):
     versions = build_version_context(task_id, job_id, job_dir)
     return render_template(
         "tasks/compare.html",
+        task=_load_task_context(task_id),
         html_url=html_url,
         chapters=chapters,
         chapter_sources=chapter_sources,

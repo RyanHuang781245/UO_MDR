@@ -25,10 +25,15 @@
         display: flex;
         align-items: center;
       }
+      @media (min-width: 768px) {
+        .sidebar-width {
+          width: 200px;
+        }
+      }
     </style>
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
+    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
       <div class="container-fluid d-flex justify-content-between">
         <a class="navbar-brand fw-bold me-auto d-flex align-items-center" href="{{ url_for('tasks_bp.tasks') }}">
           <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="me-2" style="height:30px;">
@@ -75,16 +80,60 @@
       </div>
     </nav>
     <script src="{{ url_for('static', filename='ui-utils.js') }}"></script>
-    <main class="container my-4">
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          {% for category, msg in messages %}
-            <div class="alert alert-{{ 'info' if category == 'message' else category }} py-2">{{ msg }}</div>
-          {% endfor %}
+    {% set sidebar_setting %}
+      {% block enable_sidebar %}true{% endblock %}
+    {% endset %}
+    {% set show_sidebar = sidebar_setting|trim == 'true' %}
+    <div class="{{ 'container-fluid' if show_sidebar else 'container' }}">
+      <div class="row">
+        {% if show_sidebar %}
+        <nav class="col-md-auto d-md-block bg-light border-end sidebar-width" style="min-height: calc(100vh - 56px);">
+          <div class="position-sticky pt-3" style="top: 56px; height: calc(100vh - 56px); overflow-y: auto;">
+            {% block sidebar %}
+              <ul class="nav flex-column">
+                <li class="nav-item">
+                  <a class="nav-link link-dark" href="{{ url_for('tasks_bp.tasks') }}">
+                    <i class="bi bi-list-task me-2"></i>
+                    任務管理
+                  </a>
+                  <a class="nav-link link-dark" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
+                    <i class="bi bi-info-circle me-2"></i>
+                    任務詳情
+                  </a>
+                  <a class="nav-link link-dark" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
+                    <i class="bi bi-diagram-3-fill me-2"></i>
+                    Mapping 生成
+                  </a>
+                  <a class="nav-link link-dark" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
+                    <i class="bi bi-diagram-3 me-2"></i>
+                    流程管理
+                  </a>
+                  <a class="nav-link link-dark" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
+                    <i class="bi bi-clipboard-check me-2"></i>
+                    執行結果
+                  </a>
+                  <a class="nav-link link-dark" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
+                    <i class="bi bi-calendar2-week me-2"></i>
+                    排程管理
+                  </a>
+                </li>
+              </ul>
+            {% endblock %}
+          </div>
+        </nav>
         {% endif %}
-      {% endwith %}
-      {% block content %}{% endblock %}
-    </main>
+        <main class="{{ 'col-md ms-sm-auto px-md-4' if show_sidebar else 'col-12' }} my-4">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, msg in messages %}
+                <div class="alert alert-{{ 'info' if category == 'message' else category }} py-2">{{ msg }}</div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+          {% block content %}{% endblock %}
+        </main>
+      </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='file-tree.js') }}"></script>
   </body>

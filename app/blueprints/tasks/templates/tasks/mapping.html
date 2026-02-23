@@ -1,21 +1,108 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="h4 mb-3">上傳 Mapping 檔案</h1>
+<!-- <h1 class="h4 mb-3">上傳 Mapping 檔案</h1> -->
+<div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-0 fw-bold">Mapping 生成文件</h1>
+  </div>
+  <!-- <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_detail', task_id=task_id) }}">
+      <i class="bi bi-arrow-left"></i>
+      返回任務詳情
+    </a>
+    <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task_id) }}">
+      <i class="bi bi-diagram-3"></i>
+      進入流程管理
+    </a>
+  </div> -->
+</div>
+
 <form method="post" enctype="multipart/form-data" class="card card-body mb-4">
   <div class="row g-3">
     <div class="col-md-9">
       <input class="form-control" type="file" name="mapping_file" required>
     </div>
     <div class="col-md-3 d-grid">
-      <button class="btn btn-primary" type="submit">開始處理</button>
+      <button class="btn btn-primary" type="submit">生成文件</button>
     </div>
   </div>
 </form>
-{% if messages %}
-<h2 class="h6">處理狀態</h2>
+
+{% if messages or outputs or step_runs %}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <span class="fw-semibold">處理狀態</span>
+  <div class="ms-auto d-flex align-items-center gap-3">
+    {% if step_runs %}
+    <span class="d-inline-flex align-items-center gap-1 text-success">
+      <i class="bi bi-check-circle-fill"></i>
+      <span>{{ step_ok_count }}</span>
+    </span>
+    <span class="d-inline-flex align-items-center gap-1 text-danger">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span>{{ step_error_count }}</span>
+    </span>
+    {% else %}
+    {% if has_error %}
+    <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+    {% else %}
+    <i class="bi bi-check-circle-fill text-success"></i>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% if step_runs %}
 <ul class="list-group mb-3">
-  {% for m in messages %}
-  <li class="list-group-item">{{ m }}</li>
+  {% for step in step_runs %}
+  <li class="list-group-item">
+    {% if step.status == "error" %}
+    <details>
+      <summary class="d-grid align-items-start" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
+        <div class="d-flex align-items-center gap-2 flex-shrink-0 text-nowrap">
+          <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+          <span class="fw-semibold">{{ step.action }}</span>
+        </div>
+        {% if step.detail %}
+        <div class="text-muted small text-start" style="min-width: 0; overflow: hidden;">{{ step.detail_short if step.detail_long else step.detail }}</div>
+        {% endif %}
+      </summary>
+      <div class="mt-2 small text-danger">{{ step.error }}</div>
+    </details>
+    {% else %}
+    <div class="d-grid align-items-start" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
+      <div class="d-flex align-items-center gap-2 flex-shrink-0 text-nowrap">
+        <i class="bi bi-check-circle-fill text-success"></i>
+        <span class="fw-semibold">{{ step.action }}</span>
+      </div>
+      {% if step.detail %}
+      {% if step.detail_long %}
+      <details class="text-muted small text-start" style="width: 100%; min-width: 0;">
+        <summary style="display: block; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ step.detail_short }}</summary>
+        <div class="mt-1">{{ step.detail }}</div>
+      </details>
+      {% else %}
+      <div class="text-muted small text-start" style="min-width: 0; overflow: hidden;">{{ step.detail }}</div>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if error_messages and not step_runs %}
+<ul class="list-group mb-3">
+  {% for m in error_messages %}
+  <li class="list-group-item">
+    <details>
+      <summary class="d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+        <span>錯誤</span>
+      </summary>
+      <div class="mt-2 small text-danger">{{ m }}</div>
+    </details>
+  </li>
   {% endfor %}
 </ul>
 {% endif %}
@@ -27,5 +114,8 @@
   {% endfor %}
 </ul>
 {% endif %}
-<a class="btn btn-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task_id) }}">返回任務</a>
+
+{% if log_file %}
+<a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=log_file) }}">下載Log</a>
+{% endif %}
 {% endblock %}

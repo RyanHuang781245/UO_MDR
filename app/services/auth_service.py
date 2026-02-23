@@ -485,14 +485,26 @@ class SystemSettingAdminView(SecureModelView):
     can_create = False
     can_delete = False
     can_edit = True
-    column_list = ("email_batch_notify_enabled", "updated_at")
+    column_list = ("email_batch_notify_enabled", "nas_max_copy_file_size_mb", "updated_at")
     column_labels = {
         "email_batch_notify_enabled": "排程完成通知 Email",
+        "nas_max_copy_file_size_mb": "NAS 上傳大小限制 (MB)",
         "updated_at": "更新時間",
     }
-    form_columns = ("email_batch_notify_enabled",)
+    form_columns = ("email_batch_notify_enabled", "nas_max_copy_file_size_mb")
     column_formatters = {
         "updated_at": lambda _view, _context, model, _name: format_tw_datetime(model.updated_at, assume_tz=TAIWAN_TZ),
+    }
+    form_widget_args = {
+        "email_batch_notify_enabled": {
+            "class": "toggle-switch",
+            "role": "switch",
+        },
+        "nas_max_copy_file_size_mb": {
+            "min": 0,
+            "step": 1,
+            "placeholder": "空白=使用預設值",
+        },
     }
 
 

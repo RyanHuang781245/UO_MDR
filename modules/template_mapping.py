@@ -44,8 +44,10 @@ def read_docx_parts(docx_path: str) -> dict[str, bytes]:
 
 # --- 核心解析邏輯 ---
 
-def parse_styles_numPr(styles_xml: bytes):
+def parse_styles_numPr(styles_xml: bytes | None):
     """解析樣式表，處理樣式繼承中的編號屬性"""
+    if not styles_xml:
+        return {}, {}
     root = etree.fromstring(styles_xml)
     style_based = {}
     style_numpr = {}
@@ -70,8 +72,10 @@ def resolve_style_numPr(style_id, style_based, style_numpr):
         if not cur: break
     return None, None
 
-def parse_numbering(numbering_xml: bytes):
+def parse_numbering(numbering_xml: bytes | None):
     """解析 numbering.xml，包含模板、實例與覆寫值"""
+    if not numbering_xml:
+        return {}, {}, defaultdict(dict)
     root = etree.fromstring(numbering_xml)
     num_to_abstract = {}
     num_id_overrides = defaultdict(dict)
@@ -141,8 +145,8 @@ def compute_display_label(lvlText, numFmt, counters, ilvl):
 
 def parse_paragraph_numbering(docx_path: str):
     parts = read_docx_parts(docx_path)
-    style_based, style_numpr = parse_styles_numPr(parts["word/styles.xml"])
-    num_to_abstract, abstract_levels, num_id_overrides = parse_numbering(parts["word/numbering.xml"])
+    style_based, style_numpr = parse_styles_numPr(parts.get("word/styles.xml"))
+    num_to_abstract, abstract_levels, num_id_overrides = parse_numbering(parts.get("word/numbering.xml"))
     
     root = etree.fromstring(parts["word/document.xml"])
     paragraphs = root.xpath("//w:p", namespaces=NS)

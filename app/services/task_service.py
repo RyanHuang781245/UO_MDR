@@ -8,6 +8,8 @@ from datetime import datetime
 
 from flask import current_app
 
+from modules.settings_models import SystemSetting
+
 from modules.auth_models import commit_session, db
 from modules.task_models import TaskRecord, ensure_schema as ensure_task_schema
 
@@ -78,6 +80,16 @@ def ensure_windows_long_path(path: str) -> str:
 
 def enforce_max_copy_size(path: str):
     max_bytes = current_app.config.get("NAS_MAX_COPY_FILE_SIZE")
+    try:
+        settings = SystemSetting.query.order_by(SystemSetting.id).first()
+        if settings and settings.nas_max_copy_file_size_mb is not None:
+            mb = int(settings.nas_max_copy_file_size_mb)
+            if mb <= 0:
+                max_bytes = None
+            else:
+                max_bytes = mb * 1024 * 1024
+    except Exception:
+        current_app.logger.exception("Failed to load NAS size limit from system settings")
     if not max_bytes:
         return
     checked_path = ensure_windows_long_path(path)

@@ -93,6 +93,26 @@ def _can_delete_task(meta: dict) -> bool:
     creator_work_id = _get_creator_work_id(meta)
     return bool(creator_work_id) and current_user.work_id == creator_work_id
 
+def _load_task_context(task_id: str) -> dict:
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    meta_path = os.path.join(tdir, "meta.json")
+    task = {"id": task_id}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            task.update(
+                {
+                    "name": meta.get("name", task_id),
+                    "description": meta.get("description", ""),
+                    "creator": meta.get("creator", "") or "",
+                    "nas_path": meta.get("nas_path", "") or "",
+                }
+            )
+        except Exception:
+            pass
+    return task
+
 @tasks_bp.route("/tasks/<task_id>/copy-files", methods=["GET", "POST"], endpoint="task_copy_files")
 def task_copy_files(task_id):
     base = os.path.join(current_app.config["TASK_FOLDER"], task_id, "files")
@@ -134,7 +154,13 @@ def task_copy_files(task_id):
                     message = str(e)
     dirs = list_dirs(base)
     dirs.insert(0, ".")
-    return render_template("tasks/copy_files.html", dirs=dirs, message=message, task_id=task_id)
+    return render_template(
+        "tasks/copy_files.html",
+        dirs=dirs,
+        message=message,
+        task_id=task_id,
+        task=_load_task_context(task_id),
+    )
 
 @tasks_bp.route("/tasks/<task_id>/mapping", methods=["GET", "POST"], endpoint="task_mapping")
 def task_mapping(task_id):
@@ -142,9 +168,69 @@ def task_mapping(task_id):
     if not os.path.isdir(tdir):
         abort(404)
     files_dir = os.path.join(tdir, "files")
-    out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
+    out_dir = os.path.join(tdir, "mapping_job")
+    log_dir = os.path.join(tdir, "mapping_logs")
     messages = []
     outputs = []
+    log_file = None
+    step_runs = []
+
+    def _format_step_label(entry: dict) -> tuple[str, str]:
+        stype = entry.get("type") or ""
+        params = entry.get("params") or {}
+
+        def _base(path: str) -> str:
+            return os.path.basename(path) if path else "?"
+
+        row_no = params.get("mapping_row")
+        row_prefix = f"(Row {row_no}) " if row_no not in (None, "", "None") else ""
+        if stype == "extract_word_chapter":
+            src = _base(params.get("input_file", ""))
+            chapter = params.get("target_chapter_section", "")
+            title = params.get("target_chapter_title") or params.get("target_title_section", "")
+            sub = params.get("target_subtitle") or params.get("subheading_text", "")
+            parts = [f"chapter {chapter}"] if chapter else []
+            if title:
+                parts.append(f"title {title}")
+            if sub:
+                parts.append(f"subheading {sub}")
+            detail = ", ".join(parts)
+            suffix = f" ({detail})" if detail else ""
+            return f"{row_prefix}Extract chapter", f"{src}{suffix}".strip()
+        if stype == "extract_word_all_content":
+            src = _base(params.get("input_file", ""))
+            return f"{row_prefix}Extract all", src.strip()
+        if stype == "extract_specific_table_from_word":
+            src = _base(params.get("input_file", ""))
+            label = (
+                params.get("target_caption_label")
+                or params.get("target_table_label", "")
+                or params.get("target_figure_label", "")
+            )
+            detail = f"{src} ({label})" if label else src
+            return f"{row_prefix}Extract table", detail.strip()
+        if stype == "extract_specific_figure_from_word":
+            src = _base(params.get("input_file", ""))
+            label = (
+                params.get("target_caption_label")
+                or params.get("target_figure_label", "")
+                or params.get("target_table_label", "")
+            )
+            detail = f"{src} ({label})" if label else src
+            return f"{row_prefix}Extract figure", detail.strip()
+        if stype == "insert_text":
+            text_val = (params.get("text") or "").strip()
+            return f"{row_prefix}Append text", text_val
+        if stype == "template_merge":
+            tpl = _base(entry.get("template_file", ""))
+            return f"{row_prefix}Template merge", tpl.strip()
+        return stype or "step", ""
+
+    def _truncate_detail(text: str, limit: int = 160) -> tuple[str, bool]:
+        if len(text) <= limit:
+            return text, False
+        trimmed = text[: max(0, limit - 1)].rstrip()
+        return f"{trimmed}…", True
     if request.method == "POST":
         f = request.files.get("mapping_file")
         if not f or not f.filename:
@@ -154,21 +240,147 @@ def task_mapping(task_id):
             f.save(path)
             try:
                 from modules.mapping_processor import process_mapping_excel
-                result = process_mapping_excel(path, files_dir, out_dir)
+                result = process_mapping_excel(path, files_dir, out_dir, log_dir=log_dir)
                 messages = result["logs"]
                 outputs = result["outputs"]
+                log_file = result.get("log_file")
             except Exception as e:
                 messages = [str(e)]
-    rel_outputs = [os.path.basename(p) for p in outputs]
-    return render_template("tasks/mapping.html", task_id=task_id, messages=messages, outputs=rel_outputs)
+    if log_file:
+        log_candidates = [
+            os.path.join(log_dir, log_file),
+            os.path.join(out_dir, log_file),
+        ]
+        log_path = next((p for p in log_candidates if os.path.isfile(p)), None)
+        if log_path:
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    log_data = json.load(f)
+                for run in log_data.get("runs", []):
+                    for entry in run.get("workflow_log", []):
+                        if "step" not in entry:
+                            continue
+                        action, detail = _format_step_label(entry)
+                        row_no = (entry.get("params") or {}).get("mapping_row")
+                        detail_short, detail_long = _truncate_detail(detail) if detail else ("", False)
+                        step_runs.append(
+                            {
+                                "action": action,
+                                "detail": detail,
+                                "detail_short": detail_short,
+                                "detail_long": detail_long,
+                                "row_no": row_no,
+                                "status": entry.get("status") or "ok",
+                                "error": entry.get("error") or "",
+                            }
+                        )
+                if step_runs:
+                    messages = [m for m in messages if not (m or "").startswith("WF_ERROR:")]
+            except Exception as e:
+                messages.append(f"ERROR: failed to read log file ({e})")
+    has_error = any("ERROR" in (m or "") for m in messages) or any(
+        step.get("status") == "error" for step in step_runs
+    )
+    error_messages = [m for m in messages if (m or "").startswith("ERROR:")]
+    if error_messages and step_runs:
+        error_steps = []
+        for msg in error_messages:
+            raw = (msg or "").replace("ERROR:", "", 1).strip()
+            raw = re.sub(r"^Row\s+\d+\s*:\s*", "", raw, flags=re.IGNORECASE)
+            action = raw
+            detail = ""
+            error_text = raw
+            row_match = re.search(r"Row\s+(\d+)", msg or "", re.IGNORECASE)
+            row_prefix = f"(Row {row_match.group(1)}) " if row_match else ""
+            if "::" in raw:
+                parts = [p.strip() for p in raw.split("::", 2)]
+                if len(parts) >= 2:
+                    base_action = parts[0] or action
+                    if base_action.startswith("(Row "):
+                        action = base_action
+                    else:
+                        action = f"{row_prefix}{base_action}".strip()
+                    detail = parts[1]
+                if len(parts) == 3:
+                    error_text = parts[2]
+            elif ":" in raw:
+                head, tail = raw.split(":", 1)
+                base_action = head.strip() or raw
+                if base_action.startswith("(Row "):
+                    action = base_action
+                else:
+                    action = f"{row_prefix}{base_action}".strip()
+                detail = tail.strip()
+            display_detail = detail or error_text
+            detail_short, detail_long = _truncate_detail(display_detail)
+            error_steps.append(
+                {
+                    "action": action,
+                    "detail": display_detail,
+                    "detail_short": detail_short,
+                    "detail_long": detail_long,
+                    "row_no": int(row_match.group(1)) if row_match else None,
+                    "status": "error",
+                    "error": error_text,
+                }
+            )
+        step_runs = error_steps + step_runs
+        error_messages = []
+    if step_runs:
+        step_runs = sorted(
+            step_runs,
+            key=lambda s: (s.get("row_no") is None, s.get("row_no") or 10**9),
+        )
+        row_has_error = {}
+        for step in step_runs:
+            row_no = step.get("row_no")
+            if row_no is None:
+                continue
+            if step.get("status") == "error":
+                row_has_error[row_no] = True
+            else:
+                row_has_error.setdefault(row_no, False)
+        if row_has_error:
+            step_runs = [
+                step
+                for step in step_runs
+                if step.get("row_no") is None
+                or not row_has_error.get(step.get("row_no"))
+                or step.get("status") == "error"
+            ]
+    step_ok_count = sum(1 for step in step_runs if step.get("status") != "error")
+    step_error_count = sum(1 for step in step_runs if step.get("status") == "error")
+    rel_outputs = []
+    for p in outputs:
+        rel = os.path.relpath(p, out_dir)
+        rel_outputs.append(rel.replace("\\", "/"))
+    return render_template(
+        "tasks/mapping.html",
+        task_id=task_id,
+        task=_load_task_context(task_id),
+        messages=messages,
+        outputs=rel_outputs,
+        log_file=log_file,
+        has_error=has_error,
+        step_runs=step_runs,
+        step_ok_count=step_ok_count,
+        step_error_count=step_error_count,
+        error_messages=error_messages,
+    )
 
-@tasks_bp.get("/tasks/<task_id>/output/<filename>", endpoint="task_download_output")
+@tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
 def task_download_output(task_id, filename):
-    out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
-    file_path = os.path.join(out_dir, filename)
-    if not os.path.isfile(file_path):
-        abort(404)
-    return send_from_directory(out_dir, filename, as_attachment=True)
+    safe_name = filename.replace("\\", "/")
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    mapping_job_dir = os.path.join(tdir, "mapping_job")
+    mapping_log_dir = os.path.join(tdir, "mapping_logs")
+    legacy_out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
+
+    for base_dir in (mapping_job_dir, mapping_log_dir, legacy_out_dir):
+        file_path = os.path.join(base_dir, safe_name)
+        if os.path.isfile(file_path):
+            return send_from_directory(base_dir, safe_name, as_attachment=True)
+    abort(404)
 
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():
@@ -776,6 +988,7 @@ def task_result(task_id, job_id):
             overall_status = "error"
     return render_template(
         "tasks/run.html",
+        task=_load_task_context(task_id),
         job_id=job_id,
         docx_path=url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx"),
         log_path=url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="log"),
@@ -860,8 +1073,8 @@ def task_compare(task_id, job_id):
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
             sec = params.get("target_chapter_section", "")
-            use_title = str(params.get("target_title", "")).lower() in ["1", "true", "yes", "on"]
-            title = params.get("target_title_section", "") if use_title else ""
+            use_title = str(params.get("use_chapter_title", params.get("target_title", ""))).lower() in ["1", "true", "yes", "on"]
+            title = params.get("target_chapter_title") or params.get("target_title_section", "")
             info = base
             if sec:
                 info += f" 章節 {sec}"
@@ -908,6 +1121,7 @@ def task_compare(task_id, job_id):
     versions = build_version_context(task_id, job_id, job_dir)
     return render_template(
         "tasks/compare.html",
+        task=_load_task_context(task_id),
         html_url=html_url,
         chapters=chapters,
         chapter_sources=chapter_sources,

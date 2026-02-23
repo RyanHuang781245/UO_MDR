@@ -92,10 +92,10 @@ SUPPORTED_STEPS = {
     },
     "extract_word_all_content": {
         "label": "擷取 Word 全部內容",
-        "inputs": ["input_file", "ignore_toc_and_before", "ignore_header_footer", "template_index", "template_mode"],
+        "inputs": ["input_file", "ignore_toc", "ignore_header_footer", "template_index", "template_mode"],
         "accepts": {
             "input_file": "file:docx",
-            "ignore_toc_and_before": "bool",
+            "ignore_toc": "bool",
             "ignore_header_footer": "bool",
             "template_index": "text",
             "template_mode": "text",
@@ -106,10 +106,10 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
-            "target_title",
-            "target_title_section",
+            "use_chapter_title",
+            "target_chapter_title",
             "explicit_end_title",
-            "subheading_text",
+            "target_subtitle",
             "subheading_strict_match",
             "ignore_toc",
             "ignore_header_footer",
@@ -119,10 +119,10 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
-            "target_title": "bool",
-            "target_title_section": "text",
+            "use_chapter_title": "bool",
+            "target_chapter_title": "text",
             "explicit_end_title": "text",
-            "subheading_text": "text",
+            "target_subtitle": "text",
             "subheading_strict_match": "bool",
             "ignore_toc": "bool",
             "ignore_header_footer": "bool",
@@ -135,8 +135,9 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_title",
             "target_subtitle",
-            "target_figure_label",
+            "target_caption_label",
             "include_caption",
             "template_index",
             "template_mode",
@@ -144,8 +145,9 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_title": "text",
             "target_subtitle": "text",
-            "target_figure_label": "text",
+            "target_caption_label": "text",
             "include_caption": "bool",
             "template_index": "text",
             "template_mode": "text",
@@ -156,7 +158,8 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
-            "target_table_label",
+            "target_chapter_title",
+            "target_caption_label",
             "target_subtitle",
             "include_caption",
             "template_index",
@@ -165,7 +168,8 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
-            "target_table_label": "text",
+            "target_chapter_title": "text",
+            "target_caption_label": "text",
             "target_subtitle": "text",
             "include_caption": "bool",
             "template_index": "text",
@@ -386,7 +390,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
 
             elif stype == "extract_word_all_content":
                 infile = params["input_file"]
-                ignore_toc = boolish(params.get("ignore_toc_and_before", "true"))
+                ignore_toc = boolish(params.get("ignore_toc", params.get("ignore_toc_and_before", "true")))
                 ignore_header_footer = boolish(params.get("ignore_header_footer", "true"))
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 result = extract_word_all_content(
@@ -394,7 +398,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     output_doc=None,
                     section=None,
                     output_docx_path=frag_path,
-                    ignore_toc_and_before=ignore_toc,
+                    ignore_toc=ignore_toc,
                     ignore_header_footer=ignore_header_footer,
                 )
                 out_path = None
@@ -407,16 +411,17 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
                 tsec = params.get("target_chapter_section","")
-                use_title = boolish(params.get("target_title","false"))
-                title_text = params.get("target_title_section","")
+                use_title = boolish(params.get("use_chapter_title", params.get("target_title", "false")))
+                title_text = params.get("target_chapter_title", params.get("target_title_section", ""))
+                target_subtitle = params.get("target_subtitle", params.get("subheading_text"))
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 result = extract_word_chapter(
                     infile,
                     tsec,
-                    target_title=use_title,
-                    target_title_section=title_text,
+                    use_chapter_title=use_title,
+                    target_chapter_title=title_text,
                     explicit_end_title=params.get("explicit_end_title") or None,
-                    subheading_text=params.get("subheading_text"),
+                    target_subtitle=target_subtitle,
                     subheading_strict_match=boolish(params.get("subheading_strict_match", "true")),
                     ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
                     ignore_toc=boolish(params.get("ignore_toc", "true")),
@@ -434,12 +439,19 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
 
             elif stype == "extract_specific_figure_from_word":
                 infile = params["input_file"]
+                caption_label = (
+                    params.get("target_caption_label")
+                    or params.get("target_figure_label")
+                    or params.get("target_table_label")
+                    or ""
+                )
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 result = extract_specific_figure_from_word(
                     infile,
                     params.get("target_chapter_section", ""),
-                    params.get("target_figure_label", ""),
-                    target_subtitle=params.get("target_subtitle"),
+                    caption_label,
+                    target_subtitle=params.get("target_subtitle", params.get("subheading_text")),
+                    target_chapter_title=params.get("target_chapter_title", params.get("target_title_section")),
                     output_image_path=os.path.join(workdir, "images"),
                     output_doc=None,
                     section=None,
@@ -468,13 +480,20 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
 
             elif stype == "extract_specific_table_from_word":
                 infile = params["input_file"]
+                caption_label = (
+                    params.get("target_caption_label")
+                    or params.get("target_table_label")
+                    or params.get("target_figure_label")
+                    or ""
+                )
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 extract_specific_table_from_word(
                     infile,
                     frag_path,
                     params.get("target_chapter_section", ""),
-                    params.get("target_table_label", ""),
-                    params.get("target_subtitle") or None,
+                    caption_label,
+                    params.get("target_subtitle", params.get("subheading_text")) or None,
+                    target_chapter_title=params.get("target_chapter_title", params.get("target_title_section")),
                     include_caption=boolish(params.get("include_caption", "false")),
                     save_output=True,
                 )

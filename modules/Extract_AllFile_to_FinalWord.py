@@ -73,6 +73,10 @@ def _get_paragraph_text(paragraph: Paragraph) -> str:
     return text
 
 
+def _get_paragraph_text_stripped(paragraph: Paragraph) -> str:
+    return _get_paragraph_text(paragraph).strip()
+
+
 def _hide_titles_in_section(section, titles: list[str], start_index: int = 0):
     if not section or not titles:
         return
@@ -96,30 +100,38 @@ def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, outp
     lower_ratio = 0.9
 
     stop_pattern = re.compile(
+
         r"^\s*(?:\d+\.\d+\.\d+|\d+\.\d+|[A-Z]\.|圖\s*\d+|Fig\.?\s*\d+|Figure\s+\d+)",
         re.IGNORECASE | re.MULTILINE
     )
     section_pattern = re.compile(rf"^\s*\d*\.?\s*{re.escape(target_section)}:?", re.IGNORECASE | re.MULTILINE)
     english_pattern = re.compile(r'^[\x00-\x7F]+$')
 
-    if output_doc is None or section is None:
+    is_standalone = False
+    is_docx = isinstance(output_doc, DocxDocument)
+    if output_doc is None:
         output_doc = DocxDocument()
-        section = output_doc.add_section()
-        table = output_doc.add_table(rows=1, cols=2)
+        is_docx = True
         is_standalone = True
+
+    if is_docx:
+        table = output_doc.add_table(rows=1, cols=2)
+        header_row = table.rows[0]
+        header_row.cells[0].text = "Packaging test report No."
+        header_row.cells[1].text = "Rationale for Test Article Selection"
     else:
+        if section is None:
+            section = output_doc.AddSection()
         table = section.AddTable(True)
         table.ResetCells(1, 2)
-        is_standalone = False
-
-    row = table.Rows.get_Item(0)
-    cell1 = row.Cells.get_Item(0)
-    cell2 = row.Cells.get_Item(1)
-    cell1.AddParagraph().AppendText("Packaging test report No.")
-    cell2.AddParagraph().AppendText("Rationale for Test Article Selection")
-    bg_color = Color.FromRgb(0xBA, 0xE0, 0xD2)
-    cell1.CellFormat.BackColor = bg_color
-    cell2.CellFormat.BackColor = bg_color
+        row = table.Rows.get_Item(0)
+        cell1 = row.Cells.get_Item(0)
+        cell2 = row.Cells.get_Item(1)
+        cell1.AddParagraph().AppendText("Packaging test report No.")
+        cell2.AddParagraph().AppendText("Rationale for Test Article Selection")
+        bg_color = Color.FromRgb(0xBA, 0xE0, 0xD2)
+        cell1.CellFormat.BackColor = bg_color
+        cell2.CellFormat.BackColor = bg_color
 
     for filename in os.listdir(pdf_folder_path):
         if not filename.lower().endswith(".pdf"):
@@ -157,19 +169,26 @@ def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, outp
         else:
             extracted_text = "（未找到英文內容）"
 
-        new_row = TableRow(output_doc)
-        cell1 = TableCell(output_doc)
-        cell2 = TableCell(output_doc)
-        new_row.Cells.Add(cell1)
-        new_row.Cells.Add(cell2)
-
         table_filename = filename.split(' ')[0]
-        cell1.AddParagraph().AppendText(table_filename)
-        cell2.AddParagraph().AppendText(extracted_text)
-        table.Rows.Add(new_row)
+        if is_docx:
+            new_row = table.add_row()
+            new_row.cells[0].text = table_filename
+            new_row.cells[1].text = extracted_text
+        else:
+            new_row = TableRow(output_doc)
+            cell1 = TableCell(output_doc)
+            cell2 = TableCell(output_doc)
+            new_row.Cells.Add(cell1)
+            new_row.Cells.Add(cell2)
+            cell1.AddParagraph().AppendText(table_filename)
+            cell2.AddParagraph().AppendText(extracted_text)
+            table.Rows.Add(new_row)
 
     if is_standalone:
-        output_doc.save("pdf_chapter_table.docx")
+        if is_docx:
+            output_doc.save("pdf_chapter_table.docx")
+        else:
+            output_doc.SaveToFile("pdf_chapter_table.docx", FileFormat.Docx)
     print(f"已將PDF章節 {target_section} 擷取至表格")
 
 
@@ -180,7 +199,7 @@ def extract_word_all_content(
     section=None,
     *,
     output_docx_path: str | None = None,
-    ignore_toc_and_before: bool = True,
+    ignore_toc: bool = True,
     ignore_header_footer: bool = True,
 ):
     if not os.path.isfile(input_file):
@@ -190,7 +209,7 @@ def extract_word_all_content(
     extract_body_with_options(
         input_docx=input_file,
         output_docx=out_path,
-        ignore_toc_and_before=ignore_toc_and_before,
+        ignore_toc=ignore_toc,
         ignore_header_footer=ignore_header_footer,
     )
 
@@ -265,14 +284,14 @@ def is_heading_paragraph(paragraph: Paragraph) -> bool:
 def extract_word_chapter(
     input_file: str,
     target_chapter_section: str,
-    target_title: bool = False,
-    target_title_section: str = "",
+    use_chapter_title: bool = False,
+    target_chapter_title: str = "",
     output_image_path: str | None = None,
     output_doc=None,
     section=None,
     *,
     explicit_end_title: str | None = None,
-    subheading_text: str | None = None,
+    target_subtitle: str | None = None,
     subheading_strict_match: bool = True,
     ignore_header_footer: bool = True,
     ignore_toc: bool = True,
@@ -281,15 +300,15 @@ def extract_word_chapter(
     if not os.path.isfile(input_file):
         raise FileNotFoundError(f"input file not found: {input_file}")
 
-    heading_text = target_title_section.strip()
-    if not heading_text and target_title:
+    heading_text = target_chapter_title.strip()
+    if not heading_text and use_chapter_title:
         heading_text = target_chapter_section
 
     start_heading = heading_text or target_chapter_section
     out_path = output_docx_path or _build_output_docx_path(input_file, f"section_{start_heading}")
 
     # Only trim to a subheading when the caller explicitly requests one.
-    subheading_to_use = subheading_text if subheading_text else None
+    subheading_to_use = target_subtitle if target_subtitle else None
 
     extract_section_docx_xml(
         input_docx=input_file,
@@ -374,8 +393,7 @@ def extract_word_subsection(
       4. 遇到下一個 inline 小標題（Normal + 粗體）或者下一個章節 (1.1.2...) 就停止
     """
 
-    if not os.path.exists(output_image_path):
-        os.makedirs(output_image_path)
+    os.makedirs(output_image_path, exist_ok=True)
 
     # 章節起始：例如 "1.1.1"
     chapter_pattern = re.compile(rf"^\s*{re.escape(outer_chapter_section)}(\s|$)", re.IGNORECASE)
@@ -383,6 +401,7 @@ def extract_word_subsection(
     # 章節停止：以前綴 "1.1" 找下一個章節 (1.1.2, 1.1.3 ...)
     stop_prefix = outer_chapter_section.rsplit(".", 1)[0]
     chapter_stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+
 
     # 小節標題：整行比對文字
     subsection_pattern = re.compile(rf"^\s*{re.escape(subsection_title.strip())}\s*$", re.IGNORECASE)
@@ -430,30 +449,16 @@ def extract_word_subsection(
                     continue
 
                 # 組出原段落文字（含 ListText）
-                paragraph_text = child.ListText + " " if child.ListText else ""
-                for j in range(child.ChildObjects.Count):
-                    sub = child.ChildObjects.get_Item(j)
-                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
-                        paragraph_text += sub.Text or ""
-
-                paragraph_text_stripped = paragraph_text.strip()
+                paragraph_text_stripped = _get_paragraph_text_stripped(child)
 
                 # 1) 判斷是否進入指定章節 1.1.1
                 if not in_chapter:
-                    if chapter_pattern.match(paragraph_text_stripped) or (
-                        child.ListText and chapter_pattern.match(child.ListText.strip())
-                    ):
+                    if chapter_pattern.match(paragraph_text_stripped):
                         in_chapter = True
                     continue
 
                 # 2) 章節內，先看是否遇到下一個章節（1.1.2...），整個擷取結束
-                stop_hit = False
-                if child.ListText and chapter_stop_pattern.match(child.ListText.strip()):
-                    stop_hit = True
-                if not stop_hit and paragraph_text_stripped and chapter_stop_pattern.match(paragraph_text_stripped):
-                    stop_hit = True
-
-                if stop_hit:
+                if paragraph_text_stripped and chapter_stop_pattern.match(paragraph_text_stripped):
                     in_chapter = False
                     in_subsection = False
                     done = True
@@ -461,7 +466,7 @@ def extract_word_subsection(
 
                 # 3) 在 1.1.1 內，尚未進入小節 → 尋找目標小節標題
                 if in_chapter and not in_subsection:
-                    if subsection_pattern.match(paragraph_text_stripped) and is_inline_subtitle_spire(child):
+                    if is_inline_subtitle_spire(child) and _normalize_text(paragraph_text_stripped) == _normalize_text(subsection_title):
                         in_subsection = True
                         skip_first_line_after_title = True
                     continue
@@ -566,14 +571,7 @@ def center_table_figure_paragraphs(input_file: str) -> bool:
             if isinstance(child, Paragraph):
                 if "toc" in child.StyleName.lower() or "目錄" in child.StyleName.lower():
                     continue
-                paragraph_text = ""
-                if child.ListText:
-                    paragraph_text += child.ListText + " "
-                for j in range(child.ChildObjects.Count):
-                    sub = child.ChildObjects.get_Item(j)
-                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
-                        paragraph_text += sub.Text
-                paragraph_text = paragraph_text.strip()
+                paragraph_text = _get_paragraph_text_stripped(child)
                 if pattern.match(paragraph_text):
                     child.Format.HorizontalAlignment = HorizontalAlignment.Center
             elif isinstance(child, ICompositeObject):
@@ -749,15 +747,33 @@ def _is_header_or_footer(doc_type) -> bool:
     header_footer = getattr(DocumentObjectType, "HeaderFooter", None)
     return doc_type in (header, footer, header_footer)
 
+def _normalize_space(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+
+def _match_chapter_start(text: str, chapter_section: str, chapter_title: str | None = None) -> bool:
+    if not chapter_section:
+        return False
+    pattern = re.compile(rf"^\s*{re.escape(chapter_section)}(\s|$)", re.IGNORECASE)
+    if not pattern.match(text):
+        return False
+    if chapter_title:
+        tail = pattern.sub("", text, count=1)
+        return _normalize_space(chapter_title) in _normalize_space(tail)
+    return True
+
 
 def extract_specific_figure_from_word(
     input_file: str,
     target_chapter_section: str,   # 例如 "2.1.1"
-    target_figure_label: str,      # 例如 "Figure 1."
+    target_caption_label: str,      # 例如 "Figure 1."
     target_subtitle: str | None = None,  # 可選，有就填，沒有就 None
+    target_chapter_title: str | None = None,
     output_image_path: str = "figure_output",
     output_doc=None,
     section=None,
+    *,
+    return_reason: bool = False,
 ):
     """
     從指定 Word 檔中，擷取「某章節」(可選擇是否限制到某小節) 裡，
@@ -769,7 +785,7 @@ def extract_specific_figure_from_word(
         要處理的 Word 檔路徑。
     target_chapter_section : str
         章節編號，例如 "2.1.1"。用來鎖定章節範圍。
-    target_figure_label : str
+    target_caption_label : str
         要找的 Figure 標題文字，例如 "Figure 1."。
     target_subtitle : str 或 None
         若有特定小節標題，例如 "Information on product label"，就填入；
@@ -792,13 +808,13 @@ def extract_specific_figure_from_word(
         若找不到，回傳 None。
     """
 
-    if not os.path.exists(output_image_path):
-        os.makedirs(output_image_path)
+    os.makedirs(output_image_path, exist_ok=True)
 
-    # 章節起始與停止條件
-    section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
-    stop_prefix = target_chapter_section.rsplit('.', 1)[0]
-    stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+    use_chapter = bool(target_chapter_section.strip())
+    chapter_title = (target_chapter_title or "").strip()
+    if use_chapter:
+        stop_prefix = target_chapter_section.rsplit('.', 1)[0]
+        stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
 
     # 小節標題 (可選)
     if target_subtitle and target_subtitle.strip():
@@ -807,7 +823,7 @@ def extract_specific_figure_from_word(
         subtitle_pattern = None  # 不限制小節
 
     # Figure caption
-    figure_pattern = re.compile(rf"^\s*{re.escape(target_figure_label)}", re.IGNORECASE)
+    figure_pattern = re.compile(rf"^\s*{re.escape(target_caption_label)}", re.IGNORECASE)
 
     input_doc = Document()
     input_doc.LoadFromFile(input_file)
@@ -823,8 +839,9 @@ def extract_specific_figure_from_word(
 
     image_count = [1]
 
-    in_target_chapter = False
+    in_target_chapter = not use_chapter
     in_target_subtitle = False  # 如果沒有 subtitle，會在進入章節時直接視為 True
+    subtitle_found = False
 
     recent_pictures = []
     result = None
@@ -839,16 +856,10 @@ def extract_specific_figure_from_word(
             child = node.ChildObjects.get_Item(i)
 
             if isinstance(child, Paragraph):
-                paragraph_text = child.ListText + " " if child.ListText else ""
-                for j in range(child.ChildObjects.Count):
-                    sub = child.ChildObjects.get_Item(j)
-                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
-                        paragraph_text += sub.Text
-
-                paragraph_text_stripped = paragraph_text.strip()
+                paragraph_text_stripped = _get_paragraph_text_stripped(child)
 
                 # 1) 章節開頭
-                if section_pattern.match(paragraph_text_stripped):
+                if use_chapter and _match_chapter_start(paragraph_text_stripped, target_chapter_section, chapter_title):
                     in_target_chapter = True
                     recent_pictures.clear()
                     # 若沒有指定 subtitle，整個章節都視為有效範圍
@@ -859,7 +870,7 @@ def extract_specific_figure_from_word(
                     continue
 
                 # 2) 超出章節範圍
-                if in_target_chapter and child.ListText and stop_pattern.match(child.ListText):
+                if use_chapter and in_target_chapter and stop_pattern.match(paragraph_text_stripped):
                     in_target_chapter = False
                     in_target_subtitle = False
                     recent_pictures.clear()
@@ -868,13 +879,14 @@ def extract_specific_figure_from_word(
                 # 3) 有指定 subtitle 的情況：在章節內遇到目標小節標題才開始算
                 if in_target_chapter and subtitle_pattern is not None and subtitle_pattern.match(paragraph_text_stripped):
                     in_target_subtitle = True
+                    subtitle_found = True
                     recent_pictures.clear()
                     continue
 
                 # 4) 若有 subtitle，就簡單用「看起來像新標題」來判斷離開小節
-                if in_target_chapter and subtitle_pattern is not None and in_target_subtitle:
+                if use_chapter and in_target_chapter and subtitle_pattern is not None and in_target_subtitle:
                     if paragraph_text_stripped and (
-                        section_pattern.match(paragraph_text_stripped)
+                        _match_chapter_start(paragraph_text_stripped, target_chapter_section, chapter_title)
                         or re.match(r'^\s*\d+(\.\d+)*\s+', paragraph_text_stripped)
                     ):
                         in_target_subtitle = False
@@ -922,39 +934,52 @@ def extract_specific_figure_from_word(
 
     input_doc.Close()
 
+    if subtitle_pattern is not None and not subtitle_found:
+        if return_reason:
+            return {"ok": False, "subtitle_found": False, "reason": "subtitle_not_found"}
+        return None
+
     if result is None:
-        print("未在指定章節範圍內找到對應的 Figure 圖片。")
+        print("????????????? Figure ??")
+        if return_reason:
+            return {"ok": False, "subtitle_found": True, "reason": "figure_not_found"}
     else:
-        print(f"已擷取圖片 {result['image_filename']}，對應 caption: {result['caption']}")
+        print(f"Extracted image {result['image_filename']}, caption: {result['caption']}")
+        if return_reason:
+            result["subtitle_found"] = True
+            return {"ok": True, "subtitle_found": True, "result": result}
 
     return result
 
 
 def extract_specific_table_from_word(
     input_file: str,
-    output_file: str | None,      # 另存新檔的路徑，例如 "check_result.docx"
+    output_docx_path: str | None,      # 另存新檔的路徑，例如 "check_result.docx"
     target_chapter_section: str,   # 章節編號，例如 "2.1.1"
-    target_table_label: str,       # 表格標題開頭，例如 "Table 1."
+    target_caption_label: str,       # 表格標題開頭，例如 "Table 1."
     target_subtitle: str | None = None,
+    target_chapter_title: str | None = None,
     *,
     include_caption: bool = True,
     save_output: bool = True,      # 是否存檔；如不存則僅回傳找到與否
+    return_reason: bool = False,
 ) -> bool:
     """
     擷取指定標題上方的表格，並另存到新的 Word 文件中以便檢查。
     """
 
-    # 1. 設定匹配邏輯 (Regex)
-    section_pattern = re.compile(rf"^\s*{re.escape(target_chapter_section)}(\s|$)", re.IGNORECASE)
-    stop_prefix = target_chapter_section.rsplit('.', 1)[0]
-    stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+    use_chapter = bool(target_chapter_section.strip())
+    chapter_title = (target_chapter_title or "").strip()
+    if use_chapter:
+        stop_prefix = target_chapter_section.rsplit('.', 1)[0]
+        stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
 
     if target_subtitle and target_subtitle.strip():
         subtitle_pattern = re.compile(rf"^\s*{re.escape(target_subtitle.strip())}\s*$", re.IGNORECASE)
     else:
         subtitle_pattern = None
 
-    table_label_pattern = re.compile(rf"^\s*{re.escape(target_table_label)}", re.IGNORECASE)
+    table_label_pattern = re.compile(rf"^\s*{re.escape(target_caption_label)}", re.IGNORECASE)
 
     # 2. 建立輸入與輸出文件物件
     input_doc = Document()
@@ -966,11 +991,12 @@ def extract_specific_table_from_word(
     nodes = queue.Queue()
     nodes.put(input_doc)
 
-    in_target_chapter = False
+    in_target_chapter = not use_chapter
     in_target_subtitle = (subtitle_pattern is None)
     is_waiting_for_table = False 
     saved_caption_text = ""
     result_found = False
+    subtitle_found = False
 
     # 3. 遍歷文件結構
     while nodes.qsize() > 0 and not result_found:
@@ -980,24 +1006,19 @@ def extract_specific_table_from_word(
 
             # --- 處理段落：判斷範圍與標題 ---
             if isinstance(child, Paragraph):
-                paragraph_text = child.ListText + " " if child.ListText else ""
-                for j in range(child.ChildObjects.Count):
-                    sub = child.ChildObjects.get_Item(j)
-                    if sub.DocumentObjectType == DocumentObjectType.TextRange:
-                        paragraph_text += sub.Text
-                
-                text_stripped = paragraph_text.strip()
+                text_stripped = _get_paragraph_text_stripped(child)
 
                 # A) 章節與範圍判斷
-                if section_pattern.match(text_stripped):
+                if use_chapter and _match_chapter_start(text_stripped, target_chapter_section, chapter_title):
                     in_target_chapter = True
                     in_target_subtitle = (subtitle_pattern is None)
                     continue
-                if in_target_chapter and child.ListText and stop_pattern.match(child.ListText):
+                if use_chapter and in_target_chapter and stop_pattern.match(text_stripped):
                     in_target_chapter = False
                     break
                 if in_target_chapter and subtitle_pattern and subtitle_pattern.match(text_stripped):
                     in_target_subtitle = True
+                    subtitle_found = True
                     continue
 
                 # B) 核心邏輯：發現標題 (立旗)
@@ -1031,12 +1052,15 @@ def extract_specific_table_from_word(
                 nodes.put(child)
 
     # 4. 存檔並關閉
-    if result_found and save_output and output_file:
-        output_doc.SaveToFile(output_file, FileFormat.Docx)
-        print(f"成功！已將表格與標題另存至：{output_file}")
+    if result_found and save_output and output_docx_path:
+        output_doc.SaveToFile(output_docx_path, FileFormat.Docx)
+        print(f"成功！已將表格與標題另存至：{output_docx_path}")
     elif not result_found:
         print("搜尋結束，未找到符合條件的表格。")
 
     input_doc.Close()
-    output_doc.Close()
-    return result_found
+    if subtitle_pattern is not None and not subtitle_found:
+        return {"ok": False, "subtitle_found": False, "reason": "subtitle_not_found"} if return_reason else False
+    if not result_found:
+        return {"ok": False, "subtitle_found": True, "reason": "table_not_found"} if return_reason else False
+    return {"ok": True, "subtitle_found": True, "reason": "ok"} if return_reason else True

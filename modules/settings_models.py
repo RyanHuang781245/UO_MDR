@@ -10,6 +10,7 @@ class SystemSetting(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     email_batch_notify_enabled = db.Column(db.Boolean, nullable=False, server_default="0")
+    nas_max_copy_file_size_mb = db.Column(db.Integer, nullable=True)
     updated_at = db.Column(db.DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
 
@@ -28,6 +29,8 @@ def ensure_schema() -> None:
                 conn.execute(
                     text("ALTER TABLE system_settings ADD email_batch_notify_enabled BIT NOT NULL DEFAULT(0);")
                 )
+            if "nas_max_copy_file_size_mb" not in existing_columns:
+                conn.execute(text("ALTER TABLE system_settings ADD nas_max_copy_file_size_mb INT NULL;"))
             if "updated_at" not in existing_columns:
                 conn.execute(
                     text(
@@ -42,6 +45,8 @@ def ensure_schema() -> None:
         with engine.begin() as conn:
             if "email_batch_notify_enabled" not in existing_columns:
                 conn.execute(text("ALTER TABLE system_settings ADD COLUMN email_batch_notify_enabled BOOLEAN;"))
+            if "nas_max_copy_file_size_mb" not in existing_columns:
+                conn.execute(text("ALTER TABLE system_settings ADD COLUMN nas_max_copy_file_size_mb INTEGER;"))
             if "updated_at" not in existing_columns:
                 conn.execute(text("ALTER TABLE system_settings ADD COLUMN updated_at DATETIME;"))
 
@@ -50,5 +55,5 @@ def ensure_default_settings() -> None:
     existing = SystemSetting.query.order_by(SystemSetting.id).first()
     if existing:
         return
-    db.session.add(SystemSetting(id=1, email_batch_notify_enabled=False))
+    db.session.add(SystemSetting(id=1, email_batch_notify_enabled=False, nas_max_copy_file_size_mb=None))
     commit_session()

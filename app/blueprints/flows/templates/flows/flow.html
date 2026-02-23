@@ -679,8 +679,13 @@ renderTemplatePreview();
 refreshTemplateSelects();
 function genId(){ return (Date.now().toString(36) + Math.random().toString(36).slice(2,7)); }
 function updateOrder(){
-  const ids = Array.from(document.querySelectorAll("#steps .card")).map(el => el.dataset.sid);
+  const cards = Array.from(document.querySelectorAll("#steps > .card"));
+  const ids = cards.map(el => el.dataset.sid);
   document.getElementById("ordered_ids").value = ids.join(",");
+  cards.forEach((card, index) => {
+    const badge = card.querySelector(".step-index");
+    if (badge) badge.textContent = index + 1;
+  });
   markDirty();
 }
 const normalizePreset = (raw = {}) => {
@@ -778,7 +783,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
 
     let body = `<div class="card-body">
       <div class="d-flex justify-content-between align-items-center">
-        <h2 class="h5 mb-0">${spec.label}</h2>
+        <h2 class="h5 mb-0">
+          <span class="badge bg-secondary me-2 step-index"></span>
+          ${spec.label}
+        </h2>
         <div class="btn-group">
           <div class="btn-group">
             <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
@@ -961,7 +969,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     }
     if (accept === "text"){
       if (k === "target_subtitle") {
-        const hideStyle = targetTitleVal === "false" ? "display: none;" : "";
+        const hideStyle = (spec.inputs.includes("use_chapter_title") && targetTitleVal === "false") ? "display: none;" : "";
         return `<div class="col-md-9 subheading-input" style="${hideStyle}"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
@@ -1132,7 +1140,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
 
   let body = `<div class="card-body">
     <div class="d-flex justify-content-between align-items-center">
-      <h2 class="h5 mb-0">${spec.label}</h2>
+      <h2 class="h5 mb-0">
+        <span class="badge bg-secondary me-2 step-index"></span>
+        ${spec.label}
+      </h2>
       <div class="btn-group">
         <div class="btn-group">
           <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>

@@ -348,6 +348,9 @@ class UserAdminView(SecureModelView):
 
     def update_model(self, form, model):
         try:
+            if str(model.id) == str(current_user.id) and not form.active.data:
+                flash("無法停用自己的帳號", "error")
+                return False
             model.active = bool(form.active.data)
             role_id = form.role.data
             role = Role.query.get(role_id) if role_id else None

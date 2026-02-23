@@ -14,6 +14,7 @@ from flask_login import current_user
 from wtforms import SelectField
 from ldap3 import BASE, SUBTREE, Connection, Server
 from ldap3.utils.conv import escape_filter_chars
+from markupsafe import Markup
 
 from app.extensions import ldap_manager, login_manager
 from app.utils import TAIWAN_TZ, format_tw_datetime
@@ -263,6 +264,24 @@ class SecureModelView(ModelView):
         return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
 
 
+def _format_role_column(view, context, model, name):
+    role = model.role_name
+    if not role:
+        return ""
+    label = ROLE_LABELS_ZH.get(role, role)
+    if role == ROLE_ADMIN:
+        return Markup(f'<span class="badge badge-danger">{label}</span>')
+    if role == ROLE_EDITOR:
+        return Markup(f'<span class="badge badge-success">{label}</span>')
+    return Markup(f'<span class="badge badge-secondary">{label}</span>')
+
+
+def _format_active_column(view, context, model, name):
+    if model.active:
+        return Markup('<span class="badge badge-success">啟用</span>')
+    return Markup('<span class="badge badge-secondary">停用</span>')
+
+
 class UserAdminView(SecureModelView):
     can_create = False
     can_delete = True
@@ -288,10 +307,16 @@ class UserAdminView(SecureModelView):
         "role_name": "角色",
     }
     form_extra_fields = {"role": SelectField("角色", coerce=int)}
-    form_columns = ("active", "role")
+    form_columns = ("work_id", "display_name", "active", "role")
+    form_widget_args = {
+        "work_id": {"readonly": True},
+        "display_name": {"readonly": True},
+    }
     column_formatters = {
         "last_login_at": lambda _view, _context, model, _name: format_tw_datetime(model.last_login_at),
         "created_at": lambda _view, _context, model, _name: format_tw_datetime(model.created_at, assume_tz=TAIWAN_TZ),
+        "role_name": _format_role_column,
+        "active": _format_active_column,
     }
 
     def _load_role_choices(self):

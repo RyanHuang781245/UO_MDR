@@ -64,6 +64,10 @@
             <i class="bi bi-folder"></i>
             檔案結構
           </button>
+          <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
+            <i class="bi bi-arrows-collapse"></i>
+            全部收合
+          </button>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
           <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1" type="submit" name="action" value="save">
@@ -279,6 +283,12 @@
 .run-status-body {
   color: #555;
   font-size: 0.9rem;
+}
+.step-toggle[aria-expanded="true"] .transition-icon {
+  transform: rotate(90deg);
+}
+.transition-icon {
+  transition: transform 0.2s ease;
 }
 </style>
 
@@ -781,104 +791,111 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const ignoreHeaderLabel = (FIELD_META["ignore_header_footer"] || {}).label || "移除頁首頁尾";
     const strictLabel = (FIELD_META["subheading_strict_match"] || {}).label || "小標題精確比對";
 
-    let body = `<div class="card-body">
-      <div class="d-flex justify-content-between align-items-center">
+    const collapseId = `collapse_${sid}`;
+    let body = `
+    <div class="card-header d-flex justify-content-between align-items-center py-2 bg-white">
+      <div class="d-flex align-items-center step-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
+        <i class="bi bi-chevron-right me-2 text-muted small transition-icon"></i>
         <h2 class="h5 mb-0">
           <span class="badge bg-secondary me-2 step-index"></span>
           ${spec.label}
         </h2>
+      </div>
+      <div class="btn-group">
         <div class="btn-group">
-          <div class="btn-group">
-            <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
-            <ul class="dropdown-menu">${menuBefore}</ul>
-          </div>
-          <div class="btn-group">
-            <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
-            <ul class="dropdown-menu">${menuAfter}</ul>
-          </div>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
-          <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
+          <ul class="dropdown-menu">${menuBefore}</ul>
         </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
+          <ul class="dropdown-menu">${menuAfter}</ul>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
       </div>
-      <input type="hidden" name="step_${sid}_type" value="${typeKey}">
+    </div>
+    <div id="${collapseId}" class="collapse show step-content">
+      <div class="card-body">
+        <input type="hidden" name="step_${sid}_type" value="${typeKey}">
 
-      <div class="mt-3">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-diagram-3"></i>
-          來源與章節設定
-        </div>
-        <div class="row g-3">
-          <div class="col-12">
-            <label class="form-label">輸入檔案</label>
-            <select class="form-select" name="step_${sid}_input_file" required>
-              <option value="" disabled ${fileVal ? "" : "selected"}>${filePlaceholder}</option>
-              ${fileOptions}
-            </select>
+        <div class="mt-3">
+          <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+            <i class="bi bi-diagram-3"></i>
+            來源與章節設定
           </div>
-          <div class="col-md-6">
-            <label class="form-label">${sectionLabel}</label>
-            <input class="form-control" name="step_${sid}_${sectionKey}" value="${sectionVal}" placeholder="${sectionPlaceholder}">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label d-flex justify-content-between align-items-center">
-              <span>${titleLabel}</span>
-              <span class="form-check d-flex align-items-center gap-1 m-0">
-                <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
-                <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-                <span class="small text-muted">擷取小標題內容</span>
-              </span>
-            </label>
-            <input class="form-control" name="step_${sid}_target_chapter_title" value="${titleVal}" placeholder="${titlePlaceholder}">
-          </div>
-        </div>
-
-        <div class="card bg-light border mt-3 subheading-input" style="${subheadingHideStyle}">
-          <div class="card-body">
-            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-              <i class="bi bi-card-text"></i>
-              指定擷取的小標題
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">輸入檔案</label>
+              <select class="form-select" name="step_${sid}_input_file" required>
+                <option value="" disabled ${fileVal ? "" : "selected"}>${filePlaceholder}</option>
+                ${fileOptions}
+              </select>
             </div>
-            <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
-            <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
-          </div>
-        </div>
-
-        <div class="card bg-light border mt-3">
-          <div class="card-body">
-            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-              <i class="bi bi-list-check"></i>
-              擷取規則
+            <div class="col-md-6">
+              <label class="form-label">${sectionLabel}</label>
+              <input class="form-control" name="step_${sid}_${sectionKey}" value="${sectionVal}" placeholder="${sectionPlaceholder}">
             </div>
-            <div class="row g-2">
-              ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
-              ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-4") : ""}
-              ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-4") : ""}
+            <div class="col-md-6">
+              <label class="form-label d-flex justify-content-between align-items-center">
+                <span>${titleLabel}</span>
+                <span class="form-check d-flex align-items-center gap-1 m-0">
+                  <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
+                  <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+                  <span class="small text-muted">擷取小標題內容</span>
+                </span>
+              </label>
+              <input class="form-control" name="step_${sid}_target_chapter_title" value="${titleVal}" placeholder="${titlePlaceholder}">
             </div>
           </div>
-        </div>
 
-      </div>
-
-      <div class="mt-4">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-box-arrow-in-down"></i>
-          輸出與插入設定
-        </div>
-        <div class="row g-3">
-          <div class="col-md-6">
-            <label class="form-label">模板段落</label>
-            <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${tplDisabled}>
-              ${buildTemplateOptions(tplIndexVal)}
-            </select>
-            <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+          <div class="card bg-light border mt-3 subheading-input" style="${subheadingHideStyle}">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+                <i class="bi bi-card-text"></i>
+                指定擷取的小標題
+              </div>
+              <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
+              <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
+            </div>
           </div>
-          <div class="col-md-4">
-            <label class="form-label">插入方式</label>
-            <select class="form-select" name="step_${sid}_template_mode">
-              <option value="insert_after" ${tplModeVal==="insert_after"?"selected": ""}>段落後新增</option>
-              <option value="replace" ${tplModeVal==="replace"?"selected": ""}>取代該段落</option>
-            </select>
+
+          <div class="card bg-light border mt-3">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+                <i class="bi bi-list-check"></i>
+                擷取規則
+              </div>
+              <div class="row g-2">
+                ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
+                ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-4") : ""}
+                ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-4") : ""}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="mt-4">
+          <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+            <i class="bi bi-box-arrow-in-down"></i>
+            輸出與插入設定
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">模板段落</label>
+              <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${tplDisabled}>
+                ${buildTemplateOptions(tplIndexVal)}
+              </select>
+              <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">插入方式</label>
+              <select class="form-select" name="step_${sid}_template_mode">
+                <option value="insert_after" ${tplModeVal==="insert_after"?"selected": ""}>段落後新增</option>
+                <option value="replace" ${tplModeVal==="replace"?"selected": ""}>取代該段落</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -1138,12 +1155,16 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     }
   }
 
-  let body = `<div class="card-body">
-    <div class="d-flex justify-content-between align-items-center">
-      <h2 class="h5 mb-0">
-        <span class="badge bg-secondary me-2 step-index"></span>
-        ${spec.label}
-      </h2>
+  const collapseId = `collapse_${sid}`;
+  let body = `
+    <div class="card-header d-flex justify-content-between align-items-center py-2 bg-white">
+      <div class="d-flex align-items-center step-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
+        <i class="bi bi-chevron-right me-2 text-muted small transition-icon"></i>
+        <h2 class="h5 mb-0">
+          <span class="badge bg-secondary me-2 step-index"></span>
+          ${spec.label}
+        </h2>
+      </div>
       <div class="btn-group">
         <div class="btn-group">
           <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
@@ -1158,43 +1179,47 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
       </div>
     </div>
-    <input type="hidden" name="step_${sid}_type" value="${typeKey}">
-
-    ${basicFields.length ? `
-    <div class="card bg-light border mt-3">
+    <div id="${collapseId}" class="collapse show step-content">
       <div class="card-body">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-gear"></i>
-          基本設定
-        </div>
-        <div class="row g-3">${basicFields.join("")}</div>
-      </div>
-    </div>` : ""}
+        <input type="hidden" name="step_${sid}_type" value="${typeKey}">
 
-    ${subtitleFields.length ? subtitleFields.join("") : ""}
+        ${basicFields.length ? `
+        <div class="card bg-light border mt-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-gear"></i>
+              基本設定
+            </div>
+            <div class="row g-3">${basicFields.join("")}</div>
+          </div>
+        </div>` : ""}
 
-    ${ruleFields.length ? `
-    <div class="card bg-light border mt-3">
-      <div class="card-body">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-list-check"></i>
-          選項與規則
-        </div>
-        <div class="row g-3">${ruleFields.join("")}</div>
-      </div>
-    </div>` : ""}
+        ${subtitleFields.length ? subtitleFields.join("") : ""}
 
-    ${templateFields.length ? `
-    <div class="card bg-light border mt-3">
-      <div class="card-body">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-box-arrow-in-down"></i>
-          輸出與插入設定
-        </div>
-        <div class="row g-3">${templateFields.join("")}</div>
+        ${ruleFields.length ? `
+        <div class="card bg-light border mt-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-list-check"></i>
+              選項與規則
+            </div>
+            <div class="row g-3">${ruleFields.join("")}</div>
+          </div>
+        </div>` : ""}
+
+        ${templateFields.length ? `
+        <div class="card bg-light border mt-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-box-arrow-in-down"></i>
+              輸出與插入設定
+            </div>
+            <div class="row g-3">${templateFields.join("")}</div>
+          </div>
+        </div>` : ""}
       </div>
-    </div>` : ""}
-  </div>`;
+    </div>`;
+
   card.innerHTML = body;
   const container = document.getElementById("steps");
   if (refSid){
@@ -1257,6 +1282,22 @@ if (PRESET_FLOW){
     addStep(st.type, st.params);
   }
 }
+
+const toggleAllStepsBtn = document.getElementById('toggleAllStepsBtn');
+let allCollapsed = false;
+if (toggleAllStepsBtn) {
+  toggleAllStepsBtn.addEventListener('click', () => {
+    const collapses = document.querySelectorAll('.step-content');
+    allCollapsed = !allCollapsed;
+    collapses.forEach(el => {
+      const bsCollapse = bootstrap.Collapse.getOrCreateInstance(el);
+      if (allCollapsed) bsCollapse.hide();
+      else bsCollapse.show();
+    });
+    toggleAllStepsBtn.innerHTML = allCollapsed ? '<i class="bi bi-arrows-expand"></i> 全部展開' : '<i class="bi bi-arrows-collapse"></i> 全部收合';
+  });
+}
+
 isInitialising = false;
 </script>
 

@@ -640,12 +640,20 @@ def register_auth_context(app) -> None:
         def _role_labels(role_names: list[str]) -> str:
             return ", ".join(ROLE_LABELS_ZH.get(name, name) for name in role_names)
 
+        def _extract_chinese_name(display_name: Optional[str]) -> Optional[str]:
+            if not display_name:
+                return None
+            # 過濾出非 ASCII 字元 (假設為中文)，若無中文則回傳原字串
+            chinese_text = "".join(c for c in display_name if ord(c) > 127)
+            return chinese_text if chinese_text else display_name
+
         return {
             "auth_enabled": app.config.get("AUTH_ENABLED", True),
             "current_user": current_user if current_user.is_authenticated else None,
             "current_user_roles": get_user_role_names(current_user.id) if current_user.is_authenticated else [],
             "has_permission": _has_perm,
             "role_labels": _role_labels,
+            "extract_chinese_name": _extract_chinese_name,
             "ROLE_ADMIN": ROLE_ADMIN,
             "ROLE_EDITOR": ROLE_EDITOR,
             "PERM_USER_MANAGE": PERM_USER_MANAGE,

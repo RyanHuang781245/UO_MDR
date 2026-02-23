@@ -922,11 +922,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   const templateFields = [];
 
   const subtitleToggleSteps = ["extract_specific_figure_from_word", "extract_specific_table_from_word"];
-    const subtitleToggleLabelMap = {
-      extract_specific_figure_from_word: "擷取小標題內容",
-      extract_specific_table_from_word: "擷取小標題內容",
-    };
-  const renderField = (k) => {
+      const renderField = (k) => {
     const accept = spec.accepts[k];
     const meta = FIELD_META[k] || {};
     const label = meta.label || k;
@@ -973,10 +969,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         return `<div class="col-md-6"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
-        if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
-          const show = val.trim().length > 0;
-          const hideStyle = show ? "" : "display: none;";
-          return `<div class="col-12 subtitle-wrap mt-3" style="${hideStyle}">
+      if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
+          return `<div class="col-12 subtitle-wrap mt-3">
                     <div class="card bg-light border">
                       <div class="card-body">
                         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
@@ -1094,11 +1088,6 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       handledKeys.add("input_file");
     }
     if (spec.inputs.includes("target_chapter_section")) {
-      const subtitleRaw = preset["target_subtitle"];
-      const subtitleVal = subtitleRaw === undefined || subtitleRaw === null ? "" : String(subtitleRaw);
-      const checked = subtitleVal.trim().length > 0 ? "checked" : "";
-      const toggleId = `step_${sid}_target_subtitle_toggle`;
-      const toggleLabel = subtitleToggleLabelMap[typeKey] || "擷取小標題內容";
       const targetKey = "target_caption_label";
       const targetMeta = FIELD_META[targetKey] || {};
       const targetLabel = targetMeta.label || targetKey;
@@ -1108,13 +1097,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       const sectionVal = getValue("target_chapter_section");
       basicFields.push(`
         <div class="col-md-6">
-          <label class="form-label d-flex justify-content-between align-items-center">
-            <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
-            <span class="form-check d-flex align-items-center gap-1 m-0">
-              <input class="form-check-input toggle-subtitle" type="checkbox" id="${toggleId}" ${checked}>
-              <span class="small text-muted">${toggleLabel}</span>
-            </span>
-          </label>
+          <label class="form-label">${FIELD_META.target_chapter_section?.label || "章節編號"}</label>
           <input class="form-control" name="step_${sid}_target_chapter_section" value="${sectionVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"}">
         </div>
         <div class="col-md-6">
@@ -1229,13 +1212,6 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   if (subheadingToggle && subheadingInput) {
     subheadingToggle.addEventListener("change", () => {
       subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
-    });
-  }
-  const subtitleToggle = card.querySelector(".toggle-subtitle");
-  const subtitleWrap = card.querySelector(".subtitle-wrap");
-  if (subtitleToggle && subtitleWrap) {
-    subtitleToggle.addEventListener("change", () => {
-      subtitleWrap.style.display = subtitleToggle.checked ? "" : "none";
     });
   }
   refreshTemplateSelects();

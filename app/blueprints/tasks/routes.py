@@ -233,6 +233,7 @@ def task_mapping(task_id):
         return f"{trimmed}…", True
     if request.method == "POST":
         f = request.files.get("mapping_file")
+        action = request.form.get("action") or "run"
         if not f or not f.filename:
             messages.append("請選擇檔案")
         else:
@@ -240,7 +241,13 @@ def task_mapping(task_id):
             f.save(path)
             try:
                 from modules.mapping_processor import process_mapping_excel
-                result = process_mapping_excel(path, files_dir, out_dir, log_dir=log_dir)
+                result = process_mapping_excel(
+                    path,
+                    files_dir,
+                    out_dir,
+                    log_dir=log_dir,
+                    validate_only=(action == "check"),
+                )
                 messages = result["logs"]
                 outputs = result["outputs"]
                 log_file = result.get("log_file")

@@ -132,15 +132,31 @@
         var originalText = $btn.text();
         $btn.text('...');
 
-        $.post($form.attr('action'), $form.serialize())
-          .done(function() {
+        $.ajax({
+          url: $form.attr('action'),
+          method: 'POST',
+          data: $form.serialize(),
+          dataType: 'json'
+        })
+          .done(function(resp) {
+            if (!resp || !resp.ok) {
+              var msg = (resp && resp.error) ? resp.error : '操作失敗，請檢查網路或稍後再試。';
+              alert(msg);
+              $btn.text(originalText);
+              return;
+            }
+            var displayRole = resp.role_name || roleName;
             // 成功後更新 UI：狀態改為「已存在」，並顯示角色名稱
-            $statusCell.html('<span class="status-badge status-exists">已存在</span><div class="text-muted small">' + roleName + '</div>');
+            $statusCell.html('<span class="status-badge status-exists">已存在</span><div class="text-muted small">' + displayRole + '</div>');
             // 按鈕改為「更新」樣式
             $btn.removeClass('add').addClass('update').text('更新');
           })
-          .fail(function() {
-            alert('操作失敗，請檢查網路或稍後再試。');
+          .fail(function(xhr) {
+            var msg = '操作失敗，請檢查網路或稍後再試。';
+            if (xhr && xhr.responseJSON && xhr.responseJSON.error) {
+              msg = xhr.responseJSON.error;
+            }
+            alert(msg);
             $btn.text(originalText); // 失敗時恢復按鈕文字
           })
           .always(function() {

@@ -156,6 +156,7 @@ def process_mapping_excel(
     task_files_dir: str,
     output_dir: str,
     log_dir: str | None = None,
+    validate_only: bool = False,
 ) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
 
@@ -172,6 +173,8 @@ def process_mapping_excel(
     """
     logs: List[str] = []
     outputs: List[str] = []
+    row_errors: Dict[int, List[str]] = defaultdict(list)
+    os.makedirs(output_dir, exist_ok=True)
 
     try:
         from openpyxl import load_workbook
@@ -207,6 +210,46 @@ def process_mapping_excel(
         start_row = 3 if ws.max_row and ws.max_row >= 3 else 2
         docs: Dict[str, Tuple[Document, Any]] = {}
         hidden_titles: Dict[str, List[str]] = defaultdict(list)
+        if validate_only:
+            for row in ws.iter_rows(min_row=start_row, values_only=True):
+                raw_out, _raw_title, raw_folder, raw_input, raw_instruction = row[:5]
+                out_name = str(raw_out).strip() if raw_out else ""
+                folder = str(raw_folder).strip() if raw_folder else ""
+                input_name = str(raw_input).strip() if raw_input else ""
+                instruction = str(raw_instruction).strip() if raw_instruction else ""
+                if not instruction:
+                    continue
+
+                base_dir = task_files_dir
+                if folder:
+                    found_dir = _find_directory(task_files_dir, folder)
+                    if not found_dir:
+                        logs.append(f"ERROR: {out_name or '?'} folder not found {folder}")
+                        continue
+                    base_dir = found_dir
+
+                is_all = instruction.lower() == "all"
+                chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
+                if is_all or chapter_match:
+                    if not input_name:
+                        logs.append(f"ERROR: {out_name or '?'} missing source filename")
+                        continue
+                    infile = _resolve_input_file(base_dir, input_name)
+                    if not infile:
+                        logs.append(f"ERROR: {out_name or '?'} file not found {input_name}")
+                        continue
+
+            log_file = None
+            if logs:
+                target_log_dir = log_dir or output_dir
+                os.makedirs(target_log_dir, exist_ok=True)
+                log_filename = f"mapping_log_{uuid.uuid4().hex[:8]}.json"
+                log_path = os.path.join(target_log_dir, log_filename)
+                with open(log_path, "w", encoding="utf-8") as f:
+                    json.dump({"messages": logs, "runs": []}, f, ensure_ascii=False, indent=2)
+                log_file = log_filename
+            return {"logs": logs, "outputs": [], "log_file": log_file}
+
         for row in ws.iter_rows(min_row=start_row, values_only=True):
             raw_out, raw_title, raw_folder, raw_input, raw_instruction = row[:5]
             out_name = str(raw_out).strip() if raw_out else ""
@@ -346,6 +389,8 @@ def process_mapping_excel(
     ) -> None:
         row_tag = f"(Row {row_num}) " if row_num else ""
         if level.lower() == "error" and action:
+            if row_num:
+                row_errors[row_num].append(message)
             if detail:
                 logs.append(f"{level.upper()}: {row_tag}{action} :: {detail} :: {message}")
             else:
@@ -487,6 +532,8 @@ def process_mapping_excel(
 
         output_dir_full = os.path.join(output_dir, out_rel) if out_rel else output_dir
         output_path = os.path.join(output_dir_full, out_name)
+        if validate_only and out_rel and not os.path.isdir(output_dir_full):
+            _log("warn", f"輸出資料夾不存在: {out_rel}", row_num, action_label, detail_label)
         if output_path in output_template_map and output_template_map[output_path] != template_path:
             _log("error", f"output uses different templates: {out_name}", row_num, action_label, detail_label)
             continue
@@ -646,6 +693,36 @@ def process_mapping_excel(
         groups[group_key]["steps"].append({"type": step_type, "params": params})
 
     for (output_path, template_path), payload in groups.items():
+        if validate_only:
+            workflow_log = []
+            has_error = False
+            for idx, step in enumerate(payload.get("steps", []), start=1):
+                params = step.get("params", {})
+                row_no = params.get("mapping_row")
+                err_msg = row_errors.get(row_no, [])
+                status = "error" if err_msg else "ok"
+                if status == "error":
+                    has_error = True
+                workflow_log.append(
+                    {
+                        "step": idx,
+                        "type": step.get("type"),
+                        "params": params,
+                        "status": status,
+                        "error": err_msg[0] if err_msg else "",
+                    }
+                )
+            run_logs.append(
+                {
+                    "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
+                    "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
+                    "steps": payload.get("steps", []),
+                    "workflow_log": workflow_log,
+                    "status": "error" if has_error else "ok",
+                }
+            )
+            continue
+
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         workdir = os.path.join(tempfile.gettempdir(), f"mapping_{uuid.uuid4().hex[:8]}")
         os.makedirs(workdir, exist_ok=True)
@@ -705,7 +782,7 @@ def process_mapping_excel(
             )
 
     log_file = None
-    if run_logs:
+    if run_logs or logs:
         target_log_dir = log_dir or output_dir
         os.makedirs(target_log_dir, exist_ok=True)
         log_filename = f"mapping_log_{uuid.uuid4().hex[:8]}.json"

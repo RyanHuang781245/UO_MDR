@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse
 
-from flask import abort, current_app, flash, redirect, request, send_file, url_for
+from flask import abort, current_app, flash, jsonify, redirect, request, send_file, url_for
 from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_login import current_user
@@ -461,30 +461,39 @@ class ADSearchView(BaseView):
             email = (request.form.get("email") or "").strip()
             role_name = (request.form.get("role") or "").strip()
             query = (request.form.get("q") or "").strip()
+            is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+            def _error(message: str, status: int = 400):
+                if is_ajax:
+                    return jsonify({"ok": False, "error": message}), status
+                flash(message, "danger")
+                return redirect(url_for("ad_search.index", q=query))
 
             if not work_id:
-                flash("缺少工號", "danger")
-                return redirect(url_for("ad_search.index", q=query))
+                return _error("缺少工號", 400)
 
             role = Role.query.filter_by(name=role_name).first()
             if not role:
-                flash("角色不存在", "danger")
-                return redirect(url_for("ad_search.index", q=query))
-
-            profile = LDAPProfile(
-                work_id=work_id,
-                display_name=display_name or None,
-                email=email or None,
-            )
-            user = sync_user_from_ldap(profile)
-            upsert_user_role(user, role)
+                return _error("角色不存在", 400)
             try:
+                profile = LDAPProfile(
+                    work_id=work_id,
+                    display_name=display_name or None,
+                    email=email or None,
+                )
+                user = sync_user_from_ldap(profile)
+                upsert_user_role(user, role)
                 commit_session()
-                flash("已加入/更新使用者", "success")
             except Exception as exc:
                 db.session.rollback()
+                if is_ajax:
+                    return jsonify({"ok": False, "error": str(exc)}), 500
                 flash(str(exc), "danger")
+                return redirect(url_for("ad_search.index", q=query))
 
+            if is_ajax:
+                return jsonify({"ok": True, "role_name": role.name, "message": "已加入/更新使用者"})
+            flash("已加入/更新使用者", "success")
             return redirect(url_for("ad_search.index", q=query))
 
         query = (request.args.get("q") or "").strip()

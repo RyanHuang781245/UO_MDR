@@ -31,7 +31,8 @@
       <div class="row g-3">
         <div class="col-lg-7">
           <label class="form-label text-muted small">流程名稱</label>
-          <input class="form-control" name="flow_name" placeholder="請輸入流程名稱..." value="{{ loaded_name or '' }}">
+          <input class="form-control" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 60 字)" value="{{ loaded_name or '' }}" maxlength="60" required>
+          <div class="form-text text-end small" id="flowNameCount">0/60</div>
         </div>
         <div class="col-12">
           <div class="form-check">
@@ -63,6 +64,10 @@
           <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
             <i class="bi bi-folder"></i>
             檔案結構
+          </button>
+          <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
+            <i class="bi bi-arrows-collapse"></i>
+            全部收合
           </button>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -181,14 +186,37 @@
   </div>
 </div>
 
+<div class="modal fade" id="renameFlowModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">重新命名</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="renameFlowCurrentName">
+        <div class="mb-1">
+          <label for="renameFlowInput" class="form-label">新流程名稱 (最多 60 字)</label>
+          <input type="text" class="form-control" id="renameFlowInput" maxlength="60" required>
+          <div class="form-text text-end small" id="renameFlowCount">0/60</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary" id="renameFlowSubmitBtn">確定</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="card shadow-sm border mt-4">
   <div class="card-header bg-white border-bottom">
     <h2 class="h5 mb-0 fw-bold">已保存流程</h2>
   </div>
   <div class="card-body p-0">
-    <div class="table-responsive">
+    <div class="table-responsive" style="max-height: 390px; overflow-y: auto;">
       <table class="table table-striped text-center align-middle flow-table mb-0" id="flowTable">
-        <thead>
+        <thead class="bg-white border-bottom" style="position: sticky; top: 0; z-index: 1;">
           <tr>
               <th class="text-start ps-3">流程名稱</th>
               <th class="text-center" style="width: 200px;">建立時間</th>
@@ -279,6 +307,12 @@
 .run-status-body {
   color: #555;
   font-size: 0.9rem;
+}
+.step-toggle[aria-expanded="true"] .transition-icon {
+  transform: rotate(90deg);
+}
+.transition-icon {
+  transition: transform 0.2s ease;
 }
 </style>
 
@@ -679,8 +713,13 @@ renderTemplatePreview();
 refreshTemplateSelects();
 function genId(){ return (Date.now().toString(36) + Math.random().toString(36).slice(2,7)); }
 function updateOrder(){
-  const ids = Array.from(document.querySelectorAll("#steps .card")).map(el => el.dataset.sid);
+  const cards = Array.from(document.querySelectorAll("#steps > .card"));
+  const ids = cards.map(el => el.dataset.sid);
   document.getElementById("ordered_ids").value = ids.join(",");
+  cards.forEach((card, index) => {
+    const badge = card.querySelector(".step-index");
+    if (badge) badge.textContent = index + 1;
+  });
   markDirty();
 }
 const normalizePreset = (raw = {}) => {
@@ -776,101 +815,111 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const ignoreHeaderLabel = (FIELD_META["ignore_header_footer"] || {}).label || "移除頁首頁尾";
     const strictLabel = (FIELD_META["subheading_strict_match"] || {}).label || "小標題精確比對";
 
-    let body = `<div class="card-body">
-      <div class="d-flex justify-content-between align-items-center">
-        <h2 class="h5 mb-0">${spec.label}</h2>
+    const collapseId = `collapse_${sid}`;
+    let body = `
+    <div class="card-header d-flex justify-content-between align-items-center py-2 bg-white">
+      <div class="d-flex align-items-center step-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
+        <i class="bi bi-chevron-right me-2 text-muted small transition-icon"></i>
+        <h2 class="h5 mb-0">
+          <span class="badge bg-secondary me-2 step-index"></span>
+          ${spec.label}
+        </h2>
+      </div>
+      <div class="btn-group">
         <div class="btn-group">
-          <div class="btn-group">
-            <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
-            <ul class="dropdown-menu">${menuBefore}</ul>
-          </div>
-          <div class="btn-group">
-            <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
-            <ul class="dropdown-menu">${menuAfter}</ul>
-          </div>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
-          <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
+          <ul class="dropdown-menu">${menuBefore}</ul>
         </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
+          <ul class="dropdown-menu">${menuAfter}</ul>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
       </div>
-      <input type="hidden" name="step_${sid}_type" value="${typeKey}">
+    </div>
+    <div id="${collapseId}" class="collapse show step-content">
+      <div class="card-body">
+        <input type="hidden" name="step_${sid}_type" value="${typeKey}">
 
-      <div class="mt-3">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-diagram-3"></i>
-          來源與章節設定
-        </div>
-        <div class="row g-3">
-          <div class="col-12">
-            <label class="form-label">輸入檔案</label>
-            <select class="form-select" name="step_${sid}_input_file" required>
-              <option value="" disabled ${fileVal ? "" : "selected"}>${filePlaceholder}</option>
-              ${fileOptions}
-            </select>
+        <div class="mt-3">
+          <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+            <i class="bi bi-diagram-3"></i>
+            來源與章節設定
           </div>
-          <div class="col-md-6">
-            <label class="form-label">${sectionLabel}</label>
-            <input class="form-control" name="step_${sid}_${sectionKey}" value="${sectionVal}" placeholder="${sectionPlaceholder}">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label d-flex justify-content-between align-items-center">
-              <span>${titleLabel}</span>
-              <span class="form-check d-flex align-items-center gap-1 m-0">
-                <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
-                <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-                <span class="small text-muted">擷取小標題內容</span>
-              </span>
-            </label>
-            <input class="form-control" name="step_${sid}_target_chapter_title" value="${titleVal}" placeholder="${titlePlaceholder}">
-          </div>
-        </div>
-
-        <div class="card bg-light border mt-3 subheading-input" style="${subheadingHideStyle}">
-          <div class="card-body">
-            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-              <i class="bi bi-card-text"></i>
-              指定擷取的小標題
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">輸入檔案</label>
+              <select class="form-select" name="step_${sid}_input_file" required>
+                <option value="" disabled ${fileVal ? "" : "selected"}>${filePlaceholder}</option>
+                ${fileOptions}
+              </select>
             </div>
-            <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
-            <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
-          </div>
-        </div>
-
-        <div class="card bg-light border mt-3">
-          <div class="card-body">
-            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-              <i class="bi bi-list-check"></i>
-              擷取規則
+            <div class="col-md-6">
+              <label class="form-label">${sectionLabel}</label>
+              <input class="form-control" name="step_${sid}_${sectionKey}" value="${sectionVal}" placeholder="${sectionPlaceholder}">
             </div>
-            <div class="row g-2">
-              ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
-              ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-4") : ""}
-              ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-4") : ""}
+            <div class="col-md-6">
+              <label class="form-label d-flex justify-content-between align-items-center">
+                <span>${titleLabel}</span>
+                <span class="form-check d-flex align-items-center gap-1 m-0">
+                  <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
+                  <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+                  <span class="small text-muted">擷取小標題內容</span>
+                </span>
+              </label>
+              <input class="form-control" name="step_${sid}_target_chapter_title" value="${titleVal}" placeholder="${titlePlaceholder}">
             </div>
           </div>
-        </div>
 
-      </div>
-
-      <div class="mt-4">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-box-arrow-in-down"></i>
-          輸出與插入設定
-        </div>
-        <div class="row g-3">
-          <div class="col-md-6">
-            <label class="form-label">模板段落</label>
-            <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${tplDisabled}>
-              ${buildTemplateOptions(tplIndexVal)}
-            </select>
-            <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+          <div class="card bg-light border mt-3 subheading-input" style="${subheadingHideStyle}">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+                <i class="bi bi-card-text"></i>
+                指定擷取的小標題
+              </div>
+              <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
+              <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
+            </div>
           </div>
-          <div class="col-md-4">
-            <label class="form-label">插入方式</label>
-            <select class="form-select" name="step_${sid}_template_mode">
-              <option value="insert_after" ${tplModeVal==="insert_after"?"selected": ""}>段落後新增</option>
-              <option value="replace" ${tplModeVal==="replace"?"selected": ""}>取代該段落</option>
-            </select>
+
+          <div class="card bg-light border mt-3">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+                <i class="bi bi-list-check"></i>
+                擷取規則
+              </div>
+              <div class="row g-2">
+                ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
+                ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-4") : ""}
+                ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-4") : ""}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="mt-4">
+          <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+            <i class="bi bi-box-arrow-in-down"></i>
+            輸出與插入設定
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">模板段落</label>
+              <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${tplDisabled}>
+                ${buildTemplateOptions(tplIndexVal)}
+              </select>
+              <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">插入方式</label>
+              <select class="form-select" name="step_${sid}_template_mode">
+                <option value="insert_after" ${tplModeVal==="insert_after"?"selected": ""}>段落後新增</option>
+                <option value="replace" ${tplModeVal==="replace"?"selected": ""}>取代該段落</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -922,11 +971,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   const templateFields = [];
 
   const subtitleToggleSteps = ["extract_specific_figure_from_word", "extract_specific_table_from_word"];
-    const subtitleToggleLabelMap = {
-      extract_specific_figure_from_word: "擷取小標題內容",
-      extract_specific_table_from_word: "擷取小標題內容",
-    };
-  const renderField = (k) => {
+      const renderField = (k) => {
     const accept = spec.accepts[k];
     const meta = FIELD_META[k] || {};
     const label = meta.label || k;
@@ -965,7 +1010,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     }
     if (accept === "text"){
       if (k === "target_subtitle") {
-        const hideStyle = targetTitleVal === "false" ? "display: none;" : "";
+        const hideStyle = (spec.inputs.includes("use_chapter_title") && targetTitleVal === "false") ? "display: none;" : "";
         return `<div class="col-md-9 subheading-input" style="${hideStyle}"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
@@ -973,10 +1018,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         return `<div class="col-md-6"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
-        if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
-          const show = val.trim().length > 0;
-          const hideStyle = show ? "" : "display: none;";
-          return `<div class="col-12 subtitle-wrap mt-3" style="${hideStyle}">
+      if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
+          return `<div class="col-12 subtitle-wrap mt-3">
                     <div class="card bg-light border">
                       <div class="card-body">
                         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
@@ -1094,11 +1137,6 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       handledKeys.add("input_file");
     }
     if (spec.inputs.includes("target_chapter_section")) {
-      const subtitleRaw = preset["target_subtitle"];
-      const subtitleVal = subtitleRaw === undefined || subtitleRaw === null ? "" : String(subtitleRaw);
-      const checked = subtitleVal.trim().length > 0 ? "checked" : "";
-      const toggleId = `step_${sid}_target_subtitle_toggle`;
-      const toggleLabel = subtitleToggleLabelMap[typeKey] || "擷取小標題內容";
       const targetKey = "target_caption_label";
       const targetMeta = FIELD_META[targetKey] || {};
       const targetLabel = targetMeta.label || targetKey;
@@ -1108,13 +1146,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       const sectionVal = getValue("target_chapter_section");
       basicFields.push(`
         <div class="col-md-6">
-          <label class="form-label d-flex justify-content-between align-items-center">
-            <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
-            <span class="form-check d-flex align-items-center gap-1 m-0">
-              <input class="form-check-input toggle-subtitle" type="checkbox" id="${toggleId}" ${checked}>
-              <span class="small text-muted">${toggleLabel}</span>
-            </span>
-          </label>
+          <label class="form-label">${FIELD_META.target_chapter_section?.label || "章節編號"}</label>
           <input class="form-control" name="step_${sid}_target_chapter_section" value="${sectionVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"}">
         </div>
         <div class="col-md-6">
@@ -1147,9 +1179,16 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     }
   }
 
-  let body = `<div class="card-body">
-    <div class="d-flex justify-content-between align-items-center">
-      <h2 class="h5 mb-0">${spec.label}</h2>
+  const collapseId = `collapse_${sid}`;
+  let body = `
+    <div class="card-header d-flex justify-content-between align-items-center py-2 bg-white">
+      <div class="d-flex align-items-center step-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
+        <i class="bi bi-chevron-right me-2 text-muted small transition-icon"></i>
+        <h2 class="h5 mb-0">
+          <span class="badge bg-secondary me-2 step-index"></span>
+          ${spec.label}
+        </h2>
+      </div>
       <div class="btn-group">
         <div class="btn-group">
           <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
@@ -1164,43 +1203,47 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
       </div>
     </div>
-    <input type="hidden" name="step_${sid}_type" value="${typeKey}">
-
-    ${basicFields.length ? `
-    <div class="card bg-light border mt-3">
+    <div id="${collapseId}" class="collapse show step-content">
       <div class="card-body">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-gear"></i>
-          基本設定
-        </div>
-        <div class="row g-3">${basicFields.join("")}</div>
-      </div>
-    </div>` : ""}
+        <input type="hidden" name="step_${sid}_type" value="${typeKey}">
 
-    ${subtitleFields.length ? subtitleFields.join("") : ""}
+        ${basicFields.length ? `
+        <div class="card bg-light border mt-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-gear"></i>
+              基本設定
+            </div>
+            <div class="row g-3">${basicFields.join("")}</div>
+          </div>
+        </div>` : ""}
 
-    ${ruleFields.length ? `
-    <div class="card bg-light border mt-3">
-      <div class="card-body">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-list-check"></i>
-          選項與規則
-        </div>
-        <div class="row g-3">${ruleFields.join("")}</div>
-      </div>
-    </div>` : ""}
+        ${subtitleFields.length ? subtitleFields.join("") : ""}
 
-    ${templateFields.length ? `
-    <div class="card bg-light border mt-3">
-      <div class="card-body">
-        <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-          <i class="bi bi-box-arrow-in-down"></i>
-          輸出與插入設定
-        </div>
-        <div class="row g-3">${templateFields.join("")}</div>
+        ${ruleFields.length ? `
+        <div class="card bg-light border mt-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-list-check"></i>
+              選項與規則
+            </div>
+            <div class="row g-3">${ruleFields.join("")}</div>
+          </div>
+        </div>` : ""}
+
+        ${templateFields.length ? `
+        <div class="card bg-light border mt-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-box-arrow-in-down"></i>
+              輸出與插入設定
+            </div>
+            <div class="row g-3">${templateFields.join("")}</div>
+          </div>
+        </div>` : ""}
       </div>
-    </div>` : ""}
-  </div>`;
+    </div>`;
+
   card.innerHTML = body;
   const container = document.getElementById("steps");
   if (refSid){
@@ -1231,13 +1274,6 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
     });
   }
-  const subtitleToggle = card.querySelector(".toggle-subtitle");
-  const subtitleWrap = card.querySelector(".subtitle-wrap");
-  if (subtitleToggle && subtitleWrap) {
-    subtitleToggle.addEventListener("change", () => {
-      subtitleWrap.style.display = subtitleToggle.checked ? "" : "none";
-    });
-  }
   refreshTemplateSelects();
   updateOrder();
 }
@@ -1260,16 +1296,92 @@ function moveStep(sid, direction){
 }
 function moveUp(sid){ moveStep(sid, 'up'); }
 function moveDown(sid){ moveStep(sid, 'down'); }
+
+const renameFlowModalEl = document.getElementById('renameFlowModal');
+const renameFlowInput = document.getElementById('renameFlowInput');
+const renameFlowCount = document.getElementById('renameFlowCount');
+const renameFlowCurrentName = document.getElementById('renameFlowCurrentName');
+const renameFlowSubmitBtn = document.getElementById('renameFlowSubmitBtn');
+let renameModalInstance = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (renameFlowModalEl && typeof bootstrap !== 'undefined') {
+    renameModalInstance = new bootstrap.Modal(renameFlowModalEl);
+    
+    renameFlowInput.addEventListener('input', () => {
+      const len = renameFlowInput.value.length;
+      const max = renameFlowInput.getAttribute('maxlength');
+      renameFlowCount.textContent = `${len}/${max}`;
+    });
+
+    renameFlowSubmitBtn.addEventListener('click', () => {
+      const current = renameFlowCurrentName.value;
+      const newName = renameFlowInput.value.trim();
+      if (!newName) {
+        alert('請輸入流程名稱');
+        return;
+      }
+      if (newName.length > 60) {
+        alert('流程名稱長度不可超過 60 字');
+        return;
+      }
+      submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name: newName });
+      renameModalInstance.hide();
+    });
+  }
+});
+
 function renameFlow(current){
-  const name = prompt('輸入新流程名稱', current);
-  if(!name) return;
-  submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name });
+  if (renameModalInstance) {
+    renameFlowCurrentName.value = current;
+    renameFlowInput.value = current;
+    renameFlowInput.dispatchEvent(new Event('input'));
+    renameModalInstance.show();
+  } else {
+    const name = prompt('輸入新流程名稱 (最多 60 字)', current);
+    if(!name) return;
+    if (name.length > 60) {
+      alert('流程名稱長度不可超過 60 字');
+      return;
+    }
+    submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name });
+  }
 }
 if (PRESET_FLOW){
   for (const st of PRESET_FLOW){
     addStep(st.type, st.params);
   }
 }
+
+const toggleAllStepsBtn = document.getElementById('toggleAllStepsBtn');
+let allCollapsed = false;
+document.addEventListener('DOMContentLoaded', () => {
+  if (toggleAllStepsBtn && typeof bootstrap !== 'undefined') {
+    toggleAllStepsBtn.addEventListener('click', () => {
+      const collapses = document.querySelectorAll('.step-content');
+      allCollapsed = !allCollapsed;
+      collapses.forEach(el => {
+        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(el);
+        if (allCollapsed) bsCollapse.hide();
+        else bsCollapse.show();
+      });
+      toggleAllStepsBtn.innerHTML = allCollapsed ? '<i class="bi bi-arrows-expand"></i> 全部展開' : '<i class="bi bi-arrows-collapse"></i> 全部收合';
+    });
+  }
+});
+
+const flowNameInput = document.getElementById('flowNameInput');
+const flowNameCount = document.getElementById('flowNameCount');
+if (flowNameInput && flowNameCount) {
+  const updateCount = () => {
+    const len = flowNameInput.value.length;
+    const max = flowNameInput.getAttribute('maxlength');
+    flowNameCount.textContent = `${len}/${max}`;
+  };
+  flowNameInput.addEventListener('input', updateCount);
+  updateCount();
+}
+
 isInitialising = false;
 </script>
 

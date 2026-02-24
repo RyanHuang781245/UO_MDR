@@ -38,14 +38,14 @@
     <div class="row g-3 small">
       {% if task.creator %}
       <div class="col-md-6">
-        <div class="text-muted">建立人員</div>
-        <div class="fw-semibold">{{ task.creator }}</div>
+        <div class="fw-semibold">建立人員</div>
+        <div class="text-muted mb-0">{{ task.creator }}</div>
       </div>
       {% endif %}
       {% if task.nas_path %}
       <div class="col-md-6">
-        <div class="text-muted">NAS 路徑</div>
-        <div class="fw-semibold font-monospace text-break">{{ task.nas_path }}</div>
+        <div class="fw-semibold">NAS 路徑</div>
+        <div class="text-muted mb-0">{{ task.nas_path }}</div>
       </div>
       {% endif %}
     </div>
@@ -99,12 +99,12 @@
     <div class="file-tree-container">
       {{ render_file_tree(files_tree) }}
     </div>
-    <div class="d-flex flex-wrap gap-2 mt-3">
+    <!-- <div class="d-flex flex-wrap gap-2 mt-3">
       <a class="btn btn-outline-primary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
         <i class="bi bi-folder-symlink"></i>
         複製檔案
       </a>
-    </div>
+    </div> -->
   </div>
 </div>
 
@@ -137,6 +137,8 @@ if(nasDiffBtn){
   nasDiffBtn.addEventListener('click', async () => {
     const url = nasDiffBtn.getAttribute('data-diff-url');
     if(!url) return;
+    const flashMessages = document.getElementById('flashMessages');
+    if (flashMessages) flashMessages.classList.add('d-none');
     nasDiffBtn.disabled = true;
     if(nasDiffStatus) nasDiffStatus.textContent = '偵測中...';
     try{

@@ -940,7 +940,7 @@ def extract_specific_figure_from_word(
         return None
 
     if result is None:
-        print("????????????? Figure ??")
+        print("搜尋結束，未找到符合條件的 Figure 圖片。")
         if return_reason:
             return {"ok": False, "subtitle_found": True, "reason": "figure_not_found"}
     else:

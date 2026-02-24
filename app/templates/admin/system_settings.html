@@ -1,0 +1,123 @@
+{% extends "admin/master.html" %}
+
+{% block body %}
+  <div class="container-fluid">
+    <div class="row mb-2">
+      <div class="col-sm-6">
+        <h3>系統設定</h3>
+      </div>
+      <div class="col-sm-6">
+        <div class="float-right d-flex align-items-center">
+          <span class="text-muted mr-3 small">
+            <i class="fa fa-clock-o mr-1"></i> 最後更新：{{ last_updated }}
+          </span>
+          <button type="submit" form="settings-form" class="btn btn-success btn-sm mr-2">
+            <i class="fa fa-save mr-1"></i> 儲存
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="toggle-all-btn">
+            <i class="fas fa-expand-arrows-alt mr-1"></i> 全部展開
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<section class="content">
+  <div class="container-fluid">
+    <form method="post" id="settings-form">
+      <div class="row">
+        <!-- 左側：通知設定 -->
+        <div class="col-12 mb-1">
+          <div class="card card-outline collapsed-card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa fa-bell mr-1"></i> 通知設定
+              </h3>
+              <div class="card-tools">
+                <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                  <i class="fas fa-plus"></i>
+                </button>
+              </div>
+            </div>
+            <div class="card-body" style="display: none;">
+              <div class="form-group">
+                <div class="custom-control custom-switch">
+                  <input type="checkbox" class="custom-control-input" id="emailNotify" name="email_batch_notify_enabled" {% if setting.email_batch_notify_enabled %}checked{% endif %}>
+                  <label class="custom-control-label" for="emailNotify">啟用排程完成 Email 通知</label>
+                </div>
+                <small class="form-text text-muted mt-2">
+                  開啟後，當批次任務執行完畢（無論成功或失敗），系統將發送 Email 通知給執行者。
+                </small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右側：NAS 設定 -->
+        <div class="col-12 mb-1">
+          <div class="card card-outline collapsed-card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa fa-server mr-1"></i> NAS 存取設定
+              </h3>
+              <div class="card-tools">
+                <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                  <i class="fas fa-plus"></i>
+                </button>
+              </div>
+            </div>
+            <div class="card-body" style="display: none;">
+              <div class="form-group">
+                <label for="nasSize">NAS 上傳大小限制 (MB)</label>
+                <div class="input-group">
+                  <input type="number" class="form-control" id="nasSize" name="nas_max_copy_file_size_mb" value="{{ setting.nas_max_copy_file_size_mb or '' }}" min="0" step="1" placeholder="預設值 (500)">
+                  <div class="input-group-append">
+                    <span class="input-group-text">MB</span>
+                  </div>
+                </div>
+                <small class="form-text text-muted mt-2">
+                  設定從 NAS 匯入檔案的單一檔案大小上限。若留空或設為 0，則使用系統預設值 (500MB)。
+                </small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </form>
+  </div>
+</section>
+{% endblock %}
+
+{% block tail %}
+  <script>
+    $(function() {
+      var $toggleBtn = $('#toggle-all-btn');
+      var isExpanded = false; // 預設狀態為全部收合，所以下一步是展開
+
+      $toggleBtn.on('click', function() {
+        // 找出所有擁有收合功能的按鈕
+        var $widgets = $('[data-card-widget="collapse"]');
+        
+        $widgets.each(function() {
+          var $card = $(this).closest('.card');
+          var isCardCollapsed = $card.hasClass('collapsed-card');
+          
+          // 如果目前模式是「要展開」且卡片是「收合」的，則觸發點擊
+          // 如果目前模式是「要收合」且卡片是「展開」的，則觸發點擊
+          if ((!isExpanded && isCardCollapsed) || (isExpanded && !isCardCollapsed)) {
+            $(this).click();
+          }
+        });
+
+        // 切換狀態旗標與按鈕文字
+        isExpanded = !isExpanded;
+        if (isExpanded) {
+          $toggleBtn.html('<i class="fas fa-compress-arrows-alt mr-1"></i> 全部收合');
+        } else {
+          $toggleBtn.html('<i class="fas fa-expand-arrows-alt mr-1"></i> 全部展開');
+        }
+      });
+    });
+  </script>
+{% endblock %}

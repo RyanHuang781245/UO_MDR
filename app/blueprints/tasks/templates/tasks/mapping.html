@@ -22,8 +22,8 @@
     <div class="col-md-9">
       <input class="form-control" type="file" name="mapping_file" required>
     </div>
-    <div class="col-md-3 d-grid">
-      <button class="btn btn-primary" type="submit">生成文件</button>
+    <div class="col-md-3 d-flex gap-2">
+      <button class="btn btn-outline-secondary flex-fill" name="action" value="check" type="submit">檢查</button>
     </div>
   </div>
 </form>
@@ -91,6 +91,24 @@
 </ul>
 {% endif %}
 
+{% if allow_direct_run or log_file %}
+<div class="d-flex gap-2 mb-3">
+  {% if allow_direct_run %}
+  <form method="post" class="flex-fill"{% if has_warning and warning_confirm %} onsubmit="return confirm({{ warning_confirm|tojson }});"{% endif %}>
+    <input type="hidden" name="action" value="run_cached">
+    <button class="btn btn-primary w-100" type="submit">
+      <i class="bi bi-play-fill me-1"></i> 立即執行 (Run Now)
+    </button>
+  </form>
+  {% endif %}
+  {% if log_file %}
+  <a class="btn btn-outline-secondary {{ 'flex-fill' if not allow_direct_run else '' }}" href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=log_file) }}">
+    <i class="bi bi-download me-1"></i> 下載 Log
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if error_messages and not step_runs %}
 <ul class="list-group mb-3">
   {% for m in error_messages %}
@@ -113,9 +131,5 @@
   <li class="list-group-item"><a href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=name) }}">{{ name }}</a></li>
   {% endfor %}
 </ul>
-{% endif %}
-
-{% if log_file %}
-<a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=log_file) }}">下載Log</a>
 {% endif %}
 {% endblock %}

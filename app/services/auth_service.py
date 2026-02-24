@@ -7,13 +7,14 @@ from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse
 
-from flask import abort, current_app, flash, redirect, request, send_file, url_for
+from flask import abort, current_app, flash, jsonify, redirect, request, send_file, url_for
 from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_login import current_user
 from wtforms import SelectField
 from ldap3 import BASE, SUBTREE, Connection, Server
 from ldap3.utils.conv import escape_filter_chars
+from markupsafe import Markup
 
 from app.extensions import ldap_manager, login_manager
 from app.utils import TAIWAN_TZ, format_tw_datetime
@@ -263,6 +264,24 @@ class SecureModelView(ModelView):
         return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
 
 
+def _format_role_column(view, context, model, name):
+    role = model.role_name
+    if not role:
+        return ""
+    label = ROLE_LABELS_ZH.get(role, role)
+    if role == ROLE_ADMIN:
+        return Markup(f'<span class="badge badge-danger">{label}</span>')
+    if role == ROLE_EDITOR:
+        return Markup(f'<span class="badge badge-success">{label}</span>')
+    return Markup(f'<span class="badge badge-secondary">{label}</span>')
+
+
+def _format_active_column(view, context, model, name):
+    if model.active:
+        return Markup('<span class="badge badge-success">啟用</span>')
+    return Markup('<span class="badge badge-secondary">停用</span>')
+
+
 class UserAdminView(SecureModelView):
     can_create = False
     can_delete = True
@@ -288,10 +307,16 @@ class UserAdminView(SecureModelView):
         "role_name": "角色",
     }
     form_extra_fields = {"role": SelectField("角色", coerce=int)}
-    form_columns = ("active", "role")
+    form_columns = ("work_id", "display_name", "active", "role")
+    form_widget_args = {
+        "work_id": {"readonly": True},
+        "display_name": {"readonly": True},
+    }
     column_formatters = {
         "last_login_at": lambda _view, _context, model, _name: format_tw_datetime(model.last_login_at),
         "created_at": lambda _view, _context, model, _name: format_tw_datetime(model.created_at, assume_tz=TAIWAN_TZ),
+        "role_name": _format_role_column,
+        "active": _format_active_column,
     }
 
     def _load_role_choices(self):
@@ -323,6 +348,9 @@ class UserAdminView(SecureModelView):
 
     def update_model(self, form, model):
         try:
+            if str(model.id) == str(current_user.id) and not form.active.data:
+                flash("無法停用自己的帳號", "error")
+                return False
             model.active = bool(form.active.data)
             role_id = form.role.data
             role = Role.query.get(role_id) if role_id else None
@@ -433,30 +461,39 @@ class ADSearchView(BaseView):
             email = (request.form.get("email") or "").strip()
             role_name = (request.form.get("role") or "").strip()
             query = (request.form.get("q") or "").strip()
+            is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+            def _error(message: str, status: int = 400):
+                if is_ajax:
+                    return jsonify({"ok": False, "error": message}), status
+                flash(message, "danger")
+                return redirect(url_for("ad_search.index", q=query))
 
             if not work_id:
-                flash("缺少工號", "danger")
-                return redirect(url_for("ad_search.index", q=query))
+                return _error("缺少工號", 400)
 
             role = Role.query.filter_by(name=role_name).first()
             if not role:
-                flash("角色不存在", "danger")
-                return redirect(url_for("ad_search.index", q=query))
-
-            profile = LDAPProfile(
-                work_id=work_id,
-                display_name=display_name or None,
-                email=email or None,
-            )
-            user = sync_user_from_ldap(profile)
-            upsert_user_role(user, role)
+                return _error("角色不存在", 400)
             try:
+                profile = LDAPProfile(
+                    work_id=work_id,
+                    display_name=display_name or None,
+                    email=email or None,
+                )
+                user = sync_user_from_ldap(profile)
+                upsert_user_role(user, role)
                 commit_session()
-                flash("已加入/更新使用者", "success")
             except Exception as exc:
                 db.session.rollback()
+                if is_ajax:
+                    return jsonify({"ok": False, "error": str(exc)}), 500
                 flash(str(exc), "danger")
+                return redirect(url_for("ad_search.index", q=query))
 
+            if is_ajax:
+                return jsonify({"ok": True, "role_name": role.name, "message": "已加入/更新使用者"})
+            flash("已加入/更新使用者", "success")
             return redirect(url_for("ad_search.index", q=query))
 
         query = (request.args.get("q") or "").strip()
@@ -481,31 +518,48 @@ class ADSearchView(BaseView):
         )
 
 
-class SystemSettingAdminView(SecureModelView):
-    can_create = False
-    can_delete = False
-    can_edit = True
-    column_list = ("email_batch_notify_enabled", "nas_max_copy_file_size_mb", "updated_at")
-    column_labels = {
-        "email_batch_notify_enabled": "排程完成通知 Email",
-        "nas_max_copy_file_size_mb": "NAS 上傳大小限制 (MB)",
-        "updated_at": "更新時間",
-    }
-    form_columns = ("email_batch_notify_enabled", "nas_max_copy_file_size_mb")
-    column_formatters = {
-        "updated_at": lambda _view, _context, model, _name: format_tw_datetime(model.updated_at, assume_tz=TAIWAN_TZ),
-    }
-    form_widget_args = {
-        "email_batch_notify_enabled": {
-            "class": "toggle-switch",
-            "role": "switch",
-        },
-        "nas_max_copy_file_size_mb": {
-            "min": 0,
-            "step": 1,
-            "placeholder": "空白=使用預設值",
-        },
-    }
+class SystemSettingView(BaseView):
+    extra_css = ADMIN_CUSTOM_CSS
+
+    def is_accessible(self):
+        return user_is_admin(current_user)
+
+    def inaccessible_callback(self, name, **kwargs):
+        if current_user.is_authenticated:
+            abort(403)
+        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
+
+    @expose("/", methods=["GET", "POST"])
+    def index(self):
+        setting = SystemSetting.query.first()
+        if not setting:
+            setting = SystemSetting()
+            db.session.add(setting)
+            db.session.commit()
+
+        if request.method == "POST":
+            try:
+                # Email Notification
+                setting.email_batch_notify_enabled = request.form.get("email_batch_notify_enabled") == "on"
+
+                # NAS Size Limit
+                nas_limit = request.form.get("nas_max_copy_file_size_mb")
+                if nas_limit and nas_limit.strip():
+                    setting.nas_max_copy_file_size_mb = int(nas_limit)
+                else:
+                    setting.nas_max_copy_file_size_mb = None
+
+                commit_session()
+                flash("系統設定已更新", "success")
+            except ValueError:
+                flash("數值格式錯誤", "danger")
+            except Exception as e:
+                db.session.rollback()
+                flash(f"更新失敗: {str(e)}", "danger")
+            return redirect(url_for("system_settings.index"))
+
+        last_updated = format_tw_datetime(setting.updated_at, assume_tz=TAIWAN_TZ) if setting.updated_at else "-"
+        return self.render("admin/system_settings.html", setting=setting, last_updated=last_updated)
 
 
 class AuditLogView(BaseView):
@@ -586,12 +640,20 @@ def register_auth_context(app) -> None:
         def _role_labels(role_names: list[str]) -> str:
             return ", ".join(ROLE_LABELS_ZH.get(name, name) for name in role_names)
 
+        def _extract_chinese_name(display_name: Optional[str]) -> Optional[str]:
+            if not display_name:
+                return None
+            # 過濾出非 ASCII 字元 (假設為中文)，若無中文則回傳原字串
+            chinese_text = "".join(c for c in display_name if ord(c) > 127)
+            return chinese_text if chinese_text else display_name
+
         return {
             "auth_enabled": app.config.get("AUTH_ENABLED", True),
             "current_user": current_user if current_user.is_authenticated else None,
             "current_user_roles": get_user_role_names(current_user.id) if current_user.is_authenticated else [],
             "has_permission": _has_perm,
             "role_labels": _role_labels,
+            "extract_chinese_name": _extract_chinese_name,
             "ROLE_ADMIN": ROLE_ADMIN,
             "ROLE_EDITOR": ROLE_EDITOR,
             "PERM_USER_MANAGE": PERM_USER_MANAGE,
@@ -619,10 +681,10 @@ def register_login_enforcement(app) -> None:
 
 def init_admin(app) -> Admin:
     admin = Admin(app, name="系統管理", url="/admin", index_view=SecureAdminIndexView())
+    admin.add_view(SystemSettingView(name="系統設定", endpoint="system_settings", url="system-settings"))
     admin.add_view(UserAdminView(User, db.session, name="使用者列表"))
     admin.add_view(ADSearchView(name="帳號搜尋", endpoint="ad_search", url="ad-search"))
     admin.add_view(AuditLogView(name="操作紀錄", endpoint="audit_logs", url="audit-logs"))
-    admin.add_view(SystemSettingAdminView(SystemSetting, db.session, name="系統設定"))
     return admin
 
 

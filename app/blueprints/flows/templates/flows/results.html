@@ -41,7 +41,7 @@
             <th style="width:60px;">
               <input type="checkbox" id="selectAllRuns" class="form-check-input">
             </th>
-            <th class="text-start">流程名稱</th>
+            <th class="text-start ps-3">流程名稱</th>
             <th class="text-start ps-5">執行時間</th>
             <th class="text-start ps-4">狀態</th>
             <th class="text-center" style="width:320px;">操作</th>
@@ -53,7 +53,7 @@
             <td>
               <input type="checkbox" class="form-check-input run-select" value="{{ r.job_id }}">
             </td>
-            <td class="text-start">{{ r.flow_name }}</td>
+            <td class="text-start ps-3">{{ r.flow_name }}</td>
             <td class="text-cneter pe-5">{{ r.started_at }}</td>
             <td class="text-cneter pe-5">
               {% if r.status == "completed" %}
@@ -90,9 +90,6 @@
                   <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">
                     <i class="bi bi-file-earmark-text"></i> 下載Log
                   </a>
-                {% endif %}
-                {% if r.status == "failed" and r.error %}
-                  <span class="text-danger ms-2" title="{{ r.error }}">錯誤</span>
                 {% endif %}
               </div>
             </td>

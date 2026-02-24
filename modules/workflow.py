@@ -151,7 +151,7 @@ SUPPORTED_STEPS = {
         }
     },
     "extract_specific_figure_from_word": {
-        "label": "擷取 Word 指定章節/標題的特定圖",
+        "label": "插入 Word 指定章節/標題的特定圖片",
         "inputs": [
             "input_file",
             "target_chapter_section",
@@ -174,7 +174,7 @@ SUPPORTED_STEPS = {
         }
     },
     "extract_specific_table_from_word": {
-        "label": "擷取 Word 指定章節/標題的特定表格",
+        "label": "插入 Word 指定章節/標題的特定表格",
         "inputs": [
             "input_file",
             "target_chapter_section",

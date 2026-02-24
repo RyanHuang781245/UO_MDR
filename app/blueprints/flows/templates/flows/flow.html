@@ -333,7 +333,8 @@ const BOOL_DEFAULTS = {
 
 const FIELD_META = {
   pdf_zip: {
-    label: "PDF ZIP 壓縮檔"
+    label: "PDF ZIP 壓縮檔",
+    placeholder: ""
   },
   target_section: {
     label: "章節編號",
@@ -429,6 +430,28 @@ if (applyFormattingModal) {
 }
 
 const { submitPostForm, escapeHtml } = window.UiUtils;
+
+function parseChapterRef(raw){
+  const text = (raw || "").trim();
+  const match = text.match(/^(\d+(?:\.\d+)*)(?:\s+(.+))?$/);
+  if (match) {
+    return { section: match[1], title: (match[2] || "").trim() };
+  }
+  return { section: text, title: "" };
+}
+
+function syncChapterRefInput(input){
+  if (!input) return;
+  const card = input.closest(".card");
+  const sectionName = input.dataset.section;
+  const titleName = input.dataset.title;
+  if (!sectionName || !titleName) return;
+  const parsed = parseChapterRef(input.value);
+  const sectionInput = card ? card.querySelector(`input[name="${sectionName}"]`) : null;
+  const titleInput = card ? card.querySelector(`input[name="${titleName}"]`) : null;
+  if (sectionInput) sectionInput.value = parsed.section;
+  if (titleInput) titleInput.value = parsed.title;
+}
 
 function buildInsertMenu(sid, position){
   return Object.entries(SUPPORTED_STEPS).map(([key, meta]) => (
@@ -640,6 +663,7 @@ window.addEventListener('beforeunload', function(e){
 });
 const flowForm = document.getElementById('flow_form');
 flowForm.addEventListener('submit', (e) => {
+  flowForm.querySelectorAll(".chapter-ref").forEach(syncChapterRefInput);
   const action = e.submitter?.value;
   if ((action === 'save' || action === 'run') && !flowForm.elements['flow_name'].value.trim()) {
     e.preventDefault();
@@ -796,9 +820,13 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const titleLabel = (FIELD_META[titleKey] || {}).label || titleKey;
     const titlePlaceholder = (FIELD_META[titleKey] || {}).placeholder || titleLabel;
     const titleVal = getValue(titleKey);
+    const chapterRefVal = [sectionVal, titleVal].filter(Boolean).join(" ");
 
-    const targetTitleVal = getBoolValue("use_chapter_title");
     const subheadingVal = getValue("target_subtitle");
+    let targetTitleVal = getBoolValue("use_chapter_title");
+    if (subheadingVal && subheadingVal.trim() !== "") {
+      targetTitleVal = "true";
+    }
     const subheadingLabel = (FIELD_META["target_subtitle"] || {}).label || "小標題";
     const subheadingPlaceholder = (FIELD_META["target_subtitle"] || {}).placeholder || subheadingLabel;
     const subheadingHideStyle = targetTitleVal === "false" ? "display: none;" : "";
@@ -843,37 +871,38 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       <div class="card-body">
         <input type="hidden" name="step_${sid}_type" value="${typeKey}">
 
-        <div class="mt-3">
-          <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-            <i class="bi bi-diagram-3"></i>
-            來源與章節設定
+        <div class="card bg-light border">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-diagram-3"></i>
+              來源與章節設定
+            </div>
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">輸入檔案</label>
+                <select class="form-select" name="step_${sid}_input_file" required>
+                  <option value="" disabled ${fileVal ? "" : "selected"}>${filePlaceholder}</option>
+                  ${fileOptions}
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label d-flex justify-content-between align-items-center">
+                  <span>${sectionLabel}</span>
+                  <span class="form-check d-flex align-items-center gap-1 m-0">
+                    <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
+                    <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+                    <span class="small text-muted">擷取小標題內容</span>
+                  </span>
+                </label>
+                <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${sectionPlaceholder} ${titlePlaceholder}" data-section="step_${sid}_${sectionKey}" data-title="step_${sid}_target_chapter_title">
+                <input type="hidden" name="step_${sid}_${sectionKey}" value="${sectionVal}">
+                <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
+              </div>
+            </div>
           </div>
-          <div class="row g-3">
-            <div class="col-12">
-              <label class="form-label">輸入檔案</label>
-              <select class="form-select" name="step_${sid}_input_file" required>
-                <option value="" disabled ${fileVal ? "" : "selected"}>${filePlaceholder}</option>
-                ${fileOptions}
-              </select>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">${sectionLabel}</label>
-              <input class="form-control" name="step_${sid}_${sectionKey}" value="${sectionVal}" placeholder="${sectionPlaceholder}">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label d-flex justify-content-between align-items-center">
-                <span>${titleLabel}</span>
-                <span class="form-check d-flex align-items-center gap-1 m-0">
-                  <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
-                  <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-                  <span class="small text-muted">擷取小標題內容</span>
-                </span>
-              </label>
-              <input class="form-control" name="step_${sid}_target_chapter_title" value="${titleVal}" placeholder="${titlePlaceholder}">
-            </div>
-          </div>
+        </div>
 
-          <div class="card bg-light border mt-3 subheading-input" style="${subheadingHideStyle}">
+        <div class="card bg-light border mt-3 subheading-input" style="${subheadingHideStyle}">
             <div class="card-body">
               <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
                 <i class="bi bi-card-text"></i>
@@ -898,27 +927,27 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             </div>
           </div>
 
-        </div>
-
-        <div class="mt-4">
-          <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-            <i class="bi bi-box-arrow-in-down"></i>
-            輸出與插入設定
-          </div>
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label">模板段落</label>
-              <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${tplDisabled}>
-                ${buildTemplateOptions(tplIndexVal)}
-              </select>
-              <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+        <div class="card bg-light border mt-3">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-box-arrow-in-down"></i>
+              輸出與插入設定
             </div>
-            <div class="col-md-4">
-              <label class="form-label">插入方式</label>
-              <select class="form-select" name="step_${sid}_template_mode">
-                <option value="insert_after" ${tplModeVal==="insert_after"?"selected": ""}>段落後新增</option>
-                <option value="replace" ${tplModeVal==="replace"?"selected": ""}>取代該段落</option>
-              </select>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">模板段落</label>
+                <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${tplDisabled}>
+                  ${buildTemplateOptions(tplIndexVal)}
+                </select>
+                <div class="form-text">${templateParagraphs.length ? "選擇要插入的位置（段落 index）" : "請先解析模板"}</div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">插入方式</label>
+                <select class="form-select" name="step_${sid}_template_mode">
+                  <option value="insert_after" ${tplModeVal==="insert_after"?"selected": ""}>段落後新增</option>
+                  <option value="replace" ${tplModeVal==="replace"?"selected": ""}>取代該段落</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -955,15 +984,23 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
       });
     }
+    card.querySelectorAll(".chapter-ref").forEach(input => {
+      input.addEventListener("input", () => syncChapterRefInput(input));
+      syncChapterRefInput(input);
+    });
     refreshTemplateSelects();
     updateOrder();
     return;
   }
 
   const targetTitleRaw = preset["use_chapter_title"];
-  const targetTitleVal = (targetTitleRaw === undefined || targetTitleRaw === null || targetTitleRaw === "")
+  let targetTitleVal = (targetTitleRaw === undefined || targetTitleRaw === null || targetTitleRaw === "")
     ? (BOOL_DEFAULTS["use_chapter_title"] || "false")
     : String(targetTitleRaw);
+
+  if (preset["target_subtitle"] && String(preset["target_subtitle"]).trim() !== "") {
+    targetTitleVal = "true";
+  }
 
   const templateKeys = new Set(["template_index", "template_mode"]);
   const basicFields = [];
@@ -1009,7 +1046,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                </select></div>`;
     }
     if (accept === "text"){
-      if (k === "target_subtitle") {
+      if (k === "target_subtitle" && !subtitleToggleSteps.includes(typeKey)) {
         const hideStyle = (spec.inputs.includes("use_chapter_title") && targetTitleVal === "false") ? "display: none;" : "";
         return `<div class="col-md-9 subheading-input" style="${hideStyle}"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
@@ -1018,8 +1055,12 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         return `<div class="col-md-6"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
-      if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
-          return `<div class="col-12 subtitle-wrap mt-3">
+      if (k === "target_chapter_title") {
+      return "";
+    }
+    if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
+          const hideStyle = targetTitleVal === "false" ? "display: none;" : "";
+          return `<div class="col-12 subtitle-wrap subheading-input mt-3" style="${hideStyle}">
                     <div class="card bg-light border">
                       <div class="card-body">
                         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
@@ -1144,10 +1185,23 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       const targetRaw = preset[targetKey];
       const targetVal = targetRaw === undefined || targetRaw === null ? "" : String(targetRaw);
       const sectionVal = getValue("target_chapter_section");
+      const titleVal = getValue("target_chapter_title");
+      const chapterRefVal = [sectionVal, titleVal].filter(Boolean).join(" ");
+      const checkboxHtml = `
+        <span class="form-check d-flex align-items-center gap-1 m-0">
+          <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
+          <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+          <span class="small text-muted">擷取小標題內容</span>
+        </span>`;
       basicFields.push(`
         <div class="col-md-6">
-          <label class="form-label">${FIELD_META.target_chapter_section?.label || "章節編號"}</label>
-          <input class="form-control" name="step_${sid}_target_chapter_section" value="${sectionVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"}">
+          <label class="form-label d-flex justify-content-between align-items-center">
+            <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
+            ${checkboxHtml}
+          </label>
+          <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"} ${FIELD_META.target_chapter_title?.placeholder || ""}" data-section="step_${sid}_target_chapter_section" data-title="step_${sid}_target_chapter_title">
+          <input type="hidden" name="step_${sid}_target_chapter_section" value="${sectionVal}">
+          <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
         </div>
         <div class="col-md-6">
           <label class="form-label">${targetLabel}</label>
@@ -1156,6 +1210,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       `);
       handledKeys.add("target_chapter_section");
       handledKeys.add(targetKey);
+      handledKeys.add("use_chapter_title");
     }
   }
 
@@ -1172,6 +1227,9 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       ruleFields.push(renderField(k));
       continue;
     }
+      if (k === "target_chapter_title") {
+        continue;
+      }
     if (k === "target_subtitle" && subtitleToggleSteps.includes(typeKey)) {
       subtitleFields.push(renderField(k));
     } else {
@@ -1208,11 +1266,11 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <input type="hidden" name="step_${sid}_type" value="${typeKey}">
 
         ${basicFields.length ? `
-        <div class="card bg-light border mt-3">
+        <div class="card bg-light border">
           <div class="card-body">
             <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
               <i class="bi bi-gear"></i>
-              基本設定
+              來源與章節設定
             </div>
             <div class="row g-3">${basicFields.join("")}</div>
           </div>

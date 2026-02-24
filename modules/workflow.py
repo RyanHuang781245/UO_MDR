@@ -1,6 +1,7 @@
 
 import os
 import hashlib
+import zipfile
 from datetime import datetime
 from typing import List, Dict, Any
 from docx import Document as DocxDocument
@@ -38,6 +39,25 @@ def _new_docx_fragment(path: str) -> DocxDocument:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     return DocxDocument()
 
+
+def _docx_has_content(path: str) -> bool:
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        doc = DocxDocument(path)
+        for para in doc.paragraphs:
+            if (para.text or "").strip():
+                return True
+        if getattr(doc, "tables", None):
+            if doc.tables:
+                return True
+    except Exception:
+        pass
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            return any(name.startswith("word/media/") for name in zf.namelist())
+    except Exception:
+        return False
 
 def _set_alignment(paragraph: DocxParagraph, align: str) -> None:
     align_map = {
@@ -592,6 +612,30 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
         except Exception as e:
             log[-1]["status"] = "error"
             log[-1]["error"] = str(e)
+
+    # Post-check: ensure extract steps actually produced content.
+    for entry in log:
+        if not isinstance(entry, dict):
+            continue
+        if "step" not in entry:
+            continue
+        if entry.get("status") == "error":
+            continue
+        stype = entry.get("type")
+        if stype in ("extract_word_chapter", "extract_word_all_content"):
+            out_path = entry.get("output_docx")
+            if not out_path or not _docx_has_content(out_path):
+                entry["status"] = "error"
+                entry["error"] = "No content extracted"
+        elif stype == "extract_specific_table_from_word":
+            out_path = entry.get("output_docx")
+            if not out_path or not _docx_has_content(out_path):
+                entry["status"] = "error"
+                entry["error"] = "Table not found"
+        elif stype == "extract_specific_figure_from_word":
+            if not entry.get("image_filename") and not entry.get("caption"):
+                entry["status"] = "error"
+                entry["error"] = "Figure not found"
 
     if template_cfg.get("path") and template_mappings:
         try:

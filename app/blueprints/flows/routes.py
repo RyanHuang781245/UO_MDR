@@ -124,6 +124,20 @@ def _update_job_meta(job_dir: str, **fields) -> None:
     _write_job_meta(job_dir, meta)
 
 
+def _job_has_error(job_dir: str) -> bool:
+    log_path = os.path.join(job_dir, "log.json")
+    if not os.path.exists(log_path):
+        return False
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            entries = json.load(f)
+        if not isinstance(entries, list):
+            return False
+        return any(isinstance(e, dict) and e.get("status") == "error" for e in entries)
+    except Exception:
+        return False
+
+
 def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     files_dir = os.path.join(tdir, "files")
@@ -187,6 +201,8 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     )
     workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
+    log_entries = workflow_result.get("log_json", []) or []
+    has_step_error = any(e.get("status") == "error" for e in log_entries)
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
     if center_titles:
         center_table_figure_paragraphs(result_path)
@@ -204,6 +220,19 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
         hide_paragraphs_with_text(result_path, titles_to_hide)
+    if has_step_error:
+        _update_job_meta(
+            job_dir,
+            status="failed",
+            error="Workflow step failed",
+            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+    else:
+        _update_job_meta(
+            job_dir,
+            status="completed",
+            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
     return job_id
 
 
@@ -227,6 +256,8 @@ def _run_single_job(
             _update_job_meta(job_dir, status="running", started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
             result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
+            log_entries = workflow_result.get("log_json", []) or []
+            has_step_error = any(e.get("status") == "error" for e in log_entries)
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
             if center_titles:
                 center_table_figure_paragraphs(result_path)
@@ -245,13 +276,27 @@ def _run_single_job(
                 remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
                 hide_paragraphs_with_text(result_path, titles_to_hide)
             _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
-            _update_job_meta(job_dir, status="completed", completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            record_audit(
-                action="flow_run_single_completed",
-                actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
-                detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "completed"},
-                task_id=task_id,
-            )
+            if has_step_error:
+                _update_job_meta(
+                    job_dir,
+                    status="failed",
+                    error="Workflow step failed",
+                    completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+                record_audit(
+                    action="flow_run_single_failed",
+                    actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+                    detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "failed"},
+                    task_id=task_id,
+                )
+            else:
+                _update_job_meta(job_dir, status="completed", completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                record_audit(
+                    action="flow_run_single_completed",
+                    actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+                    detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "completed"},
+                    task_id=task_id,
+                )
         except Exception as exc:
             current_app.logger.exception("Single flow execution failed")
             _update_job_meta(
@@ -395,9 +440,19 @@ def _list_flow_runs(task_id: str) -> list[dict]:
         result_path = os.path.join(job_dir, "result.docx")
         log_path = os.path.join(job_dir, "log.json")
         completed = os.path.exists(result_path)
-        status = meta.get("status") or ("completed" if completed else "pending")
-        if completed:
-            status = "completed"
+        status = meta.get("status")
+        log_error = _job_has_error(job_dir)
+        if log_error:
+            status = "failed"
+            if meta.get("status") != "failed":
+                _update_job_meta(
+                    job_dir,
+                    status="failed",
+                    error=meta.get("error") or "Workflow step failed",
+                    completed_at=meta.get("completed_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+        if not status:
+            status = "completed" if completed else "pending"
         results.append(
             {
                 "job_id": name,
@@ -692,6 +747,8 @@ def flow_run_status(task_id, job_id):
         return {"ok": False, "error": "Run not found"}, 404
     meta = _read_job_meta(job_dir)
     status = meta.get("status") or "unknown"
+    if _job_has_error(job_dir):
+        status = "failed"
     flow_name = meta.get("flow_name") or ""
     return {"ok": True, "status": status, "flow_name": flow_name}
 

@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- <h1 class="h4 mb-3">上傳 Mapping 檔案</h1> -->
 <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
   <div>
     <h1 class="h3 mb-0 fw-bold">Mapping 生成文件</h1>
@@ -82,7 +81,7 @@
   {% for step in step_runs %}
   <li class="list-group-item">
     {% if step.status == "error" %}
-    <details>
+    <details open>
       <summary class="d-grid align-items-start" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
         <div class="d-flex align-items-center gap-2 flex-shrink-0 text-nowrap">
           <i class="bi bi-exclamation-triangle-fill text-danger"></i>
@@ -122,7 +121,7 @@
 <ul class="list-group mb-3">
   {% for m in error_messages %}
   <li class="list-group-item">
-    <details>
+    <details open>
       <summary class="d-flex align-items-center gap-2">
         <i class="bi bi-exclamation-triangle-fill text-danger"></i>
         <span>錯誤</span>

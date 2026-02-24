@@ -32,7 +32,12 @@
         <p class="text-muted mb-0">-</p>
         {% endif %}
       </div>
-      <div class="text-muted small text-md-end">任務 ID：{{ task.id }}</div>
+      <div class="text-muted small text-md-end d-flex align-items-center gap-1 justify-content-md-end">
+        任務 ID：{{ task.id }}
+        <button class="btn btn-link p-0 text-muted" style="font-size: inherit;" onclick="copyToClipboard('{{ task.id }}', this)" title="複製 ID">
+          <i class="bi bi-files"></i>
+        </button>
+      </div>
     </div>
     <hr class="my-3">
     <div class="row g-3 small">
@@ -112,6 +117,21 @@
 const nasDiffBtn = document.getElementById('nasDiffBtn');
 const nasDiffStatus = document.getElementById('nasDiffStatus');
 const nasDiffAlert = document.getElementById('nasDiffAlert');
+
+function copyToClipboard(text, btn) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      if (btn) {
+        const icon = btn.querySelector("i");
+        const original = icon.className;
+        icon.className = "bi bi-check-lg text-success";
+        setTimeout(() => icon.className = original, 2000);
+      }
+    });
+  } else {
+    alert("瀏覽器不支援複製功能");
+  }
+}
 
 function renderNasDiff(diff){
   if(!nasDiffAlert) return;

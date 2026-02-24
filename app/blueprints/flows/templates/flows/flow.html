@@ -31,7 +31,8 @@
       <div class="row g-3">
         <div class="col-lg-7">
           <label class="form-label text-muted small">流程名稱</label>
-          <input class="form-control" name="flow_name" placeholder="請輸入流程名稱..." value="{{ loaded_name or '' }}">
+          <input class="form-control" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 60 字)" value="{{ loaded_name or '' }}" maxlength="60" required>
+          <div class="form-text text-end small" id="flowNameCount">0/60</div>
         </div>
         <div class="col-12">
           <div class="form-check">
@@ -181,6 +182,29 @@
           <button type="submit" class="btn btn-success">套用並執行</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="renameFlowModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">重新命名</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="renameFlowCurrentName">
+        <div class="mb-1">
+          <label for="renameFlowInput" class="form-label">新流程名稱 (最多 60 字)</label>
+          <input type="text" class="form-control" id="renameFlowInput" maxlength="60" required>
+          <div class="form-text text-end small" id="renameFlowCount">0/60</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary" id="renameFlowSubmitBtn">確定</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1272,10 +1296,56 @@ function moveStep(sid, direction){
 }
 function moveUp(sid){ moveStep(sid, 'up'); }
 function moveDown(sid){ moveStep(sid, 'down'); }
+
+const renameFlowModalEl = document.getElementById('renameFlowModal');
+const renameFlowInput = document.getElementById('renameFlowInput');
+const renameFlowCount = document.getElementById('renameFlowCount');
+const renameFlowCurrentName = document.getElementById('renameFlowCurrentName');
+const renameFlowSubmitBtn = document.getElementById('renameFlowSubmitBtn');
+let renameModalInstance = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (renameFlowModalEl && typeof bootstrap !== 'undefined') {
+    renameModalInstance = new bootstrap.Modal(renameFlowModalEl);
+    
+    renameFlowInput.addEventListener('input', () => {
+      const len = renameFlowInput.value.length;
+      const max = renameFlowInput.getAttribute('maxlength');
+      renameFlowCount.textContent = `${len}/${max}`;
+    });
+
+    renameFlowSubmitBtn.addEventListener('click', () => {
+      const current = renameFlowCurrentName.value;
+      const newName = renameFlowInput.value.trim();
+      if (!newName) {
+        alert('請輸入流程名稱');
+        return;
+      }
+      if (newName.length > 60) {
+        alert('流程名稱長度不可超過 60 字');
+        return;
+      }
+      submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name: newName });
+      renameModalInstance.hide();
+    });
+  }
+});
+
 function renameFlow(current){
-  const name = prompt('輸入新流程名稱', current);
-  if(!name) return;
-  submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name });
+  if (renameModalInstance) {
+    renameFlowCurrentName.value = current;
+    renameFlowInput.value = current;
+    renameFlowInput.dispatchEvent(new Event('input'));
+    renameModalInstance.show();
+  } else {
+    const name = prompt('輸入新流程名稱 (最多 60 字)', current);
+    if(!name) return;
+    if (name.length > 60) {
+      alert('流程名稱長度不可超過 60 字');
+      return;
+    }
+    submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name });
+  }
 }
 if (PRESET_FLOW){
   for (const st of PRESET_FLOW){
@@ -1285,17 +1355,31 @@ if (PRESET_FLOW){
 
 const toggleAllStepsBtn = document.getElementById('toggleAllStepsBtn');
 let allCollapsed = false;
-if (toggleAllStepsBtn) {
-  toggleAllStepsBtn.addEventListener('click', () => {
-    const collapses = document.querySelectorAll('.step-content');
-    allCollapsed = !allCollapsed;
-    collapses.forEach(el => {
-      const bsCollapse = bootstrap.Collapse.getOrCreateInstance(el);
-      if (allCollapsed) bsCollapse.hide();
-      else bsCollapse.show();
+document.addEventListener('DOMContentLoaded', () => {
+  if (toggleAllStepsBtn && typeof bootstrap !== 'undefined') {
+    toggleAllStepsBtn.addEventListener('click', () => {
+      const collapses = document.querySelectorAll('.step-content');
+      allCollapsed = !allCollapsed;
+      collapses.forEach(el => {
+        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(el);
+        if (allCollapsed) bsCollapse.hide();
+        else bsCollapse.show();
+      });
+      toggleAllStepsBtn.innerHTML = allCollapsed ? '<i class="bi bi-arrows-expand"></i> 全部展開' : '<i class="bi bi-arrows-collapse"></i> 全部收合';
     });
-    toggleAllStepsBtn.innerHTML = allCollapsed ? '<i class="bi bi-arrows-expand"></i> 全部展開' : '<i class="bi bi-arrows-collapse"></i> 全部收合';
-  });
+  }
+});
+
+const flowNameInput = document.getElementById('flowNameInput');
+const flowNameCount = document.getElementById('flowNameCount');
+if (flowNameInput && flowNameCount) {
+  const updateCount = () => {
+    const len = flowNameInput.value.length;
+    const max = flowNameInput.getAttribute('maxlength');
+    flowNameCount.textContent = `${len}/${max}`;
+  };
+  flowNameInput.addEventListener('input', updateCount);
+  updateCount();
 }
 
 isInitialising = false;

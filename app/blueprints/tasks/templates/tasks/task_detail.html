@@ -38,14 +38,14 @@
     <div class="row g-3 small">
       {% if task.creator %}
       <div class="col-md-6">
-        <div class="text-muted">建立人員</div>
-        <div class="fw-semibold">{{ task.creator }}</div>
+        <div class="fw-semibold">建立人員</div>
+        <div class="fw-semi">{{ task.creator }}</div>
       </div>
       {% endif %}
       {% if task.nas_path %}
       <div class="col-md-6">
-        <div class="text-muted">NAS 路徑</div>
-        <div class="fw-semibold font-monospace text-break">{{ task.nas_path }}</div>
+        <div class="fw-semibold">NAS 路徑</div>
+        <div class="fw-semi font-monospace text-break">{{ task.nas_path }}</div>
       </div>
       {% endif %}
     </div>
@@ -137,6 +137,8 @@ if(nasDiffBtn){
   nasDiffBtn.addEventListener('click', async () => {
     const url = nasDiffBtn.getAttribute('data-diff-url');
     if(!url) return;
+    const flashMessages = document.getElementById('flashMessages');
+    if (flashMessages) flashMessages.classList.add('d-none');
     nasDiffBtn.disabled = true;
     if(nasDiffStatus) nasDiffStatus.textContent = '偵測中...';
     try{

@@ -123,13 +123,15 @@
         </nav>
         {% endif %}
         <main class="{{ 'col-md ms-sm-auto px-md-4' if show_sidebar else 'col-12' }} my-4">
-          {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-              {% for category, msg in messages %}
-                <div class="alert alert-{{ 'info' if category == 'message' else category }} py-2">{{ msg }}</div>
-              {% endfor %}
-            {% endif %}
-          {% endwith %}
+          <div id="flashMessages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, msg in messages %}
+                  <div class="alert alert-{{ 'info' if category == 'message' else category }} py-2">{{ msg }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+          </div>
           {% block content %}{% endblock %}
         </main>
       </div>

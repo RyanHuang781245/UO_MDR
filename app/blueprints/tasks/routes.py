@@ -749,10 +749,23 @@ def task_nas_diff(task_id):
         return jsonify({"ok": True, "diff": None, "message": "NAS 路徑不存在或不是資料夾"}), 200
 
     try:
+        def _list_empty_dirs(base: str) -> set[str]:
+            empties: set[str] = set()
+            for root, dirs, files in os.walk(base):
+                if dirs or files:
+                    continue
+                rel = os.path.relpath(root, base)
+                if rel == ".":
+                    continue
+                empties.add(rel.replace("\\", "/") + "/")
+            return empties
+
         task_files = {p.replace("\\", "/") for p in list_files(files_dir)}
         nas_files = {p.replace("\\", "/") for p in list_files(nas_path)}
-        added = sorted(nas_files - task_files)
-        removed = sorted(task_files - nas_files)
+        task_entries = task_files | _list_empty_dirs(files_dir)
+        nas_entries = nas_files | _list_empty_dirs(nas_path)
+        added = sorted(nas_entries - task_entries)
+        removed = sorted(task_entries - nas_entries)
         if not added and not removed:
             return jsonify({"ok": True, "diff": None, "message": "未偵測到變更"}), 200
         limit = 5
@@ -817,10 +830,17 @@ def sync_task_nas(task_id):
         copied = 0
         updated = 0
         deleted = 0
+        created_dirs = 0
+        deleted_dirs = 0
         for root, dirs, files in os.walk(src_dir):
             rel = os.path.relpath(root, src_dir)
             dest_root = dst_dir if rel == "." else os.path.join(dst_dir, rel)
-            os.makedirs(dest_root, exist_ok=True)
+            if not os.path.exists(dest_root):
+                os.makedirs(dest_root, exist_ok=True)
+                if rel != ".":
+                    created_dirs += 1
+            else:
+                os.makedirs(dest_root, exist_ok=True)
             for fname in files:
                 src_file = os.path.join(root, fname)
                 dst_file = os.path.join(dest_root, fname)
@@ -851,17 +871,28 @@ def sync_task_nas(task_id):
             if rel != "." and not os.path.exists(src_root):
                 try:
                     shutil.rmtree(root)
+                    deleted_dirs += 1
                 except FileNotFoundError:
                     pass
         _apply_last_edit(meta)
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
-        flash(f"已更新 NAS 文件（新增 {copied}、更新 {updated}、刪除 {deleted}）。", "success")
+        total_added = copied + created_dirs
+        total_deleted = deleted + deleted_dirs
+        flash(f"已更新 NAS 內容（新增 {total_added}、更新 {updated}、刪除 {total_deleted}）。", "success")
         work_id, label = _get_actor_info()
         record_audit(
             action="nas_sync",
             actor={"work_id": work_id, "label": label},
-            detail={"task_id": task_id, "nas_path": nas_path, "copied": copied, "updated": updated, "deleted": deleted},
+            detail={
+                "task_id": task_id,
+                "nas_path": nas_path,
+                "copied": copied,
+                "updated": updated,
+                "deleted": deleted,
+                "created_dirs": created_dirs,
+                "deleted_dirs": deleted_dirs,
+            },
             task_id=task_id,
         )
     except PermissionError:

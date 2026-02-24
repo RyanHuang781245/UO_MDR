@@ -39,13 +39,13 @@
       {% if task.creator %}
       <div class="col-md-6">
         <div class="fw-semibold">建立人員</div>
-        <div class="fw-semi">{{ task.creator }}</div>
+        <div class="text-muted mb-0">{{ task.creator }}</div>
       </div>
       {% endif %}
       {% if task.nas_path %}
       <div class="col-md-6">
         <div class="fw-semibold">NAS 路徑</div>
-        <div class="fw-semi font-monospace text-break">{{ task.nas_path }}</div>
+        <div class="text-muted mb-0">{{ task.nas_path }}</div>
       </div>
       {% endif %}
     </div>

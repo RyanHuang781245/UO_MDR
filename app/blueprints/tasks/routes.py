@@ -229,45 +229,49 @@ def task_mapping(task_id):
             if sub:
                 parts.append(sub)
             
-            return f"{row_prefix}Extract chapter", " | ".join(parts)
+            return f"{row_prefix}擷取章節", " | ".join(parts)
         if stype == "extract_word_all_content":
             src = _base(params.get("input_file", ""))
-            return f"{row_prefix}Extract all", src.strip()
+            return f"{row_prefix}擷取全文", src.strip()
         if stype == "extract_specific_table_from_word":
             src = _base(params.get("input_file", ""))
             section = (params.get("target_chapter_section") or "").strip()
+            title = (params.get("target_chapter_title") or params.get("target_title_section") or "").strip()
+            main_header = f"{section} {title}".strip()
             label = (
                 params.get("target_caption_label")
                 or params.get("target_table_label", "")
                 or params.get("target_figure_label", "")
             ).strip()
             parts = [src]
-            if section:
-                parts.append(section)
+            if main_header:
+                parts.append(main_header)
             if label:
                 parts.append(label)
-            return f"{row_prefix}Extract table", " | ".join(parts)
+            return f"{row_prefix}擷取表格", " | ".join(parts)
         if stype == "extract_specific_figure_from_word":
             src = _base(params.get("input_file", ""))
             section = (params.get("target_chapter_section") or "").strip()
+            title = (params.get("target_chapter_title") or params.get("target_title_section") or "").strip()
+            main_header = f"{section} {title}".strip()
             label = (
                 params.get("target_caption_label")
                 or params.get("target_figure_label", "")
                 or params.get("target_table_label", "")
             ).strip()
             parts = [src]
-            if section:
-                parts.append(section)
+            if main_header:
+                parts.append(main_header)
             if label:
                 parts.append(label)
-            return f"{row_prefix}Extract figure", " | ".join(parts)
+            return f"{row_prefix}擷取圖片", " | ".join(parts)
         if stype == "insert_text":
             text_val = (params.get("text") or "").strip()
-            return f"{row_prefix}Append text", text_val
+            return f"{row_prefix}插入文字", text_val
         if stype == "template_merge":
             tpl = _base(entry.get("template_file", ""))
-            return f"{row_prefix}Template merge", tpl.strip()
-        return stype or "step", ""
+            return f"{row_prefix}範本合併", tpl.strip()
+        return stype or "步驟", ""
 
     def _truncate_detail(text: str, limit: int = 160) -> tuple[str, bool]:
         if len(text) <= limit:

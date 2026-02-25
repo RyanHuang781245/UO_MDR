@@ -17,9 +17,16 @@
 </div>
 
 <form method="post" enctype="multipart/form-data" class="card card-body mb-4">
+  {% if last_mapping_file %}
+  <div class="mb-3">
+    <span class="text-muted small">當前使用檔案：</span>
+    <span class="badge bg-light text-dark border fw-normal">{{ last_mapping_file }}</span>
+  </div> 
+  {% endif %}     
   <div class="row g-3">
     <div class="col-md-10">
-      <input class="form-control" type="file" name="mapping_file" accept=".xlsx" required>
+      <!-- <input class="form-control" type="file" name="mapping_file" accept=".xlsx" required> -->
+      <input class="form-control" type="file" name="mapping_file" accept=".xlsx" {% if not last_mapping_file %}required{% endif %}>
     </div>
     <div class="col-md-2 d-flex gap-2">
       <button class="btn btn-primary flex-fill" name="action" value="check" type="submit">

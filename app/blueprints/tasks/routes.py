@@ -409,6 +409,7 @@ def task_mapping(task_id):
         step_ok_count=step_ok_count,
         step_error_count=step_error_count,
         error_messages=error_messages,
+        last_mapping_file=last_mapping_file,
         allow_direct_run=bool(
             last_mapping_file
             and request.method == "POST"

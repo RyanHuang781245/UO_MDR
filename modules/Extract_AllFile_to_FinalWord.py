@@ -291,6 +291,7 @@ def extract_word_chapter(
     section=None,
     *,
     explicit_end_title: str | None = None,
+    explicit_end_number: str | None = None,
     target_subtitle: str | None = None,
     subheading_strict_match: bool = True,
     ignore_header_footer: bool = True,
@@ -300,11 +301,28 @@ def extract_word_chapter(
     if not os.path.isfile(input_file):
         raise FileNotFoundError(f"input file not found: {input_file}")
 
+    raw_section = str(target_chapter_section or "").strip()
+    start_section = raw_section
+    end_section = (explicit_end_number or "").strip()
     heading_text = target_chapter_title.strip()
-    if not heading_text and use_chapter_title:
-        heading_text = target_chapter_section
 
-    start_heading = heading_text or target_chapter_section
+    # Support direct-call range syntax like "1.1.1-1.1.3" (or with title suffix),
+    # so unit tests and script usage behave the same as workflow parsing.
+    range_match = re.match(
+        r"^(\d+(?:\.\d+)*)(?:\s*[-~～至到]\s*(\d+(?:\.\d+)*))?(?:\s+(.+))?$",
+        raw_section,
+    )
+    if range_match:
+        start_section = range_match.group(1)
+        if not end_section and range_match.group(2):
+            end_section = range_match.group(2)
+        if not heading_text and range_match.group(3):
+            heading_text = range_match.group(3).strip()
+
+    if not heading_text and use_chapter_title:
+        heading_text = start_section
+
+    start_heading = heading_text or start_section
     out_path = output_docx_path or _build_output_docx_path(input_file, f"section_{start_heading}")
 
     # Only trim to a subheading when the caller explicitly requests one.
@@ -314,8 +332,9 @@ def extract_word_chapter(
         input_docx=input_file,
         output_docx=out_path,
         start_heading_text=start_heading,
-        start_number=target_chapter_section,
+        start_number=start_section,
         explicit_end_title=(explicit_end_title or None),
+        explicit_end_number=(end_section or None),
         ignore_header_footer=ignore_header_footer,
         ignore_toc=ignore_toc,
         subheading_text=subheading_to_use,

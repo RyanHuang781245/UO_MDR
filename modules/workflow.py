@@ -2,6 +2,7 @@
 import os
 import hashlib
 import zipfile
+import re
 from datetime import datetime
 from typing import List, Dict, Any
 from docx import Document as DocxDocument
@@ -129,6 +130,7 @@ SUPPORTED_STEPS = {
             "use_chapter_title",
             "target_chapter_title",
             "explicit_end_title",
+            "explicit_end_number",
             "target_subtitle",
             "subheading_strict_match",
             "ignore_toc",
@@ -142,6 +144,7 @@ SUPPORTED_STEPS = {
             "use_chapter_title": "bool",
             "target_chapter_title": "text",
             "explicit_end_title": "text",
+            "explicit_end_number": "text",
             "target_subtitle": "text",
             "subheading_strict_match": "bool",
             "ignore_toc": "bool",
@@ -430,9 +433,20 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
 
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
-                tsec = params.get("target_chapter_section","")
+                tsec = params.get("target_chapter_section", "")
                 use_title = boolish(params.get("use_chapter_title", params.get("target_title", "false")))
                 title_text = params.get("target_chapter_title", params.get("target_title_section", ""))
+                end_number = params.get("explicit_end_number", "") or ""
+                raw_tsec = str(tsec or "").strip()
+                range_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s*-\s*(\d+(?:\.\d+)*))?(?:\s+(.+))?$", raw_tsec)
+                if range_match:
+                    tsec = range_match.group(1)
+                    if not end_number and range_match.group(2):
+                        end_number = range_match.group(2)
+                    if (not title_text or title_text == raw_tsec) and range_match.group(3):
+                        title_text = range_match.group(3)
+                    elif title_text == raw_tsec and not range_match.group(3):
+                        title_text = ""
                 target_subtitle = params.get("target_subtitle", params.get("subheading_text"))
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 result = extract_word_chapter(
@@ -441,6 +455,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     use_chapter_title=use_title,
                     target_chapter_title=title_text,
                     explicit_end_title=params.get("explicit_end_title") or None,
+                    explicit_end_number=end_number or None,
                     target_subtitle=target_subtitle,
                     subheading_strict_match=boolish(params.get("subheading_strict_match", "true")),
                     ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),

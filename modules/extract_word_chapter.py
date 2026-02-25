@@ -180,6 +180,32 @@ def match_subheading(p: etree._Element, subheading_text: str, strict: bool = Tru
         return txt == target
     return target in txt
 
+
+def match_heading_by_number_and_title(
+    paragraph_text: str,
+    heading_number: str | None = None,
+    heading_title: str | None = None,
+) -> bool:
+    """Match heading text using chapter number and/or title (test2.py style)."""
+    txt = normalize_text(paragraph_text)
+    num = normalize_text(heading_number or "").rstrip(".")
+    title = normalize_text(heading_title or "")
+
+    if num:
+        if re.match(rf"^{re.escape(num)}(?!\d)", txt):
+            if title:
+                return title in txt
+            return True
+        # Some documents put chapter number in TOC line, but real heading line is title-only.
+        if title and (txt == title or txt.endswith(title)):
+            return True
+        return False
+
+    if title:
+        return txt == title or title in txt
+
+    return False
+
 # ---------- 章節範圍定位（outlineLvl 優先，ilvl 備援），支援 ignore_toc ----------
 def find_section_range_children(
     body_children: list[etree._Element],
@@ -188,6 +214,8 @@ def find_section_range_children(
     style_outline: dict[str, int],
     style_based: dict[str, str],
     explicit_end_title: str | None = None,
+    explicit_end_number: str | None = None,
+    include_end_chapter: bool = True,
     ignore_toc: bool = True,
 ) -> tuple[int, int]:
     start_idx = None
@@ -226,6 +254,8 @@ def find_section_range_children(
     if start_idx is None:
         raise RuntimeError(f"找不到章節起點：{start_number} / {start_heading_text}")
 
+    has_explicit_end = bool((explicit_end_title or "").strip() or (explicit_end_number or "").strip())
+
     # ---- 找終點 ----
     end_idx = len(body_children)
     for j in range(start_idx + 1, len(body_children)):
@@ -236,8 +266,41 @@ def find_section_range_children(
 
             txt = normalize_text(get_all_text(p))
 
-            if explicit_end_title and txt == explicit_end_title:
-                return start_idx, j
+            if has_explicit_end:
+                if match_heading_by_number_and_title(
+                    paragraph_text=txt,
+                    heading_number=explicit_end_number,
+                    heading_title=explicit_end_title,
+                ):
+                    if include_end_chapter:
+                        end_outline = get_effective_outline_level(p, style_outline, style_based)
+                        end_style = get_pStyle(p)
+                        end_ilvl = get_ilvl(p)
+                        for k in range(j + 1, len(body_children)):
+                            next_block = body_children[k]
+                            for next_p in iter_paragraphs(next_block):
+                                if ignore_toc and is_toc_paragraph(next_p):
+                                    continue
+                                next_lvl = get_effective_outline_level(next_p, style_outline, style_based)
+                                if end_outline is not None and next_lvl is not None and next_lvl <= end_outline:
+                                    return start_idx, k
+                                if end_outline is None:
+                                    next_style = get_pStyle(next_p)
+                                    next_ilvl = get_ilvl(next_p)
+                                    if (
+                                        end_style is not None
+                                        and next_style == end_style
+                                        and end_ilvl is not None
+                                        and next_ilvl is not None
+                                        and next_ilvl <= end_ilvl
+                                    ):
+                                        return start_idx, k
+                        return start_idx, len(body_children)
+                    return start_idx, j
+
+            # If explicit end is provided, do not stop at the next same-level heading.
+            if has_explicit_end:
+                continue
 
             lvl = get_effective_outline_level(p, style_outline, style_based)
             if start_outline is not None and lvl is not None and lvl <= start_outline:
@@ -254,6 +317,11 @@ def find_section_range_children(
                     and ilvl <= start_ilvl
                 ):
                     return start_idx, j
+
+    if has_explicit_end:
+        raise RuntimeError(
+            f"找不到指定終點章節：number={explicit_end_number or ''} title={explicit_end_title or ''}"
+        )
 
     return start_idx, end_idx
 
@@ -370,6 +438,7 @@ def extract_section_docx_xml(
     start_heading_text: str,
     start_number: str,
     explicit_end_title: str | None = None,
+    explicit_end_number: str | None = None,
     ignore_header_footer: bool = True,
     ignore_toc: bool = True,
     subheading_text: str | None = None,
@@ -412,6 +481,7 @@ def extract_section_docx_xml(
         style_outline=style_outline,
         style_based=style_based,
         explicit_end_title=explicit_end_title,
+        explicit_end_number=explicit_end_number,
         ignore_toc=ignore_toc,
     )
     kept_section = content_children[start_idx:end_idx]
@@ -453,14 +523,14 @@ def extract_section_docx_xml(
 
 if __name__ == "__main__":
     extract_section_docx_xml(
-        input_docx=r"C:\Users\ne025\Desktop\Test_File\Section 1_Device Description_v1.docx",
+        input_docx=r"C:\Users\ne025\Desktop\Test_File\Section 1_Device Description_v1_knee.docx",
         output_docx=r"Extract_1.1.1_General_description_knee.docx",
         start_heading_text="General description",
         start_number="1.1.1",
-        explicit_end_title=None,
+        explicit_end_title="Accessories not included but necessary for use",
+        explicit_end_number="1.1.3",
         ignore_header_footer=True,
         ignore_toc=True,
-        subheading_text="General description",
         subheading_strict_match=True,
         subheading_debug=False,
     )

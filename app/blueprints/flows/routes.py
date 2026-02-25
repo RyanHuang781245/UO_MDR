@@ -138,6 +138,58 @@ def _job_has_error(job_dir: str) -> bool:
         return False
 
 
+def _normalize_task_file_rel_path(raw_path: str) -> str:
+    cleaned = (raw_path or "").strip().replace("\\", "/")
+    if cleaned in {"", ".", "/"}:
+        return ""
+    if cleaned.startswith("/") or os.path.isabs(cleaned):
+        raise ValueError("Invalid task file path")
+    normalized = os.path.normpath(cleaned).replace("\\", "/")
+    if normalized in {"", "."}:
+        return ""
+    if normalized == ".." or normalized.startswith("../"):
+        raise ValueError("Invalid task file path")
+    return normalized
+
+
+def _resolve_task_file_path(files_dir: str, rel_path: str, expect_dir: bool | None = None) -> str:
+    rel = _normalize_task_file_rel_path(rel_path)
+    base_abs = os.path.abspath(files_dir)
+    candidate = os.path.abspath(os.path.join(base_abs, rel))
+    try:
+        if os.path.commonpath([base_abs, candidate]) != base_abs:
+            raise ValueError("Invalid task file path")
+    except ValueError as exc:
+        raise ValueError("Invalid task file path") from exc
+
+    if expect_dir is True and not os.path.isdir(candidate):
+        raise FileNotFoundError("Task directory not found")
+    if expect_dir is False and not os.path.isfile(candidate):
+        raise FileNotFoundError("Task file not found")
+    return candidate
+
+
+def _normalize_step_file_value(raw_value: str, accept: str) -> str:
+    cleaned = (raw_value or "").strip()
+    if not cleaned:
+        return ""
+    rel = _normalize_task_file_rel_path(cleaned)
+    if accept.endswith(":dir") and rel == "":
+        return "."
+    return rel
+
+
+def _resolve_runtime_step_params(files_dir: str, schema: dict, raw_params: dict) -> dict:
+    params = {}
+    for key, value in raw_params.items():
+        accept = schema.get("accepts", {}).get(key, "text")
+        if isinstance(accept, str) and accept.startswith("file") and value:
+            params[key] = _resolve_task_file_path(files_dir, str(value), expect_dir=accept.endswith(":dir"))
+        else:
+            params[key] = value
+    return params
+
+
 def _execute_saved_flow(task_id: str, flow_name: str) -> str:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     files_dir = os.path.join(tdir, "files")
@@ -170,8 +222,11 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
         workflow = data
         center_titles = True
     if template_file:
-        tpl_abs = os.path.join(files_dir, template_file)
-        if os.path.isfile(tpl_abs):
+        try:
+            tpl_abs = _resolve_task_file_path(files_dir, str(template_file), expect_dir=False)
+        except (ValueError, FileNotFoundError):
+            tpl_abs = ""
+        if tpl_abs and os.path.isfile(tpl_abs):
             template_paragraphs = parse_template_paragraphs(tpl_abs)
             template_cfg = {"path": tpl_abs, "paragraphs": template_paragraphs}
     runtime_steps = []
@@ -180,13 +235,7 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
         if stype not in SUPPORTED_STEPS:
             continue
         schema = SUPPORTED_STEPS.get(stype, {})
-        params = {}
-        for k, v in step.get("params", {}).items():
-            accept = schema.get("accepts", {}).get(k, "text")
-            if accept.startswith("file") and v:
-                params[k] = os.path.join(files_dir, v)
-            else:
-                params[k] = v
+        params = _resolve_runtime_step_params(files_dir, schema, step.get("params", {}) or {})
         runtime_steps.append({"type": stype, "params": params})
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
@@ -652,8 +701,13 @@ def flow_builder(task_id):
                 if isinstance(s, dict) and s.get("type") in SUPPORTED_STEPS
             ]
     if template_file:
-        tpl_abs = os.path.join(files_dir, template_file)
-        if os.path.exists(tpl_abs):
+        try:
+            template_file = _normalize_task_file_rel_path(str(template_file))
+            tpl_abs = _resolve_task_file_path(files_dir, template_file, expect_dir=False)
+        except (ValueError, FileNotFoundError):
+            template_file = None
+            tpl_abs = ""
+        if tpl_abs:
             try:
                 template_paragraphs = parse_template_paragraphs(tpl_abs)
             except Exception:
@@ -766,6 +820,47 @@ def flow_run_active(task_id):
     }
 
 
+@flows_bp.get("/api/tasks/<task_id>/flow-files", endpoint="api_flow_list_task_files")
+def api_flow_list_task_files(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        return {"ok": False, "error": "Task files not found"}, 404
+
+    rel_path_raw = (request.args.get("path") or "").strip()
+    try:
+        rel_path = _normalize_task_file_rel_path(rel_path_raw)
+        abs_dir = _resolve_task_file_path(files_dir, rel_path, expect_dir=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return {"ok": False, "error": str(exc)}, 400
+    except PermissionError:
+        return {"ok": False, "error": "Permission denied"}, 403
+
+    dirs = []
+    files = []
+    for name in sorted(os.listdir(abs_dir), key=str.lower):
+        full = os.path.join(abs_dir, name)
+        child_rel = f"{rel_path}/{name}" if rel_path else name
+        child_rel = child_rel.replace("\\", "/")
+        if os.path.isdir(full):
+            dirs.append({"name": name, "path": child_rel})
+        elif os.path.isfile(full):
+            files.append({"name": name, "path": child_rel})
+
+    parent = None
+    if rel_path:
+        parts = rel_path.split("/")
+        parent = "/".join(parts[:-1]) if len(parts) > 1 else ""
+
+    return {
+        "ok": True,
+        "path": rel_path,
+        "parent": parent,
+        "dirs": dirs,
+        "files": files,
+    }
+
+
 @flows_bp.post("/tasks/<task_id>/flows/run", endpoint="run_flow")
 def run_flow(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -776,7 +871,15 @@ def run_flow(task_id):
     flow_name = request.form.get("flow_name", "").strip()
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     center_titles = request.form.get("center_titles") == "on"
-    template_file = request.form.get("template_file", "").strip()
+    template_file_raw = request.form.get("template_file", "").strip()
+    template_file = ""
+    if template_file_raw:
+        try:
+            template_file = _normalize_task_file_rel_path(template_file_raw)
+        except ValueError:
+            return "模板路徑不合法", 400
+        if not template_file:
+            return "模板路徑不合法", 400
     document_format = normalize_document_format(request.form.get("document_format"))
     line_spacing_raw = request.form.get("line_spacing")
     line_spacing_value = (line_spacing_raw or f"{DEFAULT_LINE_SPACING:g}").strip()
@@ -799,7 +902,14 @@ def run_flow(task_id):
         for k in schema.get("inputs", []):
             field = f"step_{sid}_{k}"
             val = request.form.get(field, "")
-            params[k] = val
+            accept = schema.get("accepts", {}).get(k, "text")
+            if isinstance(accept, str) and accept.startswith("file"):
+                try:
+                    params[k] = _normalize_step_file_value(val, accept)
+                except ValueError:
+                    return f"步驟檔案路徑不合法：{k}", 400
+            else:
+                params[k] = val
         workflow.append({"type": stype, "params": params})
     flow_dir = os.path.join(tdir, "flows")
     os.makedirs(flow_dir, exist_ok=True)
@@ -836,19 +946,17 @@ def run_flow(task_id):
         if stype not in SUPPORTED_STEPS:
             continue
         schema = SUPPORTED_STEPS.get(stype, {})
-        params = {}
-        for k, v in step["params"].items():
-            accept = schema.get("accepts", {}).get(k, "text")
-            if accept.startswith("file") and v:
-                params[k] = os.path.join(files_dir, v)
-            else:
-                params[k] = v
+        try:
+            params = _resolve_runtime_step_params(files_dir, schema, step["params"])
+        except (ValueError, FileNotFoundError) as exc:
+            return str(exc), 400
         runtime_steps.append({"type": stype, "params": params})
 
     template_cfg = None
     if template_file:
-        tpl_abs = os.path.join(files_dir, template_file)
-        if not os.path.isfile(tpl_abs):
+        try:
+            tpl_abs = _resolve_task_file_path(files_dir, template_file, expect_dir=False)
+        except (ValueError, FileNotFoundError):
             return "找不到模板檔案，請重新載入", 400
         try:
             template_paragraphs = parse_template_paragraphs(tpl_abs)
@@ -946,14 +1054,15 @@ def execute_flow(task_id, flow_name):
     if document_format == "none" or line_spacing_none:
         apply_formatting = False
     if template_file:
-        tpl_abs = os.path.join(files_dir, template_file)
-        if os.path.isfile(tpl_abs):
-            try:
-                template_paragraphs = parse_template_paragraphs(tpl_abs)
-                template_cfg = {"path": tpl_abs, "paragraphs": template_paragraphs}
-            except Exception as e:
-                current_app.logger.exception("Failed to parse template for saved flow")
-        else:
+        try:
+            template_file = _normalize_task_file_rel_path(str(template_file))
+            tpl_abs = _resolve_task_file_path(files_dir, template_file, expect_dir=False)
+            template_paragraphs = parse_template_paragraphs(tpl_abs)
+            template_cfg = {"path": tpl_abs, "paragraphs": template_paragraphs}
+        except (ValueError, FileNotFoundError):
+            template_file = None
+        except Exception:
+            current_app.logger.exception("Failed to parse template for saved flow")
             template_file = None
     runtime_steps = []
     for step in workflow:
@@ -961,13 +1070,10 @@ def execute_flow(task_id, flow_name):
         if stype not in SUPPORTED_STEPS:
             continue
         schema = SUPPORTED_STEPS.get(stype, {})
-        params = {}
-        for k, v in step.get("params", {}).items():
-            accept = schema.get("accepts", {}).get(k, "text")
-            if accept.startswith("file") and v:
-                params[k] = os.path.join(files_dir, v)
-            else:
-                params[k] = v
+        try:
+            params = _resolve_runtime_step_params(files_dir, schema, step.get("params", {}) or {})
+        except (ValueError, FileNotFoundError) as exc:
+            return str(exc), 400
         runtime_steps.append({"type": stype, "params": params})
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)

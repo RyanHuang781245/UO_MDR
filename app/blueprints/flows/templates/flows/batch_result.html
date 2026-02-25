@@ -45,20 +45,26 @@
 
     <!-- 結果表格 -->
     <div class="card border-0 shadow-sm">
-        <div class="table-responsive">
+        <div class="table-responsive border rounded" style="max-height: 650px; overflow-y: auto;">
             <table class="table table-hover align-middle mb-0">
-                <thead class="bg-light">
+                <thead class="bg-light sticky-top">
                     <tr>
-                        <th class="ps-4" style="border-top: none;">流程名稱</th>
-                        <th class="text-center">狀態</th>
-                        <th class="text-center" style="width:240px; border-top: none;">操作</th>
+                        <th class="ps-4" style="border-top: none; background-color: inherit; z-index: 2;">流程名稱</th>
+                        <th class="text-center" style="background-color: inherit; z-index: 2;">狀態</th>
+                        <th class="text-center" style="width:240px; border-top: none; background-color: inherit; z-index: 2;">操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in results %}
                     <tr>
                         <td class="ps-4">
+                            {% if r.flow and r.flow != "未命名流程" %}
+                            <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=r.flow) }}" class="text-decoration-none fw-medium">
+                                {{ r.flow }}
+                            </a>
+                            {% else %}
                             <span class="fw-medium text-dark">{{ r.flow }}</span>
+                            {% endif %}
                         </td>
                         {% set is_ok = (r.status == "completed") or (r.ok is defined and r.ok) %}
                         <td class="text-center">

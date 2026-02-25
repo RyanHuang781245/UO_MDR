@@ -29,7 +29,16 @@
           <tr>
             <td>{{ b.id }}</td>
             <td>{{ status_label }}</td>
-            <td class="text-start">{{ b.current_flow }}{% if b.total %} ({{ b.current_index }}/{{ b.total }}){% endif %}</td>
+            <td class="text-start">
+              {% if b.current_flow and b.current_flow != "未命名流程" %}
+                <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=b.current_flow) }}" class="text-decoration-none">
+                  {{ b.current_flow }}
+                </a>
+              {% else %}
+                {{ b.current_flow }}
+              {% endif %}
+              {% if b.total %} ({{ b.current_index }}/{{ b.total }}){% endif %}
+            </td>
             <td>
               <a class="btn btn-sm btn-outline-primary" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=b.id) }}">查看狀態</a>
             </td>

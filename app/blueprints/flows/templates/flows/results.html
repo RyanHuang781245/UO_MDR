@@ -34,17 +34,17 @@
       <button class="btn btn-sm btn-outline-secondary" id="downloadSelectedRunsLogBtn" type="button">批次下載紀錄</button>
       <button class="btn btn-sm btn-outline-danger" id="deleteSelectedRunsBtn" type="button">刪除已選取</button>
     </div>
-    <div class="table-responsive">
+    <div class="table-responsive shadow-sm border rounded" style="max-height: 650px; overflow-y: auto;">
       <table class="table table-hover align-middle mb-0">
-        <thead class="bg-light">
+        <thead class="bg-light sticky-top">
           <tr>
-            <th style="width:60px;">
+            <th style="width:60px; background-color: inherit; z-index: 2;">
               <input type="checkbox" id="selectAllRuns" class="form-check-input">
             </th>
-            <th class="text-start ps-3">流程名稱</th>
-            <th class="text-start ps-5">執行時間</th>
-            <th class="text-start ps-4">狀態</th>
-            <th class="text-center" style="width:320px;">操作</th>
+            <th class="text-start ps-3" style="background-color: inherit; z-index: 2;">流程名稱</th>
+            <th class="text-start ps-5" style="background-color: inherit; z-index: 2;">執行時間</th>
+            <th class="text-start ps-4" style="background-color: inherit; z-index: 2;">狀態</th>
+            <th class="text-center" style="width:320px; background-color: inherit; z-index: 2;">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -53,7 +53,15 @@
             <td>
               <input type="checkbox" class="form-check-input run-select" value="{{ r.job_id }}">
             </td>
-            <td class="text-start ps-3">{{ r.flow_name }}</td>
+            <td class="text-start ps-3">
+              {% if r.flow_name and r.flow_name != "未命名流程" %}
+                <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=r.flow_name) }}" class="text-decoration-none fw-medium">
+                  {{ r.flow_name }}
+                </a>
+              {% else %}
+                {{ r.flow_name }}
+              {% endif %}
+            </td>
             <td class="text-cneter pe-5">{{ r.started_at }}</td>
             <td class="text-cneter pe-5">
               {% if r.status == "completed" %}
@@ -110,17 +118,17 @@
         <button class="btn btn-sm btn-outline-secondary" id="clearAllBatchesBtn" type="button">取消選取</button>
         <button class="btn btn-sm btn-outline-danger" id="deleteSelectedBatchesBtn" type="button">刪除已選取</button>
       </div>
-      <div class="table-responsive">
+      <div class="table-responsive shadow-sm border rounded" style="max-height: 600px; overflow-y: auto;">
         <table class="table table-hover align-middle mb-0">
-          <thead class="bg-light">
+          <thead class="bg-light sticky-top">
                     <tr>
-          <th style="width:60px;">
+          <th style="width:60px; background-color: inherit; z-index: 2;">
                 <input type="checkbox" id="selectAllBatches" class="form-check-input">
               </th>
-          <th style="width:160px;">批次 ID</th>
-          <th class="ps-5" style="width:200px;">建立時間</th>
-          <th class="text-center" style="width:180px;">狀態</th>
-          <th class="text-center" style="width:150px;">操作</th>
+          <th style="width:160px; background-color: inherit; z-index: 2;">批次 ID</th>
+          <th class="ps-5" style="width:200px; background-color: inherit; z-index: 2;">建立時間</th>
+          <th class="text-center" style="width:180px; background-color: inherit; z-index: 2;">狀態</th>
+          <th class="text-center" style="width:150px; background-color: inherit; z-index: 2;">操作</th>
         </tr>
           </thead>
           <tbody>

@@ -270,7 +270,7 @@ def task_mapping(task_id):
             return f"{row_prefix}插入文字", text_val
         if stype == "template_merge":
             tpl = _base(entry.get("template_file", ""))
-            return f"{row_prefix}範本合併", tpl.strip()
+            return f"{row_prefix}模版合併", tpl.strip()
         return stype or "步驟", ""
 
     def _truncate_detail(text: str, limit: int = 160) -> tuple[str, bool]:

@@ -294,6 +294,7 @@ def extract_word_chapter(
     explicit_end_number: str | None = None,
     target_subtitle: str | None = None,
     subheading_strict_match: bool = True,
+    hide_chapter_title: bool = True,
     ignore_header_footer: bool = True,
     ignore_toc: bool = True,
     output_docx_path: str | None = None,
@@ -353,7 +354,7 @@ def extract_word_chapter(
     )
 
     captured_title = _read_first_paragraph_text(out_path) or start_heading
-    if captured_title:
+    if hide_chapter_title and captured_title:
         hide_paragraphs_with_text(out_path, [captured_title])
 
     appended_section = None
@@ -361,10 +362,14 @@ def extract_word_chapter(
         target_section = section or output_doc.AddSection()
         start_idx = target_section.Body.ChildObjects.Count
         _append_docx_to_section(out_path, output_doc, target_section)
-        _hide_titles_in_section(target_section, [captured_title], start_index=start_idx)
+        if hide_chapter_title and captured_title:
+            _hide_titles_in_section(target_section, [captured_title], start_index=start_idx)
         appended_section = target_section
 
-    result = {"captured_titles": [captured_title] if captured_title else [], "output_docx": out_path}
+    result = {
+        "captured_titles": [captured_title] if (hide_chapter_title and captured_title) else [],
+        "output_docx": out_path,
+    }
     return result
 
 

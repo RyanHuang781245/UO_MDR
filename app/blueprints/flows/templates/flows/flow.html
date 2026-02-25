@@ -376,7 +376,8 @@ const ACTIVE_RUNS_URL = "{{ url_for('flows_bp.flow_run_active', task_id=task.id)
 const TASK_FILE_BROWSER_URL = "{{ url_for('flows_bp.api_flow_list_task_files', task_id=task.id) }}";
 const BOOL_DEFAULTS = {
   include_caption: "false",
-  use_chapter_title: "false"
+  use_chapter_title: "false",
+  hide_chapter_title: "true"
 };
 
 const FIELD_META = {
@@ -402,6 +403,9 @@ const FIELD_META = {
   },
   subheading_strict_match: {
     label: "小標題精確比對"
+  },
+  hide_chapter_title: {
+    label: "隱藏章節標題"
   },
   target_caption_label: {
     label: "圖/表標題前綴",
@@ -1193,9 +1197,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const tplDisabled = templateParagraphs.length === 0 ? "disabled" : "";
     const tplModeVal = getValue("template_mode") || "insert_after";
 
-    const ignoreTocLabel = (FIELD_META["ignore_toc"] || {}).label || "移除目錄";
-    const ignoreHeaderLabel = (FIELD_META["ignore_header_footer"] || {}).label || "移除頁首頁尾";
-    const strictLabel = (FIELD_META["subheading_strict_match"] || {}).label || "小標題精確比對";
+  const ignoreTocLabel = (FIELD_META["ignore_toc"] || {}).label || "移除目錄";
+  const ignoreHeaderLabel = (FIELD_META["ignore_header_footer"] || {}).label || "移除頁首頁尾";
+  const strictLabel = (FIELD_META["subheading_strict_match"] || {}).label || "小標題精確比對";
+  const hideChapterTitleLabel = (FIELD_META["hide_chapter_title"] || {}).label || "隱藏章節標題";
 
     const summaryParts = [];
     if(fileVal) summaryParts.push(truncatePath(fileVal));
@@ -1297,6 +1302,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
               </div>
               <div class="row g-2">
                 ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
+                ${spec.inputs.includes("hide_chapter_title") ? renderBoolToggle("hide_chapter_title", hideChapterTitleLabel, "", "col-md-4") : ""}
                 ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-4") : ""}
                 ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-4") : ""}
               </div>

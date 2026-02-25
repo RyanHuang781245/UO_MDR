@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from flask import current_app
+from modules.auth_models import AuditLog, db
 
 
 def record_audit(
@@ -12,20 +13,56 @@ def record_audit(
     detail: Optional[Dict[str, Any]] = None,
     task_id: Optional[str] = None,
 ) -> None:
-    payload = {
-        "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "action": action,
-        "actor": actor or {},
-        "detail": detail or {},
-    }
+    work_id = None
+    if actor:
+        work_id = actor.get("work_id") or actor.get("username")
+
+    detail_json = json.dumps(detail or {}, ensure_ascii=False)
+    
+    # 1. Primary: Record to Database
+    db_success = False
     try:
-        task_root = current_app.config.get("TASK_FOLDER", "")
-        if task_id:
-            task_dir = os.path.join(task_root, task_id)
-            if os.path.isdir(task_dir):
-                _append_jsonl(os.path.join(task_dir, "task_log.jsonl"), payload)
+        log = AuditLog(
+            action=action,
+            work_id=work_id,
+            detail=detail_json,
+            task_id=task_id,
+        )
+        db.session.add(log)
+        db.session.commit()
+        db_success = True
     except Exception:
-        current_app.logger.exception("Failed to record audit log")
+        db.session.rollback()
+        current_app.logger.exception("Database audit failed, falling back to JSONL")
+
+    # 2. Secondary/Fallback: Record to JSONL ONLY IF database failed
+    if not db_success:
+        try:
+            task_root = current_app.config.get("TASK_FOLDER", "")
+            if not task_root:
+                current_app.logger.error("TASK_FOLDER not configured, cannot save fallback log")
+                return
+
+            if task_id:
+                log_dir = os.path.join(task_root, str(task_id))
+                log_path = os.path.join(log_dir, "task_log.jsonl")
+            else:
+                log_dir = task_root
+                log_path = os.path.join(log_dir, "fallback_audit.jsonl")
+            
+            current_app.logger.info(f"Writing fallback log to: {log_path} (task_id: {task_id})")
+            
+            payload = {
+                "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "action": action,
+                "work_id": work_id,
+                "detail": detail or {},
+                "task_id": task_id,
+                "fallback": True
+            }
+            _append_jsonl(log_path, payload)
+        except Exception as e:
+            current_app.logger.critical(f"CRITICAL: Both DB and JSONL audit failed! Error: {str(e)}")
 
 
 def _append_jsonl(path: str, payload: Dict[str, Any]) -> None:

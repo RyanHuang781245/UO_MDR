@@ -573,41 +573,38 @@ class AuditLogView(BaseView):
             abort(403)
         return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
 
-    def _load_entries(self, task_id: str, limit: int = 200) -> list[dict]:
-        task_root = current_app.config.get("TASK_FOLDER", "")
-        task_dir = os.path.join(task_root, task_id)
-        log_path = os.path.join(task_dir, "task_log.jsonl")
-        if not os.path.isdir(task_dir) or not os.path.exists(log_path):
-            return []
-        entries: list[dict] = []
-        try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        entries.append(json.loads(line))
-                    except Exception:
-                        continue
-        except Exception:
-            current_app.logger.exception("Failed to load audit log")
-            return []
-        entries.reverse()
-        if limit and len(entries) > limit:
-            entries = entries[:limit]
+    def _get_db_logs(self, task_id: Optional[str] = None, limit: int = 200) -> list[dict]:
+        from modules.auth_models import AuditLog
+        query = AuditLog.query
+        if task_id:
+            query = query.filter_by(task_id=task_id)
+        
+        logs = query.order_by(AuditLog.created_at.desc()).limit(limit).all()
+        
+        entries = []
+        for log in logs:
+            try:
+                detail = json.loads(log.detail) if log.detail else {}
+            except Exception:
+                detail = {"raw": log.detail}
+            
+            entries.append({
+                "ts": log.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "action": log.action,
+                "actor": {"work_id": log.work_id},
+                "detail": detail,
+                "task_id": log.task_id
+            })
         return entries
 
     @expose("/", methods=["GET"])
     def index(self):
         tasks = list_tasks()
         task_id = (request.args.get("task_id") or "").strip()
-        entries = self._load_entries(task_id) if task_id else []
-        has_file = False
-        if task_id:
-            task_root = current_app.config.get("TASK_FOLDER", "")
-            log_path = os.path.join(task_root, task_id, "task_log.jsonl")
-            has_file = os.path.exists(log_path)
+        # If task_id is empty, show global latest logs
+        entries = self._get_db_logs(task_id if task_id else None)
+        
+        has_file = True # In DB mode, we can always "generate" a file
         return self.render(
             "admin/audit_logs.html",
             tasks=tasks,
@@ -618,13 +615,23 @@ class AuditLogView(BaseView):
 
     @expose("/download", methods=["GET"])
     def download(self):
+        from io import BytesIO
         task_id = (request.args.get("task_id") or "").strip()
-        task_root = current_app.config.get("TASK_FOLDER", "")
-        task_dir = os.path.join(task_root, task_id)
-        log_path = os.path.join(task_dir, "task_log.jsonl")
-        if not task_id or not os.path.isdir(task_dir) or not os.path.exists(log_path):
-            abort(404)
-        return send_file(log_path, as_attachment=True, download_name=f"audit_{task_id}.jsonl")
+        entries = self._get_db_logs(task_id if task_id else None, limit=1000)
+        
+        output = BytesIO()
+        for entry in reversed(entries):
+            line = json.dumps(entry, ensure_ascii=False) + "\n"
+            output.write(line.encode("utf-8"))
+        
+        output.seek(0)
+        filename = f"audit_{task_id if task_id else 'global'}.jsonl"
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/x-jsonlines"
+        )
 
 
 def register_auth_context(app) -> None:

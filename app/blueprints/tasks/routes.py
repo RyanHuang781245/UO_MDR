@@ -177,14 +177,28 @@ def task_mapping(task_id):
     step_runs = []
     last_mapping_marker = os.path.join(tdir, "mapping_last.txt")
     last_mapping_file = None
-    if os.path.isfile(last_mapping_marker):
-        try:
-            cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
-            cached_path = os.path.join(tdir, cached_name)
-            if cached_name and os.path.isfile(cached_path):
-                last_mapping_file = cached_name
-        except Exception:
-            last_mapping_file = None
+
+    # 如果是頁面跳轉/重新整理 (GET)，則清掉之前的暫存紀錄與檔案
+    if request.method == "GET":
+        if os.path.isfile(last_mapping_marker):
+            try:
+                cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
+                cached_path = os.path.join(tdir, cached_name)
+                if cached_name and os.path.isfile(cached_path):
+                    os.remove(cached_path)
+                os.remove(last_mapping_marker)
+            except Exception:
+                pass
+    else:
+        # POST 請求時才讀取暫存紀錄
+        if os.path.isfile(last_mapping_marker):
+            try:
+                cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
+                cached_path = os.path.join(tdir, cached_name)
+                if cached_name and os.path.isfile(cached_path):
+                    last_mapping_file = cached_name
+            except Exception:
+                last_mapping_file = None
 
     def _format_step_label(entry: dict) -> tuple[str, str]:
         stype = entry.get("type") or ""

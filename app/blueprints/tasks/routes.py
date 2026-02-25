@@ -205,44 +205,62 @@ def task_mapping(task_id):
         params = entry.get("params") or {}
 
         def _base(path: str) -> str:
-            return os.path.basename(path) if path else "?"
+            if not path: return "?"
+            name = os.path.basename(path)
+            # 移除 "Section 1_", "Section 2_" 等前綴
+            import re
+            name = re.sub(r"^Section\s+\d+_", "", name)
+            return name
 
         row_no = params.get("mapping_row")
         row_prefix = f"(Row {row_no}) " if row_no not in (None, "", "None") else ""
         if stype == "extract_word_chapter":
             src = _base(params.get("input_file", ""))
-            chapter = params.get("target_chapter_section", "")
-            title = params.get("target_chapter_title") or params.get("target_title_section", "")
-            sub = params.get("target_subtitle") or params.get("subheading_text", "")
-            parts = [f"chapter {chapter}"] if chapter else []
-            if title:
-                parts.append(f"title {title}")
+            chapter = (params.get("target_chapter_section") or "").strip()
+            title = (params.get("target_chapter_title") or params.get("target_title_section") or "").strip()
+            sub = (params.get("target_subtitle") or params.get("subheading_text") or "").strip()
+            
+            # 組合章節與標題: "1.1.1 General description"
+            main_header = f"{chapter} {title}".strip()
+            
+            parts = [src]
+            if main_header:
+                parts.append(main_header)
             if sub:
-                parts.append(f"subheading {sub}")
-            detail = ", ".join(parts)
-            suffix = f" ({detail})" if detail else ""
-            return f"{row_prefix}Extract chapter", f"{src}{suffix}".strip()
+                parts.append(sub)
+            
+            return f"{row_prefix}Extract chapter", " | ".join(parts)
         if stype == "extract_word_all_content":
             src = _base(params.get("input_file", ""))
             return f"{row_prefix}Extract all", src.strip()
         if stype == "extract_specific_table_from_word":
             src = _base(params.get("input_file", ""))
+            section = (params.get("target_chapter_section") or "").strip()
             label = (
                 params.get("target_caption_label")
                 or params.get("target_table_label", "")
                 or params.get("target_figure_label", "")
-            )
-            detail = f"{src} ({label})" if label else src
-            return f"{row_prefix}Extract table", detail.strip()
+            ).strip()
+            parts = [src]
+            if section:
+                parts.append(section)
+            if label:
+                parts.append(label)
+            return f"{row_prefix}Extract table", " | ".join(parts)
         if stype == "extract_specific_figure_from_word":
             src = _base(params.get("input_file", ""))
+            section = (params.get("target_chapter_section") or "").strip()
             label = (
                 params.get("target_caption_label")
                 or params.get("target_figure_label", "")
                 or params.get("target_table_label", "")
-            )
-            detail = f"{src} ({label})" if label else src
-            return f"{row_prefix}Extract figure", detail.strip()
+            ).strip()
+            parts = [src]
+            if section:
+                parts.append(section)
+            if label:
+                parts.append(label)
+            return f"{row_prefix}Extract figure", " | ".join(parts)
         if stype == "insert_text":
             text_val = (params.get("text") or "").strip()
             return f"{row_prefix}Append text", text_val

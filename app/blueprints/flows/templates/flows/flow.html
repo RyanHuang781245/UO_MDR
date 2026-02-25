@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 {% from "_file_tree.html" import render_file_tree %}
 
@@ -428,12 +428,8 @@ const FIELD_META = {
     label: "段落前換頁"
   },
   explicit_end_title: {
-    label: "強制結束標題",
-    placeholder: "強制指定章節結束，請完整輸入標題"
-  },
-  explicit_end_number: {
-    label: "強制結束章節編號",
-    placeholder: "例如 6.12.4"
+    label: "結束標題",
+    placeholder: "例如 1.1.3 Accessories not included but necessary for use"
   },
   ignore_toc: {
     label: "移除目錄及前言"
@@ -1187,9 +1183,11 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const explicitLabel = (FIELD_META["explicit_end_title"] || {}).label || "強制結束標題";
     const explicitPlaceholder = (FIELD_META["explicit_end_title"] || {}).placeholder || explicitLabel;
     const explicitVal = getValue("explicit_end_title");
-    const explicitEndNumLabel = (FIELD_META["explicit_end_number"] || {}).label || "強制結束章節編號";
-    const explicitEndNumPlaceholder = (FIELD_META["explicit_end_number"] || {}).placeholder || explicitEndNumLabel;
     const explicitEndNumVal = getValue("explicit_end_number");
+    const explicitCombinedVal = [explicitEndNumVal, explicitVal].filter(Boolean).join(" ");
+    const continuousExtractChecked = explicitCombinedVal.trim() !== "";
+    const continuousExtractStyle = continuousExtractChecked ? "" : "display: none;";
+    const continuousExtractDisabled = continuousExtractChecked ? "" : "disabled";
 
     const tplIndexVal = getValue("template_index");
     const tplDisabled = templateParagraphs.length === 0 ? "disabled" : "";
@@ -1245,15 +1243,36 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
               <div class="col-12">
                 <label class="form-label d-flex justify-content-between align-items-center">
                   <span>${sectionLabel}</span>
-                  <span class="form-check d-flex align-items-center gap-1 m-0">
-                    <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
-                    <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-                    <span class="small text-muted">擷取小標題內容</span>
-                  </span>
+                  <div class="d-flex align-items-center gap-3 m-0">
+                    <div class="form-check d-flex align-items-center gap-1 m-0">
+                      <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
+                      <input class="form-check-input mt-0 bool-toggle toggle-subheading" type="checkbox" id="step_${sid}_use_chapter_title_chk" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+                      <label class="form-check-label small text-muted" for="step_${sid}_use_chapter_title_chk">擷取小標題內容</label>
+                    </div>
+                    <div class="form-check d-flex align-items-center gap-1 m-0">
+                      <input class="form-check-input mt-0 toggle-continuous-extract" type="checkbox" id="step_${sid}_continuous_extract" ${continuousExtractChecked ? "checked" : ""}>
+                      <label class="form-check-label small text-muted" for="step_${sid}_continuous_extract">連續擷取</label>
+                    </div>
+                  </div>
                 </label>
                 <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${sectionPlaceholder} ${titlePlaceholder}" data-section="step_${sid}_${sectionKey}" data-title="step_${sid}_target_chapter_title">
                 <input type="hidden" name="step_${sid}_${sectionKey}" value="${sectionVal}">
                 <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card bg-light border mt-3 continuous-card-wrap" style="${continuousExtractStyle}">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-arrow-left-right"></i>
+              連續擷取設定
+            </div>
+            <div class="row g-3">
+              <div class="col-12 continuous-end-wrap">
+                <label class="form-label">${explicitLabel}</label>
+                <input class="form-control continuous-end-input" name="step_${sid}_explicit_end_title" value="${explicitCombinedVal}" placeholder="${explicitPlaceholder}" ${continuousExtractDisabled}>
               </div>
             </div>
           </div>
@@ -1270,21 +1289,11 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             </div>
           </div>
 
-          <div class="card bg-light border mt-3">
+        <div class="card bg-light border mt-3">
             <div class="card-body">
               <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
                 <i class="bi bi-list-check"></i>
                 擷取規則
-              </div>
-              <div class="row g-2 mb-3">
-                <div class="col-md-4">
-                  <label class="form-label">${explicitEndNumLabel}</label>
-                  <input class="form-control" name="step_${sid}_explicit_end_number" value="${explicitEndNumVal}" placeholder="${explicitEndNumPlaceholder}">
-                </div>
-                <div class="col-md-8">
-                  <label class="form-label">${explicitLabel}</label>
-                  <input class="form-control" name="step_${sid}_explicit_end_title" value="${explicitVal}" placeholder="${explicitPlaceholder}">
-                </div>
               </div>
               <div class="row g-2">
                 ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
@@ -1350,6 +1359,19 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       subheadingToggle.addEventListener("change", () => {
         subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
       });
+    }
+    const continuousExtractToggle = card.querySelector(".toggle-continuous-extract");
+    const continuousCardWrap = card.querySelector(".continuous-card-wrap");
+    const continuousEndWrap = card.querySelector(".continuous-end-wrap");
+    const continuousEndInput = card.querySelector(".continuous-end-input");
+    if (continuousExtractToggle && continuousCardWrap && continuousEndWrap && continuousEndInput) {
+      const syncContinuousExtract = () => {
+        const enabled = continuousExtractToggle.checked;
+        continuousCardWrap.style.display = enabled ? "" : "none";
+        continuousEndInput.disabled = !enabled;
+      };
+      continuousExtractToggle.addEventListener("change", syncContinuousExtract);
+      syncContinuousExtract();
     }
     card.querySelectorAll(".chapter-ref").forEach(input => {
       input.addEventListener("input", () => syncChapterRefInput(input));
@@ -1572,11 +1594,11 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       const titleVal = getValue("target_chapter_title");
       const chapterRefVal = [sectionVal, titleVal].filter(Boolean).join(" ");
       const checkboxHtml = `
-        <span class="form-check d-flex align-items-center gap-1 m-0">
+        <div class="form-check d-flex align-items-center gap-1 m-0">
           <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
-          <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-          <span class="small text-muted">擷取小標題內容</span>
-        </span>`;
+          <input class="form-check-input mt-0 bool-toggle toggle-subheading" type="checkbox" id="step_${sid}_use_chapter_title_chk" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+          <label class="form-check-label small text-muted" for="step_${sid}_use_chapter_title_chk">擷取小標題內容</label>
+        </div>`;
       basicFields.push(`
         <div class="col-md-6">
           <label class="form-label d-flex justify-content-between align-items-center">

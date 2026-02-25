@@ -305,6 +305,7 @@ def extract_word_chapter(
     start_section = raw_section
     end_section = (explicit_end_number or "").strip()
     heading_text = target_chapter_title.strip()
+    end_title = (explicit_end_title or "").strip()
 
     # Support direct-call range syntax like "1.1.1-1.1.3" (or with title suffix),
     # so unit tests and script usage behave the same as workflow parsing.
@@ -322,6 +323,15 @@ def extract_word_chapter(
     if not heading_text and use_chapter_title:
         heading_text = start_section
 
+    # Allow combined end marker in one field:
+    # "1.1.3 Accessories not included but necessary for use"
+    end_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", end_title)
+    if end_match:
+        if not end_section:
+            end_section = end_match.group(1)
+        if end_match.group(2):
+            end_title = end_match.group(2).strip()
+
     start_heading = heading_text or start_section
     out_path = output_docx_path or _build_output_docx_path(input_file, f"section_{start_heading}")
 
@@ -333,7 +343,7 @@ def extract_word_chapter(
         output_docx=out_path,
         start_heading_text=start_heading,
         start_number=start_section,
-        explicit_end_title=(explicit_end_title or None),
+        explicit_end_title=(end_title or None),
         explicit_end_number=(end_section or None),
         ignore_header_footer=ignore_header_footer,
         ignore_toc=ignore_toc,

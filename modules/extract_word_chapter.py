@@ -123,6 +123,13 @@ def _ensure_numbering_instance(
         lvl_text.set(qn("w:val"), ".".join(f"%{k}" for k in range(1, ilvl + 2)))
         lvl_jc = etree.SubElement(lvl, qn("w:lvlJc"))
         lvl_jc.set(qn("w:val"), "left")
+        # Prevent numbering glyphs from inheriting italic formatting
+        # from paragraph/run direct formatting.
+        lvl_rpr = etree.SubElement(lvl, qn("w:rPr"))
+        italic = etree.SubElement(lvl_rpr, qn("w:i"))
+        italic.set(qn("w:val"), "0")
+        italic_cs = etree.SubElement(lvl_rpr, qn("w:iCs"))
+        italic_cs.set(qn("w:val"), "0")
 
     num = etree.SubElement(root, qn("w:num"))
     num.set(qn("w:numId"), str(new_num_id))

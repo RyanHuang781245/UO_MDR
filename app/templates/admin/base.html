@@ -8,7 +8,7 @@
     <title>
       {% block title %}
         {% if admin_view.category %}{{ admin_view.category }} - {% endif %}
-        {{ admin_view.name }} - {{ admin_view.admin.name }}
+        {{ admin_view.admin.name }} - {{ admin_view.name }}
       {% endblock %}
     </title>
 

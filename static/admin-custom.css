@@ -11,3 +11,10 @@
 .model-list td.col-display_name {
   white-space: nowrap;
 }
+
+@media (max-width: 767.98px) {
+  .table th,
+  .model-list td.col-display_name {
+    white-space: normal;
+  }
+}

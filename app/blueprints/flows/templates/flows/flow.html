@@ -255,17 +255,17 @@
       <table class="table table-striped text-center align-middle flow-table mb-0" id="flowTable">
         <thead class="bg-white border-bottom" style="position: sticky; top: 0; z-index: 1;">
           <tr>
-              <th class="text-start ps-3">流程名稱</th>
-              <th class="text-center" style="width: 200px;">建立時間</th>
-              <th class="text-center" style="width: 300px;">操作</th>
+              <th class="text-start ps-3 flow-col-name">流程名稱</th>
+              <th class="text-center flow-col-created">建立時間</th>
+              <th class="text-center flow-col-actions">操作</th>
           </tr>
         </thead>
         <tbody id="flowTableBody">
         {% for f in flows %}
           <tr data-flow="{{ f.name }}">
-            <td class="align-middle text-start ps-3">{{ f.name }}</span></td>
+            <td class="align-middle text-start ps-3 flow-name-cell">{{ f.name }}</td>
             <td class="align-middle">{{ f.created }}</td>
-            <td class="align-middle">
+            <td class="align-middle flow-actions-cell">
               <div class="d-inline-flex flex-wrap gap-1 justify-content-center">
                 <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
                   <input type="hidden" name="apply_formatting" value="false">
@@ -313,12 +313,28 @@
 </div>
 <style>
 .flow-table {
-  table-layout: fixed;
   width: 100%;
+  min-width: 720px;
+  table-layout: auto;
 }
 .flow-table th,
 .flow-table td {
-  width: 33.3333%;
+  vertical-align: middle;
+}
+.flow-table .flow-col-name,
+.flow-table .flow-name-cell {
+  min-width: 220px;
+}
+.flow-table .flow-col-created {
+  min-width: 170px;
+  white-space: nowrap;
+}
+.flow-table .flow-col-actions,
+.flow-table .flow-actions-cell {
+  min-width: 320px;
+}
+.flow-table .flow-actions-cell .btn {
+  white-space: nowrap;
 }
 .run-status-container {
   position: fixed;
@@ -363,6 +379,28 @@
 @media (min-width: 992px) {
   .step-summary {
     max-width: 600px;
+  }
+}
+@media (max-width: 767.98px) {
+  .run-status-container {
+    top: 72px;
+    left: 12px;
+    right: 12px;
+  }
+  .run-status-toast {
+    min-width: 0;
+    max-width: none;
+  }
+  .step-summary {
+    max-width: 160px;
+  }
+}
+@media (max-width: 575.98px) {
+  .flow-table {
+    min-width: 640px;
+  }
+  .step-summary {
+    max-width: 120px;
   }
 }
 </style>

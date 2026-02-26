@@ -27,7 +27,7 @@
   {% if not runs %}
     <div class="text-muted">尚無執行紀錄</div>
   {% else %}
-    <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
+    <div class="mb-3 d-flex flex-wrap gap-2 align-items-center results-toolbar">
       <div class="input-group input-group-sm" style="max-width: 250px;">
         <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
         <input type="text" id="runSearchInput" class="form-control border-start-0" placeholder="搜尋流程名稱或執行時間...">
@@ -54,7 +54,7 @@
       </div>
     </div>
     <div class="table-responsive shadow-sm border rounded" style="max-height: 650px; overflow-y: auto;">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0 results-table">
         <thead class="bg-light sticky-top">
           <tr>
             <th style="width:60px; background-color: inherit; z-index: 2;">
@@ -132,7 +132,7 @@
     {% if not batches %}
       <div class="text-muted">尚無批次紀錄</div>
     {% else %}
-      <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
+      <div class="mb-3 d-flex flex-wrap gap-2 align-items-center results-toolbar">
         <div class="input-group input-group-sm" style="max-width: 250px;">
           <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
           <input type="text" id="batchSearchInput" class="form-control border-start-0" placeholder="搜尋批次 ID...">
@@ -157,7 +157,7 @@
         </div>
       </div>
       <div class="table-responsive shadow-sm border rounded" style="max-height: 600px; overflow-y: auto;">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 results-table">
           <thead class="bg-light sticky-top">
                     <tr>
           <th style="width:60px; background-color: inherit; z-index: 2;">
@@ -213,6 +213,39 @@
     {% endif %}
   </div>
 {% endif %}
+<style>
+.results-table {
+  min-width: 760px;
+}
+.results-toolbar > .input-group,
+.results-toolbar > .form-select {
+  min-width: 0;
+}
+@media (max-width: 767.98px) {
+  .results-toolbar > .input-group,
+  .results-toolbar > .form-select,
+  .results-toolbar > .ms-md-auto {
+    flex: 1 1 100%;
+    max-width: 100% !important;
+  }
+  .results-toolbar > .ms-md-auto {
+    margin-left: 0 !important;
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .results-toolbar > .ms-md-auto .btn {
+    flex: 1 1 calc(50% - 0.5rem);
+  }
+}
+@media (max-width: 575.98px) {
+  .results-table {
+    min-width: 680px;
+  }
+  .results-toolbar > .ms-md-auto .btn {
+    flex-basis: 100%;
+  }
+}
+</style>
 {% if view == 'single' %}
 <script>
 const selectAllRuns = document.getElementById('selectAllRuns');

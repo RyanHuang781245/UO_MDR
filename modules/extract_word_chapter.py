@@ -60,115 +60,86 @@ def _is_heading_paragraph_xml(
         return True
     return get_effective_outline_level(p, style_outline, style_based) is not None
 
-def _merge_run_properties(
-    target_rpr: etree._Element,
-    source_rpr: etree._Element,
+def _set_paragraph_numpr(
+    p: etree._Element,
     *,
-    overwrite: bool,
+    num_id: int,
+    ilvl: int,
 ) -> None:
-    for src_child in source_rpr:
-        existing = target_rpr.find(src_child.tag)
-        if existing is None:
-            target_rpr.append(deepcopy(src_child))
-            continue
-        if not overwrite:
-            continue
-        target_rpr.remove(existing)
-        target_rpr.append(deepcopy(src_child))
-
-def _build_effective_style_run_properties(
-    style_id: str | None,
-    style_run_props: dict[str, etree._Element],
-    style_based: dict[str, str],
-) -> etree._Element | None:
-    if not style_id:
-        return None
-    chain: list[str] = []
-    cur = style_id
-    for _ in range(30):
-        chain.append(cur)
-        nxt = style_based.get(cur)
-        if not nxt:
-            break
-        cur = nxt
-
-    merged = etree.Element(qn("w:rPr"))
-    has_any = False
-    for sid in reversed(chain):
-        src_rpr = style_run_props.get(sid)
-        if src_rpr is None:
-            continue
-        _merge_run_properties(merged, src_rpr, overwrite=True)
-        has_any = True
-    return merged if has_any else None
-
-def _apply_run_properties_to_paragraph_text_runs(
-    p: etree._Element,
-    style_rpr: etree._Element | None,
-) -> None:
-    if style_rpr is None:
-        return
-    for run in p.findall("w:r", namespaces=NS):
-        rpr = run.find("w:rPr", namespaces=NS)
-        if rpr is None:
-            rpr = etree.Element(qn("w:rPr"))
-            run.insert(0, rpr)
-        _merge_run_properties(rpr, style_rpr, overwrite=False)
-
-def _prepend_paragraph_text_and_clear_numbering(
-    p: etree._Element,
-    prefix_text: str,
-    style_run_props: dict[str, etree._Element],
-    style_based: dict[str, str],
-) -> None:
-    original_style = get_pStyle(p)
-    effective_style_rpr = _build_effective_style_run_properties(
-        original_style, style_run_props, style_based
-    )
-    _apply_run_properties_to_paragraph_text_runs(p, effective_style_rpr)
-
     pPr = p.find("w:pPr", namespaces=NS)
     if pPr is None:
         pPr = etree.Element(qn("w:pPr"))
         p.insert(0, pPr)
-    if pPr is not None:
-        numPr = pPr.find("w:numPr", namespaces=NS)
-        if numPr is not None:
-            pPr.remove(numPr)
-        # Convert heading to normal paragraph after materializing prefix text,
-        # so Word won't auto-apply style-based heading numbering again.
-        p_style = pPr.find("w:pStyle", namespaces=NS)
-        if p_style is None:
-            p_style = etree.SubElement(pPr, qn("w:pStyle"))
-        p_style.set(qn("w:val"), "Normal")
-        outline = pPr.find("w:outlineLvl", namespaces=NS)
-        if outline is not None:
-            pPr.remove(outline)
+    numPr = pPr.find("w:numPr", namespaces=NS)
+    if numPr is None:
+        numPr = etree.SubElement(pPr, qn("w:numPr"))
+    ilvl_node = numPr.find("w:ilvl", namespaces=NS)
+    if ilvl_node is None:
+        ilvl_node = etree.SubElement(numPr, qn("w:ilvl"))
+    ilvl_node.set(qn("w:val"), str(max(0, min(ilvl, 8))))
+    num_id_node = numPr.find("w:numId", namespaces=NS)
+    if num_id_node is None:
+        num_id_node = etree.SubElement(numPr, qn("w:numId"))
+    num_id_node.set(qn("w:val"), str(num_id))
 
-    first_run = p.find("w:r", namespaces=NS)
-    new_run = etree.Element(qn("w:r"))
-    if first_run is not None:
-        first_rpr = first_run.find("w:rPr", namespaces=NS)
-        if first_rpr is not None:
-            new_run.append(deepcopy(first_rpr))
-    elif effective_style_rpr is not None:
-        new_run.append(deepcopy(effective_style_rpr))
+def _ensure_numbering_instance(
+    file_map: dict[str, bytes],
+    start_parts: list[int],
+) -> int:
+    numbering_name = "word/numbering.xml"
+    if numbering_name in file_map:
+        root = etree.fromstring(file_map[numbering_name])
+    else:
+        root = etree.Element(qn("w:numbering"), nsmap={"w": W_NS})
 
-    t = etree.SubElement(new_run, qn("w:t"))
-    t.text = f"{prefix_text} "
-    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    abs_ids: list[int] = []
+    num_ids: list[int] = []
+    for node in root.findall("w:abstractNum", namespaces=NS):
+        val = node.get(qn("w:abstractNumId"))
+        if val and val.isdigit():
+            abs_ids.append(int(val))
+    for node in root.findall("w:num", namespaces=NS):
+        val = node.get(qn("w:numId"))
+        if val and val.isdigit():
+            num_ids.append(int(val))
 
-    insert_pos = 0
-    if pPr is not None and len(p) > 0 and p[0].tag == qn("w:pPr"):
-        insert_pos = 1
-    p.insert(insert_pos, new_run)
+    new_abs_id = (max(abs_ids) + 1) if abs_ids else 1
+    new_num_id = (max(num_ids) + 1) if num_ids else 1
+
+    abs_node = etree.SubElement(root, qn("w:abstractNum"))
+    abs_node.set(qn("w:abstractNumId"), str(new_abs_id))
+    multi = etree.SubElement(abs_node, qn("w:multiLevelType"))
+    multi.set(qn("w:val"), "multilevel")
+
+    for ilvl in range(9):
+        lvl = etree.SubElement(abs_node, qn("w:lvl"))
+        lvl.set(qn("w:ilvl"), str(ilvl))
+        start = etree.SubElement(lvl, qn("w:start"))
+        start_val = start_parts[ilvl] if ilvl < len(start_parts) else 1
+        start.set(qn("w:val"), str(max(1, int(start_val))))
+        num_fmt = etree.SubElement(lvl, qn("w:numFmt"))
+        num_fmt.set(qn("w:val"), "decimal")
+        lvl_text = etree.SubElement(lvl, qn("w:lvlText"))
+        lvl_text.set(qn("w:val"), ".".join(f"%{k}" for k in range(1, ilvl + 2)))
+        lvl_jc = etree.SubElement(lvl, qn("w:lvlJc"))
+        lvl_jc.set(qn("w:val"), "left")
+
+    num = etree.SubElement(root, qn("w:num"))
+    num.set(qn("w:numId"), str(new_num_id))
+    abs_ref = etree.SubElement(num, qn("w:abstractNumId"))
+    abs_ref.set(qn("w:val"), str(new_abs_id))
+
+    file_map[numbering_name] = etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone="yes"
+    )
+    return new_num_id
 
 def _materialize_heading_numbering(
     section_children: list[etree._Element],
     start_number: str,
     style_outline: dict[str, int],
     style_based: dict[str, str],
-    style_run_props: dict[str, etree._Element],
+    num_id: int,
 ) -> None:
     start_parts = _parse_number_parts(start_number)
     if not start_parts:
@@ -176,7 +147,6 @@ def _materialize_heading_numbering(
 
     base_ilvl: int | None = None
     offset: int | None = None
-    counters: list[int] = []
     initialized = False
 
     for block in section_children:
@@ -194,12 +164,8 @@ def _materialize_heading_numbering(
                 offset = len(start_parts) - (base_ilvl + 1)
                 if offset < 0:
                     return
-                counters = start_parts[:]
-                _prepend_paragraph_text_and_clear_numbering(
-                    p,
-                    ".".join(str(x) for x in counters),
-                    style_run_props=style_run_props,
-                    style_based=style_based,
+                _set_paragraph_numpr(
+                    p, num_id=num_id, ilvl=(len(start_parts) - 1)
                 )
                 initialized = True
                 continue
@@ -207,20 +173,8 @@ def _materialize_heading_numbering(
             expected_len = level + 1 + (offset or 0)
             if expected_len <= 0:
                 continue
-
-            if expected_len > len(counters):
-                counters.extend([1] * (expected_len - len(counters)))
-            elif expected_len == len(counters):
-                counters[-1] += 1
-            else:
-                counters = counters[:expected_len]
-                counters[-1] += 1
-
-            _prepend_paragraph_text_and_clear_numbering(
-                p,
-                ".".join(str(x) for x in counters),
-                style_run_props=style_run_props,
-                style_based=style_based,
+            _set_paragraph_numpr(
+                p, num_id=num_id, ilvl=(expected_len - 1)
             )
 
 def iter_paragraphs(block: etree._Element):
@@ -285,18 +239,6 @@ def build_style_outline_map(styles_xml: bytes) -> tuple[dict[str, int], dict[str
                 style_based[sid] = base_id
 
     return style_outline, style_based
-
-def build_style_run_props_map(styles_xml: bytes) -> dict[str, etree._Element]:
-    style_run_props: dict[str, etree._Element] = {}
-    root = etree.fromstring(styles_xml)
-    for st in root.xpath(".//w:style[@w:type='paragraph']", namespaces=NS):
-        sid = st.get(qn("w:styleId"))
-        if not sid:
-            continue
-        rpr = st.find("w:rPr", namespaces=NS)
-        if rpr is not None:
-            style_run_props[sid] = deepcopy(rpr)
-    return style_run_props
 
 def resolve_style_outline(style_id: str | None, style_outline: dict[str, int], style_based: dict[str, str]) -> int | None:
     if not style_id:
@@ -653,7 +595,6 @@ def extract_section_docx_xml(
         raise RuntimeError("DOCX 中找不到 word/styles.xml（需要用它回推 outlineLvl）")
 
     style_outline, style_based = build_style_outline_map(file_map["word/styles.xml"])
-    style_run_props = build_style_run_props_map(file_map["word/styles.xml"])
 
     root = etree.fromstring(file_map["word/document.xml"])
     body = root.find("w:body", namespaces=NS)
@@ -693,14 +634,16 @@ def extract_section_docx_xml(
         )
 
     # 3) 重建 body：只保留（章節 or 小標題）內容 + sectPr
-    # Freeze heading numbering as plain text so merged outputs keep original
-    # chapter numbers instead of restarting from 1.
+    # Keep heading as true numbering (not plain text) and force start values
+    # from original chapter number to avoid restart after merge.
+    start_parts = _parse_number_parts(start_number)
+    heading_num_id = _ensure_numbering_instance(file_map, start_parts) if start_parts else None
     _materialize_heading_numbering(
         kept_section,
         start_number=start_number,
         style_outline=style_outline,
         style_based=style_based,
-        style_run_props=style_run_props,
+        num_id=(heading_num_id or 1),
     )
 
     for ch in list(body):

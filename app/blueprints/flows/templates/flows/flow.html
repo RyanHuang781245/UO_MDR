@@ -368,8 +368,33 @@
 .transition-icon {
   transition: transform 0.2s ease;
 }
+#steps .card {
+  min-width: 0;
+}
+#steps .card-header {
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+#steps .step-toggle {
+  min-width: 0;
+  flex: 1 1 420px;
+}
+#steps .step-toggle .fw-bold {
+  min-width: 0;
+}
 .step-summary {
+  display: inline-block;
+  min-width: 0;
   max-width: 120px;
+}
+#steps .card-header > .btn-group {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 0.35rem;
+}
+#steps .card-header > .btn-group .btn {
+  white-space: nowrap;
 }
 @media (min-width: 576px) {
   .step-summary {
@@ -382,6 +407,13 @@
   }
 }
 @media (max-width: 767.98px) {
+  #steps .step-toggle {
+    flex-basis: 100%;
+  }
+  #steps .card-header > .btn-group {
+    width: 100%;
+    justify-content: flex-start;
+  }
   .run-status-container {
     top: 72px;
     left: 12px;
@@ -1259,7 +1291,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           <span class="badge bg-secondary me-2 step-index"></span>
           ${spec.label}
         </div>
-        <div class="text-muted small ms-3 text-truncate step-summary" style="max-width: 800px;">${initialSummary}</div>
+        <div class="text-muted small ms-3 text-truncate step-summary">${initialSummary}</div>
       </div>
       <div class="btn-group">
         <div class="btn-group">
@@ -1716,7 +1748,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           <span class="badge bg-secondary me-2 step-index"></span>
           ${spec.label}
         </div>
-        <div class="text-muted small ms-3 text-truncate step-summary" style="max-width: 800px;">${initialSummary}</div>
+        <div class="text-muted small ms-3 text-truncate step-summary">${initialSummary}</div>
       </div>
       <div class="btn-group">
         <div class="btn-group">
@@ -1934,3 +1966,4 @@ isInitialising = false;
 </script>
 
 {% endblock %}
+

@@ -39,6 +39,118 @@ def get_ilvl(p: etree._Element) -> int | None:
     v = il.get(qn("w:val"))
     return int(v) if v and v.isdigit() else None
 
+def _parse_number_parts(number_text: str) -> list[int]:
+    parts: list[int] = []
+    for token in (number_text or "").split("."):
+        token = token.strip()
+        if not token:
+            continue
+        if not token.isdigit():
+            return []
+        parts.append(int(token))
+    return parts
+
+def _is_heading_paragraph_xml(
+    p: etree._Element,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+) -> bool:
+    style = (get_pStyle(p) or "").lower()
+    if style.startswith("heading"):
+        return True
+    return get_effective_outline_level(p, style_outline, style_based) is not None
+
+def _prepend_paragraph_text_and_clear_numbering(
+    p: etree._Element,
+    prefix_text: str,
+) -> None:
+    pPr = p.find("w:pPr", namespaces=NS)
+    if pPr is None:
+        pPr = etree.Element(qn("w:pPr"))
+        p.insert(0, pPr)
+    if pPr is not None:
+        numPr = pPr.find("w:numPr", namespaces=NS)
+        if numPr is not None:
+            pPr.remove(numPr)
+        # Convert heading to normal paragraph after materializing prefix text,
+        # so Word won't auto-apply style-based heading numbering again.
+        p_style = pPr.find("w:pStyle", namespaces=NS)
+        if p_style is None:
+            p_style = etree.SubElement(pPr, qn("w:pStyle"))
+        p_style.set(qn("w:val"), "Normal")
+        outline = pPr.find("w:outlineLvl", namespaces=NS)
+        if outline is not None:
+            pPr.remove(outline)
+
+    first_run = p.find("w:r", namespaces=NS)
+    new_run = etree.Element(qn("w:r"))
+    if first_run is not None:
+        first_rpr = first_run.find("w:rPr", namespaces=NS)
+        if first_rpr is not None:
+            new_run.append(deepcopy(first_rpr))
+
+    t = etree.SubElement(new_run, qn("w:t"))
+    t.text = f"{prefix_text} "
+    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+
+    insert_pos = 0
+    if pPr is not None and len(p) > 0 and p[0].tag == qn("w:pPr"):
+        insert_pos = 1
+    p.insert(insert_pos, new_run)
+
+def _materialize_heading_numbering(
+    section_children: list[etree._Element],
+    start_number: str,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+) -> None:
+    start_parts = _parse_number_parts(start_number)
+    if not start_parts:
+        return
+
+    base_ilvl: int | None = None
+    offset: int | None = None
+    counters: list[int] = []
+    initialized = False
+
+    for block in section_children:
+        for p in iter_paragraphs(block):
+            if not _is_heading_paragraph_xml(p, style_outline, style_based):
+                continue
+            level = get_ilvl(p)
+            if level is None:
+                level = get_effective_outline_level(p, style_outline, style_based)
+            if level is None:
+                continue
+
+            if not initialized:
+                base_ilvl = level
+                offset = len(start_parts) - (base_ilvl + 1)
+                if offset < 0:
+                    return
+                counters = start_parts[:]
+                _prepend_paragraph_text_and_clear_numbering(
+                    p, ".".join(str(x) for x in counters)
+                )
+                initialized = True
+                continue
+
+            expected_len = level + 1 + (offset or 0)
+            if expected_len <= 0:
+                continue
+
+            if expected_len > len(counters):
+                counters.extend([1] * (expected_len - len(counters)))
+            elif expected_len == len(counters):
+                counters[-1] += 1
+            else:
+                counters = counters[:expected_len]
+                counters[-1] += 1
+
+            _prepend_paragraph_text_and_clear_numbering(
+                p, ".".join(str(x) for x in counters)
+            )
+
 def iter_paragraphs(block: etree._Element):
     if block.tag == qn("w:p"):
         yield block
@@ -496,6 +608,15 @@ def extract_section_docx_xml(
         )
 
     # 3) 重建 body：只保留（章節 or 小標題）內容 + sectPr
+    # Freeze heading numbering as plain text so merged outputs keep original
+    # chapter numbers instead of restarting from 1.
+    _materialize_heading_numbering(
+        kept_section,
+        start_number=start_number,
+        style_outline=style_outline,
+        style_based=style_based,
+    )
+
     for ch in list(body):
         body.remove(ch)
 
@@ -525,10 +646,10 @@ if __name__ == "__main__":
     extract_section_docx_xml(
         input_docx=r"C:\Users\ne025\Desktop\Test_File\Section 1_Device Description_v1_knee.docx",
         output_docx=r"Extract_1.1.1_General_description_knee.docx",
-        start_heading_text="General description",
-        start_number="1.1.1",
-        explicit_end_title="Accessories not included but necessary for use",
-        explicit_end_number="1.1.3",
+        start_heading_text="Accessories not included but necessary for use",
+        start_number="1.1.3",
+        # explicit_end_title="Accessories not included but necessary for use",
+        # explicit_end_number="1.1.3",
         ignore_header_footer=True,
         ignore_toc=True,
         subheading_strict_match=True,

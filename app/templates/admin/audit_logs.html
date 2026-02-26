@@ -94,7 +94,7 @@
             <a href="{{ url_for('audit_logs.index') }}" class="btn btn-sm btn-outline-secondary mb-2 mr-2">清除條件</a>
             {% if has_file %}
               <a class="btn btn-sm btn-outline-primary mb-2" href="{{ url_for('audit_logs.download', task_id=task_id, q=q, action=action, start_date=start_date, end_date=end_date) }}">
-                <i class="fas fa-download mr-1"></i>下載符合條件的Log
+                <i class="fas fa-download mr-1"></i>下載Log
               </a>
             {% endif %}
           </div>
@@ -113,9 +113,10 @@
       </style>
       <thead>
         <tr>
-          <th style="width:250px;">時間</th>
-          <th style="width:250px;">動作</th>
-          <th style="width:250px;">操作者</th>
+          <th style="width:200px;">時間</th>
+          <th style="width:200px;">任務 ID</th>
+          <th style="width:200px;">動作</th>
+          <th style="width:200px;">操作者</th>
           <th>摘要</th>
           <th>詳情</th>
         </tr>
@@ -131,6 +132,7 @@
         {% set results = detail.get('results', []) %}
         <tr>
           <td>{{ e.get('ts', '') }}</td>
+          <td><code>{{ e.get('task_id', '-') }}</code></td>
           <td>{{ e.get('action', '') }}</td>
           <td>{{ actor.get('label') or actor.get('work_id') }}</td>
           <td>

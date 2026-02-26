@@ -1109,6 +1109,12 @@ def execute_flow(task_id, flow_name):
         daemon=True,
     )
     thread.start()
+    record_audit(
+        action="flow_run_single",
+        actor={"work_id": work_id, "label": label},
+        detail={"task_id": task_id, "flow": flow_name, "job_id": job_id},
+        task_id=task_id,
+    )
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id))
 
 

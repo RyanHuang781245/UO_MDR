@@ -913,9 +913,10 @@ def run_flow(task_id):
         workflow.append({"type": stype, "params": params})
     flow_dir = os.path.join(tdir, "flows")
     os.makedirs(flow_dir, exist_ok=True)
-    if action == "save":
-        if not flow_name:
-            return "缺少流程名稱", 400
+    if action == "save" and not flow_name:
+        return "缺少流程名稱", 400
+    should_save_flow = action == "save" or (action == "run" and bool(flow_name))
+    if should_save_flow:
         path = os.path.join(flow_dir, f"{flow_name}.json")
         created = datetime.now().strftime("%Y-%m-%d %H:%M")
         if os.path.exists(path):
@@ -938,7 +939,8 @@ def run_flow(task_id):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         _touch_task_last_edit(task_id)
-        return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
+        if action == "save":
+            return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
 
     runtime_steps = []
     for step in workflow:

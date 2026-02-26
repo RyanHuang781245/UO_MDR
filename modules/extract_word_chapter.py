@@ -60,10 +60,73 @@ def _is_heading_paragraph_xml(
         return True
     return get_effective_outline_level(p, style_outline, style_based) is not None
 
+def _merge_run_properties(
+    target_rpr: etree._Element,
+    source_rpr: etree._Element,
+    *,
+    overwrite: bool,
+) -> None:
+    for src_child in source_rpr:
+        existing = target_rpr.find(src_child.tag)
+        if existing is None:
+            target_rpr.append(deepcopy(src_child))
+            continue
+        if not overwrite:
+            continue
+        target_rpr.remove(existing)
+        target_rpr.append(deepcopy(src_child))
+
+def _build_effective_style_run_properties(
+    style_id: str | None,
+    style_run_props: dict[str, etree._Element],
+    style_based: dict[str, str],
+) -> etree._Element | None:
+    if not style_id:
+        return None
+    chain: list[str] = []
+    cur = style_id
+    for _ in range(30):
+        chain.append(cur)
+        nxt = style_based.get(cur)
+        if not nxt:
+            break
+        cur = nxt
+
+    merged = etree.Element(qn("w:rPr"))
+    has_any = False
+    for sid in reversed(chain):
+        src_rpr = style_run_props.get(sid)
+        if src_rpr is None:
+            continue
+        _merge_run_properties(merged, src_rpr, overwrite=True)
+        has_any = True
+    return merged if has_any else None
+
+def _apply_run_properties_to_paragraph_text_runs(
+    p: etree._Element,
+    style_rpr: etree._Element | None,
+) -> None:
+    if style_rpr is None:
+        return
+    for run in p.findall("w:r", namespaces=NS):
+        rpr = run.find("w:rPr", namespaces=NS)
+        if rpr is None:
+            rpr = etree.Element(qn("w:rPr"))
+            run.insert(0, rpr)
+        _merge_run_properties(rpr, style_rpr, overwrite=False)
+
 def _prepend_paragraph_text_and_clear_numbering(
     p: etree._Element,
     prefix_text: str,
+    style_run_props: dict[str, etree._Element],
+    style_based: dict[str, str],
 ) -> None:
+    original_style = get_pStyle(p)
+    effective_style_rpr = _build_effective_style_run_properties(
+        original_style, style_run_props, style_based
+    )
+    _apply_run_properties_to_paragraph_text_runs(p, effective_style_rpr)
+
     pPr = p.find("w:pPr", namespaces=NS)
     if pPr is None:
         pPr = etree.Element(qn("w:pPr"))
@@ -88,6 +151,8 @@ def _prepend_paragraph_text_and_clear_numbering(
         first_rpr = first_run.find("w:rPr", namespaces=NS)
         if first_rpr is not None:
             new_run.append(deepcopy(first_rpr))
+    elif effective_style_rpr is not None:
+        new_run.append(deepcopy(effective_style_rpr))
 
     t = etree.SubElement(new_run, qn("w:t"))
     t.text = f"{prefix_text} "
@@ -103,6 +168,7 @@ def _materialize_heading_numbering(
     start_number: str,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_run_props: dict[str, etree._Element],
 ) -> None:
     start_parts = _parse_number_parts(start_number)
     if not start_parts:
@@ -130,7 +196,10 @@ def _materialize_heading_numbering(
                     return
                 counters = start_parts[:]
                 _prepend_paragraph_text_and_clear_numbering(
-                    p, ".".join(str(x) for x in counters)
+                    p,
+                    ".".join(str(x) for x in counters),
+                    style_run_props=style_run_props,
+                    style_based=style_based,
                 )
                 initialized = True
                 continue
@@ -148,7 +217,10 @@ def _materialize_heading_numbering(
                 counters[-1] += 1
 
             _prepend_paragraph_text_and_clear_numbering(
-                p, ".".join(str(x) for x in counters)
+                p,
+                ".".join(str(x) for x in counters),
+                style_run_props=style_run_props,
+                style_based=style_based,
             )
 
 def iter_paragraphs(block: etree._Element):
@@ -213,6 +285,18 @@ def build_style_outline_map(styles_xml: bytes) -> tuple[dict[str, int], dict[str
                 style_based[sid] = base_id
 
     return style_outline, style_based
+
+def build_style_run_props_map(styles_xml: bytes) -> dict[str, etree._Element]:
+    style_run_props: dict[str, etree._Element] = {}
+    root = etree.fromstring(styles_xml)
+    for st in root.xpath(".//w:style[@w:type='paragraph']", namespaces=NS):
+        sid = st.get(qn("w:styleId"))
+        if not sid:
+            continue
+        rpr = st.find("w:rPr", namespaces=NS)
+        if rpr is not None:
+            style_run_props[sid] = deepcopy(rpr)
+    return style_run_props
 
 def resolve_style_outline(style_id: str | None, style_outline: dict[str, int], style_based: dict[str, str]) -> int | None:
     if not style_id:
@@ -569,6 +653,7 @@ def extract_section_docx_xml(
         raise RuntimeError("DOCX 中找不到 word/styles.xml（需要用它回推 outlineLvl）")
 
     style_outline, style_based = build_style_outline_map(file_map["word/styles.xml"])
+    style_run_props = build_style_run_props_map(file_map["word/styles.xml"])
 
     root = etree.fromstring(file_map["word/document.xml"])
     body = root.find("w:body", namespaces=NS)
@@ -615,6 +700,7 @@ def extract_section_docx_xml(
         start_number=start_number,
         style_outline=style_outline,
         style_based=style_based,
+        style_run_props=style_run_props,
     )
 
     for ch in list(body):

@@ -32,36 +32,85 @@
       white-space: nowrap;
     }
     .audit-table-scroll {
-      max-height: 560px;
+      max-height: 700px;
       overflow-y: auto;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+    }
+    .audit-table thead th {
+      position: sticky;
+      top: 0;
+      background-color: #f8f9fa;
+      z-index: 10;
+      border-bottom: 2px solid #dee2e6;
     }
   </style>
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h3>操作紀錄</h3>
+    <h3 class="mb-0">操作紀錄</h3>
     <div class="col-auto ms-auto">
-      {% if task_id and has_file %}
-        <a class="btn btn-sm btn-secondary" href="{{ url_for('audit_logs.download', task_id=task_id) }}">下載</a>
+      {% if has_file %}
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('audit_logs.download', task_id=task_id, q=q, action=action, start_date=start_date, end_date=end_date) }}">
+          <i class="fas fa-download mr-1"></i>下載符合條件的紀錄
+        </a>
       {% endif %}
     </div>
   </div>
 
-  <form class="row g-2 align-items-end mb-3" method="get">
-    <div class="col-sm-6 col-lg-4">
-      <select class="form-select task-select" name="task_id" onchange="this.form.submit()">
-        <option value="">請選擇任務</option>
-        {% for t in tasks %}
-          <option value="{{ t.id }}" title="{{ t.name }} ({{ t.id }})" {% if t.id == task_id %}selected{% endif %}>
-            {{ t.name }} ({{ t.id }})
-          </option>
-        {% endfor %}
-      </select>
+  <div class="card mb-3 shadow-sm">
+    <div class="card-body p-3">
+      <form class="row g-3" method="get" id="auditFilterForm">
+        <div class="col-md-4">
+          <label class="small text-muted mb-1">任務選擇</label>
+          <select class="form-control form-control-sm task-select" name="task_id">
+            <option value="">所有任務 (全域)</option>
+            {% for t in tasks %}
+              <option value="{{ t.id }}" title="{{ t.name }} ({{ t.id }})" {% if t.id == task_id %}selected{% endif %}>
+                {{ t.name }} ({{ t.id }})
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        
+        <div class="col-md-8">
+          <label class="small text-muted mb-1">進階查詢 (輸入後請按搜尋)</label>
+          <div class="d-flex flex-wrap gap-2">
+            <div class="input-group input-group-sm mb-2 mr-2" style="max-width: 200px;">
+              <div class="input-group-prepend">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+              </div>
+              <input type="text" name="q" value="{{ q or '' }}" class="form-control" placeholder="工號/內容關鍵字...">
+            </div>
+
+            <select name="action" class="form-control form-control-sm mb-2 mr-2" style="max-width: 180px;">
+              <option value="">所有動作</option>
+              <option value="flow_run" {% if action == 'flow_run' %}selected{% endif %}>執行流程 (全部)</option>
+              <option value="completed" {% if action == 'completed' %}selected{% endif %}>執行流程/成功</option>
+              <option value="failed" {% if action == 'failed' %}selected{% endif %}>執行流程/失敗</option>
+              <option value="flow_batch" {% if action == 'flow_batch' %}selected{% endif %}>批次執行</option>
+              <option value="task_create" {% if action == 'task_create' %}selected{% endif %}>建立任務</option>
+              <option value="login" {% if action == 'login' %}selected{% endif %}>登入</option>
+            </select>
+
+            <div class="input-group input-group-sm mb-2 mr-2" style="max-width: 350px;">
+              <div class="input-group-prepend">
+                <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+              </div>
+              <input type="date" name="start_date" value="{{ start_date or '' }}" class="form-control" title="開始日期">
+              <div class="input-group-prepend input-group-append">
+                <span class="input-group-text border-left-0 border-right-0">~</span>
+              </div>
+              <input type="date" name="end_date" value="{{ end_date or '' }}" class="form-control" title="結束日期">
+            </div>
+
+            <button type="submit" class="btn btn-sm btn-primary mb-2 px-3 mr-2">
+              <i class="fas fa-search mr-1"></i>搜尋
+            </button>
+            <a href="{{ url_for('audit_logs.index') }}" class="btn btn-sm btn-outline-secondary mb-2">清除條件</a>
+          </div>
+        </div>
+      </form>
     </div>
-    <!-- <div class="col-auto ms-auto">
-      {% if task_id and has_file %}
-        <a class="btn btn-secondary" href="{{ url_for('audit_logs.download', task_id=task_id) }}">下載</a>
-      {% endif %}
-    </div> -->
-  </form>
+  </div>
 
   {% if task_id and not entries %}
     <div class="alert alert-warning">此任務尚無操作紀錄。</div>
@@ -103,13 +152,18 @@
                 </span>
               {% endif %}
               {% if flow %}
-                <span class="audit-pill"><span class="text-muted">流程</span> <strong>{{ flow }}</strong></span>
+                <span class="audit-pill">
+                  <span class="text-muted">流程</span>
+                  <a href="{{ url_for('flows_bp.flow_builder', task_id=task_id, flow=flow) }}" class="text-decoration-none fw-bold ml-1">
+                    {{ flow }}
+                  </a>
+                </span>
               {% endif %}
               {% if job_id %}
-                <span class="audit-pill"><span class="text-muted">Job_ID</span>{{ job_id }}</span>
+                <span class="audit-pill"><span class="text-muted">Job_ID</span> <code class="text-primary">{{ job_id }}</code></span>
               {% endif %}
               {% if batch_id %}
-                <span class="audit-pill"><span class="text-muted">Batch_ID</span>{{ batch_id }}</span>
+                <span class="audit-pill"><span class="text-muted">Batch_ID</span> <code class="text-purple" style="color: #6f42c1;">{{ batch_id }}</code></span>
               {% endif %}
               {% if results %}
                 <span class="audit-pill"><span class="text-muted">流程數</span> {{ results|length }}</span>

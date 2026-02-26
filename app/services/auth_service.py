@@ -573,11 +573,41 @@ class AuditLogView(BaseView):
             abort(403)
         return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
 
-    def _get_db_logs(self, task_id: Optional[str] = None, limit: int = 200) -> list[dict]:
+    def _get_db_logs(
+        self, 
+        task_id: Optional[str] = None, 
+        limit: int = 500,
+        q: Optional[str] = None,
+        action: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> list[dict]:
         from modules.auth_models import AuditLog
+        from datetime import datetime
         query = AuditLog.query
+        
         if task_id:
             query = query.filter_by(task_id=task_id)
+        if action:
+            query = query.filter(AuditLog.action.ilike(f"%{action}%"))
+        if q:
+            # 搜尋動作、工號或詳情內容
+            search = f"%{q}%"
+            query = query.filter(
+                (AuditLog.action.ilike(search)) | 
+                (AuditLog.work_id.ilike(search)) | 
+                (AuditLog.detail.ilike(search))
+            )
+        if start_date:
+            try:
+                dt_start = datetime.strptime(f"{start_date} 00:00:00", "%Y-%m-%d %H:%M:%S")
+                query = query.filter(AuditLog.created_at >= dt_start)
+            except ValueError: pass
+        if end_date:
+            try:
+                dt_end = datetime.strptime(f"{end_date} 23:59:59", "%Y-%m-%d %H:%M:%S")
+                query = query.filter(AuditLog.created_at <= dt_end)
+            except ValueError: pass
         
         logs = query.order_by(AuditLog.created_at.desc()).limit(limit).all()
         
@@ -601,14 +631,28 @@ class AuditLogView(BaseView):
     def index(self):
         tasks = list_tasks()
         task_id = (request.args.get("task_id") or "").strip()
-        # If task_id is empty, show global latest logs
-        entries = self._get_db_logs(task_id if task_id else None)
+        q = (request.args.get("q") or "").strip()
+        action = (request.args.get("action") or "").strip()
+        start_date = (request.args.get("start_date") or "").strip()
+        end_date = (request.args.get("end_date") or "").strip()
+
+        entries = self._get_db_logs(
+            task_id=task_id if task_id else None,
+            q=q if q else None,
+            action=action if action else None,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None
+        )
         
         has_file = True # In DB mode, we can always "generate" a file
         return self.render(
             "admin/audit_logs.html",
             tasks=tasks,
             task_id=task_id,
+            q=q,
+            action=action,
+            start_date=start_date,
+            end_date=end_date,
             entries=entries,
             has_file=has_file,
         )
@@ -617,7 +661,19 @@ class AuditLogView(BaseView):
     def download(self):
         from io import BytesIO
         task_id = (request.args.get("task_id") or "").strip()
-        entries = self._get_db_logs(task_id if task_id else None, limit=1000)
+        q = (request.args.get("q") or "").strip()
+        action = (request.args.get("action") or "").strip()
+        start_date = (request.args.get("start_date") or "").strip()
+        end_date = (request.args.get("end_date") or "").strip()
+
+        entries = self._get_db_logs(
+            task_id=task_id if task_id else None,
+            q=q if q else None,
+            action=action if action else None,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None,
+            limit=2000
+        )
         
         output = BytesIO()
         for entry in reversed(entries):

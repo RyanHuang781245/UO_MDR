@@ -27,12 +27,31 @@
   {% if not runs %}
     <div class="text-muted">尚無執行紀錄</div>
   {% else %}
-    <div class="mb-2 d-flex flex-wrap gap-2">
-      <button class="btn btn-sm btn-outline-secondary" id="selectAllRunsBtn" type="button">全部選取</button>
-      <button class="btn btn-sm btn-outline-secondary" id="clearAllRunsBtn" type="button">取消選取</button>
-      <button class="btn btn-sm btn-outline-primary" id="downloadSelectedRunsDocxBtn" type="button">批次下載結果</button>
-      <button class="btn btn-sm btn-outline-secondary" id="downloadSelectedRunsLogBtn" type="button">批次下載紀錄</button>
-      <button class="btn btn-sm btn-outline-danger" id="deleteSelectedRunsBtn" type="button">刪除已選取</button>
+    <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
+      <div class="input-group input-group-sm" style="max-width: 250px;">
+        <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+        <input type="text" id="runSearchInput" class="form-control border-start-0" placeholder="搜尋流程名稱或執行時間...">
+      </div>
+      <select id="runStatusFilter" class="form-select form-select-sm" style="max-width: 150px;">
+        <option value="">所有狀態</option>
+        <option value="完成">完成</option>
+        <option value="失敗">失敗</option>
+        <option value="執行中">執行中</option>
+        <option value="排隊中">排隊中</option>
+      </select>
+      <div class="input-group input-group-sm" style="max-width: 320px;">
+        <span class="input-group-text bg-white text-muted"><i class="bi bi-calendar3"></i></span>
+        <input type="date" id="runDateStart" class="form-control" title="開始日期">
+        <span class="input-group-text bg-white border-start-0 border-end-0">~</span>
+        <input type="date" id="runDateEnd" class="form-control" title="結束日期">
+      </div>
+      <div class="ms-md-auto d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary" id="selectAllRunsBtn" type="button">全部選取</button>
+        <button class="btn btn-sm btn-outline-secondary" id="clearAllRunsBtn" type="button">取消選取</button>
+        <button class="btn btn-sm btn-outline-primary" id="downloadSelectedRunsDocxBtn" type="button">批次下載結果</button>
+        <button class="btn btn-sm btn-outline-secondary" id="downloadSelectedRunsLogBtn" type="button">批次下載紀錄</button>
+        <button class="btn btn-sm btn-outline-danger" id="deleteSelectedRunsBtn" type="button">刪除已選取</button>
+      </div>
     </div>
     <div class="table-responsive shadow-sm border rounded" style="max-height: 650px; overflow-y: auto;">
       <table class="table table-hover align-middle mb-0">
@@ -113,10 +132,29 @@
     {% if not batches %}
       <div class="text-muted">尚無批次紀錄</div>
     {% else %}
-      <div class="mb-2 d-flex flex-wrap gap-2">
-        <button class="btn btn-sm btn-outline-secondary" id="selectAllBatchesBtn" type="button">全部選取</button>
-        <button class="btn btn-sm btn-outline-secondary" id="clearAllBatchesBtn" type="button">取消選取</button>
-        <button class="btn btn-sm btn-outline-danger" id="deleteSelectedBatchesBtn" type="button">刪除已選取</button>
+      <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
+        <div class="input-group input-group-sm" style="max-width: 250px;">
+          <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+          <input type="text" id="batchSearchInput" class="form-control border-start-0" placeholder="搜尋批次 ID...">
+        </div>
+        <select id="batchStatusFilter" class="form-select form-select-sm" style="max-width: 150px;">
+          <option value="">所有狀態</option>
+          <option value="完成">完成</option>
+          <option value="失敗">失敗</option>
+          <option value="執行中">執行中</option>
+          <option value="排隊中">排隊中</option>
+        </select>
+        <div class="input-group input-group-sm" style="max-width: 320px;">
+          <span class="input-group-text bg-white text-muted"><i class="bi bi-calendar3"></i></span>
+          <input type="date" id="batchDateStart" class="form-control" title="開始日期">
+          <span class="input-group-text bg-white border-start-0 border-end-0">~</span>
+          <input type="date" id="batchDateEnd" class="form-control" title="結束日期">
+        </div>
+        <div class="ms-md-auto d-flex gap-2">
+          <button class="btn btn-sm btn-outline-secondary" id="selectAllBatchesBtn" type="button">全部選取</button>
+          <button class="btn btn-sm btn-outline-secondary" id="clearAllBatchesBtn" type="button">取消選取</button>
+          <button class="btn btn-sm btn-outline-danger" id="deleteSelectedBatchesBtn" type="button">刪除已選取</button>
+        </div>
       </div>
       <div class="table-responsive shadow-sm border rounded" style="max-height: 600px; overflow-y: auto;">
         <table class="table table-hover align-middle mb-0">
@@ -244,6 +282,40 @@ if (downloadSelectedRunsDocxBtn){
 if (downloadSelectedRunsLogBtn){
   downloadSelectedRunsLogBtn.addEventListener('click', () => submitBulkDownload('log'));
 }
+
+const runSearchInput = document.getElementById('runSearchInput');
+const runStatusFilter = document.getElementById('runStatusFilter');
+const runDateStart = document.getElementById('runDateStart');
+const runDateEnd = document.getElementById('runDateEnd');
+
+function filterRuns() {
+  const searchTerm = runSearchInput.value.toLowerCase();
+  const statusTerm = runStatusFilter.value;
+  const startDate = runDateStart.value; // YYYY-MM-DD
+  const endDate = runDateEnd.value;     // YYYY-MM-DD
+  const rows = document.querySelectorAll('tbody tr');
+  
+  rows.forEach(row => {
+    const flowName = row.querySelector('td:nth-child(2)').textContent.trim().toLowerCase();
+    const timeText = row.querySelector('td:nth-child(3)').textContent.trim();
+    const statusText = row.querySelector('td:nth-child(4)').textContent.trim();
+    
+    // 關鍵字搜尋：名稱 或 時間
+    const matchesSearch = flowName.includes(searchTerm) || timeText.toLowerCase().includes(searchTerm);
+    const matchesStatus = !statusTerm || statusText.includes(statusTerm);
+    
+    // 日期區間過濾
+    const rowDate = timeText.split(' ')[0]; // 取得 YYYY-MM-DD
+    const matchesDate = (!startDate || rowDate >= startDate) && (!endDate || rowDate <= endDate);
+    
+    row.style.display = (matchesSearch && matchesStatus && matchesDate) ? '' : 'none';
+  });
+}
+
+if (runSearchInput) runSearchInput.addEventListener('input', filterRuns);
+if (runStatusFilter) runStatusFilter.addEventListener('change', filterRuns);
+if (runDateStart) runDateStart.addEventListener('change', filterRuns);
+if (runDateEnd) runDateEnd.addEventListener('change', filterRuns);
 </script>
 {% endif %}
 {% if view == 'batch' %}
@@ -288,6 +360,38 @@ if (deleteSelectedBatchesBtn){
     form.submit();
   });
 }
+
+const batchSearchInput = document.getElementById('batchSearchInput');
+const batchStatusFilter = document.getElementById('batchStatusFilter');
+const batchDateStart = document.getElementById('batchDateStart');
+const batchDateEnd = document.getElementById('batchDateEnd');
+
+function filterBatches() {
+  const searchTerm = batchSearchInput.value.toLowerCase();
+  const statusTerm = batchStatusFilter.value;
+  const startDate = batchDateStart.value;
+  const endDate = batchDateEnd.value;
+  const rows = document.querySelectorAll('tbody tr');
+  
+  rows.forEach(row => {
+    const batchId = row.querySelector('td:nth-child(2)').textContent.trim().toLowerCase();
+    const timeText = row.querySelector('td:nth-child(3)').textContent.trim();
+    const statusText = row.querySelector('td:nth-child(4)').textContent.trim();
+    
+    const matchesSearch = batchId.includes(searchTerm) || timeText.toLowerCase().includes(searchTerm);
+    const matchesStatus = !statusTerm || statusText.includes(statusTerm);
+    
+    const rowDate = timeText.split(' ')[0];
+    const matchesDate = (!startDate || rowDate >= startDate) && (!endDate || rowDate <= endDate);
+    
+    row.style.display = (matchesSearch && matchesStatus && matchesDate) ? '' : 'none';
+  });
+}
+
+if (batchSearchInput) batchSearchInput.addEventListener('input', filterBatches);
+if (batchStatusFilter) batchStatusFilter.addEventListener('change', filterBatches);
+if (batchDateStart) batchDateStart.addEventListener('change', filterBatches);
+if (batchDateEnd) batchDateEnd.addEventListener('change', filterBatches);
 </script>
 {% endif %}
 {% endblock %}

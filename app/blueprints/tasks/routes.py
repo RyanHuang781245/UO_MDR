@@ -470,7 +470,24 @@ def task_download_output(task_id, filename):
 
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():
-    task_list = list_tasks()
+    task_list_all = list_tasks()
+    
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 10
+    total_count = len(task_list_all)
+    total_pages = (total_count + per_page - 1) // per_page
+    start = (page - 1) * per_page
+    task_list = task_list_all[start : start + per_page]
+    
+    pagination = {
+        "page": page,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages
+    }
+    
     for t in task_list:
         meta = {
             "creator_work_id": t.get("creator_work_id", ""),
@@ -480,6 +497,7 @@ def tasks():
     return render_template(
         "tasks/tasks.html",
         tasks=task_list,
+        pagination=pagination,
         allowed_nas_roots=get_configured_nas_roots(),
     )
 

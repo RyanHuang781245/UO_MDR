@@ -1,259 +1,397 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
-  <div>
-    <h1 class="h3 mb-0 fw-bold">執行結果</h1>
-  </div>
-  <!-- <div class="d-flex flex-wrap gap-2">
-    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
-      <i class="bi bi-arrow-left"></i>
-      返回流程管理
-    </a>
-  </div> -->
+<style>
+    :root {
+        --bs-blue-50: #eff6ff;
+        --bs-blue-100: #dbeafe;
+        --bs-blue-600: #2563eb;
+        --bs-emerald-50: #ecfdf5;
+        --bs-emerald-700: #047857;
+    }
+
+    .main-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: white;
+        overflow: hidden;
+    }
+
+    /* Tabs Styling */
+    .nav-tabs-custom {
+        border-bottom: 1px solid #e2e8f0;
+        padding: 0 1.5rem;
+    }
+    .nav-tabs-custom .nav-link {
+        border: none;
+        color: #64748b;
+        font-weight: 500;
+        padding: 0.75rem 1rem;
+        position: relative;
+        background: none;
+    }
+    .nav-tabs-custom .nav-link.active {
+        color: var(--bs-blue-600);
+    }
+    .nav-tabs-custom .nav-link.active::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background-color: var(--bs-blue-600);
+    }
+
+    /* Dynamic Toolbar */
+    .toolbar-container {
+        min-height: 80px;
+        padding: 1rem 1.5rem;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .action-bar {
+        background-color: var(--bs-blue-50);
+        border: 1px solid var(--bs-blue-100);
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+        display: none; /* 預設隱藏 */
+        width: 100%;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .filter-bar {
+        display: flex; /* 預設顯示 */
+        width: 100%;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    /* Form Controls */
+    .form-control-custom {
+        border: 1px solid #e2e8f0;
+        font-size: 0.875rem;
+        padding: 0.5rem 0.75rem;
+    }
+    .search-wrapper {
+        position: relative;
+        flex: 1;
+        min-width: 250px;
+    }
+    .search-wrapper i {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+    }
+    .search-wrapper input {
+        padding-left: 2.25rem;
+    }
+</style>
+
+<div class="container-fluid px-0">
+    <div class="mb-4">
+        <h1 class="h3 mb-1 fw-bold">執行結果</h1>
+        <!-- <p class="text-muted mb-3">檢視並管理單次或排程執行紀錄。</p> -->
+        
+        <div class="nav nav-tabs-custom border-bottom-0 pb-0" style="padding-left: 0;">
+            <a class="nav-link ps-0 {% if view == 'single' %}active{% endif %}" 
+               href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single') }}">單次執行</a>
+            <a class="nav-link {% if view == 'batch' %}active{% endif %}" 
+               href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}">排程執行</a>
+        </div>
+    </div>
+
+    <div class="main-card">
+
+        {% if view == 'single' %}
+            {% if not runs %}
+                <div class="p-5 text-center text-muted">
+                    <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                    尚無執行紀錄
+                </div>
+            {% else %}
+                <!-- Toolbar Section -->
+                <div class="toolbar-container">
+                    <!-- Default Filter Bar -->
+                    <div id="filterBar" class="filter-bar">
+                        <div class="search-wrapper">
+                            <i class="bi bi-search"></i>
+                            <input type="text" id="runSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋流程名稱或執行時間...">
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            <select id="runStatusFilter" class="form-select form-control-custom rounded-2" style="width: 140px;">
+                                <option value="">所有狀態</option>
+                                <option value="完成">完成</option>
+                                <option value="失敗">失敗</option>
+                                <option value="執行中">執行中</option>
+                                <option value="排隊中">排隊中</option>
+                            </select>
+                            
+                            <div class="input-group" style="width: 320px;">
+                                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-calendar3"></i></span>
+                                <input type="date" id="runDateStart" class="form-control form-control-custom border-start-0 text-center">
+                                <span class="input-group-text bg-white border-start-0 border-end-0 text-muted">~</span>
+                                <input type="date" id="runDateEnd" class="form-control form-control-custom border-start-0 text-center">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Bar (Show when selected) -->
+                    <div id="actionBar" class="action-bar">
+                        <div class="d-flex align-items-center gap-3">
+                            <button class="btn btn-link p-1 text-primary" id="clearSelectionBtn">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                            <span class="fw-semibold text-primary small" id="selectionText">已選取 0 項紀錄</span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-white btn-sm border bg-white text-primary fw-medium px-3 d-flex align-items-center gap-2 shadow-sm" id="downloadSelectedRunsDocxBtn">
+                                <i class="bi bi-download"></i> 批次下載結果
+                            </button>
+                            <button class="btn btn-white btn-sm border bg-white text-secondary fw-medium px-3 d-flex align-items-center gap-2 shadow-sm" id="downloadSelectedRunsLogBtn">
+                                <i class="bi bi-file-earmark-text"></i> 批次下載紀錄
+                            </button>
+                            <button class="btn btn-danger btn-sm px-3 d-flex align-items-center gap-2 shadow-sm" id="deleteSelectedRunsBtn">
+                                <i class="bi bi-trash3"></i> 刪除已選取
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="table-responsive">
+                    <table class="table results-table mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 60px;" class="text-center py-3 align-middle">
+                                    <input type="checkbox" class="form-check-input" id="masterCheckbox">
+                                </th>
+                                <th class="fw-bold text-uppercase text-muted py-3 text-start" style="font-size: 0.875rem; letter-spacing: 0.05em;">流程名稱</th>
+                                <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">執行時間</th>
+                                <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">狀態</th>
+                                <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            {% for r in runs %}
+                            <tr data-job-id="{{ r.job_id }}">
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input run-select" value="{{ r.job_id }}">
+                                </td>
+                                <td class="text-start">
+                                    {% if r.flow_name and r.flow_name != "未命名流程" %}
+                                        <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=r.flow_name) }}" class="text-decoration-none fw-bold text-primary" style="font-size: 0.875rem;">
+                                            {{ r.flow_name }}
+                                        </a>
+                                    {% else %}
+                                        <span class="text-muted" style="font-size: 0.875rem;">未命名流程</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ r.started_at }}</td>
+                                <td style="font-size: 0.875rem;">
+                                    {% if r.status == "completed" %}
+                                        <span class="status-badge status-badge-completed">
+                                            <i class="bi bi-check-circle-fill"></i> 完成
+                                        </span>
+                                    {% elif r.status == "failed" %}
+                                        <span class="status-badge status-badge-failed">
+                                            <i class="bi bi-x-circle-fill"></i> 失敗
+                                        </span>
+                                    {% elif r.status == "running" %}
+                                        <span class="status-badge status-badge-running">
+                                            <i class="bi bi-arrow-repeat spin"></i> 執行中
+                                        </span>
+                                    {% elif r.status == "queued" %}
+                                        <span class="status-badge status-badge-queued">
+                                            <i class="bi bi-hourglass-split"></i> 排隊中
+                                        </span>
+                                    {% else %}
+                                        <span class="status-badge status-badge-queued">
+                                            <i class="bi bi-question-circle"></i> 未完成
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="d-flex justify-content-center gap-1">
+                                        {% if r.has_result %}
+                                            <a href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}" class="btn-action-icon" title="查看結果">
+                                                <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">查看</span>
+                                            </a>
+                                            <a href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}" class="btn-action-icon" title="下載結果">
+                                                <i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載</span>
+                                            </a>
+                                        {% endif %}
+                                        {% if r.has_log %}
+                                            <a href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}" class="btn-action-icon" title="下載 Log">
+                                                <i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span>
+                                            </a>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Footer -->
+                <div class="px-4 py-3 d-flex justify-content-between align-items-center border-top bg-light bg-opacity-50">
+                    <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆資料 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=pagination.page-1) if pagination.has_prev else '#' }}">上一頁</a>
+                            </li>
+                            {% for p in range(1, pagination.total_pages + 1) %}
+                                {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
+                                <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                                    <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=p) }}">{{ p }}</a>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=pagination.page+1) if pagination.has_next else '#' }}">下一頁</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            {% endif %}
+        {% else %}
+            <!-- Batch View Content -->
+            {% if not batches %}
+                <div class="p-5 text-center text-muted">
+                    <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                    尚無批次紀錄
+                </div>
+            {% else %}
+                <!-- Toolbar for Batch -->
+                <div class="toolbar-container">
+                    <div id="filterBarBatch" class="filter-bar">
+                        <div class="search-wrapper">
+                            <i class="bi bi-search"></i>
+                            <input type="text" id="batchSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋批次 ID...">
+                        </div>
+                        <div class="d-flex gap-2">
+                            <select id="batchStatusFilter" class="form-select form-control-custom rounded-2" style="width: 140px;">
+                                <option value="">所有狀態</option>
+                                <option value="完成">完成</option>
+                                <option value="失敗">失敗</option>
+                                <option value="執行中">執行中</option>
+                                <option value="排隊中">排隊中</option>
+                            </select>
+                            <div class="input-group" style="width: 320px;">
+                                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-calendar3"></i></span>
+                                <input type="date" id="batchDateStart" class="form-control form-control-custom border-start-0 text-center">
+                                <span class="input-group-text bg-white border-start-0 border-end-0 text-muted">~</span>
+                                <input type="date" id="batchDateEnd" class="form-control form-control-custom border-start-0 text-center">
+                            </div>
+                        </div>
+                    </div>
+                    <div id="actionBarBatch" class="action-bar">
+                        <div class="d-flex align-items-center gap-3">
+                            <button class="btn btn-link p-1 text-primary" id="clearSelectionBatchBtn">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                            <span class="fw-semibold text-primary small" id="selectionTextBatch">已選取 0 項紀錄</span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-danger btn-sm px-3 d-flex align-items-center gap-2 shadow-sm" id="deleteSelectedBatchesBtn">
+                                <i class="bi bi-trash3"></i> 刪除已選取
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table results-table mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 60px;" class="text-center py-3 align-middle">
+                                    <input type="checkbox" class="form-check-input" id="masterCheckboxBatch">
+                                </th>
+                                <th class="fw-bold text-uppercase text-muted py-3 text-start" style="font-size: 0.875rem; letter-spacing: 0.05em;">批次 ID</th>
+                                <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
+                                <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">狀態</th>
+                                <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBodyBatch">
+                            {% for b in batches %}
+                            <tr data-batch-id="{{ b.id }}">
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input batch-select" value="{{ b.id }}">
+                                </td>
+                                <td class="text-start"><span class="font-monospace fw-bold text-primary" style="font-size: 0.875rem;">{{ b.id }}</span></td>
+                                <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ b.created_at }}</td>
+                                <td style="font-size: 0.875rem;">
+                                    {% if b.status == "completed" %}
+                                        <span class="status-badge status-badge-completed">
+                                            <i class="bi bi-check-circle-fill"></i> 完成
+                                        </span>
+                                    {% elif b.status == "failed" %}
+                                        <span class="status-badge status-badge-failed">
+                                            <i class="bi bi-x-circle-fill"></i> 失敗
+                                        </span>
+                                    {% elif b.status == "running" %}
+                                        <span class="status-badge status-badge-running">
+                                            <i class="bi bi-arrow-repeat spin"></i> 執行中
+                                        </span>
+                                    {% elif b.status == "queued" %}
+                                        <span class="status-badge status-badge-queued">
+                                            <i class="bi bi-hourglass-split"></i> 排隊中
+                                        </span>
+                                    {% else %}
+                                        <span class="status-badge status-badge-queued">
+                                            <i class="bi bi-question-circle"></i> {{ b.status }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="d-flex justify-content-center gap-1">
+                                        <a href="{{ url_for('flows_bp.flow_batch_result', task_id=task.id, batch_id=b.id) }}" class="btn-action-icon" title="查看結果">
+                                            <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">查看結果</span>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="px-4 py-3 d-flex justify-content-between align-items-center border-top bg-light bg-opacity-50">
+                    <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆資料 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=pagination.page-1) if pagination.has_prev else '#' }}">上一頁</a>
+                            </li>
+                            {% for p in range(1, pagination.total_pages + 1) %}
+                                {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
+                                <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                                    <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=p) }}">{{ p }}</a>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=pagination.page+1) if pagination.has_next else '#' }}">下一頁</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
 </div>
 
-<ul class="nav nav-tabs mb-3">
-  <li class="nav-item">
-    <a class="nav-link {% if view == 'single' %}active{% endif %}"
-       href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single') }}">單次執行</a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link {% if view == 'batch' %}active{% endif %}"
-       href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}">排程執行</a>
-  </li>
-</ul>
-
-{% if view == 'single' %}
-  {% if not runs %}
-    <div class="text-muted">尚無執行紀錄</div>
-  {% else %}
-    <div class="mb-3 d-flex flex-wrap gap-2 align-items-center results-toolbar">
-      <div class="input-group input-group-sm" style="max-width: 250px;">
-        <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
-        <input type="text" id="runSearchInput" class="form-control border-start-0" placeholder="搜尋流程名稱或執行時間...">
-      </div>
-      <select id="runStatusFilter" class="form-select form-select-sm" style="max-width: 150px;">
-        <option value="">所有狀態</option>
-        <option value="完成">完成</option>
-        <option value="失敗">失敗</option>
-        <option value="執行中">執行中</option>
-        <option value="排隊中">排隊中</option>
-      </select>
-      <div class="input-group input-group-sm" style="max-width: 320px;">
-        <span class="input-group-text bg-white text-muted"><i class="bi bi-calendar3"></i></span>
-        <input type="date" id="runDateStart" class="form-control" title="開始日期">
-        <span class="input-group-text bg-white border-start-0 border-end-0">~</span>
-        <input type="date" id="runDateEnd" class="form-control" title="結束日期">
-      </div>
-      <div class="ms-md-auto d-flex gap-2">
-        <button class="btn btn-sm btn-outline-secondary" id="selectAllRunsBtn" type="button">全部選取</button>
-        <button class="btn btn-sm btn-outline-secondary" id="clearAllRunsBtn" type="button">取消選取</button>
-        <button class="btn btn-sm btn-outline-primary" id="downloadSelectedRunsDocxBtn" type="button">批次下載結果</button>
-        <button class="btn btn-sm btn-outline-secondary" id="downloadSelectedRunsLogBtn" type="button">批次下載紀錄</button>
-        <button class="btn btn-sm btn-outline-danger" id="deleteSelectedRunsBtn" type="button">刪除已選取</button>
-      </div>
-    </div>
-    <div class="table-responsive shadow-sm border rounded" style="max-height: 650px; overflow-y: auto;">
-      <table class="table table-hover align-middle mb-0 results-table">
-        <thead class="bg-light sticky-top">
-          <tr>
-            <th style="width:60px; background-color: inherit; z-index: 2;">
-              <input type="checkbox" id="selectAllRuns" class="form-check-input">
-            </th>
-            <th class="text-start ps-3" style="background-color: inherit; z-index: 2;">流程名稱</th>
-            <th class="text-start ps-5" style="background-color: inherit; z-index: 2;">執行時間</th>
-            <th class="text-start ps-4" style="background-color: inherit; z-index: 2;">狀態</th>
-            <th class="text-center" style="width:320px; background-color: inherit; z-index: 2;">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in runs %}
-          <tr>
-            <td>
-              <input type="checkbox" class="form-check-input run-select" value="{{ r.job_id }}">
-            </td>
-            <td class="text-start ps-3">
-              {% if r.flow_name and r.flow_name != "未命名流程" %}
-                <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=r.flow_name) }}" class="text-decoration-none fw-medium">
-                  {{ r.flow_name }}
-                </a>
-              {% else %}
-                {{ r.flow_name }}
-              {% endif %}
-            </td>
-            <td class="text-cneter pe-5">{{ r.started_at }}</td>
-            <td class="text-cneter pe-5">
-              {% if r.status == "completed" %}
-                <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3">
-                  <i class="bi bi-check-circle-fill me-1"></i> 完成
-                </span>
-              {% elif r.status == "failed" %}
-                <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-3">
-                  <i class="bi bi-x-circle-fill me-1"></i> 失敗
-                </span>
-              {% elif r.status == "running" %}
-                <span class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle px-3">
-                  <i class="bi bi-arrow-repeat me-1"></i> 執行中
-                </span>
-              {% elif r.status == "queued" %}
-                <span class="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle px-3">
-                  <i class="bi bi-hourglass-split me-1"></i> 排隊中
-                </span>
-              {% else %}
-                <span class="badge rounded-pill bg-light text-muted border px-3">
-                  <i class="bi bi-question-circle me-1"></i> 未完成
-                </span>
-              {% endif %}
-            </td>
-            <td class="text-end pe-4">
-              <div class="btn-group btn-group-sm shadow-sm" role="group">
-                {% if r.has_result %}
-                  <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}">查看結果</a>
-                  <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">
-                    <i class="bi bi-download"></i> 下載結果
-                  </a>
-                {% endif %}
-                {% if r.has_log %}
-                  <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">
-                    <i class="bi bi-file-earmark-text"></i> 下載Log
-                  </a>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% endif %}
-{% else %}
-  <div>
-    <!-- <h2 class="h6">批次執行紀錄</h2> -->
-    {% if not batches %}
-      <div class="text-muted">尚無批次紀錄</div>
-    {% else %}
-      <div class="mb-3 d-flex flex-wrap gap-2 align-items-center results-toolbar">
-        <div class="input-group input-group-sm" style="max-width: 250px;">
-          <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
-          <input type="text" id="batchSearchInput" class="form-control border-start-0" placeholder="搜尋批次 ID...">
-        </div>
-        <select id="batchStatusFilter" class="form-select form-select-sm" style="max-width: 150px;">
-          <option value="">所有狀態</option>
-          <option value="完成">完成</option>
-          <option value="失敗">失敗</option>
-          <option value="執行中">執行中</option>
-          <option value="排隊中">排隊中</option>
-        </select>
-        <div class="input-group input-group-sm" style="max-width: 320px;">
-          <span class="input-group-text bg-white text-muted"><i class="bi bi-calendar3"></i></span>
-          <input type="date" id="batchDateStart" class="form-control" title="開始日期">
-          <span class="input-group-text bg-white border-start-0 border-end-0">~</span>
-          <input type="date" id="batchDateEnd" class="form-control" title="結束日期">
-        </div>
-        <div class="ms-md-auto d-flex gap-2">
-          <button class="btn btn-sm btn-outline-secondary" id="selectAllBatchesBtn" type="button">全部選取</button>
-          <button class="btn btn-sm btn-outline-secondary" id="clearAllBatchesBtn" type="button">取消選取</button>
-          <button class="btn btn-sm btn-outline-danger" id="deleteSelectedBatchesBtn" type="button">刪除已選取</button>
-        </div>
-      </div>
-      <div class="table-responsive shadow-sm border rounded" style="max-height: 600px; overflow-y: auto;">
-        <table class="table table-hover align-middle mb-0 results-table">
-          <thead class="bg-light sticky-top">
-                    <tr>
-          <th style="width:60px; background-color: inherit; z-index: 2;">
-                <input type="checkbox" id="selectAllBatches" class="form-check-input">
-              </th>
-          <th style="width:160px; background-color: inherit; z-index: 2;">批次 ID</th>
-          <th class="ps-5" style="width:200px; background-color: inherit; z-index: 2;">建立時間</th>
-          <th class="text-center" style="width:180px; background-color: inherit; z-index: 2;">狀態</th>
-          <th class="text-center" style="width:150px; background-color: inherit; z-index: 2;">操作</th>
-        </tr>
-          </thead>
-          <tbody>
-            {% for b in batches %}
-            <tr>
-              <td>
-                <input type="checkbox" class="form-check-input batch-select" value="{{ b.id }}">
-              </td>
-              <td>{{ b.id }}</td>
-              <td>{{ b.created_at }}</td>
-              <td class="text-center">
-                {% if b.status == "completed" %}
-                  <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3">
-                    <i class="bi bi-check-circle-fill me-1"></i> &#23436;&#25104;
-                  </span>
-                {% elif b.status == "failed" %}
-                  <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-3">
-                    <i class="bi bi-x-circle-fill me-1"></i> &#22833;&#25943;
-                  </span>
-                {% elif b.status == "running" %}
-                  <span class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle px-3">
-                    <i class="bi bi-arrow-repeat me-1"></i> &#22519;&#34892;&#20013;
-                  </span>
-                {% elif b.status == "queued" %}
-                  <span class="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle px-3">
-                    <i class="bi bi-hourglass-split me-1"></i> &#25490;&#38538;&#20013;
-                  </span>
-                {% else %}
-                  <span class="badge rounded-pill bg-light text-muted border px-3">
-                    <i class="bi bi-question-circle me-1"></i> {{ b.status }}
-                  </span>
-                {% endif %}
-              </td>
-              <td class="text-center">
-                <div class="btn-group btn-group-sm shadow-sm" role="group">
-                  <a class="btn btn-white border" href="{{ url_for('flows_bp.flow_batch_result', task_id=task.id, batch_id=b.id) }}">&#26597;&#30475;&#32080;&#26524;</a>
-                </div>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-  </div>
-{% endif %}
-<style>
-.results-table {
-  min-width: 760px;
-}
-.results-toolbar > .input-group,
-.results-toolbar > .form-select {
-  min-width: 0;
-}
-@media (max-width: 767.98px) {
-  .results-toolbar > .input-group,
-  .results-toolbar > .form-select,
-  .results-toolbar > .ms-md-auto {
-    flex: 1 1 100%;
-    max-width: 100% !important;
-  }
-  .results-toolbar > .ms-md-auto {
-    margin-left: 0 !important;
-    display: flex;
-    flex-wrap: wrap;
-  }
-  .results-toolbar > .ms-md-auto .btn {
-    flex: 1 1 calc(50% - 0.5rem);
-  }
-}
-@media (max-width: 575.98px) {
-  .results-table {
-    min-width: 680px;
-  }
-  .results-toolbar > .ms-md-auto .btn {
-    flex-basis: 100%;
-  }
-}
-</style>
-{% if view == 'single' %}
 <script>
-const selectAllRuns = document.getElementById('selectAllRuns');
-const selectAllRunsBtn = document.getElementById('selectAllRunsBtn');
-const clearAllRunsBtn = document.getElementById('clearAllRunsBtn');
-const deleteSelectedRunsBtn = document.getElementById('deleteSelectedRunsBtn');
-const downloadSelectedRunsDocxBtn = document.getElementById('downloadSelectedRunsDocxBtn');
-const downloadSelectedRunsLogBtn = document.getElementById('downloadSelectedRunsLogBtn');
+/** 共通 Helper **/
 function submitPostForm(action, fields){
   const form = document.createElement('form');
   form.method = 'post';
@@ -268,54 +406,106 @@ function submitPostForm(action, fields){
   document.body.appendChild(form);
   form.submit();
 }
+
+{% if view == 'single' %}
+/** 單次執行邏輯 **/
+const masterCheckbox = document.getElementById('masterCheckbox');
 const runCheckboxes = () => Array.from(document.querySelectorAll('.run-select'));
+const filterBar = document.getElementById('filterBar');
+const actionBar = document.getElementById('actionBar');
+const selectionText = document.getElementById('selectionText');
+const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+
 const getSelectedRunIds = () => runCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
 
-function setAllRuns(checked){
-  runCheckboxes().forEach(cb => { cb.checked = checked; });
-  if (selectAllRuns) selectAllRuns.checked = checked;
+function updateUI() {
+    const selected = getSelectedRunIds();
+    const count = selected.length;
+    const total = runCheckboxes().length;
+
+    if (count > 0) {
+        filterBar.style.display = 'none';
+        actionBar.style.display = 'flex';
+        selectionText.textContent = `已選取 ${count} 項紀錄`;
+    } else {
+        filterBar.style.display = 'flex';
+        actionBar.style.display = 'none';
+    }
+
+    // 更新行樣式
+    runCheckboxes().forEach(cb => {
+        const row = cb.closest('tr');
+        if (cb.checked) row.classList.add('row-selected');
+        else row.classList.remove('row-selected');
+    });
+
+    // 更新 Master Checkbox
+    if (masterCheckbox) {
+        if (count === 0) {
+            masterCheckbox.checked = false;
+            masterCheckbox.indeterminate = false;
+        } else if (count === total) {
+            masterCheckbox.checked = true;
+            masterCheckbox.indeterminate = false;
+        } else {
+            masterCheckbox.checked = false;
+            masterCheckbox.indeterminate = true;
+        }
+    }
 }
 
-if (selectAllRuns){
-  selectAllRuns.addEventListener('change', () => setAllRuns(selectAllRuns.checked));
+if (masterCheckbox) {
+    masterCheckbox.addEventListener('change', (e) => {
+        runCheckboxes().forEach(cb => {
+            // 只有顯示的行才被選取（如果有的話，目前沒過濾 dom，是直接隱藏）
+            if (cb.closest('tr').style.display !== 'none') {
+                cb.checked = e.target.checked;
+            }
+        });
+        updateUI();
+    });
 }
-if (selectAllRunsBtn){
-  selectAllRunsBtn.addEventListener('click', () => setAllRuns(true));
-}
-if (clearAllRunsBtn){
-  clearAllRunsBtn.addEventListener('click', () => setAllRuns(false));
-}
-if (deleteSelectedRunsBtn){
-  deleteSelectedRunsBtn.addEventListener('click', () => {
-    const selected = getSelectedRunIds();
-    if (!selected.length){
-      alert('請先選取要刪除的執行紀錄');
-      return;
+
+document.getElementById('tableBody')?.addEventListener('change', (e) => {
+    if (e.target.classList.contains('run-select')) {
+        updateUI();
     }
+});
+
+clearSelectionBtn?.addEventListener('click', () => {
+    runCheckboxes().forEach(cb => cb.checked = false);
+    updateUI();
+});
+
+// 操作按鈕
+document.getElementById('deleteSelectedRunsBtn')?.addEventListener('click', () => {
+    const selected = getSelectedRunIds();
+    if (!selected.length) return;
     if (!confirm(`確定刪除 ${selected.length} 筆執行紀錄？`)) return;
     submitPostForm(`{{ url_for('flows_bp.delete_flow_runs_bulk', task_id=task.id) }}`, {
       job_ids: selected.join(',')
     });
-  });
-}
-function submitBulkDownload(kind){
-  const selected = getSelectedRunIds();
-  if (!selected.length){
-    alert('請先選取要下載的執行紀錄');
-    return;
-  }
-  submitPostForm(`{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}`, {
-    job_ids: selected.join(','),
-    kind
-  });
-}
-if (downloadSelectedRunsDocxBtn){
-  downloadSelectedRunsDocxBtn.addEventListener('click', () => submitBulkDownload('docx'));
-}
-if (downloadSelectedRunsLogBtn){
-  downloadSelectedRunsLogBtn.addEventListener('click', () => submitBulkDownload('log'));
-}
+});
 
+document.getElementById('downloadSelectedRunsDocxBtn')?.addEventListener('click', () => {
+    const selected = getSelectedRunIds();
+    if (!selected.length) return;
+    submitPostForm(`{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}`, {
+      job_ids: selected.join(','),
+      kind: 'docx'
+    });
+});
+
+document.getElementById('downloadSelectedRunsLogBtn')?.addEventListener('click', () => {
+    const selected = getSelectedRunIds();
+    if (!selected.length) return;
+    submitPostForm(`{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}`, {
+      job_ids: selected.join(','),
+      kind: 'log'
+    });
+});
+
+// 篩選功能
 const runSearchInput = document.getElementById('runSearchInput');
 const runStatusFilter = document.getElementById('runStatusFilter');
 const runDateStart = document.getElementById('runDateStart');
@@ -324,76 +514,108 @@ const runDateEnd = document.getElementById('runDateEnd');
 function filterRuns() {
   const searchTerm = runSearchInput.value.toLowerCase();
   const statusTerm = runStatusFilter.value;
-  const startDate = runDateStart.value; // YYYY-MM-DD
-  const endDate = runDateEnd.value;     // YYYY-MM-DD
-  const rows = document.querySelectorAll('tbody tr');
+  const startDate = runDateStart.value;
+  const endDate = runDateEnd.value;
+  const rows = document.querySelectorAll('#tableBody tr');
+  let visibleCount = 0;
   
   rows.forEach(row => {
     const flowName = row.querySelector('td:nth-child(2)').textContent.trim().toLowerCase();
     const timeText = row.querySelector('td:nth-child(3)').textContent.trim();
     const statusText = row.querySelector('td:nth-child(4)').textContent.trim();
     
-    // 關鍵字搜尋：名稱 或 時間
     const matchesSearch = flowName.includes(searchTerm) || timeText.toLowerCase().includes(searchTerm);
     const matchesStatus = !statusTerm || statusText.includes(statusTerm);
     
-    // 日期區間過濾
-    const rowDate = timeText.split(' ')[0]; // 取得 YYYY-MM-DD
+    const rowDate = timeText.split(' ')[0];
     const matchesDate = (!startDate || rowDate >= startDate) && (!endDate || rowDate <= endDate);
     
-    row.style.display = (matchesSearch && matchesStatus && matchesDate) ? '' : 'none';
+    const isVisible = matchesSearch && matchesStatus && matchesDate;
+    row.style.display = isVisible ? '' : 'none';
+    if (isVisible) visibleCount++;
   });
+  document.getElementById('totalCount').textContent = visibleCount;
 }
 
-if (runSearchInput) runSearchInput.addEventListener('input', filterRuns);
-if (runStatusFilter) runStatusFilter.addEventListener('change', filterRuns);
-if (runDateStart) runDateStart.addEventListener('change', filterRuns);
-if (runDateEnd) runDateEnd.addEventListener('change', filterRuns);
-</script>
+[runSearchInput, runStatusFilter, runDateStart, runDateEnd].forEach(el => {
+    el?.addEventListener('input', filterRuns);
+    el?.addEventListener('change', filterRuns);
+});
 {% endif %}
+
 {% if view == 'batch' %}
-<script>
-const selectAllBatches = document.getElementById('selectAllBatches');
-const selectAllBatchesBtn = document.getElementById('selectAllBatchesBtn');
-const clearAllBatchesBtn = document.getElementById('clearAllBatchesBtn');
-const deleteSelectedBatchesBtn = document.getElementById('deleteSelectedBatchesBtn');
+/** 批次執行邏輯 **/
+const masterCheckboxBatch = document.getElementById('masterCheckboxBatch');
 const batchCheckboxes = () => Array.from(document.querySelectorAll('.batch-select'));
+const filterBarBatch = document.getElementById('filterBarBatch');
+const actionBarBatch = document.getElementById('actionBarBatch');
+const selectionTextBatch = document.getElementById('selectionTextBatch');
+const clearSelectionBatchBtn = document.getElementById('clearSelectionBatchBtn');
 
-function setAllBatches(checked){
-  batchCheckboxes().forEach(cb => { cb.checked = checked; });
-  if (selectAllBatches) selectAllBatches.checked = checked;
-}
-
-if (selectAllBatches){
-  selectAllBatches.addEventListener('change', () => setAllBatches(selectAllBatches.checked));
-}
-if (selectAllBatchesBtn){
-  selectAllBatchesBtn.addEventListener('click', () => setAllBatches(true));
-}
-if (clearAllBatchesBtn){
-  clearAllBatchesBtn.addEventListener('click', () => setAllBatches(false));
-}
-if (deleteSelectedBatchesBtn){
-  deleteSelectedBatchesBtn.addEventListener('click', () => {
+function updateBatchUI() {
     const selected = batchCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
-    if (!selected.length){
-      alert('請先選取要刪除的批次紀錄');
-      return;
+    const count = selected.length;
+    const total = batchCheckboxes().length;
+
+    if (count > 0) {
+        filterBarBatch.style.display = 'none';
+        actionBarBatch.style.display = 'flex';
+        selectionTextBatch.textContent = `已選取 ${count} 項紀錄`;
+    } else {
+        filterBarBatch.style.display = 'flex';
+        actionBarBatch.style.display = 'none';
     }
-    if (!confirm(`確定刪除 ${selected.length} 筆批次紀錄？`)) return;
-    const form = document.createElement('form');
-    form.method = 'post';
-    form.action = `{{ url_for('flows_bp.delete_flow_batches_bulk', task_id=task.id) }}`;
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'batch_ids';
-    input.value = selected.join(',');
-    form.appendChild(input);
-    document.body.appendChild(form);
-    form.submit();
-  });
+
+    batchCheckboxes().forEach(cb => {
+        const row = cb.closest('tr');
+        if (cb.checked) row.classList.add('row-selected');
+        else row.classList.remove('row-selected');
+    });
+
+    if (masterCheckboxBatch) {
+        if (count === 0) {
+            masterCheckboxBatch.checked = false;
+            masterCheckboxBatch.indeterminate = false;
+        } else if (count === total) {
+            masterCheckboxBatch.checked = true;
+            masterCheckboxBatch.indeterminate = false;
+        } else {
+            masterCheckboxBatch.checked = false;
+            masterCheckboxBatch.indeterminate = true;
+        }
+    }
 }
 
+masterCheckboxBatch?.addEventListener('change', (e) => {
+    batchCheckboxes().forEach(cb => {
+        if (cb.closest('tr').style.display !== 'none') {
+            cb.checked = e.target.checked;
+        }
+    });
+    updateBatchUI();
+});
+
+document.getElementById('tableBodyBatch')?.addEventListener('change', (e) => {
+    if (e.target.classList.contains('batch-select')) {
+        updateBatchUI();
+    }
+});
+
+clearSelectionBatchBtn?.addEventListener('click', () => {
+    batchCheckboxes().forEach(cb => cb.checked = false);
+    updateBatchUI();
+});
+
+document.getElementById('deleteSelectedBatchesBtn')?.addEventListener('click', () => {
+    const selected = batchCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+    if (!selected.length) return;
+    if (!confirm(`確定刪除 ${selected.length} 筆批次紀錄？`)) return;
+    submitPostForm(`{{ url_for('flows_bp.delete_flow_batches_bulk', task_id=task.id) }}`, {
+      batch_ids: selected.join(',')
+    });
+});
+
+// 篩選功能 (Batch)
 const batchSearchInput = document.getElementById('batchSearchInput');
 const batchStatusFilter = document.getElementById('batchStatusFilter');
 const batchDateStart = document.getElementById('batchDateStart');
@@ -404,7 +626,8 @@ function filterBatches() {
   const statusTerm = batchStatusFilter.value;
   const startDate = batchDateStart.value;
   const endDate = batchDateEnd.value;
-  const rows = document.querySelectorAll('tbody tr');
+  const rows = document.querySelectorAll('#tableBodyBatch tr');
+  let visibleCount = 0;
   
   rows.forEach(row => {
     const batchId = row.querySelector('td:nth-child(2)').textContent.trim().toLowerCase();
@@ -417,14 +640,17 @@ function filterBatches() {
     const rowDate = timeText.split(' ')[0];
     const matchesDate = (!startDate || rowDate >= startDate) && (!endDate || rowDate <= endDate);
     
-    row.style.display = (matchesSearch && matchesStatus && matchesDate) ? '' : 'none';
+    const isVisible = matchesSearch && matchesStatus && matchesDate;
+    row.style.display = isVisible ? '' : 'none';
+    if (isVisible) visibleCount++;
   });
+  document.getElementById('totalCountBatch').textContent = visibleCount;
 }
 
-if (batchSearchInput) batchSearchInput.addEventListener('input', filterBatches);
-if (batchStatusFilter) batchStatusFilter.addEventListener('change', filterBatches);
-if (batchDateStart) batchDateStart.addEventListener('change', filterBatches);
-if (batchDateEnd) batchDateEnd.addEventListener('change', filterBatches);
-</script>
+[batchSearchInput, batchStatusFilter, batchDateStart, batchDateEnd].forEach(el => {
+    el?.addEventListener('input', filterBatches);
+    el?.addEventListener('change', filterBatches);
+});
 {% endif %}
+</script>
 {% endblock %}

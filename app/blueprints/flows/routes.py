@@ -669,7 +669,23 @@ def flow_builder(task_id):
         abort(404)
     flow_dir = os.path.join(tdir, "flows")
     os.makedirs(flow_dir, exist_ok=True)
-    flows = _load_saved_flows(flow_dir)
+    flows_all = _load_saved_flows(flow_dir)
+    
+    # Pagination for saved flows
+    flow_page = request.args.get("fpage", 1, type=int)
+    per_page = 10
+    total_count = len(flows_all)
+    total_pages = (total_count + per_page - 1) // per_page
+    start = (flow_page - 1) * per_page
+    flows = flows_all[start : start + per_page]
+    flow_pagination = {
+        "page": flow_page,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "has_prev": flow_page > 1,
+        "has_next": flow_page < total_pages
+    }
+    
     preset = None
     center_titles = True
     template_file = None
@@ -734,6 +750,7 @@ def flow_builder(task_id):
         apply_formatting=apply_formatting,
         document_format_presets=DOCUMENT_FORMAT_PRESETS,
         line_spacing_choices=LINE_SPACING_CHOICES,
+        flow_pagination=flow_pagination,
     )
 
 
@@ -780,9 +797,43 @@ def flow_results(task_id):
     view = (request.args.get("view") or "single").lower()
     if view not in ("single", "batch"):
         view = "single"
-    runs = _list_flow_runs(task_id)
-    batches = _list_batch_statuses(task_id)
-    running = [b for b in batches if b["status"] in ("running", "queued")]
+    
+    page = request.args.get("page", 1, type=int)
+    per_page = 10
+    
+    runs_all = _list_flow_runs(task_id)
+    batches_all = _list_batch_statuses(task_id)
+    
+    if view == "single":
+        total_count = len(runs_all)
+        total_pages = (total_count + per_page - 1) // per_page
+        start = (page - 1) * per_page
+        runs = runs_all[start : start + per_page]
+        batches = batches_all # Keep all for background checks if needed, but only slice if viewing
+        pagination = {
+            "page": page,
+            "per_page": per_page,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages
+        }
+    else:
+        total_count = len(batches_all)
+        total_pages = (total_count + per_page - 1) // per_page
+        start = (page - 1) * per_page
+        batches = batches_all[start : start + per_page]
+        runs = runs_all
+        pagination = {
+            "page": page,
+            "per_page": per_page,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages
+        }
+
+    running = [b for b in batches_all if b["status"] in ("running", "queued")]
     return render_template(
         "flows/results.html",
         task={"id": task_id},
@@ -790,6 +841,7 @@ def flow_results(task_id):
         runs=runs,
         batches=batches,
         running=running,
+        pagination=pagination
     )
 
 
@@ -810,7 +862,7 @@ def flow_run_status(task_id, job_id):
 @flows_bp.get("/tasks/<task_id>/flows/runs/active", endpoint="flow_run_active")
 def flow_run_active(task_id):
     runs = _list_flow_runs(task_id)
-    active = [r for r in runs if r["status"] in ("queued", "running", "failed")]
+    active = [r for r in runs if r["status"] in ("queued", "running")]
     return {
         "ok": True,
         "runs": [

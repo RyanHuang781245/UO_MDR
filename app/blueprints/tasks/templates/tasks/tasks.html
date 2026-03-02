@@ -1,114 +1,340 @@
 ﻿{% extends "base.html" %}
 {% block enable_sidebar %}false{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3 fw-bold">任務管理列表</h1>
-<p class="form-text">請輸入任務名稱，選擇 NAS 存取路徑，任務描述可選填，設定完成後建立新任務。</p>
+<style>
+    :root {
+        --bs-blue-50: #eff6ff;
+        --bs-blue-100: #dbeafe;
+        --bs-blue-600: #2563eb;
+        --bs-emerald-50: #ecfdf5;
+        --bs-emerald-700: #047857;
+    }
 
-<form action="{{ url_for('tasks_bp.create_task') }}" method="post" class="card card-body mb-4" id="createTaskForm">
-  <div class="row g-3">
-    <div class="col-md-5">
-      <label class="form-label fw-bold">任務名稱</label>
-      <input class="form-control" name="task_name" placeholder="輸入任務名稱 (中英文)">
-    </div>
-    <div class="col-md-5">
-      <label class="form-label fw-bold">NAS 存取路徑</label>
-      <div class="input-group">
-        <input class="form-control" type="text" name="nas_path" id="nasPathInput" placeholder="輸入相對路徑，例如 /1-系統開發/測試專案" required>
-        <button
-          class="btn btn-outline-secondary"
-          type="button"
-          data-bs-toggle="modal"
-          data-bs-target="#nasBrowserModal"
-          id="openNasBrowserBtn"
-          {% if not allowed_nas_roots %}disabled{% endif %}
-        >瀏覽</button>
-      </div>
-      <input type="hidden" name="nas_root_index" id="nasRootIndexInput" value="">
-    </div>
-    <div class="col-md-2 d-grid align-items-end">
-      <button class="btn btn-primary" type="submit">建立任務</button>
-    </div>
-    <div class="col-md-12">
-      <label class="form-label fw-bold">任務描述</label>
-      <textarea class="form-control" name="task_desc" placeholder="輸入任務描述 (可選填，中英文皆可)"></textarea>
-    </div>
-  </div>
-</form>
+    .main-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: white;
+        overflow: hidden;
+    }
 
-<div class="task-loading-overlay d-none" id="taskLoadingOverlay" aria-live="polite" aria-busy="false">
-  <div class="task-loading-box">
-    <div class="spinner-border text-secondary me-3" role="status" aria-hidden="true"></div>
-    <div class="fw-semibold">處理中，請稍候...</div>
-  </div>
+    /* Dynamic Toolbar */
+    .toolbar-container {
+        min-height: 80px;
+        padding: 1rem 1.5rem;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .filter-bar {
+        display: flex;
+        width: 100%;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    /* Form Controls */
+    .form-control-custom {
+        border: 1px solid #e2e8f0;
+        font-size: 0.875rem;
+        padding: 0.5rem 0.75rem;
+    }
+    .search-wrapper {
+        position: relative;
+        flex: 1;
+        min-width: 250px;
+    }
+    .search-wrapper i {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+    }
+    .search-wrapper input {
+        padding-left: 2.25rem;
+    }
+
+    .btn-action-icon {
+        background: transparent;
+        border: 1px solid #e2e8f0;
+        color: #64748b;
+        padding: 0.4rem 0.75rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+    .btn-action-icon:hover {
+        background: #f8fafc;
+        color: var(--bs-blue-600);
+        border-color: var(--bs-blue-100);
+    }
+    .btn-action-icon.text-danger:hover {
+        color: #dc3545;
+        background: #fff5f5;
+        border-color: #feb2b2;
+    }
+
+    /* Loading Overlay & Drawer */
+    .task-loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        pointer-events: all;
+    }
+    .task-loading-box {
+        background: #fff;
+        border-radius: 8px;
+        padding: 16px 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        min-width: 260px;
+        justify-content: center;
+    }
+    .task-desc-drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.35);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+        z-index: 1040;
+    }
+    .task-desc-drawer-backdrop.is-open {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .task-desc-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100vh;
+        width: min(90vw, 420px);
+        background: #fff;
+        box-shadow: -12px 0 28px rgba(0, 0, 0, 0.18);
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+        z-index: 1050;
+        display: flex;
+        flex-direction: column;
+    }
+    .task-desc-drawer.is-open {
+        transform: translateX(0);
+    }
+    .task-desc-drawer-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .task-desc-drawer-body {
+        padding: 16px;
+        word-break: break-word;
+        overflow: auto;
+        flex: 1;
+    }
+    .task-detail-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        margin-bottom: 10px;
+    }
+    .task-detail-label {
+        color: #64748b;
+        font-weight: 600;
+        min-width: 90px;
+    }
+    .task-detail-value {
+        color: #0f172a;
+        text-align: right;
+        flex: 1;
+        word-break: break-word;
+    }
+    .task-desc-truncate {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 250px; /* 設定一個最大寬度以觸發省略號 */
+    }
+    .task-desc-drawer-open {
+        overflow: hidden;
+    }
+</style>
+<div class="container-fluid px-0">
+    <div class="mb-4">
+        <h1 class="h3 mb-1 fw-bold">任務管理</h1>
+        <p class="text-muted">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑。</p>
+    </div>
+
+    <!-- 建立任務表單 -->
+    <div class="main-card p-4 mb-4">
+        <h5 class="fw-bold mb-3">建立新任務</h5>
+        <form action="{{ url_for('tasks_bp.create_task') }}" method="post" id="createTaskForm">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold text-uppercase text-muted">任務名稱</label>
+                    <input class="form-control form-control-custom rounded-2" name="task_name" placeholder="輸入任務名稱 (中英文)">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold text-uppercase text-muted">NAS 存取路徑</label>
+                    <div class="input-group">
+                        <input class="form-control form-control-custom rounded-2" type="text" name="nas_path" id="nasPathInput" placeholder="例如 /1-系統開發/測試專案" required>
+                        <button class="btn btn-outline-secondary px-3" type="button" data-bs-toggle="modal" data-bs-target="#nasBrowserModal" id="openNasBrowserBtn" {% if not allowed_nas_roots %}disabled{% endif %}>瀏覽</button>
+                    </div>
+                    <input type="hidden" name="nas_root_index" id="nasRootIndexInput" value="">
+                </div>
+                <div class="col-md-2 d-grid align-items-end">
+                    <button class="btn btn-primary fw-bold" type="submit">建立任務</button>
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label small fw-bold text-uppercase text-muted">任務描述 (選填)</label>
+                    <textarea class="form-control form-control-custom rounded-2" name="task_desc" rows="2" placeholder="輸入任務描述..."></textarea>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="task-loading-overlay d-none" id="taskLoadingOverlay" aria-live="polite" aria-busy="false">
+        <div class="task-loading-box">
+            <div class="spinner-border text-primary me-3" role="status" aria-hidden="true"></div>
+            <div class="fw-semibold">處理中，請稍候...</div>
+        </div>
+    </div>
+
+    <!-- 任務列表 -->
+    <div class="main-card">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0">現有任務</h5>
+            <div class="text-muted small">共 <span id="totalTaskCount">{{ tasks|length }}</span> 個任務</div>
+        </div>
+
+        <!-- Toolbar Section -->
+        <div class="toolbar-container">
+            <!-- Filter Bar -->
+            <div id="filterBar" class="filter-bar">
+                <div class="search-wrapper">
+                    <i class="bi bi-search"></i>
+                    <input type="text" id="taskSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋任務名稱或描述...">
+                </div>
+            </div>
+        </div>
+        
+        <div class="table-responsive" style="overflow: visible;">
+            <table class="table mb-0 align-middle">
+                <thead style="background-color: #f8fafc;">
+                    <tr>
+                        <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="width: 25%; letter-spacing: 0.05em;">任務名稱</th>
+                        <th class="fw-bold text-uppercase text-muted py-3 text-start" style="letter-spacing: 0.05em;">任務描述</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="width: 15%; letter-spacing: 0.05em;">建立人員</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="width: 18%; letter-spacing: 0.05em;">建立時間</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="letter-spacing: 0.05em;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="taskTableBody">
+                    {% for t in tasks %}
+                    <tr class="task-row">
+                        <td class="text-start ps-4">
+                            <a class="text-decoration-none fw-bold text-primary" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">
+                                {{ t.name }}
+                            </a>
+                        </td>
+                        <td class="text-start">
+                            {% if t.description %}
+                                <div class="task-desc-truncate text-muted" style="font-size: 0.875rem;" title="{{ t.description }}">{{ t.description }}</div>
+                            {% else %}
+                                <span class="text-muted" style="font-size: 0.875rem;">-</span>
+                            {% endif %}
+                            <span class="task-id-data d-none">{{ t.id }}</span>
+                            <span class="task-desc-data d-none">{{ t.description or "" }}</span>
+                            <span class="task-nas-data d-none">{{ t.nas_path or "" }}</span>
+                            <span class="task-creator-data d-none">{{ t.creator or "-" }}</span>
+                            <span class="task-created-data d-none">{{ t.created }}</span>
+                            <span class="task-last-editor-data d-none">{{ t.last_editor or "-" }}</span>
+                            <span class="task-last-edited-data d-none">{{ t.last_edited or "-" }}</span>
+                        </td>
+                        <td class="text-muted" style="font-size: 0.875rem;">{{ t.creator or '-' }}</td>
+                        <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ t.created }}</td>
+                        <td>
+                            <div class="d-flex justify-content-center gap-1">
+                                <button class="btn-action-icon task-detail-trigger" title="查看詳情">
+                                    <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span>  
+                                </button>
+                                {% if t.can_delete %}
+                                <form action="{{ url_for('tasks_bp.delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除任務「{{ t.name }}」?')">
+                                    <button class="btn-action-icon text-danger" type="submit" title="刪除任務">
+                                        <i class="bi bi-trash"></i><span class="d-none d-lg-inline small fw-semibold">刪除</span> 
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                            目前沒有任務
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination Footer -->
+        <div class="px-4 py-3 d-flex justify-content-between align-items-center border-top bg-light bg-opacity-50">
+            <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆任務 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('tasks_bp.tasks', page=pagination.page-1) if pagination.has_prev else '#' }}">上一頁</a>
+                    </li>
+                    {% for p in range(1, pagination.total_pages + 1) %}
+                        {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
+                        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('tasks_bp.tasks', page=p) }}">{{ p }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('tasks_bp.tasks', page=pagination.page+1) if pagination.has_next else '#' }}">下一頁</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </div>
 </div>
 
-<h2 class="h5 fw-bold">現有任務</h2>
-<div class="table-responsive task-table-wrap">
-  <table class="table table-striped task-table">
-    <thead>
-      <tr>
-        <th class="text-start task-col-name">任務名稱</th>
-        <th class="text-center task-col-desc">任務描述</th>
-        <th class="text-center task-col-creator">建立人員</th>
-        <th class="text-center task-col-created">建立時間</th>
-        <th class="text-center task-col-actions">操作</th>
-      </tr>
-    </thead>
-    <tbody>
-    {% for t in tasks %}
-      <tr>
-        <td class="text-start task-col-name"><a class="task-name-link text-decoration-none" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
-        <td class="text-center task-col-desc">
-          {% if t.description %}
-            <div class="task-desc-truncate">{{ t.description }}</div>
-          {% else %}
-            <div class="text-muted">-</div>
-          {% endif %}
-          <span class="task-desc-data d-none">{{ t.description or "" }}</span>
-          <span class="task-nas-data d-none">{{ t.nas_path or "" }}</span>
-          <span class="task-creator-data d-none">{{ t.creator or "-" }}</span>
-          <span class="task-created-data d-none">{{ t.created }}</span>
-          <span class="task-last-editor-data d-none">{{ t.last_editor or "-" }}</span>
-          <span class="task-last-edited-data d-none">{{ t.last_edited or "-" }}</span>
-        </td>
-        <td class="text-center task-col-creator">{{ t.creator or '-' }}</td>
-        <td class="text-center task-col-created">{{ t.created }}</td>
-        <td class="text-center task-col-actions">
-          <div class="btn-group">
-            <button class="btn btn-sm btn-success d-inline-flex align-items-center gap-1 task-detail-trigger" type="button">
-              <i class="bi bi-eye"></i>
-              查看詳情
-            </button>
-            <button class="btn btn-sm btn-success dropdown-toggle dropdown-toggle-split" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-              <span class="visually-hidden">更多操作</span>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-              <li><button class="dropdown-item" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'><i class="bi bi-pencil me-1"></i>重新命名</button></li>
-              <li><button class="dropdown-item" type="button" onclick='editTaskDesc("{{ t.id }}", {{ (t.description or "")|tojson }})'><i class="bi bi-card-text me-1"></i>修改描述</button></li>
-              <li><button class="dropdown-item" type="button" onclick='copyTask("{{ t.id }}", {{ t.name|tojson }})'><i class="bi bi-files me-1"></i>複製任務</button></li>
-            </ul>
-          </div>
-          {% if t.can_delete %}
-          <form action="{{ url_for('tasks_bp.delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
-            <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1">
-              <i class="bi bi-trash"></i>
-              刪除
-            </button>
-          </form>
-          {% else %}
-          <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1" type="button" disabled>
-            <i class="bi bi-trash"></i>
-            刪除
-          </button>
-          {% endif %}
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="5" class="text-center">目前沒有任務</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
+<style>
+.task-item {
+    transition: background-color 0.2s ease;
+}
+.task-item:hover {
+    background-color: #f8fafc;
+}
+.task-item:last-child {
+    border-bottom: none !important;
+}
+.dropdown-menu {
+    z-index: 1051; /* 確保選單在所有元素之上 */
+}
+</style>
 
 <div class="task-desc-drawer-backdrop" id="taskDescDrawerBackdrop" aria-hidden="true" hidden></div>
 <aside class="task-desc-drawer" id="taskDescDrawer" aria-hidden="true" aria-label="任務資訊" hidden>
@@ -205,23 +431,57 @@ function renderDetailBody(details){
       <div class="task-detail-value">${escapeHtml(row.value)}</div>
     </div>`
   )).join('');
-  const descHtml = details.desc
-    ? `<div class="task-detail-desc">
-        <div class="task-detail-desc-label">任務描述</div>
-        <div class="task-detail-desc-value">${escapeHtml(details.desc)}</div>
-      </div>`
-    : '';
-  return `<div class="task-detail-list">${rowsHtml}${descHtml}</div>`;
+
+  return `
+    <div class="task-detail-list">
+      <!-- 任務名稱編輯 -->
+      <div class="mb-4">
+        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務名稱</label>
+        <input type="text" class="form-control form-control-custom shadow-sm" id="drawerTaskName" value="${escapeHtml(details.name)}">
+        <div class="mt-2 text-end">
+          <button class="btn btn-sm btn-outline-primary px-3 fw-bold" onclick="renameTask('${details.id}', document.getElementById('drawerTaskName').value, true)">
+            更新名稱
+          </button>
+        </div>
+      </div>
+
+      <!-- 任務描述編輯 -->
+      <div class="mb-4">
+        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務描述</label>
+        <textarea class="form-control form-control-custom shadow-sm" id="drawerTaskDesc" rows="4" placeholder="輸入任務描述...">${escapeHtml(details.desc || "")}</textarea>
+        <div class="mt-2 text-end">
+          <button class="btn btn-sm btn-outline-primary px-3 fw-bold" onclick="editTaskDesc('${details.id}', document.getElementById('drawerTaskDesc').value, true)">
+            更新描述
+          </button>
+        </div>
+      </div>
+
+      <div class="mb-2">
+        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務資訊</label>
+        ${rowsHtml}
+      </div>
+
+      <div class="mt-4 pt-3 border-top text-end">
+        <button class="btn btn-link btn-sm text-primary text-decoration-none p-0" onclick="copyTask('${details.id}', \`${escapeHtml(details.name)}\`)">
+          <i class="bi bi-files"></i> 複製此任務
+        </button>
+      </div>
+    </div>
+  `;
 }
 
-function renameTask(id, current){
-  const name = prompt('輸入新名稱', current);
-  if(!name) return;
+function renameTask(id, current, isDirect = false){
+  const name = isDirect ? current : prompt('輸入新名稱', current);
+  if(!name) {
+    if(!isDirect) return;
+    alert('任務名稱不能為空');
+    return;
+  }
   submitPostForm(`/tasks/${id}/rename`, { name });
 }
 
-function editTaskDesc(id, currentDesc){
-  const desc = prompt('輸入新的任務描述（可為空）', currentDesc || '');
+function editTaskDesc(id, currentDesc, isDirect = false){
+  const desc = isDirect ? currentDesc : prompt('輸入新的任務描述（可為空）', currentDesc || '');
   if(desc === null) return;
   submitPostForm(`/tasks/${id}/description`, { description: desc });
 }
@@ -573,7 +833,8 @@ function initTaskDescDrawer(){
     btn.addEventListener('click', (event) => {
       event.preventDefault();
       const row = btn.closest('tr');
-      const name = getRowText(row, '.task-name-link');
+      const id = getRowText(row, '.task-id-data');
+      const name = getRowText(row, '.text-primary');
       const desc = getRowText(row, '.task-desc-data');
       const creator = getRowText(row, '.task-creator-data');
       const created = getRowText(row, '.task-created-data');
@@ -582,6 +843,8 @@ function initTaskDescDrawer(){
       const nasPath = getRowText(row, '.task-nas-data');
       const title = name ? `任務詳情 : ${name}` : '任務詳情';
       const detailHtml = renderDetailBody({
+        id,
+        name,
         creator,
         created,
         lastEditor,
@@ -603,6 +866,27 @@ function initTaskDescDrawer(){
       closeDrawer();
     }
   });
+
+  // Task Search Logic
+  const taskSearchInput = document.getElementById('taskSearchInput');
+  const taskTableBody = document.getElementById('taskTableBody');
+  const totalTaskCount = document.getElementById('totalTaskCount');
+
+  if(taskSearchInput && taskTableBody){
+    taskSearchInput.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase();
+      const rows = taskTableBody.querySelectorAll('.task-row');
+      let visibleCount = 0;
+      rows.forEach(row => {
+        const name = row.querySelector('.text-primary')?.textContent?.toLowerCase() || '';
+        const desc = row.querySelector('.task-desc-data')?.textContent?.toLowerCase() || '';
+        const isVisible = name.includes(term) || desc.includes(term);
+        row.style.display = isVisible ? '' : 'none';
+        if(isVisible) visibleCount++;
+      });
+      if(totalTaskCount) totalTaskCount.textContent = visibleCount;
+    });
+  }
 }
 
 if(document.readyState === 'loading'){
@@ -611,210 +895,4 @@ if(document.readyState === 'loading'){
   initTaskDescDrawer();
 }
 </script>
-<style>
-.task-loading-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  pointer-events: all;
-}
-.task-loading-box {
-  background: #fff;
-  border-radius: 8px;
-  padding: 16px 20px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-  display: flex;
-  align-items: center;
-  min-width: 260px;
-  justify-content: center;
-}
-.task-table-wrap {
-  width: 100%;
-}
-.task-table {
-  width: 100%;
-  table-layout: fixed;
-  min-width: 760px;
-}
-.task-table th,
-.task-table td {
-  vertical-align: middle;
-}
-.task-table .task-col-name {
-  width: 20%;
-}
-.task-table .task-col-desc {
-  width: 28%;
-}
-.task-table .task-col-creator {
-  width: 14%;
-}
-.task-table .task-col-created {
-  width: 16%;
-}
-.task-table .task-col-actions {
-  width: 22%;
-}
-.task-table .task-col-name {
-  word-break: break-word;
-  white-space: normal;
-}
-.task-table .task-col-desc {
-  white-space: normal;
-}
-.task-table .task-col-actions {
-  white-space: normal;
-}
-.task-table .task-col-actions .btn-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.25rem;
-}
-.task-table .task-col-actions .btn-group > .btn {
-  border-radius: 0.25rem !important;
-}
-.task-table .task-col-actions form,
-.task-table .task-col-actions > .btn {
-  margin-top: 0.35rem;
-}
-.task-desc-truncate {
-  display: -webkit-box;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: normal;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  line-height: 1.4;
-  max-height: 2.8em;
-}
-.task-desc-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.35);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-  z-index: 1040;
-}
-.task-desc-drawer-backdrop.is-open {
-  opacity: 1;
-  pointer-events: auto;
-}
-.task-desc-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  height: 100vh;
-  width: min(90vw, 420px);
-  background: #fff;
-  box-shadow: -12px 0 28px rgba(0, 0, 0, 0.18);
-  transform: translateX(100%);
-  transition: transform 0.25s ease;
-  z-index: 1050;
-  display: flex;
-  flex-direction: column;
-}
-.task-desc-drawer.is-open {
-  transform: translateX(0);
-}
-.task-desc-drawer-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.task-desc-drawer-body {
-  padding: 16px;
-  word-break: break-word;
-  overflow: auto;
-  flex: 1;
-}
-.task-detail-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.task-detail-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-}
-.task-detail-label {
-  color: #64748b;
-  font-weight: 600;
-  min-width: 90px;
-}
-.task-detail-value {
-  color: #0f172a;
-  text-align: right;
-  flex: 1;
-  word-break: break-word;
-}
-.task-detail-desc {
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px dashed #cbd5f5;
-  background: #f8fafc;
-}
-.task-detail-desc-label {
-  font-weight: 600;
-  color: #0f172a;
-  margin-bottom: 6px;
-}
-.task-detail-desc-value {
-  white-space: pre-wrap;
-  color: #1f2937;
-}
-.task-desc-drawer-open {
-  overflow: hidden;
-}
-@media (max-width: 991.98px) {
-  .task-loading-box {
-    width: min(92vw, 340px);
-    min-width: 0;
-  }
-  .task-table {
-    table-layout: auto;
-    min-width: 680px;
-  }
-  .task-table .task-col-name,
-  .task-table .task-col-desc,
-  .task-table .task-col-creator,
-  .task-table .task-col-created,
-  .task-table .task-col-actions {
-    width: auto;
-  }
-}
-@media (max-width: 575.98px) {
-  .task-table {
-    min-width: 620px;
-  }
-  .task-desc-drawer {
-    width: min(96vw, 420px);
-  }
-  .task-detail-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .task-detail-label {
-    min-width: 0;
-  }
-  .task-detail-value {
-    width: 100%;
-    text-align: left;
-  }
-}
-</style>
 {% endblock %}

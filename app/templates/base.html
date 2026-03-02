@@ -9,8 +9,176 @@
     <link href="{{ url_for('static', filename='file-tree.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='responsive-fixes.css') }}" rel="stylesheet">
     <style>
-      .navbar .dropdown-toggle::after { display: none; }
-      .navbar { padding-top: 0; padding-bottom: 0; min-height: 56px; }
+      :root {
+        --bs-blue-50: #eff6ff;
+        --bs-blue-100: #dbeafe;
+        --bs-blue-600: #2563eb;
+        --bs-emerald-50: #ecfdf5;
+        --bs-emerald-700: #047857;
+        --bs-gray-200: #e2e8f0;
+        --bs-gray-500: #64748b;
+      }
+
+      body {
+        background-color: #f8fafc;
+        color: #334155;
+      }
+
+      /* 防止 Bootstrap 在 Modal 開啟時造成位移 */
+      body.modal-open {
+        padding-right: 0 !important;
+      }
+      .modal {
+        padding-right: 0 !important;
+      }
+
+      .main-card {
+        border: 1px solid var(--bs-gray-200);
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: white;
+        overflow: hidden;
+        margin-bottom: 2rem;
+      }
+
+      /* Tabs Styling */
+      .nav-tabs-custom {
+        border-bottom: 1px solid var(--bs-gray-200);
+        display: flex;
+        gap: 0.5rem;
+        padding: 0 1rem;
+        margin-bottom: 1rem;
+      }
+      .nav-tabs-custom .nav-link {
+        border: none;
+        color: var(--bs-gray-500);
+        font-weight: 500;
+        padding: 0.75rem 1rem;
+        position: relative;
+        background: none;
+        text-decoration: none;
+      }
+      .nav-tabs-custom .nav-link.active {
+        color: var(--bs-blue-600);
+      }
+      .nav-tabs-custom .nav-link.active::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background-color: var(--bs-blue-600);
+      }
+
+      /* Table Standards */
+      table thead th {
+        background-color: #f8fafc;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 700;
+        color: var(--bs-gray-500);
+        padding: 1rem;
+        text-align: center;
+      }
+      table tbody td {
+        font-size: 0.875rem;
+        color: #334155;
+        padding: 1rem;
+        vertical-align: middle;
+        text-align: center;
+      }
+      .row-selected {
+        background-color: rgba(37, 99, 235, 0.03) !important;
+      }
+
+      /* Status Badges */
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.65rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        border: 1px solid transparent;
+      }
+      .status-badge-completed {
+        background-color: var(--bs-emerald-50);
+        color: var(--bs-emerald-700);
+        border-color: #d1fae5;
+      }
+      .status-badge-failed {
+        background-color: #fef2f2;
+        color: #b91c1c;
+        border-color: #fee2e2;
+      }
+      .status-badge-running {
+        background-color: var(--bs-blue-50);
+        color: var(--bs-blue-600);
+        border-color: var(--bs-blue-100);
+      }
+      .status-badge-queued {
+        background-color: #f8fafc;
+        color: var(--bs-gray-500);
+        border-color: var(--bs-gray-200);
+      }
+
+      /* Animations */
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .spin {
+        animation: spin 2s linear infinite;
+        display: inline-block;
+      }
+
+      /* Action Icons */
+      .btn-action-icon {
+        color: #94a3b8;
+        padding: 0.4rem;
+        border-radius: 0.375rem;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        text-decoration: none;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+      }
+      .btn-action-icon:hover {
+        color: var(--bs-blue-600);
+        background-color: var(--bs-blue-50);
+      }
+
+      /* Custom Scrollbar */
+      .custom-scrollbar::-webkit-scrollbar {
+        height: 4px;
+        width: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #e2e8f0;
+        border-radius: 10px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #cbd5e1;
+      }
+
+      .navbar { 
+        padding-top: 0; 
+        padding-bottom: 0; 
+        min-height: 56px; 
+        position: fixed;
+        top: 0;
+        width: 100%;
+        z-index: 1030;
+      }
       .navbar .container-fluid { align-items: stretch; min-width: 0; gap: 0.5rem; }
       .navbar .navbar-brand,
       .navbar .navbar-actions {
@@ -45,10 +213,19 @@
       }
       .row > main {
         min-width: 0;
+        padding-top: 56px; /* Offset for fixed navbar */
       }
       @media (min-width: 768px) {
         .sidebar-width {
-          width: clamp(190px, 16vw, 260px);
+          width: clamp(160px, 12vw, 180px);
+          position: fixed;
+          top: 56px;
+          bottom: 0;
+          overflow-y: auto;
+          z-index: 1025;
+        }
+        main.col-md {
+          margin-left: clamp(160px, 12vw, 180px) !important;
         }
       }
       @media (max-width: 767.98px) {
@@ -75,10 +252,13 @@
       .sidebar-collapsed {
         display: none !important;
       }
+      .sidebar-collapsed + main.col-md {
+        margin-left: 0 !important;
+      }
     </style>
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
+    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
       <div class="container-fluid d-flex justify-content-between">
         <button class="btn btn-link link-dark p-0 me-3" id="sidebarToggle" type="button">
           <i class="bi bi-list fs-4"></i>

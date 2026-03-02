@@ -797,19 +797,65 @@ def flow_results(task_id):
     view = (request.args.get("view") or "single").lower()
     if view not in ("single", "batch"):
         view = "single"
-    
-    page = request.args.get("page", 1, type=int)
+
+    page = max(request.args.get("page", 1, type=int), 1)
     per_page = 10
-    
+
+    q = (request.args.get("q") or "").strip()
+    status = (request.args.get("status") or "").strip().lower()
+    start_date = (request.args.get("start_date") or "").strip()
+    end_date = (request.args.get("end_date") or "").strip()
+
+    def _date_prefix(text: str) -> str:
+        text = (text or "").strip()
+        return text[:10] if len(text) >= 10 else ""
+
+    def _match_date(value: str) -> bool:
+        d = _date_prefix(value)
+        if start_date and (not d or d < start_date):
+            return False
+        if end_date and (not d or d > end_date):
+            return False
+        return True
+
     runs_all = _list_flow_runs(task_id)
     batches_all = _list_batch_statuses(task_id)
-    
+
+    if view == "single":
+        if q:
+            q_lower = q.lower()
+            runs_all = [
+                r
+                for r in runs_all
+                if q_lower in (r.get("flow_name") or "").lower()
+                or q_lower in (r.get("started_at") or "").lower()
+                or q_lower in (r.get("job_id") or "").lower()
+            ]
+        if status:
+            runs_all = [r for r in runs_all if (r.get("status") or "").lower() == status]
+        if start_date or end_date:
+            runs_all = [r for r in runs_all if _match_date(r.get("started_at") or "")]
+    else:
+        if q:
+            q_lower = q.lower()
+            batches_all = [
+                b
+                for b in batches_all
+                if q_lower in (b.get("id") or "").lower()
+                or q_lower in (b.get("created_at") or "").lower()
+            ]
+        if status:
+            batches_all = [b for b in batches_all if (b.get("status") or "").lower() == status]
+        if start_date or end_date:
+            batches_all = [b for b in batches_all if _match_date(b.get("created_at") or "")]
+
     if view == "single":
         total_count = len(runs_all)
-        total_pages = (total_count + per_page - 1) // per_page
+        total_pages = max((total_count + per_page - 1) // per_page, 1)
+        page = min(page, total_pages)
         start = (page - 1) * per_page
         runs = runs_all[start : start + per_page]
-        batches = batches_all # Keep all for background checks if needed, but only slice if viewing
+        batches = []
         pagination = {
             "page": page,
             "per_page": per_page,
@@ -820,10 +866,11 @@ def flow_results(task_id):
         }
     else:
         total_count = len(batches_all)
-        total_pages = (total_count + per_page - 1) // per_page
+        total_pages = max((total_count + per_page - 1) // per_page, 1)
+        page = min(page, total_pages)
         start = (page - 1) * per_page
         batches = batches_all[start : start + per_page]
-        runs = runs_all
+        runs = []
         pagination = {
             "page": page,
             "per_page": per_page,
@@ -841,7 +888,13 @@ def flow_results(task_id):
         runs=runs,
         batches=batches,
         running=running,
-        pagination=pagination
+        pagination=pagination,
+        filters={
+            "q": q,
+            "status": status,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
     )
 
 

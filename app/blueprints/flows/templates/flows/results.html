@@ -100,9 +100,9 @@
         
         <div class="nav nav-tabs-custom border-bottom-0 pb-0" style="padding-left: 0;">
             <a class="nav-link ps-0 {% if view == 'single' %}active{% endif %}" 
-               href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single') }}">單次執行</a>
+               href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) }}">單次執行</a>
             <a class="nav-link {% if view == 'batch' %}active{% endif %}" 
-               href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}">排程執行</a>
+               href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) }}">排程執行</a>
         </div>
     </div>
 
@@ -121,23 +121,23 @@
                     <div id="filterBar" class="filter-bar">
                         <div class="search-wrapper">
                             <i class="bi bi-search"></i>
-                            <input type="text" id="runSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋流程名稱或執行時間...">
+                            <input type="text" id="runSearchInput" value="{{ filters.q }}" class="form-control form-control-custom rounded-2" placeholder="搜尋流程名稱或執行時間...">
                         </div>
                         
                         <div class="d-flex gap-2">
                             <select id="runStatusFilter" class="form-select form-control-custom rounded-2" style="width: 140px;">
-                                <option value="">所有狀態</option>
-                                <option value="完成">完成</option>
-                                <option value="失敗">失敗</option>
-                                <option value="執行中">執行中</option>
-                                <option value="排隊中">排隊中</option>
+                                <option value="" {% if not filters.status %}selected{% endif %}>所有狀態</option>
+                                <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>完成</option>
+                                <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>失敗</option>
+                                <option value="running" {% if filters.status == 'running' %}selected{% endif %}>執行中</option>
+                                <option value="queued" {% if filters.status == 'queued' %}selected{% endif %}>排隊中</option>
                             </select>
                             
                             <div class="input-group" style="width: 320px;">
                                 <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-calendar3"></i></span>
-                                <input type="date" id="runDateStart" class="form-control form-control-custom border-start-0 text-center">
+                                <input type="date" id="runDateStart" value="{{ filters.start_date }}" class="form-control form-control-custom border-start-0 text-center">
                                 <span class="input-group-text bg-white border-start-0 border-end-0 text-muted">~</span>
-                                <input type="date" id="runDateEnd" class="form-control form-control-custom border-start-0 text-center">
+                                <input type="date" id="runDateEnd" value="{{ filters.end_date }}" class="form-control form-control-custom border-start-0 text-center">
                             </div>
                         </div>
                     </div>
@@ -246,17 +246,17 @@
                     <nav>
                         <ul class="pagination pagination-sm mb-0">
                             <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=pagination.page-1) if pagination.has_prev else '#' }}">上一頁</a>
+                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=pagination.page-1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_prev else '#' }}">上一頁</a>
                             </li>
                             {% for p in range(1, pagination.total_pages + 1) %}
                                 {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
                                 <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                                    <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=p) }}">{{ p }}</a>
+                                    <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=p, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) }}">{{ p }}</a>
                                 </li>
                                 {% endif %}
                             {% endfor %}
                             <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=pagination.page+1) if pagination.has_next else '#' }}">下一頁</a>
+                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=pagination.page+1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_next else '#' }}">下一頁</a>
                             </li>
                         </ul>
                     </nav>
@@ -275,21 +275,21 @@
                     <div id="filterBarBatch" class="filter-bar">
                         <div class="search-wrapper">
                             <i class="bi bi-search"></i>
-                            <input type="text" id="batchSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋批次 ID...">
+                            <input type="text" id="batchSearchInput" value="{{ filters.q }}" class="form-control form-control-custom rounded-2" placeholder="搜尋批次 ID...">
                         </div>
                         <div class="d-flex gap-2">
                             <select id="batchStatusFilter" class="form-select form-control-custom rounded-2" style="width: 140px;">
-                                <option value="">所有狀態</option>
-                                <option value="完成">完成</option>
-                                <option value="失敗">失敗</option>
-                                <option value="執行中">執行中</option>
-                                <option value="排隊中">排隊中</option>
+                                <option value="" {% if not filters.status %}selected{% endif %}>所有狀態</option>
+                                <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>完成</option>
+                                <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>失敗</option>
+                                <option value="running" {% if filters.status == 'running' %}selected{% endif %}>執行中</option>
+                                <option value="queued" {% if filters.status == 'queued' %}selected{% endif %}>排隊中</option>
                             </select>
                             <div class="input-group" style="width: 320px;">
                                 <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-calendar3"></i></span>
-                                <input type="date" id="batchDateStart" class="form-control form-control-custom border-start-0 text-center">
+                                <input type="date" id="batchDateStart" value="{{ filters.start_date }}" class="form-control form-control-custom border-start-0 text-center">
                                 <span class="input-group-text bg-white border-start-0 border-end-0 text-muted">~</span>
-                                <input type="date" id="batchDateEnd" class="form-control form-control-custom border-start-0 text-center">
+                                <input type="date" id="batchDateEnd" value="{{ filters.end_date }}" class="form-control form-control-custom border-start-0 text-center">
                             </div>
                         </div>
                     </div>
@@ -370,17 +370,17 @@
                     <nav>
                         <ul class="pagination pagination-sm mb-0">
                             <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=pagination.page-1) if pagination.has_prev else '#' }}">上一頁</a>
+                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=pagination.page-1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_prev else '#' }}">上一頁</a>
                             </li>
                             {% for p in range(1, pagination.total_pages + 1) %}
                                 {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
                                 <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                                    <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=p) }}">{{ p }}</a>
+                                    <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=p, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) }}">{{ p }}</a>
                                 </li>
                                 {% endif %}
                             {% endfor %}
                             <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=pagination.page+1) if pagination.has_next else '#' }}">下一頁</a>
+                                <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch', page=pagination.page+1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_next else '#' }}">下一頁</a>
                             </li>
                         </ul>
                     </nav>
@@ -505,41 +505,38 @@ document.getElementById('downloadSelectedRunsLogBtn')?.addEventListener('click',
     });
 });
 
-// 篩選功能
 const runSearchInput = document.getElementById('runSearchInput');
 const runStatusFilter = document.getElementById('runStatusFilter');
 const runDateStart = document.getElementById('runDateStart');
 const runDateEnd = document.getElementById('runDateEnd');
+let runFilterTimer = null;
 
-function filterRuns() {
-  const searchTerm = runSearchInput.value.toLowerCase();
-  const statusTerm = runStatusFilter.value;
-  const startDate = runDateStart.value;
-  const endDate = runDateEnd.value;
-  const rows = document.querySelectorAll('#tableBody tr');
-  let visibleCount = 0;
-  
-  rows.forEach(row => {
-    const flowName = row.querySelector('td:nth-child(2)').textContent.trim().toLowerCase();
-    const timeText = row.querySelector('td:nth-child(3)').textContent.trim();
-    const statusText = row.querySelector('td:nth-child(4)').textContent.trim();
-    
-    const matchesSearch = flowName.includes(searchTerm) || timeText.toLowerCase().includes(searchTerm);
-    const matchesStatus = !statusTerm || statusText.includes(statusTerm);
-    
-    const rowDate = timeText.split(' ')[0];
-    const matchesDate = (!startDate || rowDate >= startDate) && (!endDate || rowDate <= endDate);
-    
-    const isVisible = matchesSearch && matchesStatus && matchesDate;
-    row.style.display = isVisible ? '' : 'none';
-    if (isVisible) visibleCount++;
-  });
-  document.getElementById('totalCount').textContent = visibleCount;
+function applyRunServerFilter(){
+  const params = new URLSearchParams();
+  params.set('view', 'single');
+  const q = (runSearchInput?.value || '').trim();
+  const status = runStatusFilter?.value || '';
+  const startDate = runDateStart?.value || '';
+  const endDate = runDateEnd?.value || '';
+  if (q) params.set('q', q);
+  if (status) params.set('status', status);
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  window.location.href = `{{ url_for('flows_bp.flow_results', task_id=task.id) }}?${params.toString()}`;
 }
 
-[runSearchInput, runStatusFilter, runDateStart, runDateEnd].forEach(el => {
-    el?.addEventListener('input', filterRuns);
-    el?.addEventListener('change', filterRuns);
+runSearchInput?.addEventListener('input', () => {
+  if (runFilterTimer) clearTimeout(runFilterTimer);
+  runFilterTimer = setTimeout(applyRunServerFilter, 350);
+});
+runSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    applyRunServerFilter();
+  }
+});
+[runStatusFilter, runDateStart, runDateEnd].forEach(el => {
+  el?.addEventListener('change', applyRunServerFilter);
 });
 {% endif %}
 
@@ -615,41 +612,38 @@ document.getElementById('deleteSelectedBatchesBtn')?.addEventListener('click', (
     });
 });
 
-// 篩選功能 (Batch)
 const batchSearchInput = document.getElementById('batchSearchInput');
 const batchStatusFilter = document.getElementById('batchStatusFilter');
 const batchDateStart = document.getElementById('batchDateStart');
 const batchDateEnd = document.getElementById('batchDateEnd');
+let batchFilterTimer = null;
 
-function filterBatches() {
-  const searchTerm = batchSearchInput.value.toLowerCase();
-  const statusTerm = batchStatusFilter.value;
-  const startDate = batchDateStart.value;
-  const endDate = batchDateEnd.value;
-  const rows = document.querySelectorAll('#tableBodyBatch tr');
-  let visibleCount = 0;
-  
-  rows.forEach(row => {
-    const batchId = row.querySelector('td:nth-child(2)').textContent.trim().toLowerCase();
-    const timeText = row.querySelector('td:nth-child(3)').textContent.trim();
-    const statusText = row.querySelector('td:nth-child(4)').textContent.trim();
-    
-    const matchesSearch = batchId.includes(searchTerm) || timeText.toLowerCase().includes(searchTerm);
-    const matchesStatus = !statusTerm || statusText.includes(statusTerm);
-    
-    const rowDate = timeText.split(' ')[0];
-    const matchesDate = (!startDate || rowDate >= startDate) && (!endDate || rowDate <= endDate);
-    
-    const isVisible = matchesSearch && matchesStatus && matchesDate;
-    row.style.display = isVisible ? '' : 'none';
-    if (isVisible) visibleCount++;
-  });
-  document.getElementById('totalCountBatch').textContent = visibleCount;
+function applyBatchServerFilter(){
+  const params = new URLSearchParams();
+  params.set('view', 'batch');
+  const q = (batchSearchInput?.value || '').trim();
+  const status = batchStatusFilter?.value || '';
+  const startDate = batchDateStart?.value || '';
+  const endDate = batchDateEnd?.value || '';
+  if (q) params.set('q', q);
+  if (status) params.set('status', status);
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  window.location.href = `{{ url_for('flows_bp.flow_results', task_id=task.id) }}?${params.toString()}`;
 }
 
-[batchSearchInput, batchStatusFilter, batchDateStart, batchDateEnd].forEach(el => {
-    el?.addEventListener('input', filterBatches);
-    el?.addEventListener('change', filterBatches);
+batchSearchInput?.addEventListener('input', () => {
+  if (batchFilterTimer) clearTimeout(batchFilterTimer);
+  batchFilterTimer = setTimeout(applyBatchServerFilter, 350);
+});
+batchSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    applyBatchServerFilter();
+  }
+});
+[batchStatusFilter, batchDateStart, batchDateEnd].forEach(el => {
+  el?.addEventListener('change', applyBatchServerFilter);
 });
 {% endif %}
 </script>

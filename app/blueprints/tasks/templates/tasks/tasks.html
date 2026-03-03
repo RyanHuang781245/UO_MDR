@@ -34,6 +34,17 @@
         flex-wrap: wrap;
     }
 
+    .action-bar {
+        background-color: var(--bs-blue-50);
+        border: 1px solid var(--bs-blue-100);
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+        display: none; /* 預設隱藏 */
+        width: 100%;
+        justify-content: space-between;
+        align-items: center;
+    }
+
     /* Form Controls */
     .form-control-custom {
         border: 1px solid #e2e8f0;
@@ -178,9 +189,15 @@
     }
 </style>
 <div class="container-fluid px-0">
-    <div class="mb-4">
-        <h1 class="h3 mb-1 fw-bold">任務管理</h1>
-        <p class="text-muted">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑。</p>
+    <div class="mb-4 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">任務管理</h1>
+            <p class="text-muted mb-0">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑。</p>
+        </div>
+        <a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('flows_bp.global_batch_page') }}">
+            <i class="bi bi-calendar2-week"></i>
+            任務排程
+        </a>
     </div>
 
     <!-- 建立任務表單 -->
@@ -234,13 +251,31 @@
                     <input type="text" id="taskSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋任務名稱或描述...">
                 </div>
             </div>
+
+            <!-- Action Bar (Show when selected) -->
+            <div id="actionBar" class="action-bar">
+                <div class="d-flex align-items-center gap-3">
+                    <button class="btn btn-link p-1 text-primary" id="clearSelectionBtn">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                    <span class="fw-semibold text-primary small" id="selectionText">已選取 0 項任務</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary btn-sm px-3 d-flex align-items-center gap-2 shadow-sm" id="createGlobalBatchBtn">
+                        <i class="bi bi-calendar2-week"></i> 加入排程執行
+                    </button>
+                </div>
+            </div>
         </div>
         
         <div class="table-responsive" style="overflow: visible;">
             <table class="table mb-0 align-middle">
                 <thead style="background-color: #f8fafc;">
                     <tr>
-                        <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="width: 25%; letter-spacing: 0.05em;">任務名稱</th>
+                        <th style="width: 60px;" class="text-center py-3 align-middle">
+                            <input type="checkbox" class="form-check-input" id="masterCheckbox">
+                        </th>
+                        <th class="fw-bold text-uppercase text-muted py-3 text-start" style="width: 25%; letter-spacing: 0.05em;">任務名稱</th>
                         <th class="fw-bold text-uppercase text-muted py-3 text-start" style="letter-spacing: 0.05em;">任務描述</th>
                         <th class="fw-bold text-uppercase text-muted py-3" style="width: 15%; letter-spacing: 0.05em;">建立人員</th>
                         <th class="fw-bold text-uppercase text-muted py-3" style="width: 18%; letter-spacing: 0.05em;">建立時間</th>
@@ -249,8 +284,11 @@
                 </thead>
                 <tbody id="taskTableBody">
                     {% for t in tasks %}
-                    <tr class="task-row">
-                        <td class="text-start ps-4">
+                    <tr class="task-row" data-task-id="{{ t.id }}">
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input task-select" value="{{ t.id }}">
+                        </td>
+                        <td class="text-start">
                             <a class="text-decoration-none fw-bold text-primary" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">
                                 {{ t.name }}
                             </a>
@@ -288,7 +326,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="5" class="text-center py-5 text-muted">
+                        <td colspan="6" class="text-center py-5 text-muted">
                             <i class="bi bi-inbox fs-2 d-block mb-2"></i>
                             目前沒有任務
                         </td>
@@ -885,8 +923,94 @@ function initTaskDescDrawer(){
         if(isVisible) visibleCount++;
       });
       if(totalTaskCount) totalTaskCount.textContent = visibleCount;
+      updateTaskUI();
     });
   }
+
+  // Multi-select Logic
+  const masterCheckbox = document.getElementById('masterCheckbox');
+  const taskCheckboxes = () => Array.from(document.querySelectorAll('.task-select'));
+  const visibleTaskCheckboxes = () => taskCheckboxes().filter(cb => cb.closest('tr').style.display !== 'none');
+  const filterBar = document.getElementById('filterBar');
+  const actionBar = document.getElementById('actionBar');
+  const selectionText = document.getElementById('selectionText');
+  const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+
+  function updateTaskUI() {
+      const selected = taskCheckboxes().filter(cb => cb.checked);
+      const count = selected.length;
+      const visible = visibleTaskCheckboxes();
+      const visibleSelectedCount = visible.filter(cb => cb.checked).length;
+
+      if (count > 0) {
+          if(filterBar) filterBar.style.display = 'none';
+          if(actionBar) actionBar.style.display = 'flex';
+          if(selectionText) selectionText.textContent = `已選取 ${count} 項任務`;
+      } else {
+          if(filterBar) filterBar.style.display = 'flex';
+          if(actionBar) actionBar.style.display = 'none';
+      }
+
+      taskCheckboxes().forEach(cb => {
+          const row = cb.closest('tr');
+          if (cb.checked) row.classList.add('row-selected');
+          else row.classList.remove('row-selected');
+      });
+
+      if (masterCheckbox) {
+          masterCheckbox.disabled = visible.length === 0;
+          if (visible.length === 0 || visibleSelectedCount === 0) {
+              masterCheckbox.checked = false;
+              masterCheckbox.indeterminate = false;
+          } else if (visibleSelectedCount === visible.length) {
+              masterCheckbox.checked = true;
+              masterCheckbox.indeterminate = false;
+          } else {
+              masterCheckbox.checked = false;
+              masterCheckbox.indeterminate = true;
+          }
+      }
+  }
+
+  if (masterCheckbox) {
+      masterCheckbox.addEventListener('change', (e) => {
+          taskCheckboxes().forEach(cb => {
+              if (cb.closest('tr').style.display !== 'none') {
+                  cb.checked = e.target.checked;
+              }
+          });
+          updateTaskUI();
+      });
+  }
+
+  if (taskTableBody) {
+      taskTableBody.addEventListener('change', (e) => {
+          if (e.target.classList.contains('task-select')) {
+              updateTaskUI();
+          }
+      });
+  }
+
+  if (clearSelectionBtn) {
+      clearSelectionBtn.addEventListener('click', () => {
+          taskCheckboxes().forEach(cb => cb.checked = false);
+          updateTaskUI();
+      });
+  }
+
+  // Batch Scheduling Action
+  const createGlobalBatchBtn = document.getElementById('createGlobalBatchBtn');
+  if (createGlobalBatchBtn) {
+      createGlobalBatchBtn.addEventListener('click', () => {
+          const selected = taskCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+          if (!selected.length) return;
+          // Redirect to global batch page with selected task IDs
+          const url = new URL("{{ url_for('flows_bp.global_batch_page') }}", window.location.origin);
+          url.searchParams.set('task_ids', selected.join(','));
+          window.location.href = url.toString();
+      });
+  }
+  updateTaskUI();
 }
 
 if(document.readyState === 'loading'){

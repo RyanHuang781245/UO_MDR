@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .main-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: white;
+        overflow: hidden;
+    }
+
+    /* Batch sorting styles */
+    .batch-col { width: 80px; }
+    .batch-flow-handle {
+        cursor: grab;
+        font-size: 1.1rem;
+        color: #94a3b8;
+        transition: color 0.2s;
+    }
+    .batch-flow-handle:hover { color: var(--bs-blue-600); }
+    .batch-row.dragging-row { opacity: 0.5; background: var(--bs-blue-50); }
+</style>
+
+<div class="container-fluid px-0">
+    <div class="mb-4 d-flex justify-content-between align-items-end">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">任務排程</h1>
+            <p class="text-muted mb-0">管理多個任務的執行順序與批次進度。</p>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1 shadow-sm" href="{{ url_for('tasks_bp.tasks') }}">
+            <i class="bi bi-arrow-left"></i> 返回任務管理
+        </a>
+    </div>
+
+    <form id="global_batch_form" action="{{ url_for('flows_bp.run_global_batch') }}" method="post">
+        <input type="hidden" name="task_ids" id="task_ids_input" value="{{ tasks|map(attribute='id')|join(',') }}">
+        
+        <div class="main-card mb-4">
+            <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+                <div class="fw-bold text-dark">待執行任務清單 (<span id="taskCount">{{ tasks|length }}</span>)</div>
+                <button class="btn btn-primary fw-bold px-4 shadow-sm" type="submit" id="startBatchBtn" {% if not tasks %}disabled{% endif %}>
+                    <i class="bi bi-play-fill"></i> 開始批次執行
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th class="batch-col text-center">排序</th>
+                            <th class="text-start ps-4">任務名稱</th>
+                            <th class="text-start">任務描述</th>
+                            <th class="text-center" style="width: 120px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="batchTaskList">
+                        {% for t in tasks %}
+                        <tr data-task-id="{{ t.id }}" draggable="true" class="batch-row {{ 'table-warning' if t.missing else '' }}">
+                            <td class="text-center">
+                                <span class="batch-flow-handle" title="拖曳排序">
+                                    <i class="bi bi-grip-vertical"></i>
+                                </span>
+                            </td>
+                            <td class="text-start ps-4">
+                                <span class="fw-bold text-primary">{{ t.name }}</span>
+                                {% if t.missing %}
+                                <span class="badge bg-warning text-dark ms-2">任務不存在</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-start text-muted small">{{ t.description or '-' }}</td>
+                            <td class="text-center">
+                                <div class="d-flex justify-content-center gap-1">
+                                    <button type="button" class="btn-action-icon batch-move-up" title="上移">
+                                        <i class="bi bi-arrow-up"></i>
+                                    </button>
+                                    <button type="button" class="btn-action-icon batch-move-down" title="下移">
+                                        <i class="bi bi-arrow-down"></i>
+                                    </button>
+                                    <button type="button" class="btn-action-icon text-danger batch-remove" title="移除">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-5">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                請先在任務管理勾選任務，再加入排程執行。
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if batch_id %}
+        <div class="main-card p-4 bg-light bg-opacity-25 mb-4" id="batchStatusSection">
+            <div class="d-flex align-items-center gap-3 mb-4">
+                <div class="spinner-border text-primary" id="statusSpinner" role="status" style="width: 1.25rem; height: 1.25rem;"></div>
+                <h5 class="fw-bold mb-0">執行進度監測</h5>
+                <span class="status-badge status-badge-queued" id="batchStatusLabel">
+                    <i class="bi bi-clock-history"></i> 佇列中
+                </span>
+            </div>
+            
+            <div id="batchProgressInfo" class="mb-4">
+                <div class="d-flex justify-content-between mb-2 small fw-semibold">
+                    <span id="currentTaskInfo" class="text-primary">正在初始化...</span>
+                    <span id="progressText" class="text-muted font-monospace">0 / 0</span>
+                </div>
+                <div class="progress" style="height: 8px; border-radius: 4px;">
+                    <div id="batchProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="fw-bold mb-2 small text-uppercase text-muted" style="letter-spacing: 0.05em;">執行細節清單</div>
+            <div id="batchResultsList" class="list-group list-group-flush border rounded-3 bg-white overflow-auto" style="max-height: 400px;">
+                <!-- Results will be injected here -->
+            </div>
+        </div>
+        {% endif %}
+    </form>
+
+    <div class="main-card mt-3">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0">歷史執行紀錄</h5>
+            <span class="text-muted small">顯示最近 {{ global_batches|length }} 筆紀錄</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th class="text-start ps-4">批次 ID</th>
+                        <th class="text-center">狀態</th>
+                        <th class="text-center">任務數</th>
+                        <th class="text-center">成功 / 失敗</th>
+                        <th class="text-center">建立時間</th>
+                        <th class="text-center">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in global_batches %}
+                    <tr class="{{ 'row-selected' if batch_id == item.id else '' }}">
+                        <td class="text-start ps-4">
+                            <code class="text-primary fw-bold font-monospace">{{ item.id }}</code>
+                        </td>
+                        <td class="text-center">
+                            {% if item.status == 'completed' %}
+                            <span class="status-badge status-badge-completed">
+                                <i class="bi bi-check-circle-fill"></i> 完成
+                            </span>
+                            {% elif item.status == 'completed_with_errors' %}
+                            <span class="status-badge status-badge-failed" style="background-color: #fffbeb; color: #b45309; border-color: #fde68a;">
+                                <i class="bi bi-exclamation-triangle-fill"></i> 部分失敗
+                            </span>
+                            {% elif item.status == 'failed' %}
+                            <span class="status-badge status-badge-failed">
+                                <i class="bi bi-x-circle-fill"></i> 失敗
+                            </span>
+                            {% elif item.status == 'running' %}
+                            <span class="status-badge status-badge-running">
+                                <i class="bi bi-arrow-repeat spin"></i> 執行中
+                            </span>
+                            {% else %}
+                            <span class="status-badge status-badge-queued">
+                                <i class="bi bi-hourglass-split"></i> 佇列中
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-semibold font-monospace">{{ item.task_count }}</td>
+                        <td class="text-center font-monospace">
+                            <span class="text-success">{{ item.ok_count }}</span> / <span class="text-danger">{{ item.fail_count }}</span>
+                        </td>
+                        <td class="text-center text-muted font-monospace small">{{ item.created_at }}</td>
+                        <td class="text-center">
+                            <a class="btn-action-icon" href="{{ url_for('flows_bp.global_batch_page', batch=item.id) }}">
+                                <i class="bi bi-eye"></i><span class="small fw-semibold ms-1">查看</span>
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-5">目前尚無歷史執行紀錄。</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination Footer -->
+        <div class="px-4 py-3 d-flex justify-content-between align-items-center border-top bg-light bg-opacity-50">
+            <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆紀錄 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('flows_bp.global_batch_page', page=pagination.page-1, batch=batch_id) if pagination.has_prev else '#' }}">上一頁</a>
+                    </li>
+                    {% for p in range(1, pagination.total_pages + 1) %}
+                        {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
+                        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('flows_bp.global_batch_page', page=p, batch=batch_id) }}">{{ p }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('flows_bp.global_batch_page', page=pagination.page+1, batch=batch_id) if pagination.has_next else '#' }}">下一頁</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+<script>
+const batchTaskList = document.getElementById('batchTaskList');
+const taskIdsInput = document.getElementById('task_ids_input');
+const taskCountSpan = document.getElementById('taskCount');
+const startBtn = document.getElementById('startBatchBtn');
+const { escapeHtml } = window.UiUtils;
+
+let taskIds = taskIdsInput.value.split(',').filter(Boolean);
+
+function syncSubmitState() {
+  if (startBtn && !startBtn.dataset.locked) {
+    startBtn.disabled = taskIds.length === 0;
+  }
+}
+
+function updateSequence() {
+  taskIds = Array.from(batchTaskList.querySelectorAll('tr[data-task-id]'))
+    .map(tr => tr.getAttribute('data-task-id'));
+  taskIdsInput.value = taskIds.join(',');
+  taskCountSpan.textContent = taskIds.length;
+  syncSubmitState();
+}
+
+if (batchTaskList) {
+  batchTaskList.addEventListener('click', (e) => {
+    const row = e.target.closest('tr');
+    if (!row) return;
+    if (e.target.closest('.batch-remove')) {
+      row.remove();
+      updateSequence();
+    } else if (e.target.closest('.batch-move-up')) {
+      const prev = row.previousElementSibling;
+      if (prev) {
+        batchTaskList.insertBefore(row, prev);
+        updateSequence();
+      }
+    } else if (e.target.closest('.batch-move-down')) {
+      const next = row.nextElementSibling;
+      if (next) {
+        batchTaskList.insertBefore(next, row);
+        updateSequence();
+      }
+    }
+  });
+
+  // Drag and Drop
+  let draggingRow = null;
+  batchTaskList.addEventListener('dragstart', (e) => {
+    draggingRow = e.target.closest('tr');
+    e.target.classList.add('dragging-row');
+  });
+  batchTaskList.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const row = e.target.closest('tr');
+    if (row && row !== draggingRow) {
+      const rect = row.getBoundingClientRect();
+      const next = (e.clientY - rect.top) > (rect.height / 2);
+      batchTaskList.insertBefore(draggingRow, next ? row.nextSibling : row);
+    }
+  });
+  batchTaskList.addEventListener('dragend', (e) => {
+    e.target.classList.remove('dragging-row');
+    updateSequence();
+  });
+}
+syncSubmitState();
+
+// Status Polling
+{% if batch_id %}
+const batchId = "{{ batch_id }}";
+const statusUrl = "{{ url_for('flows_bp.global_batch_status', batch_id=batch_id) }}";
+const labelEl = document.getElementById('batchStatusLabel');
+const progressText = document.getElementById('progressText');
+const progressBar = document.getElementById('batchProgressBar');
+const currentTaskInfo = document.getElementById('currentTaskInfo');
+const resultsList = document.getElementById('batchResultsList');
+const spinner = document.getElementById('statusSpinner');
+if (startBtn) {
+  startBtn.disabled = true;
+  startBtn.dataset.locked = '1';
+}
+
+async function pollStatus() {
+  try {
+    const resp = await fetch(statusUrl, { cache: 'no-store' });
+    if (!resp.ok) {
+      setTimeout(pollStatus, 3000);
+      return;
+    }
+    const data = await resp.json();
+    if (!data.ok) {
+      setTimeout(pollStatus, 3000);
+      return;
+    }
+
+    const status = data.status;
+    
+    if (status.status === 'completed' || status.status === 'completed_with_errors' || status.status === 'failed') {
+      spinner.classList.add('d-none');
+      progressBar.classList.remove('progress-bar-animated');
+      if(status.status === 'completed') {
+        labelEl.className = 'status-badge status-badge-completed';
+        labelEl.innerHTML = '<i class="bi bi-check-circle-fill"></i> 已完成';
+      } else if (status.status === 'completed_with_errors') {
+        labelEl.className = 'status-badge';
+        labelEl.style.cssText = 'background-color: #fffbeb; color: #b45309; border: 1px solid #fde68a;';
+        labelEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> 部分失敗';
+        progressBar.classList.add('bg-warning');
+      } else {
+        labelEl.className = 'status-badge status-badge-failed';
+        labelEl.innerHTML = '<i class="bi bi-x-circle-fill"></i> 失敗';
+        progressBar.classList.add('bg-danger');
+      }
+    } else if (status.status === 'running') {
+        labelEl.className = 'status-badge status-badge-running';
+        labelEl.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> 執行中';
+    }
+
+    const total = Array.isArray(status.tasks) ? status.tasks.length : 0;
+    const current = Math.min(status.current_index || 0, total);
+    const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+    
+    progressText.textContent = `${current} / ${total}`;
+    progressBar.style.width = `${percent}%`;
+    currentTaskInfo.textContent = status.current_task_name ? `正在執行：${status.current_task_name}` : '準備中...';
+
+    if (status.results && status.results.length) {
+      resultsList.innerHTML = status.results.map(r => `
+        <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+          <div class="text-start ps-2">
+            <div class="fw-bold text-dark">${escapeHtml(r.name)}</div>
+            <div class="small text-muted font-monospace">${escapeHtml(r.task_id)}</div>
+            ${r.ok ? '' : `<div class="text-danger small mt-1 mb-2">${(r.errors || []).map(e => escapeHtml(e)).join('<br>')}</div>`}
+            ${r.task_id ? `<a href="/tasks/${r.task_id}/flows/results" class="btn btn-sm btn-link text-primary p-0 text-decoration-none small">
+              <i class="bi bi-box-arrow-up-right me-1"></i>查看結果
+            </a>` : ''}
+          </div>
+          <span class="status-badge ${r.ok ? 'status-badge-completed' : 'status-badge-failed'}">
+            <i class="bi ${r.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"></i> ${r.ok ? '完成' : '失敗'}
+          </span>
+        </div>
+      `).join('');
+    }
+
+    if (status.status !== 'completed' && status.status !== 'completed_with_errors' && status.status !== 'failed') {
+      setTimeout(pollStatus, 3000);
+    }
+  } catch (e) {
+    console.error("Polling error", e);
+    setTimeout(pollStatus, 3000);
+  }
+}
+pollStatus();
+{% endif %}
+</script>
+{% endblock %}

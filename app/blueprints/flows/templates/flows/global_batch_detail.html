@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .main-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: white;
+        overflow: hidden;
+    }
+</style>
+
+<div class="container-fluid px-0">
+    <div class="mb-4 d-flex justify-content-between align-items-end">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">任務排程詳情</h1>
+            <p class="text-muted mb-0">檢視全域批次排程的執行歷史與具體任務細節。</p>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1 shadow-sm" href="{{ url_for('flows_bp.global_batch_page') }}">
+            <i class="bi bi-arrow-left"></i> 返回任務排程
+        </a>
+    </div>
+
+    <div class="main-card mb-4">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0">歷史執行紀錄</h5>
+            <span class="text-muted small">顯示最近 {{ global_batches|length }} 筆</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th class="text-start ps-4">批次 ID</th>
+                        <th class="text-center">狀態</th>
+                        <th class="text-center">任務數</th>
+                        <th class="text-center">成功 / 失敗</th>
+                        <th class="text-center">建立時間</th>
+                        <th class="text-center">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in global_batches %}
+                    <tr class="{{ 'row-selected' if batch_id == item.id else '' }}">
+                        <td class="text-start ps-4">
+                            <code class="text-primary fw-bold font-monospace">{{ item.id }}</code>
+                        </td>
+                        <td class="text-center">
+                            {% if item.status == 'completed' %}
+                            <span class="status-badge status-badge-completed">
+                                <i class="bi bi-check-circle-fill"></i> 完成
+                            </span>
+                            {% elif item.status == 'completed_with_errors' %}
+                            <span class="status-badge status-badge-failed" style="background-color: #fffbeb; color: #b45309; border-color: #fde68a;">
+                                <i class="bi bi-exclamation-triangle-fill"></i> 部分失敗
+                            </span>
+                            {% elif item.status == 'failed' %}
+                            <span class="status-badge status-badge-failed">
+                                <i class="bi bi-x-circle-fill"></i> 失敗
+                            </span>
+                            {% elif item.status == 'running' %}
+                            <span class="status-badge status-badge-running">
+                                <i class="bi bi-arrow-repeat spin"></i> 執行中
+                            </span>
+                            {% else %}
+                            <span class="status-badge status-badge-queued">
+                                <i class="bi bi-hourglass-split"></i> 佇列中
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-semibold font-monospace">{{ item.task_count }}</td>
+                        <td class="text-center font-monospace">
+                            <span class="text-success">{{ item.ok_count }}</span> / <span class="text-danger">{{ item.fail_count }}</span>
+                        </td>
+                        <td class="text-center text-muted font-monospace small">{{ item.created_at }}</td>
+                        <td class="text-center">
+                            <a class="btn-action-icon" href="{{ url_for('flows_bp.global_batch_detail_page', batch=item.id) }}" title="查看詳情">
+                                <i class="bi bi-eye"></i><span class="small fw-semibold ms-1">查看</span>
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-5">目前尚無歷史執行紀錄。</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination Footer -->
+        <div class="px-4 py-3 d-flex justify-content-between align-items-center border-top bg-light bg-opacity-50">
+            <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆紀錄 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('flows_bp.global_batch_detail_page', page=pagination.page-1, batch=batch_id) if pagination.has_prev else '#' }}">上一頁</a>
+                    </li>
+                    {% for p in range(1, pagination.total_pages + 1) %}
+                        {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
+                        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('flows_bp.global_batch_detail_page', page=p, batch=batch_id) }}">{{ p }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('flows_bp.global_batch_detail_page', page=pagination.page+1, batch=batch_id) if pagination.has_next else '#' }}">下一頁</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+
+    <div class="main-card">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0">批次執行詳情</h5>
+            {% if batch_id %}
+            <span class="status-badge status-badge-running" id="detailBatchId">
+                <i class="bi bi-hash"></i> <span class="font-monospace">{{ batch_id }}</span>
+            </span>
+            {% else %}
+            <span class="text-muted small" id="detailBatchId">請先從上方選取一筆批次以檢視詳情</span>
+            {% endif %}
+        </div>
+        <div id="batchDetailContainer" class="p-0">
+            {% if batch_status and batch_status.results %}
+            <div class="list-group list-group-flush overflow-auto" style="max-height: 600px;">
+                {% for r in batch_status.results %}
+                <div class="list-group-item py-4 px-4 border-bottom">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div class="text-start">
+                            <div class="h6 fw-bold text-dark mb-1">{{ r.name }}</div>
+                            <div class="small text-muted font-monospace">{{ r.task_id }}</div>
+                        </div>
+                        <span class="status-badge {{ 'status-badge-completed' if r.ok else 'status-badge-failed' }}">
+                            <i class="bi {{ 'bi-check-circle-fill' if r.ok else 'bi-x-circle-fill' }}"></i> {{ '完成' if r.ok else '失敗' }}
+                        </span>
+                    </div>
+                    {% if r.errors %}
+                    <div class="alert alert-danger py-2 px-3 small mb-3 border-0 bg-danger bg-opacity-10 text-danger text-start">
+                        <i class="bi bi-exclamation-circle me-1"></i> {{ r.errors|join('；') }}
+                    </div>
+                    {% endif %}
+                    {% if r.flows %}
+                    <div class="table-responsive rounded border">
+                        <table class="table table-sm mb-0" style="table-layout: fixed;">
+                            <colgroup>
+                                <col style="width: 45%;">
+                                <col style="width: 15%;">
+                                <col style="width: 40%;">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th class="ps-3 text-start py-2">流程名稱</th>
+                                    <th class="text-center py-2">狀態</th>
+                                    <th class="text-start py-2">訊息</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for f in r.flows %}
+                                <tr>
+                                    <td class="ps-3 text-start py-2 small fw-bold text-primary">{{ f.flow }}</td>
+                                    <td class="text-center py-2">
+                                        <i class="bi {{ 'bi-check-circle-fill text-success' if f.ok else 'bi-x-circle-fill text-danger' }}"></i>
+                                    </td>
+                                    <td class="small text-start py-2 text-muted">
+                                        {% if f.error %}<span class="text-danger">{{ f.error }}</span>{% else %}執行成功{% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-info-circle fs-3 d-block mb-2"></i>
+                目前沒有可顯示的批次詳情內容。
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+const { escapeHtml } = window.UiUtils;
+const batchId = "{{ batch_id or '' }}";
+const detailBatchId = document.getElementById('detailBatchId');
+const batchDetailContainer = document.getElementById('batchDetailContainer');
+
+function renderBatchDetail(status) {
+  if (!batchDetailContainer) return;
+  const results = Array.isArray(status?.results) ? status.results : [];
+  if (!results.length) {
+    batchDetailContainer.innerHTML = '<div class="text-center py-5 text-muted"><i class="bi bi-info-circle fs-3 d-block mb-2"></i>目前沒有可顯示的批次詳情內容。</div>';
+    return;
+  }
+  
+  batchDetailContainer.innerHTML = `
+    <div class="list-group list-group-flush overflow-auto" style="max-height: 600px;">
+      ${results.map((r) => `
+        <div class="list-group-item py-4 px-4 border-bottom">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <div class="text-start">
+              <div class="h6 fw-bold text-dark mb-1">${escapeHtml(r.name || "")}</div>
+              <div class="small text-muted font-monospace">Task ID: ${escapeHtml(r.task_id || "")}</div>
+            </div>
+            <span class="status-badge ${r.ok ? 'status-badge-completed' : 'status-badge-failed'}">
+              <i class="bi ${r.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"></i> ${r.ok ? '完成' : '失敗'}
+            </span>
+          </div>
+          ${Array.isArray(r.errors) && r.errors.length ? `
+            <div class="alert alert-danger py-2 px-3 small mb-3 border-0 bg-danger bg-opacity-10 text-danger text-start">
+              <i class="bi bi-exclamation-circle me-1"></i> ${r.errors.map((e) => escapeHtml(e)).join('；')}
+            </div>
+          ` : ''}
+          ${Array.isArray(r.flows) && r.flows.length ? `
+          <div class="table-responsive rounded border">
+            <table class="table table-sm mb-0" style="table-layout: fixed;">
+              <colgroup>
+                <col style="width: 40%;">
+                <col style="width: 30%;">
+                <col style="width: 30%;">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="ps-3 text-start py-2">流程名稱</th>
+                  <th class="text-center py-2">狀態</th>
+                  <th class="text-start py-2">訊息</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${r.flows.map((f) => `
+                  <tr>
+                    <td class="ps-3 text-start py-2 small text-primary">${escapeHtml(f.flow || "")}</td>
+                    <td class="text-center py-2">
+                      <i class="bi ${f.ok ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}"></i>
+                    </td>
+                    <td class="small text-start py-2 text-muted">${f.error ? `<span class="text-danger">${escapeHtml(f.error)}</span>` : '執行成功'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          ` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function pollStatus() {
+  if (!batchId) return;
+  try {
+    const resp = await fetch(`/batch/global/${batchId}/status`, { cache: 'no-store' });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.ok) return;
+    const status = data.status || {};
+    renderBatchDetail(status);
+    if (status.status === 'running' || status.status === 'queued') {
+      setTimeout(pollStatus, 3000);
+    }
+  } catch (_err) {
+    setTimeout(pollStatus, 3000);
+  }
+}
+
+if (batchId) {
+  pollStatus();
+}
+</script>
+{% endblock %}

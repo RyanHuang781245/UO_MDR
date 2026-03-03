@@ -1,57 +1,113 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container-fluid py-3">
-    <nav aria-label="breadcrumb" class="mb-2">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item">
-                <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}" class="text-decoration-none">
-                  <i class="bi bi-diagram-3"></i>流程管理
-                </a>
-            </li>
-            <li class="breadcrumb-item">
-                <a href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}" class="text-decoration-none">執行結果</a>
-            </li>
-            <li class="breadcrumb-item">
-                <a href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id, batch=batch_id) }}" class="text-decoration-none">排程執行</a>
-            </li>
-            <li class="breadcrumb-item active" aria-current="page">排程執行結果</li>
-        </ol>
-    </nav>
+<style>
+    :root {
+        --bs-blue-50: #eff6ff;
+        --bs-blue-100: #dbeafe;
+        --bs-blue-600: #2563eb;
+        --bs-emerald-50: #ecfdf5;
+        --bs-emerald-700: #047857;
+        --bs-gray-200: #e2e8f0;
+        --bs-gray-500: #64748b;
+    }
 
-    <!-- 標題區域 -->
-    <div class="d-flex align-items-center justify-content-between mb-4">
+    .main-card {
+        border: 1px solid var(--bs-gray-200);
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: white;
+        overflow: hidden;
+    }
+
+    .table thead th {
+        background-color: #f8fafc;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--bs-gray-500);
+        border-bottom: 1px solid var(--bs-gray-200);
+        padding: 1rem;
+    }
+
+    .table tbody td {
+        font-size: 0.875rem;
+        padding: 1rem;
+        color: #1e293b;
+    }
+
+    .status-badge {
+        padding: 0.35rem 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border: 1px solid transparent;
+        border-radius: 50rem;
+    }
+
+    .btn-action-icon {
+        background: transparent;
+        border: 1px solid #e2e8f0;
+        color: #64748b;
+        padding: 0.4rem 0.75rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        text-decoration: none;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .btn-action-icon:hover {
+        background: #f8fafc;
+        color: var(--bs-blue-600);
+        border-color: var(--bs-blue-100);
+    }
+</style>
+
+<div class="container-fluid px-0">
+    <div class="mb-4 d-flex justify-content-between align-items-end">
         <div>
-            <h1 class="h3 mb-0 fw-bold">排程執行結果</h1>
-            <p class="text-muted small mb-0">檢視當前批次的所有任務執行細節</p>
+            <h1 class="h3 mb-1 fw-bold">排程執行詳情</h1>
+            <p class="text-muted mb-0">批次 ID: <code class="text-purple">{{ batch_id }}</code></p>
         </div>
-        <div>
-            <!-- 保留一個輔助按鈕或重新整理圖標 -->
-            <button class="btn btn-sm btn-link text-secondary text-decoration-none" onclick="window.location.reload();">
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1 shadow-sm" onclick="window.location.reload();">
                 <i class="bi bi-arrow-clockwise"></i> 重新整理
             </button>
+            <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1 shadow-sm" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='batch') }}">
+                <i class="bi bi-arrow-left"></i> 返回執行結果
+            </a>
         </div>
     </div>
 
-    <!-- 狀態警告 -->
-    {% if status.status != "completed" %}
-    <div class="alert alert-warning border-0 shadow-sm d-flex align-items-center" role="alert">
-        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    {% if status.status != "completed" and status.status != "completed_with_errors" %}
+    <div class="alert alert-info border-0 shadow-sm d-flex align-items-center mb-4" role="alert">
+        <div class="spinner-border spinner-border-sm me-3" role="status"></div>
         <div>
-            <strong>批次尚未完成：</strong> 當前狀態為 {{ status.status }}，部分結果可能尚未產出。
+            <strong>執行中：</strong> 目前狀態為 <span class="badge bg-primary">{{ status.status }}</span>，請稍候產出完整結果。
         </div>
     </div>
     {% endif %}
 
-    <!-- 結果表格 -->
-    <div class="card border-0 shadow-sm">
-        <div class="table-responsive border rounded" style="max-height: 650px; overflow-y: auto;">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="bg-light sticky-top">
+    <div class="main-card">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+            <div class="fw-bold text-dark">流程執行清單</div>
+            <div class="text-muted small">共 {{ results|length }} 個流程</div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table mb-0 align-middle">
+                <thead>
                     <tr>
-                        <th class="ps-4" style="border-top: none; background-color: inherit; z-index: 2;">流程名稱</th>
-                        <th class="text-center" style="background-color: inherit; z-index: 2;">狀態</th>
-                        <th class="text-center" style="width:240px; border-top: none; background-color: inherit; z-index: 2;">操作</th>
+                        <th class="ps-4 text-start">流程名稱</th>
+                        <th class="text-center">狀態</th>
+                        <th class="text-center" style="width: 320px;">下載操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -59,45 +115,45 @@
                     <tr>
                         <td class="ps-4">
                             {% if r.flow and r.flow != "未命名流程" %}
-                            <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=r.flow) }}" class="text-decoration-none fw-medium">
+                            <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=r.flow) }}" class="text-decoration-none fw-bold text-primary">
                                 {{ r.flow }}
                             </a>
                             {% else %}
-                            <span class="fw-medium text-dark">{{ r.flow }}</span>
+                            <span class="fw-bold text-dark">{{ r.flow }}</span>
                             {% endif %}
                         </td>
                         {% set is_ok = (r.status == "completed") or (r.ok is defined and r.ok) %}
                         <td class="text-center">
                             {% if is_ok %}
-                            <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-3">
-                                <i class="bi bi-check-circle-fill me-1"></i> 完成
+                            <span class="status-badge bg-emerald-50 border-emerald-200 text-emerald-700" style="background-color: var(--bs-emerald-50); color: var(--bs-emerald-700); border-color: #a7f3d0;">
+                                <i class="bi bi-check-circle-fill"></i> 完成
                             </span>
                             {% else %}
-                            <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-3">
-                                <i class="bi bi-x-circle-fill me-1"></i> 失敗
+                            <span class="status-badge bg-danger bg-opacity-10 border-danger text-danger">
+                                <i class="bi bi-x-circle-fill"></i> 失敗
                             </span>
                             {% endif %}
                         </td>
-                        <td class="text-end pe-5">
-                            {% if is_ok and r.job_id %}
-                            <div class="btn-group btn-group-sm shadow-sm" role="group">
-                                <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}">
-                                    <i class="bi bi-download"></i> 下載結果
+                        <td class="text-center">
+                            <div class="d-flex justify-content-center gap-2">
+                                {% if is_ok and r.job_id %}
+                                <a class="btn-action-icon" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}" title="下載 Word 結果">
+                                    <i class="bi bi-file-earmark-word"></i> Word
                                 </a>
-                                <a class="btn btn-white border" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}">
-                                    <i class="bi bi-file-earmark-text"></i> 下載Log
+                                <a class="btn-action-icon" href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='log') }}" title="下載執行日誌">
+                                    <i class="bi bi-file-earmark-text"></i> 日誌
                                 </a>
+                                {% else %}
+                                <span class="text-muted small fst-italic">{{ r.error or "無內容" }}</span>
+                                {% endif %}
                             </div>
-                            {% else %}
-                            <span class="text-muted small italic">{{ r.error or "無結果內容" }}</span>
-                            {% endif %}
                         </td>
                     </tr>
                     {% else %}
                     <tr>
                         <td colspan="3" class="text-center py-5 text-muted">
                             <i class="bi bi-inbox fs-2 d-block mb-2"></i>
-                            尚無執行結果
+                            目前尚無流程執行結果。
                         </td>
                     </tr>
                     {% endfor %}
@@ -106,5 +162,4 @@
         </div>
     </div>
 </div>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
 {% endblock %}

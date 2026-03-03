@@ -368,59 +368,48 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
         status.update({"status": "running", "current_index": 0})
         _write_batch_status(task_id, batch_id, status)
         results = []
+        failed_count = 0
         for idx, flow_name in enumerate(flow_sequence, start=1):
             status.update({"current_index": idx, "current_flow": flow_name})
             _write_batch_status(task_id, batch_id, status)
             try:
                 job_id = _execute_saved_flow(task_id, flow_name)
+                job_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id, "jobs", job_id)
+                job_meta = _read_job_meta(job_dir)
+                job_status = (job_meta.get("status") or "").lower()
+                job_error = (job_meta.get("error") or "").strip()
+                if job_status == "failed" or _job_has_error(job_dir):
+                    raise RuntimeError(job_error or "Workflow step failed")
                 results.append({"flow": flow_name, "job_id": job_id, "status": "completed"})
                 _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
             except Exception as exc:
                 results.append({"flow": flow_name, "status": "failed", "error": str(exc)})
-                completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                failed_count += 1
                 status.update(
                     {
-                        "status": "failed",
-                        "error": str(exc),
                         "results": results,
-                        "completed_at": completed_at,
+                        "last_error": str(exc),
                     }
                 )
                 _write_batch_status(task_id, batch_id, status)
-                record_audit(
-                    action="flow_batch_failed",
-                    actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
-                    detail={
-                        "task_id": task_id,
-                        "batch_id": batch_id,
-                        "status": "failed",
-                        "error": str(exc),
-                        "results": results,
-                    },
-                    task_id=task_id,
-                )
-                send_batch_notification(
-                    task_id=task_id,
-                    batch_id=batch_id,
-                    status="failed",
-                    results=results,
-                    actor_work_id=actor.get("work_id", ""),
-                    actor_label=actor.get("label", ""),
-                    completed_at=completed_at,
-                    error=str(exc),
-                )
-                return
         completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        status.update({"status": "completed", "results": results, "completed_at": completed_at})
+        has_failed = failed_count > 0
+        final_status = "completed_with_errors" if has_failed else "completed"
+        status.update({"status": final_status, "results": results, "completed_at": completed_at})
+        if has_failed:
+            status["error"] = f"{failed_count} flow(s) failed"
+        else:
+            status.pop("error", None)
         _write_batch_status(task_id, batch_id, status)
         record_audit(
-            action="flow_batch_completed",
+            action="flow_batch_completed_with_errors" if has_failed else "flow_batch_completed",
             actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
             detail={
                 "task_id": task_id,
                 "batch_id": batch_id,
-                "status": "completed",
+                "status": final_status,
                 "count": len(results),
+                "failed_count": failed_count,
                 "results": results,
             },
             task_id=task_id,
@@ -428,11 +417,12 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
         send_batch_notification(
             task_id=task_id,
             batch_id=batch_id,
-            status="completed",
+            status="failed" if has_failed else "completed",
             results=results,
             actor_work_id=actor.get("work_id", ""),
             actor_label=actor.get("label", ""),
             completed_at=completed_at,
+            error=status.get("error") if has_failed else None,
         )
 
 
@@ -753,6 +743,367 @@ def flow_builder(task_id):
         flow_pagination=flow_pagination,
     )
 
+
+# Global Batch Helpers
+def _global_batch_status_path(batch_id: str) -> str:
+    path = os.path.join(current_app.config["TASK_FOLDER"], "global_batches")
+    os.makedirs(path, exist_ok=True)
+    return os.path.join(path, f"{batch_id}.json")
+
+
+def _normalize_global_task_ids(raw_ids: str) -> list[str]:
+    task_ids: list[str] = []
+    seen: set[str] = set()
+    for part in (raw_ids or "").split(","):
+        tid = part.strip()
+        if not tid or tid in seen:
+            continue
+        seen.add(tid)
+        task_ids.append(tid)
+    return task_ids
+
+
+def _write_global_batch_status(batch_id: str, payload: dict) -> None:
+    path = _global_batch_status_path(batch_id)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, path)
+
+
+def _load_global_batch_status(batch_id: str) -> dict | None:
+    path = _global_batch_status_path(batch_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+            return None
+
+
+def _list_global_batch_statuses(limit: int = 100) -> list[dict]:
+    status_dir = os.path.join(current_app.config["TASK_FOLDER"], "global_batches")
+    if not os.path.isdir(status_dir):
+        return []
+    items: list[dict] = []
+    for fn in os.listdir(status_dir):
+        if not fn.endswith(".json"):
+            continue
+        batch_id = os.path.splitext(fn)[0]
+        status = _load_global_batch_status(batch_id) or {}
+        created_at = status.get("created_at")
+        if not created_at:
+            created_at = datetime.fromtimestamp(
+                os.path.getmtime(os.path.join(status_dir, fn))
+            ).strftime("%Y-%m-%d %H:%M:%S")
+        tasks = status.get("tasks") or []
+        results = status.get("results") or []
+        ok_count = sum(1 for item in results if item.get("ok"))
+        fail_count = sum(1 for item in results if not item.get("ok"))
+        items.append(
+            {
+                "id": batch_id,
+                "status": (status.get("status") or "unknown").lower(),
+                "created_at": created_at,
+                "completed_at": status.get("completed_at") or "",
+                "current_task_name": status.get("current_task_name") or "",
+                "task_count": len(tasks),
+                "ok_count": ok_count,
+                "fail_count": fail_count,
+            }
+        )
+    items.sort(key=lambda r: r["created_at"], reverse=True)
+    return items[: max(limit, 0)]
+
+
+def _run_tasks_batch(app, task_ids: list[str], batch_id: str, actor: dict) -> None:
+    with app.app_context():
+        from app.blueprints.tasks.routes import _load_task_context
+
+        status = _load_global_batch_status(batch_id) or {}
+        status.update(
+            {
+                "status": "running",
+                "current_index": 0,
+                "current_task_id": "",
+                "current_task_name": "",
+            }
+        )
+        _write_global_batch_status(batch_id, status)
+
+        results = []
+        any_failed = False
+        terminal_error = ""
+        try:
+            for i, tid in enumerate(task_ids, start=1):
+                task_meta = _load_task_context(tid) or {}
+                task_name = (task_meta.get("name") or tid).strip() or tid
+                status["current_task_id"] = tid
+                status["current_index"] = i
+                status["current_task_name"] = task_name
+                _write_global_batch_status(batch_id, status)
+
+                tdir = os.path.join(current_app.config["TASK_FOLDER"], tid)
+                flow_dir = os.path.join(tdir, "flows")
+                task_ok = True
+                task_errors = []
+                flow_results: list[dict] = []
+                task_batch_id = ""
+
+                if not task_meta:
+                    task_ok = False
+                    task_errors.append("Task not found")
+                elif not os.path.isdir(flow_dir):
+                    task_ok = False
+                    task_errors.append("Flow directory not found")
+                else:
+                    flows_to_run = _load_saved_flows(flow_dir)
+                    if not flows_to_run:
+                        task_ok = False
+                        task_errors.append("No saved flow found")
+                    else:
+                        flow_sequence = [
+                            (f.get("name") or "").strip()
+                            for f in flows_to_run
+                            if (f.get("name") or "").strip()
+                        ]
+                        if not flow_sequence:
+                            task_ok = False
+                            task_errors.append("No runnable flow found")
+                        else:
+                            task_batch_id = str(uuid.uuid4())[:8]
+                            _write_batch_status(
+                                tid,
+                                task_batch_id,
+                                {
+                                    "id": task_batch_id,
+                                    "status": "queued",
+                                    "flows": flow_sequence,
+                                    "current_index": 0,
+                                    "current_flow": "",
+                                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "actor": actor.get("label") or actor.get("work_id", ""),
+                                },
+                            )
+                            _run_flow_batch(app, tid, flow_sequence, task_batch_id, actor)
+                            task_batch_status = _load_batch_status(tid, task_batch_id) or {}
+                            task_ok = (task_batch_status.get("status") or "").lower() == "completed"
+                            batch_results = task_batch_status.get("results") or []
+                            for item in batch_results:
+                                flow_name = (item.get("flow") or "").strip()
+                                flow_ok = (item.get("status") or "").lower() == "completed"
+                                flow_error = (item.get("error") or "").strip()
+                                flow_results.append(
+                                    {
+                                        "flow": flow_name,
+                                        "ok": flow_ok,
+                                        "job_id": item.get("job_id") or "",
+                                        "error": flow_error,
+                                    }
+                                )
+                                if not flow_ok:
+                                    task_errors.append(
+                                        f"{flow_name}: {flow_error or 'Workflow step failed'}"
+                                    )
+
+                results.append({
+                    "task_id": tid,
+                    "name": task_name,
+                    "ok": task_ok,
+                    "errors": task_errors,
+                    "flows": flow_results,
+                    "task_batch_id": task_batch_id,
+                })
+                any_failed = any_failed or (not task_ok)
+                status["results"] = results
+                _write_global_batch_status(batch_id, status)
+
+        except Exception as exc:
+            current_app.logger.exception("Global batch failed")
+            any_failed = True
+            terminal_error = str(exc)
+            status["error"] = terminal_error
+        finally:
+            completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            status["status"] = "failed" if any_failed else "completed"
+            status["completed_at"] = completed_at
+            status["results"] = results
+            _write_global_batch_status(batch_id, status)
+
+            actor_work_id = actor.get("work_id", "")
+            actor_label = actor.get("label", "")
+
+            record_audit(
+                action="global_task_batch_completed" if status["status"] == "completed" else "global_task_batch_failed",
+                actor={"work_id": actor_work_id, "label": actor_label},
+                detail={
+                    "batch_id": batch_id,
+                    "status": status["status"],
+                    "tasks": task_ids,
+                    "count": len(results),
+                    "failed_count": sum(1 for item in results if not item.get("ok")),
+                    "error": terminal_error or status.get("error") or "",
+                },
+                task_id=None,
+            )
+
+@flows_bp.get("/batch/global", endpoint="global_batch_page")
+def global_batch_page():
+    raw_ids = request.args.get("task_ids", "")
+    task_ids = _normalize_global_task_ids(raw_ids)
+    batch_id = request.args.get("batch")
+
+    if not task_ids:
+        if batch_id:
+            status = _load_global_batch_status(batch_id)
+            if status:
+                task_ids = status.get("tasks", [])
+            else:
+                flash("找不到指定的任務排程批次。", "warning")
+                batch_id = None
+
+    tasks = []
+    from app.blueprints.tasks.routes import _load_task_context
+    for tid in task_ids:
+        task_meta = _load_task_context(tid) or {}
+        tasks.append(
+            {
+                "id": tid,
+                "name": (task_meta.get("name") or tid).strip() or tid,
+                "description": task_meta.get("description", ""),
+                "missing": not bool(task_meta),
+            }
+        )
+
+    # Global Batch History Pagination
+    all_history = _list_global_batch_statuses(limit=500)
+    page = request.args.get("page", 1, type=int)
+    per_page = 10
+    total_count = len(all_history)
+    total_pages = (total_count + per_page - 1) // per_page
+    start = (page - 1) * per_page
+    history_slice = all_history[start : start + per_page]
+
+    pagination = {
+        "page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+    }
+
+    return render_template(
+        "flows/global_batch.html",
+        tasks=tasks,
+        batch_id=batch_id,
+        global_batches=history_slice,
+        pagination=pagination,
+    )
+
+
+@flows_bp.get("/batch/global/detail", endpoint="global_batch_detail_page")
+def global_batch_detail_page():
+    batch_id = (request.args.get("batch") or "").strip()
+    all_history = _list_global_batch_statuses(limit=500)
+    
+    # Global Batch History Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 10
+    total_count = len(all_history)
+    total_pages = (total_count + per_page - 1) // per_page
+    start = (page - 1) * per_page
+    history_slice = all_history[start : start + per_page]
+
+    pagination = {
+        "page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+    }
+
+    batch_status = None
+    if batch_id:
+        batch_status = _load_global_batch_status(batch_id)
+        if not batch_status:
+            flash("找不到指定的任務排程批次。", "warning")
+            batch_id = ""
+    if not batch_status and all_history:
+        batch_id = all_history[0]["id"]
+        batch_status = _load_global_batch_status(batch_id)
+
+    return render_template(
+        "flows/global_batch_detail.html",
+        batch_id=batch_id,
+        batch_status=batch_status,
+        global_batches=history_slice,
+        pagination=pagination,
+    )
+
+@flows_bp.post("/batch/global/run", endpoint="run_global_batch")
+def run_global_batch():
+    raw_ids = request.form.get("task_ids", "")
+    task_ids = _normalize_global_task_ids(raw_ids)
+    if not task_ids:
+        flash("無效的任務清單。", "danger")
+        return redirect(url_for("tasks_bp.tasks"))
+
+    from app.blueprints.tasks.routes import _load_task_context
+    valid_task_ids = []
+    invalid_task_ids = []
+    for tid in task_ids:
+        if _load_task_context(tid):
+            valid_task_ids.append(tid)
+        else:
+            invalid_task_ids.append(tid)
+
+    if not valid_task_ids:
+        flash("找不到可執行的任務。", "danger")
+        return redirect(url_for("tasks_bp.tasks"))
+    if invalid_task_ids:
+        flash(f"以下任務不存在，已略過：{', '.join(invalid_task_ids)}", "warning")
+
+    batch_id = str(uuid.uuid4())[:8]
+    work_id, label = _get_actor_info()
+
+    status = {
+        "id": batch_id,
+        "status": "queued",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "tasks": valid_task_ids,
+        "invalid_tasks": invalid_task_ids,
+        "current_index": 0,
+        "current_task_id": "",
+        "current_task_name": "",
+        "actor": {"work_id": work_id, "label": label},
+        "results": [],
+    }
+    _write_global_batch_status(batch_id, status)
+
+    app = current_app._get_current_object()
+    thread = threading.Thread(
+        target=_run_tasks_batch,
+        args=(app, valid_task_ids, batch_id, {"work_id": work_id, "label": label}),
+        daemon=True,
+    )
+    thread.start()
+
+    record_audit(
+        action="global_task_batch_queued",
+        actor={"work_id": work_id, "label": label},
+        detail={"batch_id": batch_id, "tasks": valid_task_ids, "invalid_tasks": invalid_task_ids},
+        task_id=None,
+    )
+
+    return redirect(url_for("flows_bp.global_batch_page", batch=batch_id))
+
+@flows_bp.get("/batch/global/<batch_id>/status", endpoint="global_batch_status")
+def global_batch_status(batch_id):
+    status = _load_global_batch_status(batch_id)
+    if not status:
+        return {"ok": False, "error": "Batch not found"}, 404
+    return {"ok": True, "status": status}
 
 @flows_bp.get("/tasks/<task_id>/flows/batch", endpoint="flow_batch_page")
 def flow_batch_page(task_id):

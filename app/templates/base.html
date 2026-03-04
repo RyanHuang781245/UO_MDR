@@ -343,13 +343,9 @@
                     <i class="bi bi-list-task me-2"></i>
                     任務管理
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flows_bp.global_batch_page' else '' }}" href="{{ url_for('flows_bp.global_batch_page', task_ids=task.id) if task is defined and task and task.id else url_for('flows_bp.global_batch_page') }}">
+                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flows_bp.global_batch_page' else '' }}" href="{{ url_for('flows_bp.global_batch_page') }}">
                     <i class="bi bi-calendar2-week me-2"></i>
-                    任務排程
-                  </a>
-                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flows_bp.global_batch_detail_page' else '' }}" href="{{ url_for('flows_bp.global_batch_detail_page') }}">
-                    <i class="bi bi-card-list me-2"></i>
-                    批次詳情
+                    批次執行
                   </a>
                   {% if task and task.id %}
                   <a class="nav-link link-dark {{ 'active' if request.path == url_for('tasks_bp.task_detail', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
@@ -360,15 +356,15 @@
                     <i class="bi bi-diagram-3-fill me-2"></i>
                     Mapping
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if '/flows' in request.path and '/results' not in request.path and '/batch' not in request.path else '' }}" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
+                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flows_bp.flow_builder' and '/batch' not in request.path else '' }}" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
                     <i class="bi bi-diagram-3 me-2"></i>
                     流程管理
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if '/results' in request.path else '' }}" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
+                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flows_bp.flow_results' else '' }}" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
                     <i class="bi bi-clipboard-check me-2"></i>
                     執行結果
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if '/copy_files' in request.path else '' }}" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
+                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'tasks_bp.task_copy_files' else '' }}" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
                     <i class="bi bi-folder-symlink me-2"></i>
                     複製檔案
                   </a>

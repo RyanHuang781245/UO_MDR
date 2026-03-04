@@ -953,6 +953,7 @@ def global_batch_page():
     raw_ids = request.args.get("task_ids", "")
     task_ids = _normalize_global_task_ids(raw_ids)
     batch_id = request.args.get("batch")
+    batch_status = _load_global_batch_status(batch_id) if batch_id else None
 
     if not task_ids:
         if batch_id:
@@ -997,6 +998,7 @@ def global_batch_page():
         "flows/global_batch.html",
         tasks=tasks,
         batch_id=batch_id,
+        batch_status=batch_status,
         global_batches=history_slice,
         pagination=pagination,
     )
@@ -1005,6 +1007,11 @@ def global_batch_page():
 @flows_bp.get("/batch/global/detail", endpoint="global_batch_detail_page")
 def global_batch_detail_page():
     batch_id = (request.args.get("batch") or "").strip()
+    page = request.args.get("page", 1, type=int)
+    if batch_id:
+        return redirect(url_for("flows_bp.global_batch_page", batch=batch_id, page=page))
+    return redirect(url_for("flows_bp.global_batch_page", page=page))
+
     all_history = _list_global_batch_statuses(limit=500)
     
     # Global Batch History Pagination
@@ -1104,6 +1111,63 @@ def global_batch_status(batch_id):
     if not status:
         return {"ok": False, "error": "Batch not found"}, 404
     return {"ok": True, "status": status}
+
+
+@flows_bp.post("/batch/global/<batch_id>/download", endpoint="download_global_batch")
+def download_global_batch(batch_id):
+    status = _load_global_batch_status(batch_id)
+    if not status:
+        flash("Batch not found", "warning")
+        return redirect(url_for("flows_bp.global_batch_page"))
+
+    kind = (request.form.get("kind") or "docx").strip().lower()
+    if kind not in {"docx", "log"}:
+        kind = "docx"
+    filename = "result.docx" if kind == "docx" else "log.json"
+
+    status_dir = os.path.dirname(_global_batch_status_path(batch_id))
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    zip_name = f"global_batch_{batch_id}_{kind}_{stamp}.zip"
+    zip_path = os.path.join(status_dir, zip_name)
+
+    import zipfile
+
+    added = 0
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for task_result in status.get("results") or []:
+                task_id = (task_result.get("task_id") or "").strip()
+                if not task_id:
+                    continue
+                task_name = (task_result.get("name") or task_id).strip() or task_id
+                task_slug = re.sub(r"[^\w\-]+", "_", task_name).strip("_") or task_id
+                for flow in task_result.get("flows") or []:
+                    if not flow.get("ok"):
+                        continue
+                    job_id = (flow.get("job_id") or "").strip()
+                    flow_name = (flow.get("flow") or "flow").strip() or "flow"
+                    flow_slug = re.sub(r"[^\w\-]+", "_", flow_name).strip("_") or "flow"
+                    if not job_id:
+                        continue
+                    job_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id, "jobs", job_id)
+                    src = os.path.join(job_dir, filename)
+                    if not os.path.exists(src):
+                        continue
+                    arcname = os.path.join(task_slug, flow_slug, job_id, filename)
+                    zf.write(src, arcname=arcname)
+                    added += 1
+        if added == 0:
+            flash("No downloadable files found in this batch", "warning")
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            return redirect(url_for("flows_bp.global_batch_page", batch=batch_id))
+        return send_file(zip_path, as_attachment=True, download_name=zip_name)
+    except Exception:
+        current_app.logger.exception("Failed to build global batch download zip")
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        flash("Failed to prepare batch download", "danger")
+        return redirect(url_for("flows_bp.global_batch_page", batch=batch_id))
 
 @flows_bp.get("/tasks/<task_id>/flows/batch", endpoint="flow_batch_page")
 def flow_batch_page(task_id):

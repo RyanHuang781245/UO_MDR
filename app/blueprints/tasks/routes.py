@@ -648,6 +648,7 @@ def copy_task(task_id):
     new_meta = {
         "name": new_name,
         "description": meta.get("description", ""),
+        "nas_path": meta.get("nas_path", ""),
         "created": created_at.strftime("%Y-%m-%d %H:%M"),
         "last_edited": created_at.strftime("%Y-%m-%d %H:%M"),
     }
@@ -667,6 +668,17 @@ def copy_task(task_id):
         creator=creator or None,
         nas_path=new_meta.get("nas_path") or None,
         created_at=created_at,
+    )
+    record_audit(
+        action="task_copy",
+        actor={"work_id": work_id, "label": creator},
+        detail={
+            "task_id": new_id,
+            "task_name": new_name,
+            "nas_path": new_meta.get("nas_path"),
+            "source_task_id": task_id
+        },
+        task_id=new_id,
     )
     flash("已複製任務", "success")
     return redirect(url_for("tasks_bp.tasks"))
@@ -815,20 +827,39 @@ def task_nas_diff(task_id):
                 empties.add(rel.replace("\\", "/") + "/")
             return empties
 
-        task_files = {p.replace("\\", "/") for p in list_files(files_dir)}
-        nas_files = {p.replace("\\", "/") for p in list_files(nas_path)}
-        task_entries = task_files | _list_empty_dirs(files_dir)
-        nas_entries = nas_files | _list_empty_dirs(nas_path)
+        task_files_map = {p.replace("\\", "/"): os.path.join(files_dir, p) for p in list_files(files_dir)}
+        nas_files_map = {p.replace("\\", "/"): os.path.join(nas_path, p) for p in list_files(nas_path)}
+        task_entries = set(task_files_map.keys()) | _list_empty_dirs(files_dir)
+        nas_entries = set(nas_files_map.keys()) | _list_empty_dirs(nas_path)
+
         added = sorted(nas_entries - task_entries)
         removed = sorted(task_entries - nas_entries)
-        if not added and not removed:
+        updated = []
+
+        # Check for modified files among common files
+        common_files = set(task_files_map.keys()) & set(nas_files_map.keys())
+        for rel in common_files:
+            try:
+                t_stat = os.stat(task_files_map[rel])
+                n_stat = os.stat(nas_files_map[rel])
+                # 同步邏輯使用：size 不同或 NAS 檔案較新
+                if n_stat.st_size != t_stat.st_size or int(n_stat.st_mtime) > int(t_stat.st_mtime):
+                    updated.append(rel)
+            except Exception:
+                continue
+        updated.sort()
+
+        if not added and not removed and not updated:
             return jsonify({"ok": True, "diff": None, "message": "未偵測到變更"}), 200
+
         limit = 5
         diff = {
             "added": added[:limit],
             "removed": removed[:limit],
+            "updated": updated[:limit],
             "added_count": len(added),
             "removed_count": len(removed),
+            "updated_count": len(updated),
             "limit": limit,
         }
         return jsonify({"ok": True, "diff": diff}), 200

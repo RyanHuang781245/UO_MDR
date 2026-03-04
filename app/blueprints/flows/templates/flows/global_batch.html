@@ -78,6 +78,18 @@
     border-radius: 0.5rem;
     padding: 0.75rem;
   }
+
+  .flow-detail-table {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .flow-detail-table th,
+  .flow-detail-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>
 
 <div class="container-fluid px-0">
@@ -461,7 +473,13 @@ function renderBatchResults(status) {
           ${errors.length ? `<div class="small text-danger mb-2">${errors.map((e) => escapeHtml(e)).join("<br>")}</div>` : ""}
           ${flows.length
             ? `<div class="table-responsive border rounded">
-                <table class="table table-sm mb-0">
+                <table class="table table-sm mb-0 flow-detail-table">
+                  <colgroup>
+                    <col style="width: 40%">
+                    <col style="width: 12%">
+                    <col style="width: 30%">
+                    <col style="width: 18%">
+                  </colgroup>
                   <thead>
                     <tr>
                       <th class="text-start">流程</th>

@@ -284,10 +284,19 @@
         <button class="btn btn-link link-dark p-0 me-3" id="sidebarToggle" type="button">
           <i class="bi bi-list fs-4"></i>
         </button>
-        <a class="navbar-brand fw-bold me-auto d-flex align-items-center" href="{{ url_for('tasks_bp.tasks') }}">
-          <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="me-2" style="height:30px;">
-          法規文件轉換平台
-        </a>
+        <div class="d-flex align-items-center me-auto overflow-hidden">
+          <a class="navbar-brand fw-bold d-flex align-items-center me-2" href="{{ url_for('tasks_bp.tasks') }}">
+            <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="me-2" style="height:30px;">
+            <span class="d-none d-sm-inline">法規文件轉換平台</span>
+          </a>
+          {% if task and task.name %}
+          <div class="d-flex align-items-center text-muted gap-2 overflow-hidden" style="font-size: 0.975rem;">
+            <i class="bi bi-chevron-right small"></i>
+              {{ task.name }}
+            </span>
+          </div>
+          {% endif %}
+        </div>
         <div class="navbar-actions d-flex align-items-center gap-2">
           {% if not auth_enabled %}
             <span class="text-muted small">Auth disabled</span>

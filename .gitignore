@@ -9,3 +9,5 @@ test.py
 uv.lock
 .vscode/
 .env
+AGENTS.md
+GEMINI.md

@@ -126,11 +126,10 @@
   </div>
 
   <div class="main-card">
-    <ul class="nav nav-tabs nav-tabs-custom">
-      <li class="nav-item">
-        <a class="nav-link active" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single') }}">單次執行</a>
-      </li>
-    </ul>
+      <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+        <h5 class="fw-bold mb-0">單次執行</h5>
+        <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆流程（第 {{ pagination.page }} / {{ pagination.total_pages }} 頁）</div>
+      </div>
 
     {% if not runs %}
     <div class="p-5 text-center text-muted">
@@ -228,8 +227,8 @@
     </div>
     {% endif %}
 
-    <div class="px-4 py-3 d-flex justify-content-between align-items-center border-top bg-light bg-opacity-50">
-      <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆（第 {{ pagination.page }} / {{ pagination.total_pages }} 頁）</div>
+    <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+      <!-- <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆流程（第 {{ pagination.page }} / {{ pagination.total_pages }} 頁）</div> -->
       <nav>
         <ul class="pagination pagination-sm mb-0">
           <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">

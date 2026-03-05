@@ -51,6 +51,11 @@
         font-size: 0.875rem;
         padding: 0.5rem 0.75rem;
     }
+    textarea.form-control-custom {
+        resize: vertical;
+        min-height: 60px;
+        max-height: 250px;
+    }
     .search-wrapper {
         position: relative;
         flex: 1;
@@ -192,7 +197,7 @@
     <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
         <div>
             <h1 class="h3 mb-1 fw-bold">任務管理</h1>
-            <p class="text-muted mb-0 small">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑。</p>
+            <p class="text-muted mb-0 small">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑</p>
         </div>
         <a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('flows_bp.global_batch_page') }}">
             <i class="bi bi-calendar2-week"></i>
@@ -218,7 +223,10 @@
                     <input type="hidden" name="nas_root_index" id="nasRootIndexInput" value="">
                 </div>
                 <div class="col-md-2 d-grid align-items-end">
-                    <button class="btn btn-primary fw-bold" type="submit">建立任務</button>
+                    <button class="btn btn-primary fw-bold" type="submit">
+                        <i class="bi bi-plus-lg me-1"></i>
+                        建立任務
+                    </button>
                 </div>
                 <div class="col-md-12">
                     <label class="form-label small fw-bold text-uppercase text-muted">任務描述 (選填)</label>

@@ -188,7 +188,13 @@ def _resolve_runtime_step_params(files_dir: str, schema: dict, raw_params: dict)
     return params
 
 
-def _execute_saved_flow(task_id: str, flow_name: str) -> str:
+def _execute_saved_flow(
+    task_id: str,
+    flow_name: str,
+    source: str = "manual",
+    global_batch_id: str = "",
+    task_batch_id: str = "",
+) -> str:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     files_dir = os.path.join(tdir, "files")
     if not os.path.isdir(files_dir):
@@ -243,6 +249,9 @@ def _execute_saved_flow(task_id: str, flow_name: str) -> str:
         {
             "flow_name": flow_name,
             "mode": "batch",
+            "source": source,
+            "global_batch_id": global_batch_id,
+            "task_batch_id": task_batch_id,
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         },
     )
@@ -360,7 +369,15 @@ def _run_single_job(
             )
 
 
-def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, actor: dict) -> None:
+def _run_flow_batch(
+    app,
+    task_id: str,
+    flow_sequence: list[str],
+    batch_id: str,
+    actor: dict,
+    source: str = "batch",
+    global_batch_id: str = "",
+) -> None:
     with app.app_context():
         status = _load_batch_status(task_id, batch_id) or {}
         status.update({"status": "running", "current_index": 0})
@@ -372,7 +389,13 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
             _write_batch_status(task_id, batch_id, status)
             job_id = ""
             try:
-                job_id = _execute_saved_flow(task_id, flow_name)
+                job_id = _execute_saved_flow(
+                    task_id,
+                    flow_name,
+                    source=source,
+                    global_batch_id=global_batch_id,
+                    task_batch_id=batch_id,
+                )
                 job_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id, "jobs", job_id)
                 job_meta = _read_job_meta(job_dir)
                 job_status = (job_meta.get("status") or "").lower()
@@ -474,6 +497,9 @@ def _list_flow_runs(task_id: str) -> list[dict]:
         meta = _read_job_meta(job_dir)
         if meta.get("mode") == "batch":
             continue
+        source = (meta.get("source") or "manual").strip().lower()
+        if source not in {"manual", "global_batch"}:
+            source = "manual"
         flow_name = (meta.get("flow_name") or "").strip() or "未命名流程"
         started_at = meta.get("started_at")
         if not started_at:
@@ -500,6 +526,7 @@ def _list_flow_runs(task_id: str) -> list[dict]:
                 "flow_name": flow_name,
                 "started_at": started_at,
                 "status": status,
+                "source": source,
                 "has_result": completed,
                 "has_log": os.path.exists(log_path),
                 "error": meta.get("error") or "",
@@ -875,7 +902,15 @@ def _run_tasks_batch(app, task_ids: list[str], batch_id: str, actor: dict) -> No
                                     "actor": actor.get("label") or actor.get("work_id", ""),
                                 },
                             )
-                            _run_flow_batch(app, tid, flow_sequence, task_batch_id, actor)
+                            _run_flow_batch(
+                                app,
+                                tid,
+                                flow_sequence,
+                                task_batch_id,
+                                actor,
+                                source="global_batch",
+                                global_batch_id=batch_id,
+                            )
                             task_batch_status = _load_batch_status(tid, task_batch_id) or {}
                             task_ok = (task_batch_status.get("status") or "").lower() == "completed"
                             batch_results = task_batch_status.get("results") or []
@@ -1523,6 +1558,7 @@ def execute_flow(task_id, flow_name):
         {
             "flow_name": flow_name,
             "mode": "single",
+            "source": "manual",
             "status": "queued",
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         },

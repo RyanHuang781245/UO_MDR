@@ -793,9 +793,46 @@ def _load_global_batch_status(batch_id: str) -> dict | None:
         return None
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            status = json.load(f)
+        if isinstance(status, dict):
+            return _enrich_global_batch_status(status)
+        return None
     except Exception:
             return None
+
+
+def _build_job_relpaths(task_id: str, job_id: str) -> dict:
+    base = os.path.join(task_id, "jobs", job_id).replace("\\", "/")
+    return {
+        "job_relpath": base,
+        "result_relpath": f"{base}/result.docx",
+        "log_relpath": f"{base}/log.json",
+    }
+
+
+def _enrich_global_batch_status(status: dict) -> dict:
+    results = status.get("results")
+    if not isinstance(results, list):
+        return status
+
+    for task_result in results:
+        if not isinstance(task_result, dict):
+            continue
+        task_id = (task_result.get("task_id") or "").strip()
+        flows = task_result.get("flows")
+        if not isinstance(flows, list):
+            continue
+        for flow in flows:
+            if not isinstance(flow, dict):
+                continue
+            job_id = (flow.get("job_id") or "").strip()
+            if not task_id or not job_id:
+                continue
+            paths = _build_job_relpaths(task_id, job_id)
+            flow.setdefault("job_relpath", paths["job_relpath"])
+            flow.setdefault("result_relpath", paths["result_relpath"])
+            flow.setdefault("log_relpath", paths["log_relpath"])
+    return status
 
 
 def _list_global_batch_statuses(limit: int = 100) -> list[dict]:
@@ -918,12 +955,17 @@ def _run_tasks_batch(app, task_ids: list[str], batch_id: str, actor: dict) -> No
                                 flow_name = (item.get("flow") or "").strip()
                                 flow_ok = (item.get("status") or "").lower() == "completed"
                                 flow_error = (item.get("error") or "").strip()
+                                flow_job_id = (item.get("job_id") or "").strip()
+                                path_info = _build_job_relpaths(tid, flow_job_id) if flow_job_id else {}
                                 flow_results.append(
                                     {
                                         "flow": flow_name,
                                         "ok": flow_ok,
-                                        "job_id": item.get("job_id") or "",
+                                        "job_id": flow_job_id,
                                         "error": flow_error,
+                                        "job_relpath": path_info.get("job_relpath", ""),
+                                        "result_relpath": path_info.get("result_relpath", ""),
+                                        "log_relpath": path_info.get("log_relpath", ""),
                                     }
                                 )
                                 if not flow_ok:
@@ -1027,50 +1069,6 @@ def global_batch_page():
         pagination=pagination,
     )
 
-
-@flows_bp.get("/batch/global/detail", endpoint="global_batch_detail_page")
-def global_batch_detail_page():
-    batch_id = (request.args.get("batch") or "").strip()
-    page = request.args.get("page", 1, type=int)
-    if batch_id:
-        return redirect(url_for("flows_bp.global_batch_page", batch=batch_id, page=page))
-    return redirect(url_for("flows_bp.global_batch_page", page=page))
-
-    all_history = _list_global_batch_statuses(limit=500)
-    
-    # Global Batch History Pagination
-    page = request.args.get("page", 1, type=int)
-    per_page = 10
-    total_count = len(all_history)
-    total_pages = (total_count + per_page - 1) // per_page
-    start = (page - 1) * per_page
-    history_slice = all_history[start : start + per_page]
-
-    pagination = {
-        "page": page,
-        "total_pages": total_pages,
-        "total_count": total_count,
-        "has_prev": page > 1,
-        "has_next": page < total_pages,
-    }
-
-    batch_status = None
-    if batch_id:
-        batch_status = _load_global_batch_status(batch_id)
-        if not batch_status:
-            flash("找不到指定的任務排程批次。", "warning")
-            batch_id = ""
-    if not batch_status and all_history:
-        batch_id = all_history[0]["id"]
-        batch_status = _load_global_batch_status(batch_id)
-
-    return render_template(
-        "flows/global_batch_detail.html",
-        batch_id=batch_id,
-        batch_status=batch_status,
-        global_batches=history_slice,
-        pagination=pagination,
-    )
 
 @flows_bp.post("/batch/global/run", endpoint="run_global_batch")
 def run_global_batch():

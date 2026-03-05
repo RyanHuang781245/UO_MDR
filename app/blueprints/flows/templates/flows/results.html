@@ -212,7 +212,7 @@
             <td>
               <div class="d-flex justify-content-center gap-1">
                 {% if r.has_result %}
-                <a href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}" class="btn-action-icon" title="查看"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">查看</span></a>
+                <a href="{{ url_for('tasks_bp.task_result', task_id=task.id, job_id=r.job_id) }}" class="btn-action-icon" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></a>
                 <a href="{{ url_for('tasks_bp.task_download', task_id=task.id, job_id=r.job_id, kind='docx') }}" class="btn-action-icon" title="下載"><i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載</span></a>
                 {% endif %}
                 {% if r.has_log %}

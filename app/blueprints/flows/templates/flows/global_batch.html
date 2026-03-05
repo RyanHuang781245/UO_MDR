@@ -73,7 +73,7 @@
 </style>
 
 <div class="container-fluid px-0">
-  <div class="mb-4 d-flex justify-content-between align-items-center">
+  <div class="mb-1 d-flex justify-content-between align-items-center">
     <div>
       <h1 class="h3 mb-1 fw-bold">排程中心</h1>
       <p class="text-muted mb-0 small"></i>批次執行多個任務流程，並即時監控進度</p>
@@ -97,8 +97,47 @@
   <div class="tab-content">
     <!-- 頁籤一：當前排程與執行狀態 -->
     <div class="tab-pane fade show active" id="queue-pane">
-      <div class="row g-4">
-        <!-- 左側：待執行清單 -->
+      <!-- 頂部：即時進度 (全寬) - 僅在執行中或查看詳情時顯示 -->
+      <div class="mb-4" id="batchStatusContainer" {% if not batch_id %}style="display:none"{% endif %}>
+        <div class="main-card">
+          <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center bg-light bg-opacity-25">
+            <span class="fw-bold"><i class="bi bi-activity me-2 text-primary"></i>執行狀態</span>
+            <div class="d-flex align-items-center gap-2">
+              <span class="status-badge" id="batchStatusLabel">
+                {% if batch_id %}
+                  <i class="bi bi-arrow-repeat spin"></i> 讀取中...
+                {% else %}
+                  <i class="bi bi-dash-circle"></i> 尚未執行
+                {% endif %}
+              </span>
+              {% if batch_id %}
+              <code class="text-primary small fw-bold font-monospace bg-blue-50 px-2 py-1 rounded">#{{ batch_id }}</code>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="p-4">
+            <!-- 進度條區塊 -->
+            <div class="status-progress-card" id="batchProgressWrap">
+              <div class="d-flex justify-content-between align-items-end mb-2">
+                <div>
+                  <div class="small text-muted fw-bold text-uppercase mb-1">正在處理</div>
+                  <div id="currentTaskInfo" class="fw-bold text-dark">準備中...</div>
+                </div>
+                <div class="text-end">
+                  <span id="progressText" class="h4 mb-0 font-monospace text-primary fw-bold">0 / 0</span>
+                </div>
+              </div>
+              <div class="progress" style="height: 12px; background-color: rgba(37, 99, 235, 0.1);">
+                <div id="batchProgressBar" class="progress-bar progress-bar-striped progress-bar-animated shadow-sm" role="progressbar" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4 align-items-start">
+        <!-- 下方左側：待執行清單 -->
         <div class="col-lg-5">
           <form id="globalBatchForm" action="{{ url_for('flows_bp.run_global_batch') }}" method="post">
             <input type="hidden" name="task_ids" id="taskIdsInput" value="{{ tasks|map(attribute='id')|join(',') }}">
@@ -106,10 +145,10 @@
               <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center bg-light bg-opacity-25">
                 <span class="fw-bold"><i class="bi bi-collection me-2 text-primary"></i>待執行任務 (<span id="taskCount">{{ tasks|length }}</span>)</span>
                 <button class="btn btn-primary btn-sm fw-bold px-3 shadow-sm" type="submit" id="startBatchBtn" {% if not tasks or batch_id %}disabled{% endif %}>
-                  <i class="bi bi-play-fill"></i> 開始執行
+                  <i class="bi bi-play-fill"></i> 執行排程
                 </button>
               </div>
-              <div class="table-responsive" style="max-height: 600px;">
+              <div class="table-responsive overflow-auto" style="max-height: 600px;">
                 <table class="table mb-0 align-middle" style="table-layout: fixed;">
                   <thead class="table-light">
                     <tr>
@@ -148,60 +187,30 @@
           </form>
         </div>
 
-        <!-- 右側：執行明細與即時進度 -->
+        <!-- 下方右側：執行結果明細 -->
         <div class="col-lg-7">
-          <div class="main-card h-100 d-flex flex-column">
-            <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center bg-light bg-opacity-25">
-              <span class="fw-bold"><i class="bi bi-activity me-2 text-primary"></i>執行狀態</span>
-              <div class="d-flex align-items-center gap-2">
-                <span class="status-badge" id="batchStatusLabel">
-                  {% if batch_id %}
-                    <i class="bi bi-arrow-repeat spin"></i> 讀取中...
-                  {% else %}
-                    <i class="bi bi-dash-circle"></i> 尚未執行
-                  {% endif %}
-                </span>
-                {% if batch_id %}
-                <code class="text-primary small fw-bold font-monospace bg-blue-50 px-2 py-1 rounded">#{{ batch_id }}</code>
+          <div class="main-card d-flex flex-column">
+            <div class="px-4 py-3 border-bottom bg-light bg-opacity-25 d-flex justify-content-between align-items-center">
+              <span class="fw-bold"><i class="bi bi-list-check me-2 text-primary"></i>執行結果明細</span>
+              <div id="batchResultsSummary" class="small text-muted">
+                {% if batch_status and batch_status.results %}
+                  成功 {{ batch_status.results|selectattr('ok')|list|length }} / 失敗 {{ batch_status.results|rejectattr('ok')|list|length }}
                 {% endif %}
               </div>
             </div>
-
-            <div class="p-4 flex-grow-1">
-              <!-- 進度條區塊 -->
-              <div class="status-progress-card mb-4" id="batchProgressWrap" {% if not batch_id %}style="display:none"{% endif %}>
-                <div class="d-flex justify-content-between align-items-end mb-2">
-                  <div>
-                    <div class="small text-muted fw-bold text-uppercase mb-1">正在處理</div>
-                    <div id="currentTaskInfo" class="fw-bold text-dark">準備中...</div>
-                  </div>
-                  <div class="text-end">
-                    <span id="progressText" class="h4 mb-0 font-monospace text-primary fw-bold">0 / 0</span>
-                  </div>
-                </div>
-                <div class="progress" style="height: 10px; background-color: rgba(37, 99, 235, 0.1);">
-                  <div id="batchProgressBar" class="progress-bar progress-bar-striped progress-bar-animated shadow-sm" role="progressbar" style="width: 0%"></div>
-                </div>
-              </div>
-
-              <!-- 結果清單 -->
-              <div class="border rounded-3 bg-white overflow-hidden d-flex flex-column" style="min-height: 400px; max-height: 600px;">
-                <div class="px-3 py-2 bg-light border-bottom small fw-bold text-muted">執行結果明細</div>
-                <div id="batchResultsList" class="flex-grow-1 overflow-auto">
-                  {% if batch_status and batch_status.results %}
-                    <!-- 由 JS 動態渲染或後端初步渲染 -->
+            <div id="batchResultsList" class="overflow-auto" style="max-height: 600px;">
+              {% if batch_status and batch_status.results %}
+                <!-- 由 JS 動態渲染或後端初步渲染 -->
+              {% else %}
+                <div class="text-center text-muted py-5" id="batchEmptyHint">
+                  <i class="bi bi-clipboard-data fs-2 d-block mb-3 opacity-25"></i>
+                  {% if batch_id %}
+                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>正在讀取批次資訊...
                   {% else %}
-                  <div class="text-center text-muted py-5" id="batchEmptyHint">
-                    <i class="bi bi-clipboard-data fs-2 d-block mb-3 opacity-25"></i>
-                    {% if batch_id %}
-                      <div class="spinner-border spinner-border-sm text-primary me-2"></div>正在讀取批次資訊...
-                    {% else %}
-                      請在左側確認任務並點擊「開始執行」
-                    {% endif %}
-                  </div>
+                    尚未開始執行，暫無執行結果
                   {% endif %}
                 </div>
-              </div>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -265,7 +274,7 @@
                   <div class="d-flex justify-content-center gap-1">
                     <a class="btn-action-icon" href="{{ url_for('flows_bp.global_batch_page', batch=item.id) }}" title="查看詳情">
                       <i class="bi bi-eye"></i><span>
-                        查看
+                        詳情
                       </span>
                     </a>
                     <button type="button" class="btn-action-icon global-download-btn" data-url="{{ url_for('flows_bp.download_global_batch', batch_id=item.id) }}" data-kind="docx" title="下載文件">
@@ -298,7 +307,7 @@
           <nav>
             <ul class="pagination pagination-sm mb-0 gap-1">
               <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                <a class="page-link rounded-2" href="{{ url_for('flows_bp.global_batch_page', page=pagination.page-1, batch=batch_id) if pagination.has_prev else '#' }}#history-pane">上一頁</a>
+                <a class="page-link rounded-2" href="{{ url_for('flows_bp.global_batch_page', page=pagination.page-1, batch=batch_id) if pagination.has_prev else '#' }}#history-pane" title="上一頁"><i class="bi bi-chevron-left"></i></a>
               </li>
               {% for p in range(1, pagination.total_pages + 1) %}
                 {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
@@ -308,7 +317,7 @@
                 {% endif %}
               {% endfor %}
               <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                <a class="page-link rounded-2" href="{{ url_for('flows_bp.global_batch_page', page=pagination.page+1, batch=batch_id) if pagination.has_next else '#' }}#history-pane">下一頁</a>
+                <a class="page-link rounded-2" href="{{ url_for('flows_bp.global_batch_page', page=pagination.page+1, batch=batch_id) if pagination.has_next else '#' }}#history-pane" title="下一頁"><i class="bi bi-chevron-right"></i></a>
               </li>
             </ul>
           </nav>
@@ -317,7 +326,6 @@
     </div>
   </div>
 </div>
-
 <script>
 // 頁籤記憶功能：從 URL Hash 初始化頁籤
 function initTabFromHash() {
@@ -351,10 +359,12 @@ const taskCountSpan = document.getElementById("taskCount");
 const startBtn = document.getElementById("startBatchBtn");
 const batchResultsList = document.getElementById("batchResultsList");
 const statusLabel = document.getElementById("batchStatusLabel");
+const batchStatusContainer = document.getElementById("batchStatusContainer");
 const progressWrap = document.getElementById("batchProgressWrap");
 const progressText = document.getElementById("progressText");
 const progressBar = document.getElementById("batchProgressBar");
 const currentTaskInfo = document.getElementById("currentTaskInfo");
+const batchResultsSummary = document.getElementById("batchResultsSummary");
 const activeBatchId = document.getElementById("activeBatchId");
 const { escapeHtml } = window.UiUtils;
 
@@ -373,6 +383,10 @@ function submitPostForm(action, fields) {
   });
   document.body.appendChild(form);
   form.submit();
+}
+
+function escapeAttr(value) {
+  return escapeHtml(String(value ?? "")).replace(/"/g, "&quot;");
 }
 
 function syncSubmitState() {
@@ -483,6 +497,17 @@ function updateHistoryRow(status) {
 function renderBatchResults(status) {
   const results = Array.isArray(status?.results) ? status.results : [];
   const allTasks = Array.isArray(status?.tasks) ? status.tasks : [];
+
+  if (batchResultsSummary) {
+    const ok = results.filter((r) => r && r.ok).length;
+    const fail = results.filter((r) => r && !r.ok).length;
+    if (results.length > 0) {
+      batchResultsSummary.textContent = `成功 ${ok} / 失敗 ${fail}`;
+    } else {
+      batchResultsSummary.textContent = "";
+    }
+  }
+
   if (!results.length && !allTasks.length) {
     batchResultsList.innerHTML = `
       <div class="text-center py-5 text-muted">
@@ -539,9 +564,9 @@ function renderBatchResults(status) {
                 <table class="table table-sm mb-0 flow-detail-table" style="table-layout: fixed;">
                   <colgroup>
                     <col style="width: 35%">
-                    <col style="width: 12%">
+                    <col style="width: 10%">
+                    <col style="width: 20%">
                     <col style="width: 35%">
-                    <col style="width: 18%">
                   </colgroup>
                   <thead class="table-light">
                     <tr>
@@ -559,6 +584,8 @@ function renderBatchResults(status) {
                         const jobId = encodeURIComponent(f.job_id || "");
                         const flowName = f.flow || "";
                         const errorMsg = f.error || (ok ? "完成" : "失敗");
+                        const resultPath = f.result_relpath || f.result_path || "";
+                        const logPath = f.log_relpath || f.log_path || "";
                         return `<tr>
                           <td class="text-start text-truncate ps-3" title="${escapeHtml(flowName)}">${escapeHtml(flowName)}</td>
                           <td class="text-center">${ok ? "<i class='bi bi-check-circle-fill text-success'></i>" : "<i class='bi bi-x-circle-fill text-danger'></i>"}</td>
@@ -566,9 +593,15 @@ function renderBatchResults(status) {
                           <td class="text-center pe-3">
                             ${f.job_id
                               ? `<div class="d-flex justify-content-center gap-1">
-                                  ${ok ? `<a class="btn-action-icon p-1" href="/tasks/${taskId}/download/${jobId}/docx" title="下載 Word"><i class="bi bi-download"></i><span>下載</span></a>` : ""}
-                                  <a class="btn-action-icon p-1" href="/tasks/${taskId}/download/${jobId}/log" title="下載 Log"><i class="bi bi-file-earmark-text"></i><span>Log</span></a>
-                                 </div>`
+                                   <button type="button" class="btn-action-icon p-1 flow-path-btn"
+                                     data-result-path="${escapeAttr(resultPath)}"
+                                     data-log-path="${escapeAttr(logPath)}"
+                                     title="查看路徑">
+                                     <i class="bi bi-folder2-open"></i><span>路徑</span>
+                                   </button>
+                                   ${ok ? `<a class="btn-action-icon p-1" href="/tasks/${taskId}/download/${jobId}/docx" title="下載 Word"><i class="bi bi-download"></i><span>下載</span></a>` : ""}
+                                   <a class="btn-action-icon p-1" href="/tasks/${taskId}/download/${jobId}/log" title="下載 Log"><i class="bi bi-file-earmark-text"></i><span>Log</span></a>
+                                  </div>`
                               : "<span class='text-muted small'>-</span>"}
                           </td>
                         </tr>`;
@@ -581,6 +614,24 @@ function renderBatchResults(status) {
         </div>`;
     })
     .join("") + pending.join("");
+}
+
+if (batchResultsList) {
+  batchResultsList.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".flow-path-btn");
+    if (!btn) return;
+    const resultPath = btn.dataset.resultPath || "";
+    const logPath = btn.dataset.logPath || "";
+    const text = `Result: ${resultPath}\nLog: ${logPath}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      const original = btn.innerHTML;
+      btn.innerHTML = '<i class="bi bi-clipboard-check"></i><span>已複製</span>';
+      setTimeout(() => { btn.innerHTML = original; }, 1200);
+    } catch (_err) {
+      window.alert(text);
+    }
+  });
 }
 
 {% if batch_id %}
@@ -603,6 +654,7 @@ async function pollStatus() {
     updateHistoryRow(status);
     if (activeBatchId) activeBatchId.textContent = selectedBatchId;
 
+    if (batchStatusContainer) batchStatusContainer.style.display = "block";
     if (progressWrap) progressWrap.style.display = "block";
     const total = Array.isArray(status.tasks) ? status.tasks.length : 0;
     const current = Math.min(status.current_index || 0, total);

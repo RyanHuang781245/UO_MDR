@@ -89,7 +89,7 @@
     </li>
     <li class="nav-item">
       <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button">
-        <i class="bi bi-clock-history me-2"></i>執行歷史
+        <i class="bi bi-clock-history me-2"></i>歷史排程
       </button>
     </li>
   </ul>
@@ -211,8 +211,7 @@
     <!-- 頁籤二：執行歷史 -->
     <div class="tab-pane fade" id="history-pane">
       <div class="main-card">
-        <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center">
-          <h5 class="fw-bold mb-0">歷史執行紀錄</h5>
+        <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center"> 
           <div class="text-muted small">
             顯示第 {{ (pagination.page - 1) * 10 + 1 }} - {{ [pagination.page * 10, pagination.total_count]|min }} 筆，共 {{ pagination.total_count }} 筆
           </div>
@@ -549,7 +548,7 @@ function renderBatchResults(status) {
                       <th class="text-start ps-3">流程</th>
                       <th class="text-center">狀態</th>
                       <th class="text-start">訊息</th>
-                      <th class="text-center pe-3">下載</th>
+                      <th class="text-center pe-3">操作</th>
                     </tr>
                   </thead>
                   <tbody>

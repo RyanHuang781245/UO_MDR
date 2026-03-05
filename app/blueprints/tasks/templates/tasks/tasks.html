@@ -189,7 +189,7 @@
     }
 </style>
 <div class="container-fluid px-0">
-    <div class="mb-4 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+    <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
         <div>
             <h1 class="h3 mb-1 fw-bold">任務管理</h1>
             <p class="text-muted mb-0 small">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑。</p>
@@ -290,7 +290,7 @@
                             <input type="checkbox" class="form-check-input task-select" value="{{ t.id }}">
                         </td>
                         <td class="text-start">
-                            <a class="text-decoration-none fw-bold text-primary" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">
+                            <a class="text-decoration-none fw-bold text-primary task-desc-truncate d-block" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}" title="{{ t.name }}">
                                 {{ t.name }}
                             </a>
                         </td>

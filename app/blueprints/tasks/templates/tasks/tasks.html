@@ -328,7 +328,7 @@
                         <td>
                             <div class="d-flex justify-content-center gap-1">
                                 <button class="btn-action-icon task-pin-toggle" type="button" title="設為置頂" aria-pressed="false">
-                                    <i class="bi bi-pin-angle"></i><span class="d-none d-lg-inline small fw-semibold">置頂</span>
+                                    <i class="bi bi-pin-angle"></i>
                                 </button>
                                 <button class="btn-action-icon task-detail-trigger" title="查看詳情">
                                     <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span>  
@@ -1009,8 +1009,8 @@ function initTaskDescDrawer(){
               btn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
               btn.setAttribute('title', isPinned ? '取消置頂' : '設為置頂');
               btn.innerHTML = isPinned
-                  ? '<i class="bi bi-pin-angle-fill"></i><span class="d-none d-lg-inline small fw-semibold">已置頂</span>'
-                  : '<i class="bi bi-pin-angle"></i><span class="d-none d-lg-inline small fw-semibold">置頂</span>';
+                  ? '<i class="bi bi-pin-angle-fill"></i>'
+                  : '<i class="bi bi-pin-angle"></i>';
           }
           taskTableBody?.appendChild(row);
       });

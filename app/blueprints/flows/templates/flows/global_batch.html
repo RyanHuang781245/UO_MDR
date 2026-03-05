@@ -144,9 +144,21 @@
             <div class="main-card">
               <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center bg-light bg-opacity-25">
                 <span class="fw-bold"><i class="bi bi-collection me-2 text-primary"></i>待執行任務 (<span id="taskCount">{{ tasks|length }}</span>)</span>
-                <button class="btn btn-primary btn-sm fw-bold px-3 shadow-sm" type="submit" id="startBatchBtn" {% if not tasks or batch_id %}disabled{% endif %}>
-                  <i class="bi bi-play-fill"></i> 執行排程
-                </button>
+                <div class="d-flex align-items-center gap-2">
+                  {% if not batch_id %}
+                  <a
+                    class="btn btn-outline-primary btn-sm fw-bold px-3"
+                    href="{{ url_for('tasks_bp.tasks', append_to_batch=1, existing_task_ids=tasks|map(attribute='id')|join(',')) }}"
+                    id="addTasksBtn"
+                    data-base-url="{{ url_for('tasks_bp.tasks') }}"
+                  >
+                    <i class="bi bi-plus-lg"></i> 新增任務
+                  </a>
+                  {% endif %}
+                  <button class="btn btn-primary btn-sm fw-bold px-3 shadow-sm" type="submit" id="startBatchBtn" {% if not tasks or batch_id %}disabled{% endif %}>
+                    <i class="bi bi-play-fill"></i> 執行排程
+                  </button>
+                </div>
               </div>
               <div class="table-responsive overflow-auto" style="max-height: 600px;">
                 <table class="table mb-0 align-middle" style="table-layout: fixed;">
@@ -357,6 +369,7 @@ const batchTaskList = document.getElementById("batchTaskList");
 const taskIdsInput = document.getElementById("taskIdsInput");
 const taskCountSpan = document.getElementById("taskCount");
 const startBtn = document.getElementById("startBatchBtn");
+const addTasksBtn = document.getElementById("addTasksBtn");
 const batchResultsList = document.getElementById("batchResultsList");
 const statusLabel = document.getElementById("batchStatusLabel");
 const batchStatusContainer = document.getElementById("batchStatusContainer");
@@ -395,11 +408,26 @@ function syncSubmitState() {
   }
 }
 
+function syncAddTasksLink() {
+  if (!addTasksBtn) return;
+  const base = addTasksBtn.dataset.baseUrl || addTasksBtn.getAttribute("href") || "";
+  if (!base) return;
+  const url = new URL(base, window.location.origin);
+  url.searchParams.set("append_to_batch", "1");
+  if (taskIds.length > 0) {
+    url.searchParams.set("existing_task_ids", taskIds.join(","));
+  } else {
+    url.searchParams.delete("existing_task_ids");
+  }
+  addTasksBtn.href = url.toString();
+}
+
 function updateSequence() {
   taskIds = Array.from(batchTaskList.querySelectorAll("tr[data-task-id]")).map((tr) => tr.getAttribute("data-task-id"));
   taskIdsInput.value = taskIds.join(",");
   taskCountSpan.textContent = taskIds.length;
   syncSubmitState();
+  syncAddTasksLink();
 }
 
 if (batchTaskList) {
@@ -444,6 +472,7 @@ if (batchTaskList) {
 }
 
 syncSubmitState();
+syncAddTasksLink();
 
 function statusBadge(status) {
   if (status === "completed") return '<span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>';

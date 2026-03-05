@@ -35,6 +35,7 @@ from app.services.notification_service import send_batch_notification
 from app.services.audit_service import record_audit
 from app.services.task_service import build_file_tree, gather_available_files
 from app.utils import parse_bool
+from app.blueprints.tasks.routes import _load_task_context
 
 flows_bp = Blueprint("flows_bp", __name__, template_folder="templates")
 
@@ -646,6 +647,12 @@ def flow_builder(task_id):
     files_dir = os.path.join(tdir, "files")
     if not os.path.isdir(files_dir):
         abort(404)
+    
+    task_context = _load_task_context(task_id)
+    if not task_context:
+        abort(404)
+    task_context["id"] = task_id
+
     flow_dir = os.path.join(tdir, "flows")
     os.makedirs(flow_dir, exist_ok=True)
     flows_all = _load_saved_flows(flow_dir)
@@ -713,7 +720,7 @@ def flow_builder(task_id):
     tree = build_file_tree(files_dir)
     return render_template(
         "flows/flow.html",
-        task={"id": task_id},
+        task=task_context,
         steps=SUPPORTED_STEPS,
         files=avail,
         flows=flows,
@@ -1193,6 +1200,11 @@ def download_global_batch(batch_id):
 
 @flows_bp.get("/tasks/<task_id>/flows/results", endpoint="flow_results")
 def flow_results(task_id):
+    task_context = _load_task_context(task_id)
+    if not task_context:
+        abort(404)
+    task_context["id"] = task_id
+    
     view = (request.args.get("view") or "single").lower()
     if view == "batch":
         return redirect(url_for("flows_bp.global_batch_page"))
@@ -1249,7 +1261,7 @@ def flow_results(task_id):
 
     return render_template(
         "flows/results.html",
-        task={"id": task_id},
+        task=task_context,
         view="single",
         runs=runs,
         batches=[],

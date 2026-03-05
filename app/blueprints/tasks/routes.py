@@ -498,6 +498,7 @@ def tasks():
         "tasks/tasks.html",
         tasks=task_list,
         pagination=pagination,
+        all_task_ids=[(t.get("id") or "").strip() for t in task_list_all if (t.get("id") or "").strip()],
         allowed_nas_roots=get_configured_nas_roots(),
     )
 

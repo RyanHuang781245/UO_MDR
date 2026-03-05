@@ -349,17 +349,17 @@
             <nav>
                 <ul class="pagination pagination-sm mb-0 gap-1">
                     <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page-1) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page-1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
                     </li>
                     {% for p in range(1, pagination.total_pages + 1) %}
                         {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
                         <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=p) }}">{{ p }}</a>
+                            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=p, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) }}">{{ p }}</a>
                         </li>
                         {% endif %}
                     {% endfor %}
                     <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page+1) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page+1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
                     </li>
                 </ul>
             </nav>
@@ -938,22 +938,80 @@ function initTaskDescDrawer(){
   // Multi-select Logic
   const masterCheckbox = document.getElementById('masterCheckbox');
   const taskCheckboxes = () => Array.from(document.querySelectorAll('.task-select'));
-  const visibleTaskCheckboxes = () => taskCheckboxes().filter(cb => cb.closest('tr').style.display !== 'none');
+  const allTaskIds = ({{ all_task_ids|tojson }});
   const filterBar = document.getElementById('filterBar');
   const actionBar = document.getElementById('actionBar');
   const selectionText = document.getElementById('selectionText');
   const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+  const pageUrlParams = new URLSearchParams(window.location.search);
+  const appendToBatch = pageUrlParams.get('append_to_batch') === '1';
+  const persistedIdsRaw = appendToBatch
+      ? (pageUrlParams.get('existing_task_ids') || '')
+      : (pageUrlParams.get('selected_task_ids') || pageUrlParams.get('existing_task_ids') || '');
+  const existingTaskIds = persistedIdsRaw
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean);
+  const selectedTaskIds = new Set();
+
+  existingTaskIds.forEach(id => {
+      if (allTaskIds.includes(id)) selectedTaskIds.add(id);
+  });
+
+  function syncVisibleCheckboxes() {
+      taskCheckboxes().forEach(cb => {
+          cb.checked = selectedTaskIds.has(cb.value);
+      });
+  }
+
+  function syncPaginationLinks() {
+      const idsCsv = Array.from(selectedTaskIds).join(',');
+      document.querySelectorAll('.pagination a.page-link').forEach(link => {
+          const href = link.getAttribute('href') || '';
+          if (!href || href === '#') return;
+          const url = new URL(href, window.location.origin);
+          if (appendToBatch) {
+              url.searchParams.set('append_to_batch', '1');
+              if (idsCsv) url.searchParams.set('existing_task_ids', idsCsv);
+              else url.searchParams.delete('existing_task_ids');
+          } else {
+              if (idsCsv) url.searchParams.set('selected_task_ids', idsCsv);
+              else url.searchParams.delete('selected_task_ids');
+              url.searchParams.delete('append_to_batch');
+              url.searchParams.delete('existing_task_ids');
+          }
+          link.href = url.toString();
+      });
+  }
+
+  function syncCurrentUrlState() {
+      const idsCsv = Array.from(selectedTaskIds).join(',');
+      const url = new URL(window.location.href);
+      if (appendToBatch) {
+          url.searchParams.set('append_to_batch', '1');
+          if (idsCsv) url.searchParams.set('existing_task_ids', idsCsv);
+          else url.searchParams.delete('existing_task_ids');
+      } else {
+          if (idsCsv) url.searchParams.set('selected_task_ids', idsCsv);
+          else url.searchParams.delete('selected_task_ids');
+          url.searchParams.delete('append_to_batch');
+          url.searchParams.delete('existing_task_ids');
+      }
+      window.history.replaceState(null, '', url.toString());
+  }
 
   function updateTaskUI() {
-      const selected = taskCheckboxes().filter(cb => cb.checked);
-      const count = selected.length;
-      const visible = visibleTaskCheckboxes();
-      const visibleSelectedCount = visible.filter(cb => cb.checked).length;
+      syncVisibleCheckboxes();
+      const count = selectedTaskIds.size;
 
       if (count > 0) {
           if(filterBar) filterBar.style.display = 'none';
           if(actionBar) actionBar.style.display = 'flex';
-          if(selectionText) selectionText.textContent = `已選取 ${count} 項任務`;
+          if(selectionText) {
+              selectionText.textContent = appendToBatch
+                  ? `已加入 ${count} 項任務（含既有排程）`
+                  : `已選取 ${count} 項任務`;
+          }
       } else {
           if(filterBar) filterBar.style.display = 'flex';
           if(actionBar) actionBar.style.display = 'none';
@@ -961,16 +1019,16 @@ function initTaskDescDrawer(){
 
       taskCheckboxes().forEach(cb => {
           const row = cb.closest('tr');
-          if (cb.checked) row.classList.add('row-selected');
+          if (selectedTaskIds.has(cb.value)) row.classList.add('row-selected');
           else row.classList.remove('row-selected');
       });
 
       if (masterCheckbox) {
-          masterCheckbox.disabled = visible.length === 0;
-          if (visible.length === 0 || visibleSelectedCount === 0) {
+          masterCheckbox.disabled = allTaskIds.length === 0;
+          if (selectedTaskIds.size === 0) {
               masterCheckbox.checked = false;
               masterCheckbox.indeterminate = false;
-          } else if (visibleSelectedCount === visible.length) {
+          } else if (selectedTaskIds.size === allTaskIds.length) {
               masterCheckbox.checked = true;
               masterCheckbox.indeterminate = false;
           } else {
@@ -978,15 +1036,17 @@ function initTaskDescDrawer(){
               masterCheckbox.indeterminate = true;
           }
       }
+      syncPaginationLinks();
+      syncCurrentUrlState();
   }
 
   if (masterCheckbox) {
       masterCheckbox.addEventListener('change', (e) => {
-          taskCheckboxes().forEach(cb => {
-              if (cb.closest('tr').style.display !== 'none') {
-                  cb.checked = e.target.checked;
-              }
-          });
+          if (e.target.checked) {
+              allTaskIds.forEach(id => selectedTaskIds.add(id));
+          } else {
+              selectedTaskIds.clear();
+          }
           updateTaskUI();
       });
   }
@@ -994,6 +1054,9 @@ function initTaskDescDrawer(){
   if (taskTableBody) {
       taskTableBody.addEventListener('change', (e) => {
           if (e.target.classList.contains('task-select')) {
+              const tid = e.target.value;
+              if (e.target.checked) selectedTaskIds.add(tid);
+              else selectedTaskIds.delete(tid);
               updateTaskUI();
           }
       });
@@ -1001,7 +1064,7 @@ function initTaskDescDrawer(){
 
   if (clearSelectionBtn) {
       clearSelectionBtn.addEventListener('click', () => {
-          taskCheckboxes().forEach(cb => cb.checked = false);
+          selectedTaskIds.clear();
           updateTaskUI();
       });
   }
@@ -1009,8 +1072,11 @@ function initTaskDescDrawer(){
   // Batch Scheduling Action
   const createGlobalBatchBtn = document.getElementById('createGlobalBatchBtn');
   if (createGlobalBatchBtn) {
+      if (appendToBatch) {
+          createGlobalBatchBtn.innerHTML = '<i class="bi bi-calendar2-week"></i> 更新排程清單';
+      }
       createGlobalBatchBtn.addEventListener('click', () => {
-          const selected = taskCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+          const selected = Array.from(selectedTaskIds);
           if (!selected.length) return;
           // Redirect to global batch page with selected task IDs
           const url = new URL("{{ url_for('flows_bp.global_batch_page') }}", window.location.origin);

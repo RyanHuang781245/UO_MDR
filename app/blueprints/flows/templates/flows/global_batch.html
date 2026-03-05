@@ -113,7 +113,7 @@
                 <table class="table mb-0 align-middle" style="table-layout: fixed;">
                   <thead class="table-light">
                     <tr>
-                      <th class="batch-col-sort text-center">#</th>
+                      <th class="batch-col-sort text-center"></th>
                       <th class="ps-3">任務資訊</th>
                       <th class="batch-col-action text-center">操作</th>
                     </tr>
@@ -222,7 +222,7 @@
           <table class="table align-middle mb-0">
             <thead>
               <tr>
-                <th class="ps-4">Batch ID</th>
+                <th class="text-start ps-4">Batch ID</th>
                 <th class="text-center">執行狀態</th>
                 <th class="text-center">任務數</th>
                 <th class="text-center">成功 / 失敗</th>
@@ -233,9 +233,8 @@
             <tbody>
               {% for item in global_batches %}
               <tr class="history-row {{ 'history-row-active border-start border-4 border-primary' if batch_id == item.id else '' }}">
-                <td class="ps-4">
+                <td class="text-start ps-4">
                   <div class="d-flex align-items-center gap-2">
-                    <i class="bi bi-hash text-muted"></i>
                     <code class="text-primary fw-bold font-monospace">{{ item.id }}</code>
                   </div>
                 </td>

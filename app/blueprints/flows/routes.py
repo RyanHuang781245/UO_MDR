@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -372,6 +372,7 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
         for idx, flow_name in enumerate(flow_sequence, start=1):
             status.update({"current_index": idx, "current_flow": flow_name})
             _write_batch_status(task_id, batch_id, status)
+            job_id = ""
             try:
                 job_id = _execute_saved_flow(task_id, flow_name)
                 job_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id, "jobs", job_id)
@@ -383,7 +384,10 @@ def _run_flow_batch(app, task_id: str, flow_sequence: list[str], batch_id: str, 
                 results.append({"flow": flow_name, "job_id": job_id, "status": "completed"})
                 _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
             except Exception as exc:
-                results.append({"flow": flow_name, "status": "failed", "error": str(exc)})
+                failed_item = {"flow": flow_name, "status": "failed", "error": str(exc)}
+                if job_id:
+                    failed_item["job_id"] = job_id
+                results.append(failed_item)
                 failed_count += 1
                 status.update(
                     {
@@ -546,46 +550,6 @@ def delete_flow_runs_bulk(task_id):
     else:
         flash("沒有可刪除的執行紀錄。", "warning")
     return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
-
-
-@flows_bp.post("/tasks/<task_id>/flows/batches/delete", endpoint="delete_flow_batches_bulk")
-def delete_flow_batches_bulk(task_id):
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    jobs_dir = os.path.join(tdir, "jobs")
-    status_dir = os.path.join(tdir, "jobs", "batch")
-    raw = request.form.get("batch_ids", "")
-    batch_ids = [b.strip() for b in raw.split(",") if b.strip()]
-    if not batch_ids:
-        flash("請先選取要刪除的批次紀錄。", "warning")
-        return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="batch"))
-    deleted = 0
-    for batch_id in batch_ids:
-        path = _batch_status_path(task_id, batch_id)
-        if not os.path.exists(path):
-            continue
-        try:
-            status = _load_batch_status(task_id, batch_id) or {}
-            results = status.get("results") or []
-            for r in results:
-                job_id = r.get("job_id")
-                if not job_id:
-                    continue
-                job_dir = os.path.join(jobs_dir, job_id)
-                if os.path.isdir(job_dir):
-                    try:
-                        import shutil
-                        shutil.rmtree(job_dir)
-                    except Exception:
-                        current_app.logger.exception("Failed to delete batch job directory")
-            os.remove(path)
-            deleted += 1
-        except Exception:
-            current_app.logger.exception("Failed to delete batch status")
-    if deleted:
-        flash(f"已刪除 {deleted} 筆批次紀錄。", "success")
-    else:
-        flash("沒有可刪除的批次紀錄。", "warning")
-    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="batch"))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/runs/download", endpoint="download_flow_runs_bulk")
@@ -1169,49 +1133,11 @@ def download_global_batch(batch_id):
         flash("Failed to prepare batch download", "danger")
         return redirect(url_for("flows_bp.global_batch_page", batch=batch_id))
 
-@flows_bp.get("/tasks/<task_id>/flows/batch", endpoint="flow_batch_page")
-def flow_batch_page(task_id):
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    flow_dir = os.path.join(tdir, "flows")
-    if not os.path.isdir(flow_dir):
-        abort(404)
-    flows = _load_saved_flows(flow_dir)
-    batch_id = request.args.get("batch")
-    return render_template(
-        "flows/batch.html",
-        task={"id": task_id},
-        flows=flows,
-        batch_id=batch_id,
-    )
-
-
-@flows_bp.get("/tasks/<task_id>/flows/runs", endpoint="flow_runs")
-def flow_runs(task_id):
-    runs = _list_flow_runs(task_id)
-    return render_template(
-        "flows/runs.html",
-        task={"id": task_id},
-        runs=runs,
-    )
-
-
-@flows_bp.get("/tasks/<task_id>/flows/batches", endpoint="flow_batch_list")
-def flow_batch_list(task_id):
-    batches = _list_batch_statuses(task_id)
-    running = [b for b in batches if b["status"] in ("running", "queued")]
-    return render_template(
-        "flows/batch_list.html",
-        task={"id": task_id},
-        batches=batches,
-        running=running,
-    )
-
-
 @flows_bp.get("/tasks/<task_id>/flows/results", endpoint="flow_results")
 def flow_results(task_id):
     view = (request.args.get("view") or "single").lower()
-    if view not in ("single", "batch"):
-        view = "single"
+    if view == "batch":
+        return redirect(url_for("flows_bp.global_batch_page"))
 
     page = max(request.args.get("page", 1, type=int), 1)
     per_page = 10
@@ -1234,74 +1160,41 @@ def flow_results(task_id):
         return True
 
     runs_all = _list_flow_runs(task_id)
-    batches_all = _list_batch_statuses(task_id)
+    if q:
+        q_lower = q.lower()
+        runs_all = [
+            r
+            for r in runs_all
+            if q_lower in (r.get("flow_name") or "").lower()
+            or q_lower in (r.get("started_at") or "").lower()
+            or q_lower in (r.get("job_id") or "").lower()
+        ]
+    if status:
+        runs_all = [r for r in runs_all if (r.get("status") or "").lower() == status]
+    if start_date or end_date:
+        runs_all = [r for r in runs_all if _match_date(r.get("started_at") or "")]
 
-    if view == "single":
-        if q:
-            q_lower = q.lower()
-            runs_all = [
-                r
-                for r in runs_all
-                if q_lower in (r.get("flow_name") or "").lower()
-                or q_lower in (r.get("started_at") or "").lower()
-                or q_lower in (r.get("job_id") or "").lower()
-            ]
-        if status:
-            runs_all = [r for r in runs_all if (r.get("status") or "").lower() == status]
-        if start_date or end_date:
-            runs_all = [r for r in runs_all if _match_date(r.get("started_at") or "")]
-    else:
-        if q:
-            q_lower = q.lower()
-            batches_all = [
-                b
-                for b in batches_all
-                if q_lower in (b.get("id") or "").lower()
-                or q_lower in (b.get("created_at") or "").lower()
-            ]
-        if status:
-            batches_all = [b for b in batches_all if (b.get("status") or "").lower() == status]
-        if start_date or end_date:
-            batches_all = [b for b in batches_all if _match_date(b.get("created_at") or "")]
+    total_count = len(runs_all)
+    total_pages = max((total_count + per_page - 1) // per_page, 1)
+    page = min(page, total_pages)
+    start = (page - 1) * per_page
+    runs = runs_all[start : start + per_page]
+    pagination = {
+        "page": page,
+        "per_page": per_page,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+    }
+    running = [r for r in runs_all if r["status"] in ("running", "queued")]
 
-    if view == "single":
-        total_count = len(runs_all)
-        total_pages = max((total_count + per_page - 1) // per_page, 1)
-        page = min(page, total_pages)
-        start = (page - 1) * per_page
-        runs = runs_all[start : start + per_page]
-        batches = []
-        pagination = {
-            "page": page,
-            "per_page": per_page,
-            "total_count": total_count,
-            "total_pages": total_pages,
-            "has_prev": page > 1,
-            "has_next": page < total_pages
-        }
-    else:
-        total_count = len(batches_all)
-        total_pages = max((total_count + per_page - 1) // per_page, 1)
-        page = min(page, total_pages)
-        start = (page - 1) * per_page
-        batches = batches_all[start : start + per_page]
-        runs = []
-        pagination = {
-            "page": page,
-            "per_page": per_page,
-            "total_count": total_count,
-            "total_pages": total_pages,
-            "has_prev": page > 1,
-            "has_next": page < total_pages
-        }
-
-    running = [b for b in batches_all if b["status"] in ("running", "queued")]
     return render_template(
         "flows/results.html",
         task={"id": task_id},
-        view=view,
+        view="single",
         runs=runs,
-        batches=batches,
+        batches=[],
         running=running,
         pagination=pagination,
         filters={
@@ -1636,72 +1529,6 @@ def execute_flow(task_id, flow_name):
         task_id=task_id,
     )
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id))
-
-
-@flows_bp.post("/tasks/<task_id>/flows/run-batch", endpoint="run_flow_batch")
-def run_flow_batch(task_id):
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    flow_dir = os.path.join(tdir, "flows")
-    if not os.path.isdir(flow_dir):
-        abort(404)
-    sequence_raw = request.form.get("flow_sequence", "").strip()
-    if not sequence_raw:
-        return "缺少流程順序", 400
-    flow_sequence = [s.strip() for s in sequence_raw.split(",") if s.strip()]
-    if not flow_sequence:
-        return "缺少流程順序", 400
-    for name in flow_sequence:
-        if not os.path.exists(os.path.join(flow_dir, f"{name}.json")):
-            return f"找不到流程：{name}", 404
-    batch_id = str(uuid.uuid4())[:8]
-    work_id, label = _get_actor_info()
-    status = {
-        "id": batch_id,
-        "status": "queued",
-        "flows": flow_sequence,
-        "current_index": 0,
-        "current_flow": "",
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "actor": label or work_id,
-    }
-    _write_batch_status(task_id, batch_id, status)
-    app = current_app._get_current_object()
-    thread = threading.Thread(
-        target=_run_flow_batch,
-        args=(app, task_id, flow_sequence, batch_id, {"work_id": work_id, "label": label}),
-        daemon=True,
-    )
-    thread.start()
-    record_audit(
-        action="flow_run_batch",
-        actor={"work_id": work_id, "label": label},
-        detail={"task_id": task_id, "batch_id": batch_id, "flows": flow_sequence},
-        task_id=task_id,
-    )
-    return redirect(url_for("flows_bp.flow_batch_page", task_id=task_id, batch=batch_id))
-
-
-@flows_bp.get("/tasks/<task_id>/flows/batch/<batch_id>/status", endpoint="flow_batch_status")
-def flow_batch_status(task_id, batch_id):
-    status = _load_batch_status(task_id, batch_id)
-    if not status:
-        return {"ok": False, "error": "Batch not found"}, 404
-    return {"ok": True, "status": status}
-
-
-@flows_bp.get("/tasks/<task_id>/flows/batch/<batch_id>", endpoint="flow_batch_result")
-def flow_batch_result(task_id, batch_id):
-    status = _load_batch_status(task_id, batch_id)
-    if not status:
-        abort(404)
-    results = status.get("results") or []
-    return render_template(
-        "flows/batch_result.html",
-        task={"id": task_id},
-        batch_id=batch_id,
-        status=status,
-        results=results,
-    )
 
 
 @flows_bp.post("/tasks/<task_id>/flows/update-format/<flow_name>", endpoint="update_flow_format")

@@ -471,6 +471,7 @@ def task_download_output(task_id, filename):
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():
     task_list_all = list_tasks()
+    pin_scope_key, _ = _get_actor_info()
     
     # Pagination
     page = request.args.get("page", 1, type=int)
@@ -499,6 +500,7 @@ def tasks():
         tasks=task_list,
         pagination=pagination,
         all_task_ids=[(t.get("id") or "").strip() for t in task_list_all if (t.get("id") or "").strip()],
+        pin_scope_key=pin_scope_key or "anonymous",
         allowed_nas_roots=get_configured_nas_roots(),
     )
 

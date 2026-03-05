@@ -95,6 +95,14 @@
         background: #fff5f5;
         border-color: #feb2b2;
     }
+    .task-pin-toggle.is-pinned {
+        color: var(--bs-blue-600);
+        border-color: var(--bs-blue-100);
+        background: var(--bs-blue-50);
+    }
+    .task-pinned-row:not(.row-selected) {
+        background: rgba(37, 99, 235, 0.03);
+    }
 
     /* Loading Overlay & Drawer */
     .task-loading-overlay {
@@ -319,6 +327,9 @@
                         <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ t.created }}</td>
                         <td>
                             <div class="d-flex justify-content-center gap-1">
+                                <button class="btn-action-icon task-pin-toggle" type="button" title="設為置頂" aria-pressed="false">
+                                    <i class="bi bi-pin-angle"></i><span class="d-none d-lg-inline small fw-semibold">置頂</span>
+                                </button>
                                 <button class="btn-action-icon task-detail-trigger" title="查看詳情">
                                     <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span>  
                                 </button>
@@ -945,6 +956,8 @@ function initTaskDescDrawer(){
   const clearSelectionBtn = document.getElementById('clearSelectionBtn');
   const pageUrlParams = new URLSearchParams(window.location.search);
   const appendToBatch = pageUrlParams.get('append_to_batch') === '1';
+  const pinScopeKey = String({{ pin_scope_key|tojson }} || 'anonymous').trim() || 'anonymous';
+  const PIN_STORAGE_KEY = `uo_mdr.task_pins.v1.${pinScopeKey}`;
   const persistedIdsRaw = appendToBatch
       ? (pageUrlParams.get('existing_task_ids') || '')
       : (pageUrlParams.get('selected_task_ids') || pageUrlParams.get('existing_task_ids') || '');
@@ -953,9 +966,66 @@ function initTaskDescDrawer(){
       .map(v => v.trim())
       .filter(Boolean);
   const selectedTaskIds = new Set();
+  const pinnedTaskIds = new Set();
+
+  function loadPinnedTaskIds() {
+      try {
+          const raw = localStorage.getItem(PIN_STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return;
+          parsed.forEach(id => {
+              const tid = String(id || '').trim();
+              if (tid) pinnedTaskIds.add(tid);
+          });
+      } catch (_err) {
+      }
+  }
+
+  function savePinnedTaskIds() {
+      try {
+          localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(Array.from(pinnedTaskIds)));
+      } catch (_err) {
+      }
+  }
+
+  function refreshPinState() {
+      const rows = Array.from(taskTableBody?.querySelectorAll('.task-row') || []);
+      rows.sort((a, b) => {
+          const aPinned = pinnedTaskIds.has(a.dataset.taskId || '');
+          const bPinned = pinnedTaskIds.has(b.dataset.taskId || '');
+          if (aPinned !== bPinned) return aPinned ? -1 : 1;
+          const aOrder = Number(a.dataset.defaultOrder || 0);
+          const bOrder = Number(b.dataset.defaultOrder || 0);
+          return aOrder - bOrder;
+      });
+      rows.forEach((row) => {
+          const taskId = row.dataset.taskId || '';
+          const isPinned = pinnedTaskIds.has(taskId);
+          row.classList.toggle('task-pinned-row', isPinned);
+          const btn = row.querySelector('.task-pin-toggle');
+          if (btn) {
+              btn.classList.toggle('is-pinned', isPinned);
+              btn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+              btn.setAttribute('title', isPinned ? '取消置頂' : '設為置頂');
+              btn.innerHTML = isPinned
+                  ? '<i class="bi bi-pin-angle-fill"></i><span class="d-none d-lg-inline small fw-semibold">已置頂</span>'
+                  : '<i class="bi bi-pin-angle"></i><span class="d-none d-lg-inline small fw-semibold">置頂</span>';
+          }
+          taskTableBody?.appendChild(row);
+      });
+  }
 
   existingTaskIds.forEach(id => {
       if (allTaskIds.includes(id)) selectedTaskIds.add(id);
+  });
+  loadPinnedTaskIds();
+  Array.from(pinnedTaskIds).forEach(id => {
+      if (!allTaskIds.includes(id)) pinnedTaskIds.delete(id);
+  });
+  savePinnedTaskIds();
+  Array.from(taskTableBody?.querySelectorAll('.task-row') || []).forEach((row, index) => {
+      row.dataset.defaultOrder = String(index);
   });
 
   function syncVisibleCheckboxes() {
@@ -1001,6 +1071,7 @@ function initTaskDescDrawer(){
   }
 
   function updateTaskUI() {
+      refreshPinState();
       syncVisibleCheckboxes();
       const count = selectedTaskIds.size;
 
@@ -1052,6 +1123,19 @@ function initTaskDescDrawer(){
   }
 
   if (taskTableBody) {
+      taskTableBody.addEventListener('click', (e) => {
+          const pinBtn = e.target.closest('.task-pin-toggle');
+          if (!pinBtn) return;
+          e.preventDefault();
+          const row = pinBtn.closest('.task-row');
+          const tid = row?.dataset.taskId || '';
+          if (!tid) return;
+          if (pinnedTaskIds.has(tid)) pinnedTaskIds.delete(tid);
+          else pinnedTaskIds.add(tid);
+          savePinnedTaskIds();
+          updateTaskUI();
+      });
+
       taskTableBody.addEventListener('change', (e) => {
           if (e.target.classList.contains('task-select')) {
               const tid = e.target.value;

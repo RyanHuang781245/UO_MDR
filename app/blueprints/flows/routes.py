@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime
 
@@ -79,10 +80,7 @@ def _write_batch_status(task_id: str, batch_id: str, payload: dict) -> None:
     status_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id, "jobs", "batch")
     os.makedirs(status_dir, exist_ok=True)
     path = _batch_status_path(task_id, batch_id)
-    tmp_path = f"{path}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, path)
+    _write_json_with_replace_retry(path, payload)
 
 
 def _load_batch_status(task_id: str, batch_id: str) -> dict | None:
@@ -727,12 +725,39 @@ def _normalize_global_task_ids(raw_ids: str) -> list[str]:
     return task_ids
 
 
+def _write_json_with_replace_retry(path: str, payload: dict, retries: int = 8, delay_sec: float = 0.03) -> None:
+    last_exc = None
+    for attempt in range(retries):
+        tmp_path = f"{path}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, path)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay_sec * (attempt + 1))
+        except Exception:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+    if last_exc:
+        raise last_exc
+
+
 def _write_global_batch_status(batch_id: str, payload: dict) -> None:
     path = _global_batch_status_path(batch_id)
-    tmp_path = f"{path}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, path)
+    _write_json_with_replace_retry(path, payload)
 
 
 def _load_global_batch_status(batch_id: str) -> dict | None:

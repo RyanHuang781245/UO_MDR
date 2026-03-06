@@ -576,12 +576,13 @@ class AuditLogView(BaseView):
     def _get_db_logs(
         self, 
         task_id: Optional[str] = None, 
-        limit: int = 500,
+        page: int = 1,
+        per_page: int = 50,
         q: Optional[str] = None,
         action: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None
-    ) -> list[dict]:
+    ) -> tuple[list[dict], dict]:
         from modules.auth_models import AuditLog
         from datetime import datetime
         query = AuditLog.query
@@ -609,7 +610,11 @@ class AuditLogView(BaseView):
                 query = query.filter(AuditLog.created_at <= dt_end)
             except ValueError: pass
         
-        logs = query.order_by(AuditLog.created_at.desc()).limit(limit).all()
+        total_count = query.count()
+        total_pages = (total_count + per_page - 1) // per_page
+        page = max(1, min(page, total_pages)) if total_pages > 0 else 1
+        
+        logs = query.order_by(AuditLog.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
         
         entries = []
         for log in logs:
@@ -625,7 +630,16 @@ class AuditLogView(BaseView):
                 "detail": detail,
                 "task_id": log.task_id
             })
-        return entries
+            
+        pagination = {
+            "total_count": total_count,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages
+        }
+        return entries, pagination
 
     @expose("/", methods=["GET"])
     def index(self):
@@ -635,9 +649,15 @@ class AuditLogView(BaseView):
         action = (request.args.get("action") or "").strip()
         start_date = (request.args.get("start_date") or "").strip()
         end_date = (request.args.get("end_date") or "").strip()
+        
+        try:
+            page = int(request.args.get("page", 1))
+        except (ValueError, TypeError):
+            page = 1
 
-        entries = self._get_db_logs(
+        entries, pagination = self._get_db_logs(
             task_id=task_id if task_id else None,
+            page=page,
             q=q if q else None,
             action=action if action else None,
             start_date=start_date if start_date else None,
@@ -654,6 +674,7 @@ class AuditLogView(BaseView):
             start_date=start_date,
             end_date=end_date,
             entries=entries,
+            pagination=pagination,
             has_file=has_file,
         )
 

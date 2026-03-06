@@ -1269,7 +1269,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <div class="form-check">
           <input type="hidden" name="step_${sid}_${key}" value="${hiddenVal}">
           <input class="form-check-input bool-toggle${extraClass}" type="checkbox" id="${inputId}" data-target="step_${sid}_${key}" ${checked}>
-          <label class="form-check-label" for="${inputId}">${label}</label>
+          <label class="form-check-label">${label}</label>
         </div>
       </div>`;
   };
@@ -1361,20 +1361,20 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             <div class="row g-3">
               ${renderTaskFilePickerField({ sid, key: "input_file", label: fileLabel, value: fileVal, accept: fileAccept, colClass: "col-12", required: true })}
               <div class="col-12">
-                <label class="form-label d-flex justify-content-between align-items-center">
+                <div class="form-label d-flex justify-content-between align-items-center">
                   <span>${sectionLabel}</span>
                   <div class="d-flex align-items-center gap-3 m-0">
                     <div class="form-check d-flex align-items-center gap-1 m-0">
                       <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
                       <input class="form-check-input mt-0 bool-toggle toggle-subheading" type="checkbox" id="step_${sid}_use_chapter_title_chk" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-                      <label class="form-check-label small text-muted" for="step_${sid}_use_chapter_title_chk">擷取小標題內容</label>
+                      <label class="form-check-label small text-muted">擷取小標題內容</label>
                     </div>
                     <div class="form-check d-flex align-items-center gap-1 m-0">
                       <input class="form-check-input mt-0 toggle-continuous-extract" type="checkbox" id="step_${sid}_continuous_extract" ${continuousExtractChecked ? "checked" : ""}>
-                      <label class="form-check-label small text-muted" for="step_${sid}_continuous_extract">連續擷取</label>
+                      <label class="form-check-label small text-muted">連續擷取</label>
                     </div>
                   </div>
-                </label>
+                </div>
                 <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${sectionPlaceholder} ${titlePlaceholder}" data-section="step_${sid}_${sectionKey}" data-title="step_${sid}_target_chapter_title">
                 <input type="hidden" name="step_${sid}_${sectionKey}" value="${sectionVal}">
                 <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
@@ -1619,7 +1619,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                  <div class="form-check">
                    <input type="hidden" name="step_${sid}_${k}" value="${hiddenVal}">
                    <input class="form-check-input bool-toggle${extraClass}" type="checkbox" id="${inputId}" data-target="step_${sid}_${k}" ${checked}>
-                   <label class="form-check-label" for="${inputId}">${label}</label>
+                   <label class="form-check-label">${label}</label>
                  </div>
                </div>`;
       }
@@ -1718,14 +1718,14 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <div class="form-check d-flex align-items-center gap-1 m-0">
           <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
           <input class="form-check-input mt-0 bool-toggle toggle-subheading" type="checkbox" id="step_${sid}_use_chapter_title_chk" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-          <label class="form-check-label small text-muted" for="step_${sid}_use_chapter_title_chk">擷取小標題內容</label>
+          <label class="form-check-label small text-muted">擷取小標題內容</label>
         </div>`;
       basicFields.push(`
         <div class="col-md-6">
-          <label class="form-label d-flex justify-content-between align-items-center">
+          <div class="form-label d-flex justify-content-between align-items-center">
             <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
             ${checkboxHtml}
-          </label>
+          </div>
           <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"} ${FIELD_META.target_chapter_title?.placeholder || ""}" data-section="step_${sid}_target_chapter_section" data-title="step_${sid}_target_chapter_title">
           <input type="hidden" name="step_${sid}_target_chapter_section" value="${sectionVal}">
           <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">

@@ -55,7 +55,7 @@
                     偵測 NAS 變更
                 </button>
                 <form action="{{ url_for('tasks_bp.sync_task_nas', task_id=task.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定要更新 NAS 文件嗎？這會覆蓋目前任務檔案夾內容。')">
-                    <button class="btn btn-sm btn-outline-warning d-inline-flex align-items-center gap-1 fw-bold" type="submit">
+                    <button class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" type="submit">
                         <i class="bi bi-arrow-repeat"></i>
                         同步 NAS 變更
                     </button>

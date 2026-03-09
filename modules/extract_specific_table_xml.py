@@ -245,12 +245,11 @@ def extract_specific_table_from_word_xml(
     """
 
     chapter_section = (target_chapter_section or "").strip()
-    if not chapter_section:
-        raise ValueError("target_chapter_section is required")
 
     caption_label = (target_caption_label or "").strip()
     table_title = (target_table_title or "").strip()
-    table_index = int(target_table_index) if target_table_index is not None else None
+    table_index_raw = str(target_table_index).strip() if target_table_index is not None else ""
+    table_index = int(table_index_raw) if table_index_raw else None
     if not caption_label and not table_title and table_index is None:
         raise ValueError("One of target_caption_label, target_table_title, or target_table_index is required")
     if table_index is not None and table_index <= 0:
@@ -258,6 +257,7 @@ def extract_specific_table_from_word_xml(
 
     chapter_title = (target_chapter_title or "").strip()
     subtitle = (target_subtitle or "").strip()
+    use_chapter = bool(chapter_section or chapter_title)
     start_heading_text = chapter_title or chapter_section
 
     with zipfile.ZipFile(input_file, "r") as zin:
@@ -277,15 +277,18 @@ def extract_specific_table_from_word_xml(
     body_children = list(body)
     content_children = body_children[:-1] if body_children and body_children[-1].tag == qn("w:sectPr") else body_children
 
-    start_idx, end_idx = find_section_range_children(
-        content_children,
-        start_heading_text=start_heading_text,
-        start_number=chapter_section,
-        style_outline=style_outline,
-        style_based=style_based,
-        ignore_toc=True,
-    )
-    section_children = content_children[start_idx:end_idx]
+    if use_chapter:
+        start_idx, end_idx = find_section_range_children(
+            content_children,
+            start_heading_text=start_heading_text,
+            start_number=chapter_section,
+            style_outline=style_outline,
+            style_based=style_based,
+            ignore_toc=True,
+        )
+        section_children = content_children[start_idx:end_idx]
+    else:
+        section_children = content_children
 
     subtitle_found = not bool(subtitle)
     if subtitle:
@@ -312,6 +315,7 @@ def extract_specific_table_from_word_xml(
     candidate_tables: list[tuple[etree._Element, Optional[etree._Element]]] = []
     last_nonempty_paragraph: etree._Element | None = None
     selected_title_analysis: dict | None = None
+    match_mode = ""
 
     for block in section_children:
         if block.tag == qn("w:p"):
@@ -340,6 +344,7 @@ def extract_specific_table_from_word_xml(
         candidate_tables.append((table_element, last_nonempty_paragraph))
         if waiting_for_table or waiting_for_title_table:
             saved_table_block = table_element
+            match_mode = "caption" if waiting_for_table else "title"
             break
 
     if saved_table_block is None:
@@ -348,6 +353,7 @@ def extract_specific_table_from_word_xml(
             saved_caption_block = None
             selected_title_analysis = _analyze_table_title_candidate(fallback_title_block)
             saved_title_block = fallback_title_block if selected_title_analysis.get("accepted") else None
+            match_mode = "table_index"
 
     if saved_table_block is None:
         if return_reason:
@@ -387,13 +393,7 @@ def extract_specific_table_from_word_xml(
             "ok": True,
             "subtitle_found": subtitle_found,
             "reason": "ok",
-            "match_mode": (
-                "caption"
-                if saved_caption_block is not None
-                else "title"
-                if saved_title_block is not None
-                else "table_index"
-            ),
+            "match_mode": match_mode or "table_index",
             "selected_caption_text": _block_text(saved_caption_block),
             "selected_caption_seq_debug": selected_caption_seq,
             "selected_title_text": _block_text(saved_title_block),

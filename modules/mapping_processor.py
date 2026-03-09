@@ -439,11 +439,12 @@ def process_mapping_excel(
         return chapter, title, subheading
 
     def _build_detail(action: str, src: str, instruction: str) -> str:
+        instruction_core = (instruction or "").split("|", 1)[0].strip()
         src_base = os.path.basename(src) if src else ""
         if action == "Append text":
             return src
         if action == "Extract chapter":
-            chapter, title, subheading = _parse_chapter_parts(instruction)
+            chapter, title, subheading = _parse_chapter_parts(instruction_core)
             parts = [f"chapter {chapter}"] if chapter else []
             if title:
                 parts.append(f"title {title}")
@@ -452,16 +453,39 @@ def process_mapping_excel(
             suffix = f" ({', '.join(parts)})" if parts else ""
             return f"{src_base}{suffix}".strip()
         if action == "Extract figure":
-            label_match = re.search(r"\b(Figure)\b.*", instruction, re.IGNORECASE)
+            label_match = re.search(r"\b(Figure)\b.*", instruction_core, re.IGNORECASE)
             label = label_match.group(0).strip() if label_match else ""
             return f"{src_base} ({label})".strip() if label else src_base
         if action == "Extract table":
-            label_match = re.search(r"\b(Table)\b.*", instruction, re.IGNORECASE)
+            label_match = re.search(r"\b(Table)\b.*", instruction_core, re.IGNORECASE)
             label = label_match.group(0).strip() if label_match else ""
             return f"{src_base} ({label})".strip() if label else src_base
         if action == "Extract all":
             return src_base
-        return src_base or instruction
+        return src_base or instruction_core
+
+    def _parse_instruction_tail_options(raw_instruction: str) -> tuple[str, dict[str, str], str]:
+        """
+        Parse optional tail tokens from mapping instruction:
+        <core>|title=...|index=...
+        """
+        raw = (raw_instruction or "").strip()
+        if not raw:
+            return "", {}, ""
+        parts = [p.strip() for p in raw.split("|")]
+        core = parts[0]
+        options: dict[str, str] = {}
+        for token in parts[1:]:
+            if not token:
+                continue
+            if "=" not in token:
+                return core, options, f"無效參數語法: {token}"
+            key_raw, value_raw = token.split("=", 1)
+            key = key_raw.strip().lower()
+            value = value_raw.strip()
+            if key in {"title", "index"}:
+                options[key] = value
+        return core, options, ""
 
     for row_num, row in enumerate(
         ws.iter_rows(min_row=header_row + 1, values_only=True),
@@ -558,35 +582,56 @@ def process_mapping_excel(
         tf_label = None
         tf_chapter = ""
         tf_chapter_title = None
-        chapter_token = re.compile(r"^\d+(?:\.\d+)*\.?$")
-        label_match = re.search(r"\b(Table|Figure)\b.*", instruction, re.IGNORECASE)
-        if label_match:
-            tf_label = instruction[label_match.start():].strip()
-            tf_kind = "table" if tf_label.lower().startswith("table") else "figure"
-            head = instruction[:label_match.start()].strip().strip(",，\u3001")
-            if head:
-                head_parts = [p.strip() for p in re.split(r"[\\/]+", head) if p.strip()]
-                if not head_parts:
-                    head_parts = [head.strip()]
-                inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", head_parts[0])
-                if inline_match:
-                    tf_chapter = inline_match.group(1).rstrip(".")
-                    inline_title = (inline_match.group(2) or "").strip()
-                    if inline_title:
-                        tf_chapter_title = inline_title
-                        if len(head_parts) > 1:
-                            tf_subtitle = " ".join(head_parts[1:]).strip() or None
-                        else:
-                            tf_subtitle = None
-                    else:
-                        if len(head_parts) > 1:
-                            tf_chapter_title = head_parts[1].strip() or None
-                        if len(head_parts) > 2:
-                            tf_subtitle = " ".join(head_parts[2:]).strip() or None
-                        else:
-                            tf_subtitle = None
+        instruction_core = instruction
+        tail_options: dict[str, str] = {}
+        tail_error = ""
+        if "|" in instruction and "=" in instruction.split("|", 1)[1]:
+            instruction_core, tail_options, tail_error = _parse_instruction_tail_options(instruction)
+            if tail_error:
+                _log("error", tail_error, row_num, action_label, detail_label)
+                continue
+
+        def _parse_table_head(head_text: str) -> tuple[str, str | None, str | None]:
+            parsed_chapter = ""
+            parsed_title = None
+            parsed_subtitle = None
+            if not head_text:
+                return parsed_chapter, parsed_title, parsed_subtitle
+            # Accept "/", "\" and "|" as section delimiters for user convenience.
+            head_parts = [p.strip() for p in re.split(r"[\\/|]+", head_text) if p.strip()]
+            if not head_parts:
+                head_parts = [head_text.strip()]
+            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", head_parts[0])
+            if inline_match:
+                parsed_chapter = inline_match.group(1).rstrip(".")
+                inline_title = (inline_match.group(2) or "").strip()
+                if inline_title:
+                    parsed_title = inline_title
+                    if len(head_parts) > 1:
+                        parsed_subtitle = " ".join(head_parts[1:]).strip() or None
                 else:
-                    tf_subtitle = " ".join(head_parts).strip()
+                    if len(head_parts) > 1:
+                        parsed_title = head_parts[1].strip() or None
+                    if len(head_parts) > 2:
+                        parsed_subtitle = " ".join(head_parts[2:]).strip() or None
+            else:
+                parsed_subtitle = " ".join(head_parts).strip() or None
+            return parsed_chapter, parsed_title, parsed_subtitle
+
+        label_match = re.search(r"\b(Table|Figure)\b.*", instruction_core, re.IGNORECASE)
+        if label_match:
+            tf_label = instruction_core[label_match.start():].strip()
+            tf_kind = "table" if tf_label.lower().startswith("table") else "figure"
+            head = instruction_core[:label_match.start()].strip().rstrip("|").strip().strip(",，\u3001")
+            tf_chapter, tf_chapter_title, tf_subtitle = _parse_table_head(head)
+        elif "title" in tail_options or "index" in tail_options:
+            tf_kind = "table"
+            tf_label = ""
+            head = instruction_core.strip().strip(",，\u3001")
+            parsed_chapter, parsed_title, parsed_subtitle = _parse_chapter_parts(head)
+            tf_chapter = parsed_chapter
+            tf_chapter_title = parsed_title or None
+            tf_subtitle = parsed_subtitle or None
 
         if tf_kind:
             infile = _resolve_input_file(task_files_dir, src_name)
@@ -604,8 +649,23 @@ def process_mapping_excel(
                 params["target_subtitle"] = tf_subtitle
             if tf_kind == "table":
                 params["target_caption_label"] = tf_label
+                option_title = (tail_options.get("title") or "").strip()
+                if option_title:
+                    params["target_table_title"] = option_title
+                option_index_raw = (tail_options.get("index") or "").strip()
+                if option_index_raw:
+                    try:
+                        option_index = int(option_index_raw)
+                    except ValueError:
+                        _log("error", f"index 必須是正整數: {option_index_raw}", row_num, action_label, detail_label)
+                        continue
+                    if option_index <= 0:
+                        _log("error", f"index 必須大於 0: {option_index}", row_num, action_label, detail_label)
+                        continue
+                    params["target_table_index"] = option_index
                 step_type = "extract_specific_table_from_word"
-                _log("info", f"extract table: {src_name} ({tf_label})", row_num)
+                target_hint = tf_label or option_title or f"index={params.get('target_table_index', '')}".strip()
+                _log("info", f"extract table: {src_name} ({target_hint})", row_num)
             else:
                 params["target_caption_label"] = tf_label
                 step_type = "extract_specific_figure_from_word"
@@ -618,9 +678,9 @@ def process_mapping_excel(
             continue
 
         is_all = instruction.lower() == "all"
-        chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
+        chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction_core)
         if not is_all and not chapter_match:
-            _log("error", f"unsupported operation: {instruction}", row_num, action_label, detail_label)
+            _log("error", f"unsupported operation: {instruction_core}", row_num, action_label, detail_label)
             continue
 
         infile = _resolve_input_file(task_files_dir, src_name)
@@ -642,9 +702,9 @@ def process_mapping_excel(
             params["explicit_end_title"] = ""
 
             split_pattern = r"[\\/]+"
-            has_split = re.search(split_pattern, instruction)
+            has_split = re.search(split_pattern, instruction_core)
             if has_split:
-                first, after = re.split(split_pattern, instruction, maxsplit=1)
+                first, after = re.split(split_pattern, instruction_core, maxsplit=1)
                 first = first.strip()
                 after = after.strip()
                 first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", first)
@@ -673,7 +733,7 @@ def process_mapping_excel(
                 if "use_chapter_title" not in params:
                     params["use_chapter_title"] = False
             else:
-                inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", instruction.strip())
+                inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", instruction_core.strip())
                 title_inline = ""
                 if inline_match:
                     chapter = inline_match.group(1)

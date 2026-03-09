@@ -1423,7 +1423,8 @@ def run_flow(task_id):
             json.dump(data, f, ensure_ascii=False, indent=2)
         _touch_task_last_edit(task_id)
         if action == "save":
-            return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
+            fpage = request.form.get("fpage")
+            return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))
 
     runtime_steps = []
     for step in workflow:
@@ -1488,7 +1489,8 @@ def run_flow(task_id):
         detail={"task_id": task_id, "flow": flow_name, "job_id": job_id},
         task_id=task_id,
     )
-    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id))
+    fpage = request.form.get("fpage")
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id, fpage=fpage))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/execute/<flow_name>", endpoint="execute_flow")
@@ -1599,7 +1601,8 @@ def execute_flow(task_id, flow_name):
         detail={"task_id": task_id, "flow": flow_name, "job_id": job_id},
         task_id=task_id,
     )
-    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id))
+    fpage = request.form.get("fpage")
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, job=job_id, fpage=fpage))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/update-format/<flow_name>", endpoint="update_flow_format")
@@ -1652,7 +1655,8 @@ def update_flow_format(task_id, flow_name):
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
     _touch_task_last_edit(task_id)
-    return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
+    fpage = request.form.get("fpage")
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/delete/<flow_name>", endpoint="delete_flow")
@@ -1663,7 +1667,8 @@ def delete_flow(task_id, flow_name):
     if os.path.exists(path):
         os.remove(path)
         _touch_task_last_edit(task_id)
-    return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
+    fpage = request.form.get("fpage")
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))
 
 
 @flows_bp.post("/tasks/<task_id>/flows/rename/<flow_name>", endpoint="rename_flow")
@@ -1681,7 +1686,8 @@ def rename_flow(task_id, flow_name):
         return "流程名稱已存在", 400
     os.rename(old_path, new_path)
     _touch_task_last_edit(task_id)
-    return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
+    fpage = request.form.get("fpage")
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))
 
 
 @flows_bp.get("/tasks/<task_id>/flows/export/<flow_name>", endpoint="export_flow")
@@ -1705,4 +1711,5 @@ def import_flow(task_id):
     path = os.path.join(flow_dir, f"{name}.json")
     f.save(path)
     _touch_task_last_edit(task_id)
-    return redirect(url_for("flows_bp.flow_builder", task_id=task_id))
+    fpage = request.form.get("fpage")
+    return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))

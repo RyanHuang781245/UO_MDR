@@ -243,11 +243,17 @@ def task_mapping(task_id):
                 or params.get("target_table_label", "")
                 or params.get("target_figure_label", "")
             ).strip()
+            table_title = (params.get("target_table_title") or "").strip()
+            table_index = str(params.get("target_table_index") or "").strip()
             parts = [src]
             if main_header:
                 parts.append(main_header)
             if label:
                 parts.append(label)
+            if table_title:
+                parts.append(f"title={table_title}")
+            if table_index:
+                parts.append(f"index={table_index}")
             return f"{row_prefix}擷取表格", " | ".join(parts)
         if stype == "extract_specific_figure_from_word":
             src = _base(params.get("input_file", ""))

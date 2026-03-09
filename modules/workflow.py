@@ -185,6 +185,8 @@ SUPPORTED_STEPS = {
             "target_chapter_section",
             "target_chapter_title",
             "target_caption_label",
+            "target_table_title",
+            "target_table_index",
             "target_subtitle",
             "include_caption",
             "template_index",
@@ -195,6 +197,8 @@ SUPPORTED_STEPS = {
             "target_chapter_section": "text",
             "target_chapter_title": "text",
             "target_caption_label": "text",
+            "target_table_title": "text",
+            "target_table_index": "int",
             "target_subtitle": "text",
             "include_caption": "bool",
             "template_index": "text",
@@ -524,6 +528,10 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     or params.get("target_figure_label")
                     or ""
                 )
+                table_title_raw = params.get("target_table_title")
+                table_index_raw = params.get("target_table_index")
+                table_title = str(table_title_raw).strip() if table_title_raw is not None else ""
+                table_index = str(table_index_raw).strip() if table_index_raw is not None else ""
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 extract_specific_table_from_word(
                     infile,
@@ -532,6 +540,8 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     caption_label,
                     params.get("target_subtitle", params.get("subheading_text")) or None,
                     target_chapter_title=params.get("target_chapter_title", params.get("target_title_section")),
+                    target_table_title=table_title or None,
+                    target_table_index=table_index or None,
                     include_caption=boolish(params.get("include_caption", "false")),
                     save_output=True,
                 )

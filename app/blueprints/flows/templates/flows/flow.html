@@ -5,163 +5,214 @@
 <div id="runStatusContainer" class="run-status-container"></div>
 
 <div class="container-fluid px-0">
-    <div class="mb-3">
-        <h1 class="h3 mb-1 fw-bold">流程管理</h1>
-        <!-- <p class="text-muted">定義、保存並執行自動化轉換流程。您可以透過新增步驟來串接不同的處理邏輯。</p> -->
+    <div class="mb-3 d-flex justify-content-between align-items-center">
+        <h1 class="h3 mb-0 fw-bold">流程管理</h1>
+        <!-- <div class="d-flex gap-2">
+            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#importFlowModal">
+                <i class="bi bi-box-arrow-in-down text-primary"></i>
+                匯入流程
+            </button>
+        </div> -->
     </div>
 
-    <!-- 流程編輯區 -->
-    <div class="main-card mb-4" style="overflow: visible;">
-        <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post">
-            <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
-            <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
+    <ul class="nav nav-tabs nav-tabs-custom mb-4" id="flowTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if not request.args.get('fpage') %}active{% endif %}" id="builder-tab" data-bs-toggle="tab" data-bs-target="#builder-pane" type="button" role="tab" aria-controls="builder-pane" aria-selected="{% if not request.args.get('fpage') %}true{% else %}false{% endif %}">定義流程</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if request.args.get('fpage') %}active{% endif %}" id="saved-tab" data-bs-toggle="tab" data-bs-target="#saved-pane" type="button" role="tab" aria-controls="saved-pane" aria-selected="{% if request.args.get('fpage') %}true{% else %}false{% endif %}">已保存流程</button>
+        </li>
+    </ul>
 
-            <div class="px-4 py-4 border-bottom">
-                <div class="row g-3">
-                    <div class="col-lg-8">
-                        <label class="form-label small fw-bold text-uppercase text-muted">流程名稱</label>
-                        <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" required>
-                        <div class="form-text text-end small" id="flowNameCount">0/50</div>
-                    </div>
-                    <div class="col-lg-4 d-flex align-items-end pb-2">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
-                            <label class="form-check-label fw-medium" for="center_titles">置中 Table/Figure 標題段落</label>
+    <div class="tab-content" id="flowTabsContent">
+        <!-- 流程編輯區 -->
+        <div class="tab-pane fade {% if not request.args.get('fpage') %}show active{% endif %}" id="builder-pane" role="tabpanel" aria-labelledby="builder-tab">
+            <div class="main-card mb-4" style="overflow: visible;">
+                <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post">
+                    <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
+                    <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
+
+
+                    <div class="px-4 py-4 border-bottom">
+                        <div class="row g-3">
+                            <div class="col-lg-8">
+                                <label class="form-label small fw-bold text-uppercase text-muted">流程名稱</label>
+                                <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" required>
+                                <div class="form-text text-end small" id="flowNameCount">0/50</div>
+                            </div>
+                            <div class="col-lg-4 d-flex align-items-end pb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
+                                    <label class="form-check-label fw-medium" for="center_titles">置中 Table/Figure 標題段落</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            <!-- 操作工具列 -->
-            <div class="px-4 py-3 bg-light bg-opacity-50 border-bottom d-flex flex-column flex-lg-row justify-content-between gap-3">
-                <div class="d-flex flex-wrap gap-2">
-                    <div class="dropdown">
-                        <button class="btn btn-white border bg-white shadow-sm dropdown-toggle d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-plus-lg text-primary"></i>
-                            新增步驟
-                        </button>
-                        <ul class="dropdown-menu shadow-sm border-0">
-                            {% for key, meta in steps.items() %}
-                            <li><a class="dropdown-item py-2" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
-                            {% endfor %}
-                        </ul>
+                    <!-- 操作工具列 -->
+                    <div class="flow-toolbar px-4 py-3 bg-light bg-opacity-50 border-bottom d-flex flex-column flex-lg-row justify-content-between gap-3">
+                        <div class="d-flex flex-wrap gap-2">
+                            <div class="dropdown">
+                                <button class="btn btn-white border bg-white shadow-sm dropdown-toggle d-inline-flex align-items-center gap-1" id="addStepDropdownBtn" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport">
+                                    <i class="bi bi-plus-lg text-primary"></i>
+                                    新增步驟
+                                </button>
+                                <ul class="dropdown-menu shadow-sm border-0">
+                                    {% for key, meta in steps.items() %}
+                                    <li><a class="dropdown-item py-2" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">
+                                <i class="bi bi-search text-primary"></i>
+                                模板解析
+                            </button>
+                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
+                                <i class="bi bi-folder text-primary"></i>
+                                檔案結構
+                            </button>
+                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
+                                <i class="bi bi-arrows-collapse text-primary"></i>
+                                全部收合
+                            </button>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" type="submit" name="action" value="save">
+                                <i class="bi bi-save"></i>
+                                保存流程
+                            </button>
+                            <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold px-3" type="submit" name="action" value="run">
+                                <i class="bi bi-play-fill"></i>
+                                執行流程
+                            </button>
+                        </div>
                     </div>
-                    <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">
-                        <i class="bi bi-search text-primary"></i>
-                        模板解析
-                    </button>
-                    <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
-                        <i class="bi bi-folder text-primary"></i>
-                        檔案結構
-                    </button>
-                    <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
-                        <i class="bi bi-arrows-collapse text-primary"></i>
-                        全部收合
-                    </button>
-                </div>
-                <div class="d-flex flex-wrap gap-2">
-                    <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" type="submit" name="action" value="save">
-                        <i class="bi bi-save"></i>
-                        保存流程
-                    </button>
-                    <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold px-3" type="submit" name="action" value="run">
-                        <i class="bi bi-play-fill"></i>
-                        執行流程
-                    </button>
-                </div>
-            </div>
-            
-            <div class="px-4 py-2 bg-white border-bottom small text-muted">
-                <i class="bi bi-file-earmark-text me-1"></i> 目前解析模板：<code class="text-primary fw-bold" id="currentTemplateLabel">{{ template_file or "未選擇" }}</code>
-            </div>
+                    
+                    <div class="px-4 py-2 bg-white border-bottom small text-muted">
+                        <i class="bi bi-file-earmark-text me-1"></i> 目前解析模板：<code class="text-primary fw-bold" id="currentTemplateLabel">{{ template_file or "未選擇" }}</code>
+                    </div>
 
-            <div class="px-4 py-4">
-                <div id="steps" class="vstack gap-3"></div>
+                    <div class="px-4 py-4">
+                        <div id="steps" class="vstack gap-3"></div>
+                    </div>
+                </form>
             </div>
-        </form>
-    </div>
-
-    <!-- 已保存流程列表 -->
-    <div class="main-card">
-        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#savedFlowsCollapse">
-            <h5 class="fw-bold mb-0">已保存流程</h5>
-            <div class="text-muted small">共 <span>{{ flow_pagination.total_count }}</span> 筆流程 (第 {{ flow_pagination.page }} / {{ flow_pagination.total_pages }} 頁)</div>
         </div>
-        <div id="savedFlowsCollapse" class="collapse show">
-            <div class="table-responsive">
-                <table class="table mb-0 align-middle">
-                    <thead style="background-color: #f8fafc;">
-                        <tr>
-                            <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">流程名稱</th>
-                            <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
-                            <th class="fw-bold text-uppercase text-muted py-3" style="width: 420px; font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="flowTableBody">
-                        {% for f in flows %}
-                        <tr data-flow="{{ f.name }}">
-                            <td class="text-start ps-4">
-                                <span class="fw-bold text-primary" style="font-size: 0.875rem;">{{ f.name }}</span>
-                            </td>
-                            <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ f.created }}</td>
-                            <td>
-                                <div class="d-flex justify-content-center gap-1">
-                                    <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製檔案步驟，執行前請確認 NAS 與任務資料夾內容一致。')"{% endif %}>
-                                        <input type="hidden" name="apply_formatting" value="false">
-                                        <button class="btn-action-icon text-success" type="submit" title="快速執行">
-                                            <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">執行</span>
-                                        </button>
-                                    </form>
-                                    <button class="btn-action-icon apply-formatting-btn" type="button" data-bs-toggle="modal" data-bs-target="#applyFormattingModal" data-flow="{{ f.name }}" data-action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" title="套用格式並執行">
-                                        <i class="bi bi-text-paragraph"></i><span class="d-none d-lg-inline small fw-semibold">套用格式並執行</span>
-                                    </button>
-                                    <a class="btn-action-icon" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}" title="編輯流程">
-                                        <i class="bi bi-pencil-square"></i><span class="d-none d-lg-inline small fw-semibold">編輯流程</span>
-                                    </a>
-                                    <button class="btn-action-icon" type="button" onclick="renameFlow('{{ f.name }}')" title="重新命名">
-                                        <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
-                                    </button>
-                                    <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除流程「{{ f.name }}」?')">
-                                        <button class="btn-action-icon text-danger" type="submit" title="刪除流程">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="3" class="text-center py-5 text-muted">
-                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
-                                尚無流程
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            <!-- Pagination Footer for Saved Flows -->
-            <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
-                <nav>
-                    <ul class="pagination pagination-sm mb-0 gap-1">
-                        <li class="page-item {% if not flow_pagination.has_prev %}disabled{% endif %}">
-                            <a class="page-link" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page-1) if flow_pagination.has_prev else '#' }}"title="上一頁"><i class="bi bi-chevron-left"></i></a>
-                        </li>
-                        {% for p in range(1, flow_pagination.total_pages + 1) %}
-                            {% if p >= flow_pagination.page - 2 and p <= flow_pagination.page + 2 %}
-                            <li class="page-item {% if p == flow_pagination.page %}active{% endif %}">
-                                <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=p) }}">{{ p }}</a>
-                            </li>
-                            {% endif %}
-                        {% endfor %}
-                        <li class="page-item {% if not flow_pagination.has_next %}disabled{% endif %}">
-                            <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page+1) if flow_pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
-                        </li>
-                    </ul>
-                </nav>
+
+        <!-- 已保存流程列表 -->
+        <div class="tab-pane fade {% if request.args.get('fpage') %}show active{% endif %}" id="saved-pane" role="tabpanel" aria-labelledby="saved-tab">
+            <div class="main-card">
+                <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0">已保存流程</h5>
+                    <div class="text-muted small">共 <span>{{ flow_pagination.total_count }}</span> 筆流程 (第 {{ flow_pagination.page }} / {{ flow_pagination.total_pages }} 頁)</div>
+                </div>
+                <div>
+                    <div class="table-responsive">
+                        <table class="table mb-0 align-middle">
+                            <thead style="background-color: #f8fafc;">
+                                <tr>
+                                    <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">流程名稱</th>
+                                    <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
+                                    <th class="fw-bold text-uppercase text-muted py-3" style="width: 450px; font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="flowTableBody">
+                                {% for f in flows %}
+                                <tr data-flow="{{ f.name }}">
+                                    <td class="text-start ps-4">
+                                        <span class="fw-bold text-primary" style="font-size: 0.875rem;">{{ f.name }}</span>
+                                    </td>
+                                    <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ f.created }}</td>
+                                    <td>
+                                        <div class="d-flex justify-content-center gap-1">
+                                            <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製檔案步驟，執行前請確認 NAS 與任務資料夾內容一致。')"{% endif %}>
+                                                <input type="hidden" name="apply_formatting" value="false">
+                                                <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
+                                                <button class="btn-action-icon text-success" type="submit" title="快速執行">
+                                                    <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">執行</span>
+                                                </button>
+                                            </form>
+
+                                            <button class="btn-action-icon apply-formatting-btn" type="button" data-bs-toggle="modal" data-bs-target="#applyFormattingModal" data-flow="{{ f.name }}" data-action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" title="套用格式並執行">
+                                                <i class="bi bi-text-paragraph"></i><span class="d-none d-lg-inline small fw-semibold">套用格式並執行</span>
+                                            </button>
+                                            <a class="btn-action-icon" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}" title="編輯流程">
+                                                <i class="bi bi-pencil-square"></i><span class="d-none d-lg-inline small fw-semibold">編輯流程</span>
+                                            </a>
+                                            <button class="btn-action-icon" type="button" onclick="renameFlow('{{ f.name }}')" title="重新命名">
+                                                <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
+                                            </button>
+                                            <!-- <a class="btn-action-icon" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}" title="導出流程">
+                                                <i class="bi bi-box-arrow-up"></i>
+                                            </a> -->
+                                            <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除流程「{{ f.name }}」?')">
+                                                <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
+                                                <button class="btn-action-icon text-danger" type="submit" title="刪除流程">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="3" class="text-center py-5 text-muted">
+                                        <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                        尚無流程
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Pagination Footer for Saved Flows -->
+                    <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0 gap-1">
+                                <li class="page-item {% if not flow_pagination.has_prev %}disabled{% endif %}">
+                                    <a class="page-link" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page-1) if flow_pagination.has_prev else '#' }}"title="上一頁"><i class="bi bi-chevron-left"></i></a>
+                                </li>
+                                {% for p in range(1, flow_pagination.total_pages + 1) %}
+                                    {% if p >= flow_pagination.page - 2 and p <= flow_pagination.page + 2 %}
+                                    <li class="page-item {% if p == flow_pagination.page %}active{% endif %}">
+                                        <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=p) }}">{{ p }}</a>
+                                    </li>
+                                    {% endif %}
+                                {% endfor %}
+                                <li class="page-item {% if not flow_pagination.has_next %}disabled{% endif %}">
+                                    <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page+1) if flow_pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+</div>
+
+<!-- Modals -->
+<div class="modal fade" id="importFlowModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{{ url_for('flows_bp.import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data">
+        <div class="modal-header">
+          <h5 class="modal-title">匯入流程</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-uppercase text-muted">選擇流程檔案 (.json)</label>
+            <input type="file" name="flow_file" class="form-control form-control-custom" accept=".json" required>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+          <button type="submit" class="btn btn-primary fw-bold">匯入</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
 <!-- Modals -->
@@ -265,6 +316,7 @@
         </div>
         <div class="modal-body">
           <input type="hidden" name="apply_formatting" value="true">
+          <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
           <div class="mb-4">
             <label class="form-label small fw-bold text-uppercase text-muted">選擇字型格式</label>
             <select class="form-select form-control-custom" name="document_format">
@@ -314,7 +366,6 @@
   </div>
 </div>
 
-<div class="modal fade" id="templateModal" tabindex="-1" aria-labelledby="templateModalLabel" aria-hidden="true">
 <style>
 .flow-table {
   width: 100%;
@@ -372,6 +423,19 @@
 .run-status-body {
   color: #555;
   font-size: 0.9rem;
+}
+#builder-pane,
+#builder-pane .main-card,
+#builder-pane .flow-toolbar {
+  overflow: visible;
+}
+#builder-pane .main-card {
+  min-height: 460px;
+}
+.flow-toolbar .dropdown-menu {
+  z-index: 1080;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
 }
 .step-toggle[aria-expanded="true"] .transition-icon {
   transform: rotate(90deg);
@@ -496,6 +560,14 @@ const FIELD_META = {
     label: "圖/表標題前綴",
     placeholder: "例如 Figure 1 或 Table 1"
   },
+  target_table_title: {
+    label: "表格標題全文",
+    placeholder: "例如 General information of the accessories."
+  },
+  target_table_index: {
+    label: "章節內表格序號",
+    placeholder: "例如 1"
+  },
   input_file: {
     label: "輸入檔案",
     placeholder: "請選擇檔案"
@@ -548,6 +620,7 @@ const FIELD_META = {
 };
 
 const RUN_JOB_ID = {{ job_id|tojson }};
+const CURRENT_FLOW_PAGE = {{ flow_pagination.page|tojson }};
 const runStatusContainer = document.getElementById("runStatusContainer");
 const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
 const applyFormattingModal = document.getElementById("applyFormattingModal");
@@ -1764,7 +1837,16 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     }
   }
 
-  const summaryKeys = ["input_file", "pdf_zip", "target_chapter_section", "target_section", "target_caption_label", "text"];
+  const summaryKeys = [
+    "input_file",
+    "pdf_zip",
+    "target_chapter_section",
+    "target_section",
+    "target_caption_label",
+    "target_table_title",
+    "target_table_index",
+    "text"
+  ];
   const getSummaryParts = () => {
     const parts = [];
     summaryKeys.forEach(k => {
@@ -1926,6 +2008,21 @@ const renameFlowSubmitBtn = document.getElementById('renameFlowSubmitBtn');
 let renameModalInstance = null;
 
 document.addEventListener('DOMContentLoaded', () => {
+  const addStepDropdownBtn = document.getElementById('addStepDropdownBtn');
+  if (addStepDropdownBtn && typeof bootstrap !== 'undefined' && bootstrap.Dropdown) {
+    bootstrap.Dropdown.getOrCreateInstance(addStepDropdownBtn, {
+      boundary: document.body,
+      popperConfig(defaultBsPopperConfig) {
+        return {
+          ...defaultBsPopperConfig,
+          strategy: 'fixed',
+        };
+      },
+    });
+  }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
   if (renameFlowModalEl && typeof bootstrap !== 'undefined') {
     renameModalInstance = new bootstrap.Modal(renameFlowModalEl);
     
@@ -1946,7 +2043,7 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('流程名稱長度不可超過 50 字');
         return;
       }
-      submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name: newName });
+      submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name: newName, fpage: String(CURRENT_FLOW_PAGE) });
       renameModalInstance.hide();
     });
   }
@@ -1965,7 +2062,7 @@ function renameFlow(current){
       alert('流程名稱長度不可超過 50 字');
       return;
     }
-    submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name });
+    submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name, fpage: String(CURRENT_FLOW_PAGE) });
   }
 }
 if (PRESET_FLOW){

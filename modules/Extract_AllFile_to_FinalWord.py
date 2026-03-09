@@ -13,6 +13,7 @@ from spire.doc import *
 from spire.doc.common import *
 from modules.extract_word_all_content import extract_body_with_options
 from modules.extract_word_chapter import extract_section_docx_xml
+from modules.extract_specific_table_xml import extract_specific_table_from_word_xml
 
 
 def set_run_font_eastasia(run, eastasia_name: str):
@@ -994,107 +995,25 @@ def extract_specific_table_from_word(
     target_subtitle: str | None = None,
     target_chapter_title: str | None = None,
     *,
+    target_table_title: str | None = None,
+    target_table_index: int | str | None = None,
     include_caption: bool = True,
     save_output: bool = True,      # 是否存檔；如不存則僅回傳找到與否
     return_reason: bool = False,
-) -> bool:
+) -> bool | dict:
     """
-    擷取指定標題上方的表格，並另存到新的 Word 文件中以便檢查。
+    Compatibility wrapper: route table extraction to the XML-based implementation.
     """
-
-    use_chapter = bool(target_chapter_section.strip())
-    chapter_title = (target_chapter_title or "").strip()
-    if use_chapter:
-        stop_prefix = target_chapter_section.rsplit('.', 1)[0]
-        stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
-
-    if target_subtitle and target_subtitle.strip():
-        subtitle_pattern = re.compile(rf"^\s*{re.escape(target_subtitle.strip())}\s*$", re.IGNORECASE)
-    else:
-        subtitle_pattern = None
-
-    table_label_pattern = re.compile(rf"^\s*{re.escape(target_caption_label)}", re.IGNORECASE)
-
-    # 2. 建立輸入與輸出文件物件
-    input_doc = Document()
-    input_doc.LoadFromFile(input_file)
-
-    output_doc = Document()
-    out_section = output_doc.AddSection()
-
-    nodes = queue.Queue()
-    nodes.put(input_doc)
-
-    in_target_chapter = not use_chapter
-    in_target_subtitle = (subtitle_pattern is None)
-    is_waiting_for_table = False 
-    saved_caption_text = ""
-    result_found = False
-    subtitle_found = False
-
-    # 3. 遍歷文件結構
-    while nodes.qsize() > 0 and not result_found:
-        node = nodes.get()
-        for i in range(node.ChildObjects.Count):
-            child = node.ChildObjects.get_Item(i)
-
-            # --- 處理段落：判斷範圍與標題 ---
-            if isinstance(child, Paragraph):
-                text_stripped = _get_paragraph_text_stripped(child)
-
-                # A) 章節與範圍判斷
-                if use_chapter and _match_chapter_start(text_stripped, target_chapter_section, chapter_title):
-                    in_target_chapter = True
-                    in_target_subtitle = (subtitle_pattern is None)
-                    continue
-                if use_chapter and in_target_chapter and stop_pattern.match(text_stripped):
-                    in_target_chapter = False
-                    break
-                if in_target_chapter and subtitle_pattern and subtitle_pattern.match(text_stripped):
-                    in_target_subtitle = True
-                    subtitle_found = True
-                    continue
-
-                # B) 核心邏輯：發現標題 (立旗)
-                if in_target_chapter and in_target_subtitle:
-                    if table_label_pattern.match(text_stripped):
-                        is_waiting_for_table = True
-                        saved_caption_text = text_stripped
-                        continue
-
-            # --- 處理表格：擷取目標 ---
-            elif isinstance(child, Table):
-                if is_waiting_for_table:
-                    if include_caption and saved_caption_text:
-                        out_section.AddParagraph().AppendText(saved_caption_text)
-                    # 複製並寫入表格
-                    new_table = child.Clone()
-                    out_section.Body.ChildObjects.Add(new_table)
-
-                    result_found = True
-                    break
-                
-                nodes.put(child)
-
-            # --- 處理其他結構 ---
-            elif isinstance(child, Section):
-                nodes.put(child.Body)
-            elif isinstance(child, ICompositeObject):
-                doc_type = getattr(child, "DocumentObjectType", None)
-                if _is_header_or_footer(doc_type):
-                    continue
-                nodes.put(child)
-
-    # 4. 存檔並關閉
-    if result_found and save_output and output_docx_path:
-        output_doc.SaveToFile(output_docx_path, FileFormat.Docx)
-        print(f"成功！已將表格與標題另存至：{output_docx_path}")
-    elif not result_found:
-        print("搜尋結束，未找到符合條件的表格。")
-
-    input_doc.Close()
-    if subtitle_pattern is not None and not subtitle_found:
-        return {"ok": False, "subtitle_found": False, "reason": "subtitle_not_found"} if return_reason else False
-    if not result_found:
-        return {"ok": False, "subtitle_found": True, "reason": "table_not_found"} if return_reason else False
-    return {"ok": True, "subtitle_found": True, "reason": "ok"} if return_reason else True
+    return extract_specific_table_from_word_xml(
+        input_file=input_file,
+        output_docx_path=output_docx_path,
+        target_chapter_section=target_chapter_section,
+        target_caption_label=target_caption_label,
+        target_subtitle=target_subtitle,
+        target_chapter_title=target_chapter_title,
+        target_table_title=target_table_title,
+        target_table_index=target_table_index,
+        include_caption=include_caption,
+        save_output=save_output,
+        return_reason=return_reason,
+    )

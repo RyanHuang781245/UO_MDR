@@ -7,22 +7,21 @@
 <div class="container-fluid px-0">
     <div class="mb-3 d-flex justify-content-between align-items-center">
         <h1 class="h3 mb-0 fw-bold">流程管理</h1>
-        <!-- <div class="d-flex gap-2">
-            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#importFlowModal">
-                <i class="bi bi-box-arrow-in-down text-primary"></i>
-                匯入流程
-            </button>
-        </div> -->
     </div>
 
     <ul class="nav nav-tabs nav-tabs-custom mb-4" id="flowTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link {% if not request.args.get('fpage') %}active{% endif %}" id="builder-tab" data-bs-toggle="tab" data-bs-target="#builder-pane" type="button" role="tab" aria-controls="builder-pane" aria-selected="{% if not request.args.get('fpage') %}true{% else %}false{% endif %}">定義流程</button>
+            <button class="nav-link {% if not request.args.get('fpage') %}active{% endif %}" id="builder-tab" data-bs-toggle="tab" data-bs-target="#builder-pane" type="button" role="tab" aria-controls="builder-pane" aria-selected="{% if not request.args.get('fpage') %}true{% else %}false{% endif %}">
+                <i class="bi bi-plus-square me-2"></i>定義流程
+            </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link {% if request.args.get('fpage') %}active{% endif %}" id="saved-tab" data-bs-toggle="tab" data-bs-target="#saved-pane" type="button" role="tab" aria-controls="saved-pane" aria-selected="{% if request.args.get('fpage') %}true{% else %}false{% endif %}">已保存流程</button>
+            <button class="nav-link {% if request.args.get('fpage') %}active{% endif %}" id="saved-tab" data-bs-toggle="tab" data-bs-target="#saved-pane" type="button" role="tab" aria-controls="saved-pane" aria-selected="{% if request.args.get('fpage') %}true{% else %}false{% endif %}">
+                <i class="bi bi-folder-check me-2"></i>已保存流程
+            </button>
         </li>
     </ul>
+
 
     <div class="tab-content" id="flowTabsContent">
         <!-- 流程編輯區 -->

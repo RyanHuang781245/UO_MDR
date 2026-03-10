@@ -296,7 +296,7 @@ def extract_word_chapter(
     explicit_end_number: str | None = None,
     target_subtitle: str | None = None,
     subheading_strict_match: bool = True,
-    hide_chapter_title: bool = True,
+    hide_chapter_title: bool = False,
     ignore_header_footer: bool = True,
     ignore_toc: bool = True,
     output_docx_path: str | None = None,

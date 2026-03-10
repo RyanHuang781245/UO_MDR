@@ -458,34 +458,128 @@
 .transition-icon {
   transition: transform 0.2s ease;
 }
-#steps .card {
+#steps > .card {
   min-width: 0;
+  border: 1px solid var(--bs-gray-200);
+  border-left: 4px solid var(--bs-gray-300);
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+  margin-bottom: 0.5rem;
 }
-#steps .card-header {
+#steps > .card:hover {
+  border-color: var(--bs-blue-200);
+  border-left-color: var(--bs-blue-400);
+  transform: translateX(2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+#steps > .card.is-active {
+  border-color: var(--bs-blue-600);
+  border-left-color: var(--bs-blue-600);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.12);
+  transform: translateX(0);
+}
+#steps > .card .card-header {
+  padding: 0.75rem 1.25rem;
+  background-color: transparent !important;
+  border-bottom: none;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
-#steps .step-toggle {
+#steps > .card.is-active .card-header {
+  border-bottom: 1px solid var(--bs-gray-100);
+}
+#steps > .card .step-index {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background-color: var(--bs-gray-100) !important;
+  color: var(--bs-gray-600) !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+#steps > .card.is-active .step-index {
+  background-color: var(--bs-blue-600) !important;
+  color: white !important;
+}
+#steps > .card .step-toggle {
   min-width: 0;
   flex: 1 1 420px;
 }
-#steps .step-toggle .fw-bold {
-  min-width: 0;
+#steps > .card .step-toggle .fw-bold {
+  color: var(--bs-gray-700);
+}
+#steps > .card.is-active .step-toggle .fw-bold {
+  color: var(--bs-blue-600);
 }
 .step-summary {
   display: inline-block;
   min-width: 0;
   max-width: 120px;
+  color: var(--bs-gray-400);
+  font-weight: 400;
 }
-#steps .card-header > .btn-group {
+#steps > .card.is-active .step-summary {
+  color: var(--bs-gray-500);
+}
+#steps > .card .card-header > .btn-group {
   flex: 0 1 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
   row-gap: 0.35rem;
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
 }
-#steps .card-header > .btn-group .btn {
-  white-space: nowrap;
+#steps > .card:hover .card-header > .btn-group,
+#steps > .card.is-active .card-header > .btn-group {
+  opacity: 1;
 }
+@keyframes step-move-flash {
+  0% { 
+    background-color: #fffbeb; 
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2);
+    transform: scale(1.02);
+  }
+  50% {
+    background-color: #fffbeb;
+    border-color: #f59e0b;
+  }
+  100% { 
+    background-color: #fafbfc; 
+    border-color: var(--bs-gray-200);
+    box-shadow: none;
+    transform: scale(1);
+  }
+}
+.step-moved-highlight {
+  animation: step-move-flash 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  z-index: 10;
+}
+#steps > .card .card-body {
+  padding: 1.5rem;
+  background-color: #fafbfc;
+  transition: background-color 0.3s ease;
+}
+/* Nested cards inside a step */
+#steps .card-body .card {
+  border: 1px solid var(--bs-gray-200);
+  border-left-width: 1px !important;
+  border-left-color: var(--bs-gray-200) !important;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  background-color: white;
+  transform: none !important;
+  box-shadow: none !important;
+}
+#steps .card-body .card-body {
+  padding: 1rem;
+  background-color: white;
+}
+
+
 @media (min-width: 576px) {
   .step-summary {
     max-width: 300px;
@@ -2058,11 +2152,27 @@ function moveStep(sid, direction){
   if (!el) return;
   const sibling = direction === 'up' ? el.previousElementSibling : el.nextElementSibling;
   if (!sibling) return;
+  
+  // Apply move animation
   if (direction === 'up') {
     el.parentNode.insertBefore(el, sibling);
   } else {
     el.parentNode.insertBefore(sibling, el);
   }
+  
+  // Trigger visual feedback flash
+  el.classList.remove('step-moved-highlight');
+  void el.offsetWidth; // Trigger reflow to restart animation
+  el.classList.add('step-moved-highlight');
+
+  // Remove the highlight class after animation finishes to prevent style locking
+  setTimeout(() => {
+    el.classList.remove('step-moved-highlight');
+  }, 1200);
+
+  // Smooth scroll to follow the moved element
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  
   updateOrder();
 }
 function moveUp(sid){ moveStep(sid, 'up'); }
@@ -2146,6 +2256,8 @@ _applyRuleVisibility(document);
 
 const toggleAllStepsBtn = document.getElementById('toggleAllStepsBtn');
 let allCollapsed = false;
+let isBulkOperating = false; // Flag to prevent highlighting during bulk actions
+
 document.addEventListener('DOMContentLoaded', () => {
   if (toggleRuleVisibilitySwitch) {
     toggleRuleVisibilitySwitch.addEventListener('change', () => {
@@ -2154,17 +2266,54 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (toggleAllStepsBtn && typeof bootstrap !== 'undefined') {
     toggleAllStepsBtn.addEventListener('click', () => {
+      isBulkOperating = true; // Lock highlighting
+      
       const collapses = document.querySelectorAll('.step-content');
       allCollapsed = !allCollapsed;
+      
       collapses.forEach(el => {
         const bsCollapse = bootstrap.Collapse.getOrCreateInstance(el);
         if (allCollapsed) bsCollapse.hide();
         else bsCollapse.show();
       });
+      
+      // If collapsing all, remove all active highlights immediately
+      if (allCollapsed) {
+        document.querySelectorAll('#steps > .card.is-active').forEach(c => c.classList.remove('is-active'));
+      }
+      
       toggleAllStepsBtn.innerHTML = allCollapsed ? '<i class="bi bi-arrows-expand"></i> 全部展開' : '<i class="bi bi-arrows-collapse"></i> 全部收合';
+      
+      // Release lock after a short delay to allow events to settle
+      setTimeout(() => { isBulkOperating = false; }, 100);
     });
   }
+
+  // Handle active step highlighting (Exclusive)
+  document.getElementById('steps').addEventListener('show.bs.collapse', (e) => {
+    if (isBulkOperating) return; // Skip during bulk expand
+    
+    if (e.target.classList.contains('step-content')) {
+      // Remove is-active from ALL cards first
+      document.querySelectorAll('#steps > .card.is-active').forEach(c => c.classList.remove('is-active'));
+      
+      const card = e.target.closest('.card');
+      if (card) card.classList.add('is-active');
+    }
+  });
+  
+  document.getElementById('steps').addEventListener('hide.bs.collapse', (e) => {
+    if (isBulkOperating) return; // Skip during bulk collapse
+    
+    if (e.target.classList.contains('step-content')) {
+      const card = e.target.closest('.card');
+      if (card) card.classList.remove('is-active');
+    }
+  });
 });
+
+
+
 
 const flowNameInput = document.getElementById('flowNameInput');
 const flowNameCount = document.getElementById('flowNameCount');

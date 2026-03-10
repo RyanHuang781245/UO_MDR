@@ -36,14 +36,12 @@ except Exception:
 
 try:
     from modules.Extract_AllFile_to_FinalWord import (
-        center_table_figure_paragraphs,
         apply_basic_style,
         remove_hidden_runs,
         hide_paragraphs_with_text,
         remove_paragraphs_with_text,
     )
 except Exception:  # optional dependencies may be missing
-    center_table_figure_paragraphs = _optional_dependency_stub("center_table_figure_paragraphs")
     apply_basic_style = _optional_dependency_stub("apply_basic_style")
     remove_hidden_runs = _optional_dependency_stub("remove_hidden_runs")
     hide_paragraphs_with_text = _optional_dependency_stub("hide_paragraphs_with_text")

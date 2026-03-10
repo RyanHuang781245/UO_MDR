@@ -21,7 +21,6 @@ from .Extract_AllFile_to_FinalWord import (
     extract_word_chapter,
     extract_specific_figure_from_word,
     extract_specific_table_from_word,
-    center_table_figure_paragraphs,
     apply_basic_style,
     remove_hidden_runs,
     hide_paragraphs_with_text,
@@ -364,7 +363,6 @@ def process_mapping_excel(
             titles = hidden_titles.get(name, [])
             remove_hidden_runs(out_path, preserve_texts=titles)
             renumber_figures_tables_file(out_path)
-            center_table_figure_paragraphs(out_path)
             apply_basic_style(out_path)
             hide_paragraphs_with_text(out_path, titles)
             outputs.append(out_path)
@@ -918,7 +916,6 @@ def process_mapping_excel(
                     )
             result_path = workflow_result.get("result_docx") or os.path.join(workdir, "result.docx")
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-            center_table_figure_paragraphs(result_path)
             if DEFAULT_APPLY_FORMATTING and DEFAULT_DOCUMENT_FORMAT_KEY != "none":
                 preset = DOCUMENT_FORMAT_PRESETS.get(DEFAULT_DOCUMENT_FORMAT_KEY) or DOCUMENT_FORMAT_PRESETS.get("default", {})
                 apply_basic_style(

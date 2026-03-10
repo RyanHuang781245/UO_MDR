@@ -71,7 +71,7 @@
                             </thead>
                             <tbody class="small">
                                 <tr><td class="font-monospace">檔案名稱/資料夾名稱/文字內容</td><td>來源檔案（或 Add Text 文字）</td></tr>
-                                <tr><td class="font-monospace">擷取段落/操作</td><td>章節/指令內容（可含 <code>|title=</code>、<code>|index=</code>）</td></tr>
+                                <tr><td class="font-monospace">擷取段落/操作</td><td>章節/指令內容（可含 <code>|Figure x. or Table x.</code>、<code>|title=</code>、<code>|index=</code>）</td></tr>
                                 <tr><td class="font-monospace">類型</td><td><code>空白</code>=擷取章節、<code>Figure</code>=擷取圖片、<code>Table</code>=擷取表格</td></tr>
                                 <tr><td class="font-monospace">檔案路徑</td><td>輸出資料夾（相對路徑）</td></tr>
                                 <tr><td class="font-monospace">檔案名稱</td><td>輸出檔名（.docx）</td></tr>
@@ -82,13 +82,11 @@
                     </div>
 
                     <div class="small fw-semibold text-dark mb-2">操作欄語法範例</div>
-                    <div class="small font-monospace mb-1">章節擷取（類型空白）：<span class="text-primary">1.1.1 General description</span></div>
+                    <div class="small font-monospace mb-1">章節擷取（類型 空白）：<span class="text-primary">1.1.1 General description</span></div>
                     <div class="small font-monospace mb-1">圖片擷取（類型 Figure）：<span class="text-primary">1.1.1 General description|title=System overview|index=2</span></div>
+                    <div class="small font-monospace mb-1">圖片擷取（類型 Figure）：<span class="text-primary">1.1.1 General description|title=System overview|title=figure title</span></div>
                     <div class="small font-monospace mb-2">表格擷取（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|index=1</span></div>
-
-                    <div class="small text-danger mb-0">
-                        注意：<code>index</code> 必須是正整數；若操作欄已寫 <code>Figure/Table</code>，需與「類型」欄一致。
-                    </div>
+                    <div class="small font-monospace mb-2">表格擷取（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|title=table title</span></div>
                 </div>
                 <div class="modal-footer">
                     <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}">

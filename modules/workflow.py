@@ -163,6 +163,8 @@ SUPPORTED_STEPS = {
             "target_chapter_title",
             "target_subtitle",
             "target_caption_label",
+            "target_figure_title",
+            "target_figure_index",
             "include_caption",
             "template_index",
             "template_mode",
@@ -173,6 +175,8 @@ SUPPORTED_STEPS = {
             "target_chapter_title": "text",
             "target_subtitle": "text",
             "target_caption_label": "text",
+            "target_figure_title": "text",
+            "target_figure_index": "int",
             "include_caption": "bool",
             "template_index": "text",
             "template_mode": "text",
@@ -487,37 +491,31 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     or params.get("target_table_label")
                     or ""
                 )
+                figure_title_raw = params.get("target_figure_title")
+                figure_index_raw = params.get("target_figure_index")
+                figure_title = str(figure_title_raw).strip() if figure_title_raw is not None else ""
+                figure_index = str(figure_index_raw).strip() if figure_index_raw is not None else ""
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                include_caption = boolish(params.get("include_caption", "true"))
                 result = extract_specific_figure_from_word(
                     infile,
                     params.get("target_chapter_section", ""),
                     caption_label,
                     target_subtitle=params.get("target_subtitle", params.get("subheading_text")),
                     target_chapter_title=params.get("target_chapter_title", params.get("target_title_section")),
-                    output_image_path=os.path.join(workdir, "images"),
+                    target_figure_title=figure_title or None,
+                    target_figure_index=figure_index or None,
+                    output_docx_path=frag_path,
+                    include_caption=include_caption,
+                    save_output=True,
+                    return_reason=True,
                     output_doc=None,
                     section=None,
                 )
-                image_dir = os.path.join(workdir, "images")
-                os.makedirs(image_dir, exist_ok=True)
-                include_caption = boolish(params.get("include_caption", "true"))
-                added = False
-                doc = DocxDocument()
                 if isinstance(result, dict):
-                    image_filename = result.get("image_filename")
-                    caption_text = result.get("caption")
-                    log[-1]["image_filename"] = image_filename
-                    log[-1]["caption"] = caption_text
-                    if image_filename:
-                        img_path = os.path.join(image_dir, image_filename)
-                        if os.path.exists(img_path):
-                            doc.add_picture(img_path)
-                            added = True
-                    if include_caption and caption_text:
-                        doc.add_paragraph(caption_text)
-                        added = True
-                if added:
-                    doc.save(frag_path)
+                    log[-1]["result"] = result
+                if os.path.isfile(frag_path):
+                    log[-1]["output_docx"] = frag_path
                     _route_fragment(frag_path, params, stype)
 
             elif stype == "extract_specific_table_from_word":
@@ -661,9 +659,14 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 entry["status"] = "error"
                 entry["error"] = "Table not found"
         elif stype == "extract_specific_figure_from_word":
-            if not entry.get("image_filename") and not entry.get("caption"):
+            out_path = entry.get("output_docx")
+            if not out_path or not _docx_has_content(out_path):
                 entry["status"] = "error"
-                entry["error"] = "Figure not found"
+                reason = ""
+                result = entry.get("result")
+                if isinstance(result, dict):
+                    reason = str(result.get("reason") or "").strip()
+                entry["error"] = reason or "Figure not found"
 
     if template_cfg.get("path") and template_mappings:
         try:

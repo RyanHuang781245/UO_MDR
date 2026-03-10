@@ -559,6 +559,14 @@ const FIELD_META = {
     label: "圖/表標題前綴",
     placeholder: "例如 Figure 1 或 Table 1"
   },
+  target_figure_title: {
+    label: "圖片標題全文",
+    placeholder: "例如 Figure showing the system overview."
+  },
+  target_figure_index: {
+    label: "章節內圖片序號",
+    placeholder: "例如 1"
+  },
   target_table_title: {
     label: "表格標題全文",
     placeholder: "例如 General information of the accessories."
@@ -1842,6 +1850,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     "target_chapter_section",
     "target_section",
     "target_caption_label",
+    "target_figure_title",
+    "target_figure_index",
     "target_table_title",
     "target_table_index",
     "text"

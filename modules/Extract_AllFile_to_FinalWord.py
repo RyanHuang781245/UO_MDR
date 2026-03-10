@@ -13,6 +13,7 @@ from spire.doc import *
 from spire.doc.common import *
 from modules.extract_word_all_content import extract_body_with_options
 from modules.extract_word_chapter import extract_section_docx_xml
+from modules.extract_specific_figure_xml import extract_specific_figure_from_word_xml
 from modules.extract_specific_table_xml import extract_specific_table_from_word_xml
 
 
@@ -782,21 +783,6 @@ def _is_header_or_footer(doc_type) -> bool:
     header_footer = getattr(DocumentObjectType, "HeaderFooter", None)
     return doc_type in (header, footer, header_footer)
 
-def _normalize_space(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip()).lower()
-
-
-def _match_chapter_start(text: str, chapter_section: str, chapter_title: str | None = None) -> bool:
-    if not chapter_section:
-        return False
-    pattern = re.compile(rf"^\s*{re.escape(chapter_section)}(\s|$)", re.IGNORECASE)
-    if not pattern.match(text):
-        return False
-    if chapter_title:
-        tail = pattern.sub("", text, count=1)
-        return _normalize_space(chapter_title) in _normalize_space(tail)
-    return True
-
 
 def extract_specific_figure_from_word(
     input_file: str,
@@ -804,187 +790,59 @@ def extract_specific_figure_from_word(
     target_caption_label: str,      # 例如 "Figure 1."
     target_subtitle: str | None = None,  # 可選，有就填，沒有就 None
     target_chapter_title: str | None = None,
+    target_figure_title: str | None = None,
+    target_figure_index: int | str | None = None,
     output_image_path: str = "figure_output",
+    output_docx_path: str | None = None,
     output_doc=None,
     section=None,
     *,
+    include_caption: bool = True,
+    save_output: bool = True,
     return_reason: bool = False,
-):
+) -> bool | dict:
     """
-    從指定 Word 檔中，擷取「某章節」(可選擇是否限制到某小節) 裡，
-    對應指定 Figure caption 的那一張圖。
-
-    參數說明
-    ----------
-    input_file : str
-        要處理的 Word 檔路徑。
-    target_chapter_section : str
-        章節編號，例如 "2.1.1"。用來鎖定章節範圍。
-    target_caption_label : str
-        要找的 Figure 標題文字，例如 "Figure 1."。
-    target_subtitle : str 或 None
-        若有特定小節標題，例如 "Information on product label"，就填入；
-        若整個章節沒有小標題或不想限定，就給 None 或空字串。
-    output_image_path : str
-        圖片輸出資料夾路徑。
-    output_doc : spire.doc.Document, optional
-        若有傳入，會將找到的圖片插入到這份 Document 的 section 中。
-    section : spire.doc.Section, optional
-        搭配 output_doc 使用，指定插入圖片的 section。
-
-    回傳
-    ----------
-    dict 或 None
-        若成功，回傳:
-        {
-            "image_filename": "Image-1.png",
-            "caption": "Figure 1. xxx",
-        }
-        若找不到，回傳 None。
+    Compatibility wrapper: route figure extraction to the XML-based implementation.
     """
+    _ = output_image_path  # Kept for backward-compatible call sites.
+    if not os.path.isfile(input_file):
+        raise FileNotFoundError(f"input file not found: {input_file}")
 
-    os.makedirs(output_image_path, exist_ok=True)
+    append_to_spire_doc = output_doc is not None
+    effective_output_docx_path = output_docx_path
+    created_temp_output = False
 
-    use_chapter = bool(target_chapter_section.strip())
-    chapter_title = (target_chapter_title or "").strip()
-    if use_chapter:
-        stop_prefix = target_chapter_section.rsplit('.', 1)[0]
-        stop_pattern = re.compile(rf"^\s*{re.escape(stop_prefix)}(\.\d+)?(\s|$)", re.IGNORECASE)
+    if append_to_spire_doc and not effective_output_docx_path:
+        suffix = f"figure_{target_caption_label or 'extract'}"
+        effective_output_docx_path = _build_output_docx_path(input_file, suffix)
+        created_temp_output = True
 
-    # 小節標題 (可選)
-    if target_subtitle and target_subtitle.strip():
-        subtitle_pattern = re.compile(rf"^\s*{re.escape(target_subtitle.strip())}\s*$", re.IGNORECASE)
-    else:
-        subtitle_pattern = None  # 不限制小節
+    xml_save_output = save_output or append_to_spire_doc
+    result = extract_specific_figure_from_word_xml(
+        input_file=input_file,
+        output_docx_path=effective_output_docx_path,
+        target_chapter_section=target_chapter_section,
+        target_caption_label=target_caption_label,
+        target_subtitle=target_subtitle,
+        target_chapter_title=target_chapter_title,
+        target_figure_title=target_figure_title,
+        target_figure_index=target_figure_index,
+        include_caption=include_caption,
+        save_output=xml_save_output,
+        return_reason=return_reason,
+    )
 
-    # Figure caption
-    figure_pattern = re.compile(rf"^\s*{re.escape(target_caption_label)}", re.IGNORECASE)
+    ok = bool(result.get("ok")) if return_reason and isinstance(result, dict) else bool(result)
+    if append_to_spire_doc and ok and effective_output_docx_path and os.path.isfile(effective_output_docx_path):
+        _append_docx_to_section(effective_output_docx_path, output_doc, section)
 
-    input_doc = Document()
-    input_doc.LoadFromFile(input_file)
+    if created_temp_output and effective_output_docx_path and os.path.isfile(effective_output_docx_path):
+        try:
+            os.remove(effective_output_docx_path)
+        except OSError:
+            pass
 
-    is_standalone_doc = False
-    if output_doc is None or section is None:
-        output_doc = Document()
-        section = output_doc.AddSection()
-        is_standalone_doc = True
-
-    nodes = queue.Queue()
-    nodes.put(input_doc)
-
-    image_count = [1]
-
-    in_target_chapter = not use_chapter
-    in_target_subtitle = False  # 如果沒有 subtitle，會在進入章節時直接視為 True
-    subtitle_found = False
-
-    recent_pictures = []
-    result = None
-
-    def save_picture_and_record(pic: DocPicture) -> str:
-        file_name = _save_picture_with_original_format(pic, output_image_path, image_count)
-        return file_name
-
-    while nodes.qsize() > 0 and result is None:
-        node = nodes.get()
-        for i in range(node.ChildObjects.Count):
-            child = node.ChildObjects.get_Item(i)
-
-            if isinstance(child, Paragraph):
-                paragraph_text_stripped = _get_paragraph_text_stripped(child)
-
-                # 1) 章節開頭
-                if use_chapter and _match_chapter_start(paragraph_text_stripped, target_chapter_section, chapter_title):
-                    in_target_chapter = True
-                    recent_pictures.clear()
-                    # 若沒有指定 subtitle，整個章節都視為有效範圍
-                    if subtitle_pattern is None:
-                        in_target_subtitle = True
-                    else:
-                        in_target_subtitle = False
-                    continue
-
-                # 2) 超出章節範圍
-                if use_chapter and in_target_chapter and stop_pattern.match(paragraph_text_stripped):
-                    in_target_chapter = False
-                    in_target_subtitle = False
-                    recent_pictures.clear()
-                    continue
-
-                # 3) 有指定 subtitle 的情況：在章節內遇到目標小節標題才開始算
-                if in_target_chapter and subtitle_pattern is not None and subtitle_pattern.match(paragraph_text_stripped):
-                    in_target_subtitle = True
-                    subtitle_found = True
-                    recent_pictures.clear()
-                    continue
-
-                # 4) 若有 subtitle，就簡單用「看起來像新標題」來判斷離開小節
-                if use_chapter and in_target_chapter and subtitle_pattern is not None and in_target_subtitle:
-                    if paragraph_text_stripped and (
-                        _match_chapter_start(paragraph_text_stripped, target_chapter_section, chapter_title)
-                        or re.match(r'^\s*\d+(\.\d+)*\s+', paragraph_text_stripped)
-                    ):
-                        in_target_subtitle = False
-                        recent_pictures.clear()
-                        continue
-
-                # 5) 在有效範圍內處理圖片與 Figure caption
-                if in_target_chapter and in_target_subtitle:
-                    # 先抓圖
-                    for j in range(child.ChildObjects.Count):
-                        sub = child.ChildObjects.get_Item(j)
-                        if sub.DocumentObjectType == DocumentObjectType.Picture and isinstance(sub, DocPicture):
-                            img_file = save_picture_and_record(sub)
-                            recent_pictures.append(img_file)
-
-                    # 再判斷是不是目標 Figure caption
-                    if figure_pattern.match(paragraph_text_stripped) and recent_pictures:
-                        target_img = recent_pictures[-1]
-                        img_path = os.path.join(output_image_path, target_img)
-
-                        if os.path.isfile(img_path):
-                            para = section.AddParagraph()
-                            pic = para.AppendPicture(img_path)
-
-                            cap_para = section.AddParagraph()
-                            cap_para.AppendText(paragraph_text_stripped)
-
-                        result = {
-                            "image_filename": target_img,
-                            "caption": paragraph_text_stripped,
-                        }
-                        break
-
-            elif isinstance(child, Table):
-                nodes.put(child)
-            elif isinstance(child, Section):
-                nodes.put(child.Body)
-            elif isinstance(child, ICompositeObject):
-                doc_type = getattr(child, "DocumentObjectType", None)
-                # if doc_type in (DocumentObjectType.Header, DocumentObjectType.Footer):
-                #     continue
-                if _is_header_or_footer(doc_type):
-                    continue
-                nodes.put(child)
-
-    input_doc.Close()
-
-    if subtitle_pattern is not None and not subtitle_found:
-        if return_reason:
-            return {"ok": False, "subtitle_found": False, "reason": "subtitle_not_found"}
-        return None
-
-    if result is None:
-        print("搜尋結束，未找到符合條件的 Figure 圖片。")
-        if return_reason:
-            return {"ok": False, "subtitle_found": True, "reason": "figure_not_found"}
-    else:
-        print(f"Extracted image {result['image_filename']}, caption: {result['caption']}")
-        if return_reason:
-            result["subtitle_found"] = True
-            return {"ok": True, "subtitle_found": True, "result": result}
-
-    return result
+    return result if return_reason else ok
 
 
 def extract_specific_table_from_word(

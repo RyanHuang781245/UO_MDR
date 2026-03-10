@@ -265,11 +265,17 @@ def task_mapping(task_id):
                 or params.get("target_figure_label", "")
                 or params.get("target_table_label", "")
             ).strip()
+            figure_title = (params.get("target_figure_title") or "").strip()
+            figure_index = str(params.get("target_figure_index") or "").strip()
             parts = [src]
             if main_header:
                 parts.append(main_header)
             if label:
                 parts.append(label)
+            if figure_title:
+                parts.append(f"title={figure_title}")
+            if figure_index:
+                parts.append(f"index={figure_index}")
             return f"{row_prefix}擷取圖片", " | ".join(parts)
         if stype == "insert_text":
             text_val = (params.get("text") or "").strip()

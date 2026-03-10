@@ -12,6 +12,25 @@
             <h5 class="fw-bold mb-0">上傳 Mapping 定義文件</h5>
         </div> -->
         <div class="px-4 py-4">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+                <button
+                    class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2"
+                    type="button"
+                    data-bs-toggle="modal"
+                    data-bs-target="#mappingDefinitionModal"
+                >
+                    <i class="bi bi-info-circle text-primary"></i>
+                    Mapping 定義說明
+                </button>
+                <a
+                    class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2"
+                    href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}"
+                >
+                    <i class="bi bi-download text-primary"></i>
+                    下載 Mapping 範例
+                </a>
+            </div>
+
             <form method="post" enctype="multipart/form-data">
                 {% if last_mapping_file %}
                 <div class="mb-4 d-flex align-items-center gap-2">
@@ -33,6 +52,55 @@
                     </div>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div class="modal fade" id="mappingDefinitionModal" tabindex="-1" aria-labelledby="mappingDefinitionModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="mappingDefinitionModalLabel">Mapping 定義說明</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="small fw-semibold text-dark mb-2">欄位順序（建議）</div>
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead style="background-color: #f8fafc;">
+                                <tr>
+                                    <th class="small text-muted">欄位名稱</th>
+                                    <th class="small text-muted">用途</th>
+                                </tr>
+                            </thead>
+                            <tbody class="small">
+                                <tr><td class="font-monospace">檔案名稱/資料夾名稱/文字內容</td><td>來源檔案（或 Add Text 文字）</td></tr>
+                                <tr><td class="font-monospace">擷取段落/操作</td><td>章節/指令內容（可含 <code>|title=</code>、<code>|index=</code>）</td></tr>
+                                <tr><td class="font-monospace">類型</td><td><code>空白</code>=擷取章節、<code>Figure</code>=擷取圖片、<code>Table</code>=擷取表格</td></tr>
+                                <tr><td class="font-monospace">檔案路徑</td><td>輸出資料夾（相對路徑）</td></tr>
+                                <tr><td class="font-monospace">檔案名稱</td><td>輸出檔名（.docx）</td></tr>
+                                <tr><td class="font-monospace">模板文件</td><td>可空白；需插入模板段落時填入</td></tr>
+                                <tr><td class="font-monospace">插入段落名稱/目的資料夾名稱</td><td>模板模式下的插入段落名稱</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="small fw-semibold text-dark mb-2">操作欄語法範例</div>
+                    <div class="small font-monospace mb-1">章節擷取（類型空白）：<span class="text-primary">1.1.1 General description</span></div>
+                    <div class="small font-monospace mb-1">圖片擷取（類型 Figure）：<span class="text-primary">1.1.1 General description|title=System overview|index=2</span></div>
+                    <div class="small font-monospace mb-2">表格擷取（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|index=1</span></div>
+
+                    <div class="small text-danger mb-0">
+                        注意：<code>index</code> 必須是正整數；若操作欄已寫 <code>Figure/Table</code>，需與「類型」欄一致。
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}">
+                        <i class="bi bi-download"></i>
+                        下載 Mapping 範例
+                    </a>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">關閉</button>
+                </div>
+            </div>
         </div>
     </div>
 

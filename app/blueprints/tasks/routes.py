@@ -466,6 +466,35 @@ def task_mapping(task_id):
         ),
     )
 
+
+@tasks_bp.get("/tasks/<task_id>/mapping/example", endpoint="task_download_mapping_example")
+def task_download_mapping_example(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    if not os.path.isdir(tdir):
+        abort(404)
+
+    static_dir = current_app.static_folder or ""
+    rel_sample = "samples/mapping_example.xlsx"
+    sample_path = os.path.join(static_dir, rel_sample)
+
+    if os.path.isfile(sample_path):
+        return send_from_directory(
+            static_dir,
+            rel_sample,
+            as_attachment=True,
+            download_name="mapping_example.xlsx",
+        )
+
+    fallback = Path(current_app.root_path).parent / "Mapping.xlsx"
+    if fallback.is_file():
+        return send_file(
+            str(fallback),
+            as_attachment=True,
+            download_name="mapping_example.xlsx",
+        )
+
+    abort(404)
+
 @tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
 def task_download_output(task_id, filename):
     safe_name = filename.replace("\\", "/")

@@ -517,7 +517,7 @@ const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
 const ACTIVE_RUNS_URL = "{{ url_for('flows_bp.flow_run_active', task_id=task.id) }}";
 const TASK_FILE_BROWSER_URL = "{{ url_for('flows_bp.api_flow_list_task_files', task_id=task.id) }}";
 const BOOL_DEFAULTS = {
-  include_caption: "false",
+  include_caption: "true",
   use_chapter_title: "false",
   hide_chapter_title: "true"
 };

@@ -540,7 +540,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     target_chapter_title=params.get("target_chapter_title", params.get("target_title_section")),
                     target_table_title=table_title or None,
                     target_table_index=table_index or None,
-                    include_caption=boolish(params.get("include_caption", "false")),
+                    include_caption=boolish(params.get("include_caption", "true")),
                     save_output=True,
                 )
                 if os.path.isfile(frag_path):

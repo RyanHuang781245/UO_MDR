@@ -21,6 +21,16 @@ def _extract_step(input_file: str, **extra_params):
     return {"type": "extract_specific_figure_from_word", "params": params}
 
 
+def _extract_table_step(input_file: str, **extra_params):
+    params = {
+        "input_file": input_file,
+        "target_chapter_section": "1.1",
+        "target_caption_label": "Table 1.",
+    }
+    params.update(extra_params)
+    return {"type": "extract_specific_table_from_word", "params": params}
+
+
 def test_workflow_extract_figure_success_saves_fragment_and_result(
     tmp_path: Path,
     monkeypatch,
@@ -138,3 +148,31 @@ def test_workflow_extract_figure_forwards_title_and_index(
     assert figure_entry["status"] == "ok"
     assert captured["target_figure_title"] == "System architecture"
     assert captured["target_figure_index"] == "2"
+
+
+def test_workflow_extract_table_include_caption_defaults_true(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    src = tmp_path / "source.docx"
+    _create_docx(src)
+    captured: dict[str, object] = {}
+
+    def fake_extract_specific_table_from_word(*args, **kwargs):
+        captured["include_caption"] = kwargs.get("include_caption")
+        output_docx_path = kwargs.get("output_docx_path") or (args[1] if len(args) > 1 else None)
+        out_path = Path(str(output_docx_path))
+        _create_docx(out_path, text="Table 1. Default Caption")
+        return {"ok": True, "reason": "ok"}
+
+    monkeypatch.setattr(
+        "modules.workflow.extract_specific_table_from_word",
+        fake_extract_specific_table_from_word,
+    )
+
+    steps = [_extract_table_step(str(src))]
+    result = run_workflow(steps, str(tmp_path / "job_table_default_caption"))
+    table_entry = next(e for e in result["log_json"] if e.get("type") == "extract_specific_table_from_word")
+
+    assert table_entry["status"] == "ok"
+    assert captured["include_caption"] is True

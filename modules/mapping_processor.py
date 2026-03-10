@@ -596,10 +596,10 @@ def process_mapping_excel(
                 if insert_label:
                     if last_idx is not None:
                         target_idx = last_idx
-                        _log("error", f"插入段落 '{insert_label}' 未找到；已添加到文件末尾", row_num, action_label, detail_label)
+                        _log("error", f"插入段落 '{insert_label}' 未找到", row_num, action_label, detail_label)
                     else:
                         target_idx = 0
-                        _log("error", f"插入段落 '{insert_label}' 未找到；已添加到文件末尾", row_num, action_label, detail_label)
+                        _log("error", f"插入段落 '{insert_label}' 未找到", row_num, action_label, detail_label)
                 else:
                     target_idx = last_idx if last_idx is not None else 0
 

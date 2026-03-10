@@ -36,7 +36,7 @@
                         <div class="row g-3">
                             <div class="col-12 col-lg-7 col-xl-6">
                                 <label class="form-label small fw-bold text-uppercase text-muted">流程名稱</label>
-                                <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" required>
+                                <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" pattern="[^/\\\\]+" title="流程名稱不可包含 / 或 \\" required>
                                 <div class="form-text text-end small" id="flowNameCount">0/50</div>
                             </div>
                         </div>

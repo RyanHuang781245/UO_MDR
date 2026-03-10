@@ -39,6 +39,52 @@ from app.blueprints.tasks.routes import _load_task_context
 flows_bp = Blueprint("flows_bp", __name__, template_folder="templates")
 
 
+_INVALID_FLOW_NAME_CHARS = r'\\/:*?"<>|'
+_WINDOWS_RESERVED_FLOW_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
+
+
+def _validate_flow_name(name: str) -> str | None:
+    text = (name or "").strip()
+    if not text:
+        return "缺少流程名稱"
+    if len(text) > 50:
+        return "流程名稱最多 50 字"
+    if text in {".", ".."}:
+        return "流程名稱不合法"
+    if any(ord(ch) < 32 for ch in text):
+        return "流程名稱含有不可見控制字元"
+    if any(ch in _INVALID_FLOW_NAME_CHARS for ch in text):
+        return '流程名稱不可包含 \\ / : * ? " < > |'
+    if text[-1] in {" ", "."}:
+        return "流程名稱結尾不可為空白或句點"
+    if text.upper() in _WINDOWS_RESERVED_FLOW_NAMES:
+        return "流程名稱為系統保留字，請更換名稱"
+    return None
+
+
 def _get_actor_info():
     if current_user and getattr(current_user, "is_authenticated", False):
         display_name = (getattr(current_user, "display_name", "") or "").strip()
@@ -1336,6 +1382,10 @@ def run_flow(task_id):
         abort(404)
     action = request.form.get("action", "run")
     flow_name = request.form.get("flow_name", "").strip()
+    if flow_name:
+        name_error = _validate_flow_name(flow_name)
+        if name_error:
+            return name_error, 400
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     template_file_raw = request.form.get("template_file", "").strip()
     template_file = ""
@@ -1650,8 +1700,9 @@ def delete_flow(task_id, flow_name):
 @flows_bp.post("/tasks/<task_id>/flows/rename/<flow_name>", endpoint="rename_flow")
 def rename_flow(task_id, flow_name):
     new_name = request.form.get("name", "").strip()
-    if not new_name:
-        return "缺少流程名稱", 400
+    name_error = _validate_flow_name(new_name)
+    if name_error:
+        return name_error, 400
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     flow_dir = os.path.join(tdir, "flows")
     old_path = os.path.join(flow_dir, f"{flow_name}.json")

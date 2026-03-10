@@ -1495,10 +1495,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                 擷取規則
               </div>
               <div class="row g-2">
-                ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
-                ${spec.inputs.includes("hide_chapter_title") ? renderBoolToggle("hide_chapter_title", hideChapterTitleLabel, "", "col-md-4") : ""}
-                ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-4") : ""}
-                ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-4") : ""}
+                ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-3") : ""}
+                ${spec.inputs.includes("hide_chapter_title") ? renderBoolToggle("hide_chapter_title", hideChapterTitleLabel, "", "col-md-3") : ""}
+                ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-3") : ""}
+                ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-3") : ""}
               </div>
             </div>
           </div>

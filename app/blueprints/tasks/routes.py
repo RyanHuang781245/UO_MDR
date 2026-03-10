@@ -46,6 +46,7 @@ from app.services.task_service import (
 )
 
 from app.services.nas_service import get_configured_nas_roots, resolve_nas_path, validate_nas_path
+from app.utils import normalize_docx_output_filename
 from modules.auth_models import ROLE_ADMIN, user_has_role
 from modules.file_copier import copy_files
 
@@ -1552,10 +1553,25 @@ def task_download(task_id, job_id, kind):
             remove_paragraphs_with_text(download_path, titles_to_remove)
         if not SKIP_DOCX_CLEANUP:
             remove_hidden_runs(download_path)
+        download_name = f"result_{job_id}.docx"
+        meta_path = os.path.join(job_dir, "meta.json")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                if isinstance(meta, dict):
+                    candidate_name, candidate_error = normalize_docx_output_filename(
+                        meta.get("output_filename"),
+                        default="",
+                    )
+                    if not candidate_error and candidate_name:
+                        download_name = candidate_name
+            except Exception:
+                pass
         return send_file(
             download_path,
             as_attachment=True,
-            download_name=f"result_{job_id}.docx",
+            download_name=download_name,
         )
     elif kind == "log":
         return send_file(

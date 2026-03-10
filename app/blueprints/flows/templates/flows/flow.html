@@ -39,6 +39,11 @@
                                 <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" pattern="[^/\\\\]+" title="流程名稱不可包含 / 或 \\" required>
                                 <div class="form-text text-end small" id="flowNameCount">0/50</div>
                             </div>
+                            <div class="col-12 col-lg-7 col-xl-6">
+                                <label class="form-label small fw-bold text-uppercase text-muted">輸出檔名</label>
+                                <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="留白使用預設下載檔名" value="{{ output_filename or '' }}" maxlength="120" title='可輸入檔名，系統會自動補上 .docx'>
+                                <div class="form-text text-end small">支援自訂下載檔名，副檔名會自動補為 <code>.docx</code></div>
+                            </div>
                         </div>
                     </div>
 

@@ -33,7 +33,7 @@ from app.services.flow_service import (
 from app.services.notification_service import send_batch_notification
 from app.services.audit_service import record_audit
 from app.services.task_service import build_file_tree, gather_available_files
-from app.utils import parse_bool
+from app.utils import normalize_docx_output_filename, parse_bool
 from app.blueprints.tasks.routes import _load_task_context
 
 flows_bp = Blueprint("flows_bp", __name__, template_folder="templates")
@@ -254,6 +254,7 @@ def _execute_saved_flow(
     line_spacing = DEFAULT_LINE_SPACING
     template_file = None
     apply_formatting = DEFAULT_APPLY_FORMATTING
+    output_filename = ""
     template_cfg = None
     if isinstance(data, dict):
         workflow = data.get("steps", [])
@@ -265,6 +266,12 @@ def _execute_saved_flow(
         if document_format == "none" or line_spacing_none:
             apply_formatting = False
         template_file = data.get("template_file")
+        output_filename, output_filename_error = normalize_docx_output_filename(
+            data.get("output_filename"),
+            default="",
+        )
+        if output_filename_error:
+            output_filename = ""
     else:
         workflow = data
     if template_file:
@@ -295,6 +302,7 @@ def _execute_saved_flow(
             "global_batch_id": global_batch_id,
             "task_batch_id": task_batch_id,
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "output_filename": output_filename,
         },
     )
     workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
@@ -714,6 +722,7 @@ def flow_builder(task_id):
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = f"{DEFAULT_LINE_SPACING:g}"
     apply_formatting = DEFAULT_APPLY_FORMATTING
+    output_filename = ""
     loaded_name = request.args.get("flow")
     job_id = request.args.get("job")
     if loaded_name:
@@ -727,6 +736,12 @@ def flow_builder(task_id):
                 document_format = normalize_document_format(data.get("document_format"))
                 line_spacing = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
                 apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+                output_filename, output_filename_error = normalize_docx_output_filename(
+                    data.get("output_filename"),
+                    default="",
+                )
+                if output_filename_error:
+                    output_filename = ""
             else:
                 steps_data = data
             preset = [
@@ -764,6 +779,7 @@ def flow_builder(task_id):
         document_format=document_format,
         line_spacing=line_spacing,
         apply_formatting=apply_formatting,
+        output_filename=output_filename,
         document_format_presets=DOCUMENT_FORMAT_PRESETS,
         line_spacing_choices=LINE_SPACING_CHOICES,
         flow_pagination=flow_pagination,
@@ -1386,6 +1402,12 @@ def run_flow(task_id):
         name_error = _validate_flow_name(flow_name)
         if name_error:
             return name_error, 400
+    output_filename, output_filename_error = normalize_docx_output_filename(
+        request.form.get("output_filename", ""),
+        default="",
+    )
+    if output_filename_error:
+        return output_filename_error, 400
     ordered_ids = request.form.get("ordered_ids", "").split(",")
     template_file_raw = request.form.get("template_file", "").strip()
     template_file = ""
@@ -1450,6 +1472,7 @@ def run_flow(task_id):
             "document_format": document_format,
             "line_spacing": line_spacing_value,
             "apply_formatting": apply_formatting,
+            "output_filename": output_filename,
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -1493,6 +1516,7 @@ def run_flow(task_id):
             "mode": "single",
             "status": "queued",
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "output_filename": output_filename,
         },
     )
     work_id, label = _get_actor_info()
@@ -1539,6 +1563,7 @@ def execute_flow(task_id, flow_name):
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
     apply_formatting = DEFAULT_APPLY_FORMATTING
+    output_filename = ""
     template_file = None
     template_cfg = None
     if isinstance(data, dict):
@@ -1549,6 +1574,12 @@ def execute_flow(task_id, flow_name):
         line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
         template_file = data.get("template_file")
         apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        output_filename, output_filename_error = normalize_docx_output_filename(
+            data.get("output_filename"),
+            default="",
+        )
+        if output_filename_error:
+            output_filename = ""
         if document_format == "none" or line_spacing_none:
             apply_formatting = False
     else:
@@ -1600,6 +1631,7 @@ def execute_flow(task_id, flow_name):
             "source": "manual",
             "status": "queued",
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "output_filename": output_filename,
         },
     )
     work_id, label = _get_actor_info()

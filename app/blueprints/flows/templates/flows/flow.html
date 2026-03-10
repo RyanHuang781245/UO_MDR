@@ -73,6 +73,10 @@
                                 <i class="bi bi-arrows-collapse text-primary"></i>
                                 全部收合
                             </button>
+                            <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded bg-white shadow-sm">
+                                <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="toggleRuleVisibilitySwitch">
+                                <label class="form-check-label small text-muted mb-0" for="toggleRuleVisibilitySwitch">顯示擷取規則</label>
+                            </div>
                         </div>
                         <div class="d-flex flex-wrap gap-2">
                             <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" type="submit" name="action" value="save">
@@ -435,6 +439,19 @@
   max-height: min(60vh, 420px);
   overflow-y: auto;
 }
+.flow-toolbar-switch {
+  min-height: 38px;
+  padding-left: 0.75rem !important;
+}
+.flow-toolbar-switch .form-check-input {
+  margin-left: 0 !important;
+  margin-top: 0 !important;
+}
+.flow-toolbar-switch .form-check-label {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+}
 .step-toggle[aria-expanded="true"] .transition-icon {
   transform: rotate(90deg);
 }
@@ -526,6 +543,47 @@ const BOOL_DEFAULTS = {
   use_chapter_title: "false",
   hide_chapter_title: "false"
 };
+const RULE_VISIBILITY_STORAGE_KEY = `flow_rule_visibility_${TASK_ID}`;
+let showExtractionRules = false;
+
+function _loadRuleVisibilityPreference(){
+  try{
+    const raw = localStorage.getItem(RULE_VISIBILITY_STORAGE_KEY);
+    if (raw === "1" || raw === "true") return true;
+    if (raw === "0" || raw === "false") return false;
+  }catch(e){
+    // ignore
+  }
+  return false;
+}
+
+function _saveRuleVisibilityPreference(visible){
+  try{
+    localStorage.setItem(RULE_VISIBILITY_STORAGE_KEY, visible ? "1" : "0");
+  }catch(e){
+    // ignore
+  }
+}
+
+function _applyRuleVisibility(scope = document){
+  const root = scope && scope.querySelectorAll ? scope : document;
+  root.querySelectorAll(".extraction-rules-card").forEach((el) => {
+    el.style.display = showExtractionRules ? "" : "none";
+  });
+}
+
+function _syncRuleToggleSwitch(){
+  const toggle = document.getElementById("toggleRuleVisibilitySwitch");
+  if (!toggle) return;
+  toggle.checked = !!showExtractionRules;
+}
+
+function _setRuleVisibility(visible){
+  showExtractionRules = !!visible;
+  _applyRuleVisibility(document);
+  _syncRuleToggleSwitch();
+  _saveRuleVisibilityPreference(showExtractionRules);
+}
 
 const FIELD_META = {
   pdf_zip: {
@@ -1488,7 +1546,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             </div>
           </div>
 
-        <div class="card bg-light border mt-3">
+        <div class="card bg-light border mt-3 extraction-rules-card">
             <div class="card-body">
               <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
                 <i class="bi bi-list-check"></i>
@@ -1579,6 +1637,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     });
     refreshTemplateSelects();
     updateOrder();
+    _applyRuleVisibility(card);
 
     const updateSummary = () => {
       const parts = [];
@@ -1913,7 +1972,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         ${subtitleFields.length ? subtitleFields.join("") : ""}
 
         ${ruleFields.length ? `
-        <div class="card bg-light border mt-3">
+        <div class="card bg-light border mt-3 extraction-rules-card">
           <div class="card-body">
             <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
               <i class="bi bi-list-check"></i>
@@ -1968,6 +2027,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   }
   refreshTemplateSelects();
   updateOrder();
+  _applyRuleVisibility(card);
 
   const updateSummary = () => {
     const parts = [];
@@ -2079,9 +2139,19 @@ if (PRESET_FLOW){
   }
 }
 
+const toggleRuleVisibilitySwitch = document.getElementById('toggleRuleVisibilitySwitch');
+showExtractionRules = _loadRuleVisibilityPreference();
+_syncRuleToggleSwitch();
+_applyRuleVisibility(document);
+
 const toggleAllStepsBtn = document.getElementById('toggleAllStepsBtn');
 let allCollapsed = false;
 document.addEventListener('DOMContentLoaded', () => {
+  if (toggleRuleVisibilitySwitch) {
+    toggleRuleVisibilitySwitch.addEventListener('change', () => {
+      _setRuleVisibility(toggleRuleVisibilitySwitch.checked);
+    });
+  }
   if (toggleAllStepsBtn && typeof bootstrap !== 'undefined') {
     toggleAllStepsBtn.addEventListener('click', () => {
       const collapses = document.querySelectorAll('.step-content');

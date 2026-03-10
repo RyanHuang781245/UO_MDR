@@ -336,7 +336,7 @@
                                 {% if t.can_delete %}
                                 <form action="{{ url_for('tasks_bp.delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除任務「{{ t.name }}」?')">
                                     <button class="btn-action-icon text-danger" type="submit" title="刪除任務">
-                                        <i class="bi bi-trash"></i><span class="d-none d-lg-inline small fw-semibold">刪除</span> 
+                                        <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
                                 {% endif %}

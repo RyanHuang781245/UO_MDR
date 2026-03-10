@@ -372,6 +372,20 @@ def task_mapping(task_id):
 
     error_messages = [m for m in messages if (m or "").startswith("ERROR:")]
     if error_messages and step_runs:
+        def _norm_error_text(text: str) -> str:
+            return re.sub(r"\s+", " ", (text or "").strip())
+
+        existing_row_errors: dict[int | None, set[str]] = {}
+        for step in step_runs:
+            if step.get("status") != "error":
+                continue
+            row_no = step.get("row_no")
+            bucket = existing_row_errors.setdefault(row_no, set())
+            for candidate in (step.get("error"), step.get("detail")):
+                normalized = _norm_error_text(str(candidate or ""))
+                if normalized:
+                    bucket.add(normalized)
+
         error_steps = []
         for msg in error_messages:
             raw = (msg or "").replace("ERROR:", "", 1).strip()
@@ -401,6 +415,13 @@ def task_mapping(task_id):
                     action = f"{row_prefix}{base_action}".strip()
                 detail = tail.strip()
             display_detail = detail or error_text
+            parsed_row_no = int(row_match.group(1)) if row_match else None
+            norm_error_text = _norm_error_text(error_text)
+            norm_display_detail = _norm_error_text(display_detail)
+            existing_bucket = existing_row_errors.get(parsed_row_no, set())
+            if norm_error_text in existing_bucket or norm_display_detail in existing_bucket:
+                continue
+
             detail_short, detail_long = _truncate_detail(display_detail)
             error_steps.append(
                 {
@@ -408,12 +429,13 @@ def task_mapping(task_id):
                     "detail": display_detail,
                     "detail_short": detail_short,
                     "detail_long": detail_long,
-                    "row_no": int(row_match.group(1)) if row_match else None,
+                    "row_no": parsed_row_no,
                     "status": "error",
                     "error": error_text,
                 }
             )
-        step_runs = error_steps + step_runs
+        if error_steps:
+            step_runs = error_steps + step_runs
         error_messages = []
     if step_runs:
         step_runs = sorted(

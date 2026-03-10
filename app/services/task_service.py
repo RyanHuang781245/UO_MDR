@@ -105,12 +105,14 @@ def enforce_max_copy_size(path: str):
             raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
         return
 
+    total_size = 0
     for root, _, files in os.walk(checked_path):
         for fn in files:
             fpath = os.path.join(root, fn)
-            if _check(fpath) > max_bytes:
-                current_app.logger.warning("檔案大小超過限制：%s", fpath)
-                raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
+            total_size += _check(fpath)
+            if total_size > max_bytes:
+                current_app.logger.warning("資料夾總大小超過限制：%s", checked_path)
+                raise ValueError("資料夾總大小超過允許的大小限制，請分批處理或聯絡系統管理員")
 
 
 def _iter_task_dirs():

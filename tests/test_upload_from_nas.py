@@ -2,7 +2,8 @@ import os
 import pytest
 
 from app.services.nas_service import validate_nas_path
-from app.services.task_service import deduplicate_name
+from app.services import task_service
+from app.services.task_service import deduplicate_name, enforce_max_copy_size
 
 
 def test_validate_nas_path_rules(tmp_path, app):
@@ -74,3 +75,27 @@ def test_upload_task_file_from_nas(tmp_path, app, client):
     finally:
         app.config["TASK_FOLDER"] = original_task_folder
         app.config["ALLOWED_SOURCE_ROOTS"] = original_roots
+
+
+def test_enforce_max_copy_size_blocks_when_directory_total_exceeds_limit(tmp_path, app, monkeypatch):
+    class _DummyQuery:
+        def order_by(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            return None
+
+    monkeypatch.setattr(task_service.SystemSetting, "query", _DummyQuery())
+    original_limit = app.config.get("NAS_MAX_COPY_FILE_SIZE")
+    app.config["NAS_MAX_COPY_FILE_SIZE"] = 10
+
+    src = tmp_path / "bundle"
+    src.mkdir()
+    (src / "a.txt").write_bytes(b"123456")
+    (src / "b.txt").write_bytes(b"78901")
+
+    try:
+        with pytest.raises(ValueError, match="資料夾總大小超過允許的大小限制"):
+            enforce_max_copy_size(str(src))
+    finally:
+        app.config["NAS_MAX_COPY_FILE_SIZE"] = original_limit

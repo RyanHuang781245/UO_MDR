@@ -798,6 +798,7 @@ def extract_specific_figure_from_word(
     section=None,
     *,
     include_caption: bool = True,
+    ignore_header_footer: bool = True,
     save_output: bool = True,
     return_reason: bool = False,
 ) -> bool | dict:
@@ -828,6 +829,7 @@ def extract_specific_figure_from_word(
         target_figure_title=target_figure_title,
         target_figure_index=target_figure_index,
         include_caption=include_caption,
+        ignore_header_footer=ignore_header_footer,
         save_output=xml_save_output,
         return_reason=return_reason,
     )
@@ -856,6 +858,7 @@ def extract_specific_table_from_word(
     target_table_title: str | None = None,
     target_table_index: int | str | None = None,
     include_caption: bool = True,
+    ignore_header_footer: bool = True,
     save_output: bool = True,      # 是否存檔；如不存則僅回傳找到與否
     return_reason: bool = False,
 ) -> bool | dict:
@@ -872,6 +875,7 @@ def extract_specific_table_from_word(
         target_table_title=target_table_title,
         target_table_index=target_table_index,
         include_caption=include_caption,
+        ignore_header_footer=ignore_header_footer,
         save_output=save_output,
         return_reason=return_reason,
     )

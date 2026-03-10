@@ -41,6 +41,7 @@ def test_workflow_extract_figure_success_saves_fragment_and_result(
 
     def fake_extract_specific_figure_from_word(*_args, **kwargs):
         captured["include_caption"] = kwargs.get("include_caption")
+        captured["ignore_header_footer"] = kwargs.get("ignore_header_footer")
         output_docx_path = kwargs.get("output_docx_path")
         assert output_docx_path
         out_path = Path(str(output_docx_path))
@@ -60,6 +61,7 @@ def test_workflow_extract_figure_success_saves_fragment_and_result(
     assert Path(figure_entry["output_docx"]).is_file()
     assert figure_entry["result"]["ok"] is True
     assert captured["include_caption"] is False
+    assert captured["ignore_header_footer"] is True
 
 
 def test_workflow_extract_figure_not_found_uses_result_reason(
@@ -176,3 +178,59 @@ def test_workflow_extract_table_include_caption_defaults_true(
 
     assert table_entry["status"] == "ok"
     assert captured["include_caption"] is True
+
+
+def test_workflow_extract_figure_forwards_ignore_header_footer(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    src = tmp_path / "source.docx"
+    _create_docx(src)
+    captured: dict[str, object] = {}
+
+    def fake_extract_specific_figure_from_word(*_args, **kwargs):
+        captured["ignore_header_footer"] = kwargs.get("ignore_header_footer")
+        output_docx_path = kwargs.get("output_docx_path")
+        out_path = Path(str(output_docx_path))
+        _create_docx(out_path, text="Figure result")
+        return {"ok": True, "reason": "ok"}
+
+    monkeypatch.setattr(
+        "modules.workflow.extract_specific_figure_from_word",
+        fake_extract_specific_figure_from_word,
+    )
+
+    steps = [_extract_step(str(src), ignore_header_footer="false")]
+    result = run_workflow(steps, str(tmp_path / "job_figure_ignore_header_footer"))
+    figure_entry = next(e for e in result["log_json"] if e.get("type") == "extract_specific_figure_from_word")
+
+    assert figure_entry["status"] == "ok"
+    assert captured["ignore_header_footer"] is False
+
+
+def test_workflow_extract_table_forwards_ignore_header_footer(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    src = tmp_path / "source.docx"
+    _create_docx(src)
+    captured: dict[str, object] = {}
+
+    def fake_extract_specific_table_from_word(*args, **kwargs):
+        captured["ignore_header_footer"] = kwargs.get("ignore_header_footer")
+        output_docx_path = kwargs.get("output_docx_path") or (args[1] if len(args) > 1 else None)
+        out_path = Path(str(output_docx_path))
+        _create_docx(out_path, text="Table result")
+        return {"ok": True, "reason": "ok"}
+
+    monkeypatch.setattr(
+        "modules.workflow.extract_specific_table_from_word",
+        fake_extract_specific_table_from_word,
+    )
+
+    steps = [_extract_table_step(str(src), ignore_header_footer="false")]
+    result = run_workflow(steps, str(tmp_path / "job_table_ignore_header_footer"))
+    table_entry = next(e for e in result["log_json"] if e.get("type") == "extract_specific_table_from_word")
+
+    assert table_entry["status"] == "ok"
+    assert captured["ignore_header_footer"] is False

@@ -15,6 +15,7 @@ from modules.extract_word_chapter import (
     get_pStyle,
     normalize_text,
     qn,
+    remove_all_header_footer_references,
     trim_to_subheading_range,
 )
 
@@ -234,6 +235,7 @@ def extract_specific_table_from_word_xml(
     target_table_title: str | None = None,
     target_table_index: int | None = None,
     include_caption: bool = True,
+    ignore_header_footer: bool = True,
     save_output: bool = True,
     return_reason: bool = False,
 ) -> bool | dict:
@@ -380,6 +382,15 @@ def extract_specific_table_from_word_xml(
 
     if save_output and output_docx_path:
         updated_document_xml = _replace_body_with_blocks(file_map["word/document.xml"], kept_blocks)
+        if ignore_header_footer:
+            updated_root = etree.fromstring(updated_document_xml)
+            remove_all_header_footer_references(updated_root)
+            updated_document_xml = etree.tostring(
+                updated_root,
+                xml_declaration=True,
+                encoding="UTF-8",
+                standalone="yes",
+            )
         with zipfile.ZipFile(output_docx_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
             for name, data in file_map.items():
                 zout.writestr(name, updated_document_xml if name == "word/document.xml" else data)

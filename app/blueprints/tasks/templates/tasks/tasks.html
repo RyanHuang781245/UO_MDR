@@ -200,6 +200,62 @@
     .task-desc-drawer-open {
         overflow: hidden;
     }
+
+    .task-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        z-index: 1052;
+    }
+    .task-modal-overlay.is-open {
+        display: flex;
+    }
+    .task-modal-panel {
+        width: min(560px, 96vw);
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.28);
+        overflow: hidden;
+    }
+    .task-modal-panel.task-modal-panel-sm {
+        width: min(420px, 96vw);
+    }
+    .task-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.875rem 1rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .task-modal-body {
+        padding: 1rem;
+    }
+    .task-modal-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        padding: 0.875rem 1rem;
+        border-top: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+    .task-copy-warning {
+        margin-top: 0.75rem;
+        border: 1px solid #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+        border-radius: 0.5rem;
+        padding: 0.625rem 0.75rem;
+        font-size: 0.875rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
 </style>
 <div class="container-fluid px-0">
     <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
@@ -402,6 +458,62 @@
   <div class="task-desc-drawer-body" id="taskDescDrawerBody"></div>
 </aside>
 
+<div class="task-modal-overlay" id="copyTaskModalOverlay" aria-hidden="true" hidden>
+  <div class="task-modal-panel" role="dialog" aria-modal="true" aria-labelledby="copyTaskModalTitle">
+    <div class="task-modal-header">
+      <div class="fw-semibold" id="copyTaskModalTitle"><i class="bi bi-files me-2 text-primary"></i>複製任務</div>
+      <button type="button" class="btn-close" id="copyTaskModalCloseBtn" aria-label="關閉"></button>
+    </div>
+    <div class="task-modal-body">
+      <div class="mb-3">
+        <label class="small fw-bold text-uppercase text-muted d-block mb-1">新任務名稱</label>
+        <input type="text" class="form-control form-control-custom" id="copyTaskNameInput" maxlength="120">
+      </div>
+      <div>
+        <label class="small fw-bold text-uppercase text-muted d-block mb-1">NAS 存取路徑</label>
+        <div class="input-group">
+          <input type="text" class="form-control form-control-custom font-monospace" id="copyTaskNasInput" placeholder="留空表示不設定">
+          <button
+            class="btn btn-outline-secondary px-3"
+            type="button"
+            id="copyTaskNasBrowseBtn"
+            data-bs-toggle="modal"
+            data-bs-target="#nasBrowserModal"
+            {% if not allowed_nas_roots %}disabled{% endif %}
+          >
+            瀏覽
+          </button>
+        </div>
+      </div>
+      <div class="task-copy-warning d-none" id="copyTaskNasWarning">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        任務內流程可能會失效
+      </div>
+      <div class="small text-danger mt-2 d-none" id="copyTaskError"></div>
+    </div>
+    <div class="task-modal-footer">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="copyTaskCancelBtn">取消</button>
+      <button type="button" class="btn btn-primary btn-sm" id="copyTaskSubmitBtn">確認複製</button>
+    </div>
+  </div>
+</div>
+
+<div class="task-modal-overlay" id="copyTaskConfirmOverlay" aria-hidden="true" hidden>
+  <div class="task-modal-panel task-modal-panel-sm" role="dialog" aria-modal="true" aria-labelledby="copyTaskConfirmTitle">
+    <div class="task-modal-header">
+      <div class="fw-semibold" id="copyTaskConfirmTitle"><i class="bi bi-exclamation-triangle me-2 text-warning"></i>確認變更</div>
+      <button type="button" class="btn-close" id="copyTaskConfirmCloseBtn" aria-label="關閉"></button>
+    </div>
+    <div class="task-modal-body">
+      任務內流程可能會失效，確定要更新 NAS 路徑嗎？
+    </div>
+    <div class="task-modal-footer">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="copyTaskConfirmCancelBtn">返回編輯</button>
+      <button type="button" class="btn btn-warning btn-sm" id="copyTaskConfirmSubmitBtn">仍要複製</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="nasBrowserModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
@@ -476,6 +588,9 @@ function getRowText(row, selector){
 }
 
 function renderDetailBody(details){
+  const copyTaskIdArg = JSON.stringify(details.id || "");
+  const copyTaskNameArg = JSON.stringify(details.name || "");
+  const copyTaskNasArg = JSON.stringify(details.nasPath || "");
   const rows = [
     { label: '建立人員', value: details.creator || '-' },
     { label: '建立時間', value: details.created || '-' },
@@ -519,7 +634,7 @@ function renderDetailBody(details){
       </div>
 
       <div class="mt-4 pt-3 border-top text-end">
-        <button class="btn btn-link btn-sm text-primary text-decoration-none p-0" onclick="copyTask('${details.id}', \`${escapeHtml(details.name)}\`)">
+        <button class="btn btn-link btn-sm text-primary text-decoration-none p-0" onclick='copyTask(${copyTaskIdArg}, ${copyTaskNameArg}, ${copyTaskNasArg})'>
           <i class="bi bi-files"></i> 複製此任務
         </button>
       </div>
@@ -543,17 +658,252 @@ function editTaskDesc(id, currentDesc, isDirect = false){
   submitPostForm(`/tasks/${id}/description`, { description: desc });
 }
 
-function copyTask(id, currentName){
-  const defaultName = currentName ? `${currentName} (複製)` : '任務複製';
-  const name = prompt('輸入新任務名稱', defaultName);
-  if(!name) return;
-  submitPostForm(`/tasks/${id}/copy`, { name });
+const copyTaskModalOverlay = document.getElementById('copyTaskModalOverlay');
+const copyTaskConfirmOverlay = document.getElementById('copyTaskConfirmOverlay');
+const copyTaskModalCloseBtn = document.getElementById('copyTaskModalCloseBtn');
+const copyTaskCancelBtn = document.getElementById('copyTaskCancelBtn');
+const copyTaskSubmitBtn = document.getElementById('copyTaskSubmitBtn');
+const copyTaskConfirmCloseBtn = document.getElementById('copyTaskConfirmCloseBtn');
+const copyTaskConfirmCancelBtn = document.getElementById('copyTaskConfirmCancelBtn');
+const copyTaskConfirmSubmitBtn = document.getElementById('copyTaskConfirmSubmitBtn');
+const copyTaskNameInput = document.getElementById('copyTaskNameInput');
+const copyTaskNasInput = document.getElementById('copyTaskNasInput');
+const copyTaskNasBrowseBtn = document.getElementById('copyTaskNasBrowseBtn');
+const copyTaskNasWarning = document.getElementById('copyTaskNasWarning');
+const copyTaskError = document.getElementById('copyTaskError');
+
+let copyTaskDraft = null;
+let copyTaskLastFocused = null;
+let copyTaskNasRootIndex = '';
+
+function isOverlayOpen(el){
+  return !!el && el.classList.contains('is-open');
 }
+
+function setOverlayOpen(el, open){
+  if(!el) return;
+  if(open){
+    el.hidden = false;
+    el.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => el.classList.add('is-open'));
+  } else {
+    el.classList.remove('is-open');
+    el.setAttribute('aria-hidden', 'true');
+    setTimeout(() => {
+      if(!el.classList.contains('is-open')) el.hidden = true;
+    }, 180);
+  }
+}
+
+function syncTaskModalBodyScroll(){
+  const hasOpen = isOverlayOpen(copyTaskModalOverlay) || isOverlayOpen(copyTaskConfirmOverlay);
+  const drawerOpen = document.getElementById('taskDescDrawer')?.classList.contains('is-open');
+  document.body.classList.toggle('task-desc-drawer-open', hasOpen || !!drawerOpen);
+}
+
+function setCopyTaskError(message){
+  if(!copyTaskError) return;
+  const text = (message || '').trim();
+  copyTaskError.textContent = text;
+  copyTaskError.classList.toggle('d-none', !text);
+}
+
+function isAbsoluteNasPath(path){
+  const value = String(path || '').trim();
+  return /^([A-Za-z]:[\\/]|\\\\|\/)/.test(value);
+}
+
+function normalizeNasForCompare(path){
+  return String(path || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+}
+
+function findRootIndexForPath(path){
+  if(!isAbsoluteNasPath(path)) return null;
+  const pathKey = normalizeNasForCompare(path);
+  if(!pathKey) return null;
+  for(let i = 0; i < allowedNasRoots.length; i += 1){
+    const rootKey = normalizeNasForCompare(allowedNasRoots[i]);
+    if(!rootKey) continue;
+    if(pathKey === rootKey || pathKey.startsWith(`${rootKey}/`)){
+      return i;
+    }
+  }
+  return null;
+}
+
+function getRelativePathUnderRoot(path, rootIndex){
+  const raw = String(path || '').trim();
+  if(!raw || raw === '.') return '';
+  const cleaned = raw.replace(/\\/g, '/').replace(/\/+$/, '');
+  if(!isAbsoluteNasPath(cleaned)){
+    return cleaned.replace(/^\.?[\\/]+/, '').replace(/\\/g, '/');
+  }
+  const rootRaw = String(allowedNasRoots[rootIndex] || '').trim();
+  if(!rootRaw) return null;
+  const rootNorm = rootRaw.replace(/\\/g, '/').replace(/\/+$/, '');
+  const pathNormKey = normalizeNasForCompare(cleaned);
+  const rootNormKey = normalizeNasForCompare(rootNorm);
+  if(pathNormKey === rootNormKey) return '';
+  if(pathNormKey.startsWith(`${rootNormKey}/`)){
+    return cleaned.slice(rootNorm.length + 1);
+  }
+  return null;
+}
+
+function currentCopyNasPath(){
+  return (copyTaskNasInput?.value || '').trim();
+}
+
+function sourceCopyNasPath(){
+  return (copyTaskDraft?.sourceNasPath || '').trim();
+}
+
+function hasNasPathChanged(){
+  return currentCopyNasPath() !== sourceCopyNasPath();
+}
+
+function refreshNasWarning(){
+  if(!copyTaskNasWarning) return;
+  copyTaskNasWarning.classList.toggle('d-none', !hasNasPathChanged());
+}
+
+function openCopyTaskModal(id, currentName, currentNasPath){
+  if(!copyTaskModalOverlay || !copyTaskNameInput || !copyTaskNasInput) return;
+  const sourceRaw = (currentNasPath || '').trim();
+  let sourceDisplayPath = sourceRaw;
+  let sourceRootIndex = '';
+  const matchedRoot = findRootIndexForPath(sourceRaw);
+  if(matchedRoot !== null){
+    const rel = getRelativePathUnderRoot(sourceRaw, matchedRoot);
+    if(rel !== null){
+      sourceDisplayPath = rel || '.';
+      sourceRootIndex = String(matchedRoot);
+    }
+  }
+  copyTaskDraft = {
+    id: String(id || ''),
+    sourceNasPath: sourceDisplayPath,
+  };
+  copyTaskLastFocused = document.activeElement;
+  copyTaskNameInput.value = currentName ? `${currentName} (複製)` : '任務複製';
+  copyTaskNasInput.value = sourceDisplayPath;
+  copyTaskNasRootIndex = sourceRootIndex;
+  setCopyTaskError('');
+  refreshNasWarning();
+  setOverlayOpen(copyTaskModalOverlay, true);
+  syncTaskModalBodyScroll();
+  setTimeout(() => copyTaskNameInput.focus(), 0);
+}
+
+function closeCopyTaskConfirmModal(){
+  setOverlayOpen(copyTaskConfirmOverlay, false);
+  syncTaskModalBodyScroll();
+}
+
+function closeCopyTaskModal(){
+  closeCopyTaskConfirmModal();
+  setOverlayOpen(copyTaskModalOverlay, false);
+  syncTaskModalBodyScroll();
+  setCopyTaskError('');
+  if(copyTaskLastFocused && typeof copyTaskLastFocused.focus === 'function'){
+    copyTaskLastFocused.focus();
+  }
+}
+
+function submitCopyTaskForm(){
+  if(!copyTaskDraft?.id) return;
+  const name = (copyTaskNameInput?.value || '').trim();
+  let nasPath = currentCopyNasPath();
+  let nasRootIndex = copyTaskNasRootIndex || '';
+  if(!name){
+    setCopyTaskError('任務名稱不能為空');
+    copyTaskNameInput?.focus();
+    return;
+  }
+
+  if(isAbsoluteNasPath(nasPath)){
+    const matchedRoot = findRootIndexForPath(nasPath);
+    if(matchedRoot !== null){
+      const rel = getRelativePathUnderRoot(nasPath, matchedRoot);
+      if(rel !== null){
+        nasPath = rel || '.';
+        nasRootIndex = String(matchedRoot);
+      }
+    }
+  }
+
+  closeCopyTaskModal();
+  submitPostForm(`/tasks/${copyTaskDraft.id}/copy`, {
+    name,
+    nas_path: nasPath,
+    nas_root_index: nasRootIndex,
+  });
+}
+
+function copyTask(id, currentName, currentNasPath = ''){
+  openCopyTaskModal(id, currentName, currentNasPath);
+}
+
+copyTaskNasInput?.addEventListener('input', () => {
+  setCopyTaskError('');
+  const raw = currentCopyNasPath();
+  if(isAbsoluteNasPath(raw)){
+    const matchedRoot = findRootIndexForPath(raw);
+    copyTaskNasRootIndex = matchedRoot === null ? '' : String(matchedRoot);
+  }
+  refreshNasWarning();
+});
+copyTaskNameInput?.addEventListener('input', () => setCopyTaskError(''));
+copyTaskModalCloseBtn?.addEventListener('click', closeCopyTaskModal);
+copyTaskCancelBtn?.addEventListener('click', closeCopyTaskModal);
+copyTaskConfirmCloseBtn?.addEventListener('click', closeCopyTaskConfirmModal);
+copyTaskConfirmCancelBtn?.addEventListener('click', closeCopyTaskConfirmModal);
+copyTaskSubmitBtn?.addEventListener('click', () => {
+  const name = (copyTaskNameInput?.value || '').trim();
+  if(!name){
+    setCopyTaskError('任務名稱不能為空');
+    copyTaskNameInput?.focus();
+    return;
+  }
+  if(hasNasPathChanged()){
+    setOverlayOpen(copyTaskConfirmOverlay, true);
+    syncTaskModalBodyScroll();
+    return;
+  }
+  submitCopyTaskForm();
+});
+copyTaskConfirmSubmitBtn?.addEventListener('click', submitCopyTaskForm);
+copyTaskModalOverlay?.addEventListener('click', (event) => {
+  if(event.target === copyTaskModalOverlay){
+    closeCopyTaskModal();
+  }
+});
+copyTaskConfirmOverlay?.addEventListener('click', (event) => {
+  if(event.target === copyTaskConfirmOverlay){
+    closeCopyTaskConfirmModal();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if(event.key !== 'Escape') return;
+  if(isOverlayOpen(copyTaskConfirmOverlay)){
+    closeCopyTaskConfirmModal();
+    return;
+  }
+  if(isOverlayOpen(copyTaskModalOverlay)){
+    closeCopyTaskModal();
+  }
+});
 
 const allowedNasRoots = {{ allowed_nas_roots | tojson }};
 const nasModalEl = document.getElementById('nasBrowserModal');
 const nasPathInput = document.getElementById('nasPathInput');
 const nasRootIndexInput = document.getElementById('nasRootIndexInput');
+const openNasBrowserBtn = document.getElementById('openNasBrowserBtn');
 const nasRootSelect = document.getElementById('nasRootSelect');
 const nasStatus = document.getElementById('nasStatus');
 const nasGoUpBtn = document.getElementById('nasGoUpBtn');
@@ -568,6 +918,26 @@ const nasRootRemoveBtn = document.getElementById('nasRootRemoveBtn');
 const nasAddUrl = "{{ url_for('nas_bp.add_nas_root_route') }}";
 const nasRemoveUrl = "{{ url_for('nas_bp.remove_nas_root_route') }}";
 const nasRootInputs = [nasRootSelect, nasRootRemoveSelect];
+let nasPickerTarget = 'create';
+
+function getNasPickerContext(){
+  if(nasPickerTarget === 'copy'){
+    return {
+      inputEl: copyTaskNasInput,
+      rootIndex: copyTaskNasRootIndex,
+      setRootIndex(value){
+        copyTaskNasRootIndex = value || '';
+      },
+    };
+  }
+  return {
+    inputEl: nasPathInput,
+    rootIndex: nasRootIndexInput?.value || '',
+    setRootIndex(value){
+      if(nasRootIndexInput) nasRootIndexInput.value = value || '';
+    },
+  };
+}
 
 function refreshRootSelects(){
   if(nasRootSelect){
@@ -715,20 +1085,30 @@ if(nasPathInput){
 
 if(nasModalEl){
   nasModalEl.addEventListener('shown.bs.modal', () => {
-    const savedRootIndex = nasRootIndexInput?.value;
+    const ctx = getNasPickerContext();
+    const rawPath = (ctx.inputEl?.value || '').trim();
+    let savedRootIndex = ctx.rootIndex;
+    if(savedRootIndex === '' || savedRootIndex === null || savedRootIndex === undefined){
+      const matched = findRootIndexForPath(rawPath);
+      if(matched !== null) savedRootIndex = String(matched);
+    }
     if(nasRootSelect){
       if(savedRootIndex !== undefined && savedRootIndex !== ''){
         nasRootSelect.value = savedRootIndex;
       }
       nasState.rootIndex = parseInt(nasRootSelect.value || '0', 10);
     }
-    const rawPath = (nasPathInput?.value || '').trim();
-    const rel = rawPath === '.' ? '' : rawPath.replace(/^\.?[\\/]+/, '');
-    nasState.currentRel = rel;
-    nasState.selectedRel = rawPath ? rel : null;
+    const rel = getRelativePathUnderRoot(rawPath, nasState.rootIndex);
+    if(rel === null){
+      nasState.currentRel = '';
+      nasState.selectedRel = null;
+    } else {
+      nasState.currentRel = rel;
+      nasState.selectedRel = rawPath ? rel : null;
+    }
     updateCurrentPathDisplay();
     updateSelectedPathDisplay();
-    loadFolders(rel);
+    loadFolders(nasState.currentRel);
   });
 }
 
@@ -812,13 +1192,25 @@ if(nasGoUpBtn){
 
 if(nasApplyBtn){
   nasApplyBtn.addEventListener('click', () => {
-    if(!nasPathInput) return;
+    const ctx = getNasPickerContext();
+    if(!ctx.inputEl) return;
     const rel = nasState.selectedRel === null ? (nasState.currentRel || '') : nasState.selectedRel;
     const chosen = rel === '' ? '.' : rel;
-    nasPathInput.value = chosen;
-    if(nasRootIndexInput) nasRootIndexInput.value = String(nasState.rootIndex);
+    ctx.inputEl.value = chosen;
+    ctx.setRootIndex(String(nasState.rootIndex));
+    if(nasPickerTarget === 'copy'){
+      setCopyTaskError('');
+      refreshNasWarning();
+    }
   });
 }
+
+openNasBrowserBtn?.addEventListener('click', () => {
+  nasPickerTarget = 'create';
+});
+copyTaskNasBrowseBtn?.addEventListener('click', () => {
+  nasPickerTarget = 'copy';
+});
 
 const createTaskForm = document.getElementById('createTaskForm');
 const taskSubmittingAlert = document.getElementById('taskSubmittingAlert');

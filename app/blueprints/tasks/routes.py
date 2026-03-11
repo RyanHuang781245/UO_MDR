@@ -692,6 +692,72 @@ def copy_task(task_id):
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
+    source_nas_path = (meta.get("nas_path", "") or "").strip()
+
+    requested_nas_path = request.form.get("nas_path")
+    requested_root_index = request.form.get("nas_root_index", "").strip()
+    target_nas_path = source_nas_path
+    if requested_nas_path is not None:
+        raw_nas_path = requested_nas_path.strip()
+        if not raw_nas_path:
+            target_nas_path = ""
+        elif raw_nas_path == source_nas_path:
+            target_nas_path = source_nas_path
+        else:
+            try:
+                if os.path.isabs(raw_nas_path):
+                    resolved_path = os.path.abspath(raw_nas_path)
+                    roots = get_configured_nas_roots()
+                    if roots and not requested_root_index:
+                        for idx, root in enumerate(roots):
+                            root_abs = os.path.abspath(root)
+                            try:
+                                if os.path.commonpath([root_abs, resolved_path]) == root_abs:
+                                    rel = os.path.relpath(resolved_path, root_abs).replace("\\", "/")
+                                    raw_nas_path = "." if rel == "." else rel
+                                    requested_root_index = str(idx)
+                                    break
+                            except ValueError:
+                                continue
+                    if roots:
+                        allowed = False
+                        for root in roots:
+                            root_abs = os.path.abspath(root)
+                            try:
+                                if os.path.commonpath([root_abs, resolved_path]) == root_abs:
+                                    allowed = True
+                                    break
+                            except ValueError:
+                                continue
+                        if not allowed:
+                            return _fail("NAS 路徑不在允許的根目錄內。")
+                    if not os.path.isdir(resolved_path):
+                        return _fail("NAS 路徑不存在或不是資料夾。")
+                    target_nas_path = resolved_path
+                else:
+                    resolved_path = resolve_nas_path(
+                        raw_nas_path,
+                        allow_recursive=current_app.config.get("NAS_ALLOW_RECURSIVE", True),
+                        root_index=requested_root_index or None,
+                    )
+                    if not os.path.isdir(resolved_path):
+                        return _fail("NAS 路徑不存在或不是資料夾。")
+                    target_nas_path = resolved_path
+                    if requested_root_index:
+                        roots = get_configured_nas_roots()
+                        try:
+                            idx = int(requested_root_index)
+                            if 0 <= idx < len(roots):
+                                root_clean = roots[idx].rstrip("/\\")
+                                sep = "\\" if "\\" in root_clean else "/"
+                                rel = re.sub(r"^[./\\]+", "", raw_nas_path).replace("/", sep)
+                                target_nas_path = f"{root_clean}{sep}{rel}" if rel else root_clean
+                        except ValueError:
+                            pass
+            except ValueError as exc:
+                return _fail(str(exc))
+            except FileNotFoundError as exc:
+                return _fail(str(exc))
 
     created_at = datetime.now()
     work_id, creator = _get_actor_info()
@@ -715,7 +781,7 @@ def copy_task(task_id):
     new_meta = {
         "name": new_name,
         "description": meta.get("description", ""),
-        "nas_path": meta.get("nas_path", ""),
+        "nas_path": target_nas_path,
         "created": created_at.strftime("%Y-%m-%d %H:%M"),
         "last_edited": created_at.strftime("%Y-%m-%d %H:%M"),
     }
@@ -743,6 +809,7 @@ def copy_task(task_id):
             "task_id": new_id,
             "task_name": new_name,
             "nas_path": new_meta.get("nas_path"),
+            "source_nas_path": source_nas_path,
             "source_task_id": task_id
         },
         task_id=new_id,

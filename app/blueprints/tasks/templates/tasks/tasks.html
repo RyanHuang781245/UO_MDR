@@ -1004,7 +1004,7 @@ function updateCurrentPathDisplay(){
   const root = allowedNasRoots[nasState.rootIndex] || '';
   const sep = root.includes('\\') ? '\\' : '/';
   const rootClean = root.replace(/[\\/]+$/, '');
-  const relRaw = nasState.selectedRel !== null ? nasState.selectedRel : (nasState.currentRel || '');
+  const relRaw = nasState.currentRel || '';
   const rel = relRaw.replace(/^\/+/, '').replace(/\//g, sep);
   nasCurrentPathEl.textContent = rel ? `${rootClean}${sep}${rel}` : (rootClean || '/');
 }
@@ -1022,6 +1022,11 @@ function selectFolder(rel){
   nasState.selectedRel = rel || '';
   updateSelectedPathDisplay();
   updateCurrentPathDisplay();
+}
+
+function clearNasSelection(){
+  nasState.selectedRel = null;
+  updateSelectedPathDisplay();
 }
 
 function renderFolders(folders){
@@ -1047,6 +1052,7 @@ function renderFolders(folders){
     nameBtn.addEventListener('click', () => selectFolder(folder.path));
     nameBtn.addEventListener('dblclick', (event) => {
       event.preventDefault();
+      clearNasSelection();
       loadFolders(folder.path);
     });
 
@@ -1186,6 +1192,7 @@ if(nasGoUpBtn){
     if(!nasState.currentRel) return;
     const parts = nasState.currentRel.split('/').filter(Boolean);
     parts.pop();
+    clearNasSelection();
     loadFolders(parts.join('/'));
   });
 }

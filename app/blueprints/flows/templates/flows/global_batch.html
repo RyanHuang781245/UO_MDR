@@ -750,9 +750,6 @@ function renderBatchResults(status) {
             <div>
               <div class="fw-bold text-dark">${escapeHtml(r.name || "")}</div>
               <div class="small text-muted font-monospace mb-1">${escapeHtml(r.task_id || "")}</div>
-              <a href="/tasks/${encodeURIComponent(r.task_id || "")}/flows/results" class="small text-decoration-none d-inline-flex align-items-center gap-1">
-                <i class="bi bi-box-arrow-in-right"></i>查看任務結果
-              </a>
             </div>
             <span class="status-badge ${r.ok ? "status-badge-completed" : "status-badge-failed"}">
               <i class="bi ${r.ok ? "bi-check-circle-fill" : "bi-x-circle-fill"}"></i>

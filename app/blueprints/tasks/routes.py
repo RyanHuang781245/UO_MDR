@@ -499,6 +499,7 @@ def task_download_mapping_example(task_id):
     static_dir = current_app.static_folder or ""
     rel_sample = "samples/mapping_example.xlsx"
     sample_path = os.path.join(static_dir, rel_sample)
+    checked_paths: list[str] = [sample_path]
 
     if os.path.isfile(sample_path):
         return send_from_directory(
@@ -508,15 +509,29 @@ def task_download_mapping_example(task_id):
             download_name="mapping_example.xlsx",
         )
 
-    fallback = Path(current_app.root_path).parent / "Mapping.xlsx"
-    if fallback.is_file():
-        return send_file(
-            str(fallback),
-            as_attachment=True,
-            download_name="mapping_example.xlsx",
-        )
+    project_root = Path(current_app.root_path).parent
+    fallback_candidates = [
+        project_root / "Mapping.xlsx",
+        project_root / "mapping.xlsx",
+        project_root / "MAPPING.xlsx",
+    ]
+    for candidate in fallback_candidates:
+        checked_paths.append(str(candidate))
+        if candidate.is_file():
+            return send_file(
+                str(candidate),
+                as_attachment=True,
+                download_name="mapping_example.xlsx",
+            )
 
-    abort(404)
+    current_app.logger.error(
+        "Mapping example file not found. checked_paths=%s",
+        checked_paths,
+    )
+    return (
+        "找不到 Mapping 範例檔案。請確認 static/samples/mapping_example.xlsx 或專案根目錄 Mapping.xlsx 是否存在。",
+        404,
+    )
 
 @tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
 def task_download_output(task_id, filename):

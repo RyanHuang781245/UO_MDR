@@ -134,7 +134,7 @@
                 </form>
                 {% endif %}
                 {% if log_file %}
-                <a class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=log_file) }}">
+                <a class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=log_file) }}">
                     <i class="bi bi-file-earmark-text text-muted"></i> 
                     下載 Log
                 </a>
@@ -204,7 +204,7 @@
                 </h6>
                 <div class="d-flex flex-wrap gap-2">
                     {% for name in outputs %}
-                    <a class="d-flex align-items-center gap-2 p-2 bg-white border rounded-2 text-decoration-none text-dark hover-shadow transition-all" style="max-width: 100%;" href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=name) }}">
+                    <a class="d-flex align-items-center gap-2 p-2 bg-white border rounded-2 text-decoration-none text-dark hover-shadow transition-all" style="max-width: 100%;" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=name) }}">
                         <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
                         <span class="text-truncate small fw-medium">{{ name }}</span>
                         <i class="bi bi-download ms-auto text-muted small flex-shrink-0"></i>

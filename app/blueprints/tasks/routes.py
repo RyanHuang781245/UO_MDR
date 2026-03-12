@@ -533,9 +533,11 @@ def task_download_mapping_example(task_id):
         404,
     )
 
-@tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
-def task_download_output(task_id, filename):
-    safe_name = filename.replace("\\", "/")
+def _send_mapping_output_file(task_id: str, filename: str):
+    safe_name = (filename or "").replace("\\", "/").strip("/")
+    if not safe_name:
+        abort(404)
+
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     mapping_job_dir = os.path.join(tdir, "mapping_job")
     mapping_log_dir = os.path.join(tdir, "mapping_logs")
@@ -546,6 +548,16 @@ def task_download_output(task_id, filename):
         if os.path.isfile(file_path):
             return send_from_directory(base_dir, safe_name, as_attachment=True)
     abort(404)
+
+
+@tasks_bp.get("/tasks/<task_id>/output/download", endpoint="task_download_output_query")
+def task_download_output_query(task_id):
+    return _send_mapping_output_file(task_id, request.args.get("filename", ""))
+
+
+@tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
+def task_download_output(task_id, filename):
+    return _send_mapping_output_file(task_id, filename)
 
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():

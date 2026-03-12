@@ -94,6 +94,17 @@ def _normalize_match(text: str) -> str:
     return cleaned
 
 
+def _normalize_output_rel_path(path: str) -> str:
+    """Treat both Windows and POSIX separators as directory delimiters."""
+    raw = (path or "").strip()
+    if not raw:
+        return ""
+    parts = [part for part in re.split(r"[\\/]+", raw) if part]
+    if not parts:
+        return ""
+    return os.path.join(*parts)
+
+
 def _find_header_row(ws, header_names: List[str], max_scan: int = 10) -> int | None:
     max_row = ws.max_row or 0
     scan = min(max_row, max_scan)
@@ -545,6 +556,7 @@ def process_mapping_excel(
         src_name = _cell(col_idx.get("source", 0))
         instruction = _cell(col_idx.get("operation", 1))
         out_rel = _cell(col_idx.get("out_path", 2))
+        out_rel_normalized = _normalize_output_rel_path(out_rel)
         out_name = _cell(col_idx.get("out_name", 3))
         template_name = _cell(col_idx.get("template", 4))
         insert_label = _cell(col_idx.get("insert", 5))
@@ -601,9 +613,9 @@ def process_mapping_excel(
                 else:
                     target_idx = last_idx if last_idx is not None else 0
 
-        output_dir_full = os.path.join(output_dir, out_rel) if out_rel else output_dir
+        output_dir_full = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir
         output_path = os.path.join(output_dir_full, out_name)
-        if validate_only and out_rel and not os.path.isdir(output_dir_full):
+        if validate_only and out_rel_normalized and not os.path.isdir(output_dir_full):
             _log("warn", f"輸出資料夾不存在: {out_rel}", row_num, action_label, detail_label)
         if output_path in output_template_map and output_template_map[output_path] != template_path:
             _log("error", f"output uses different templates: {out_name}", row_num, action_label, detail_label)

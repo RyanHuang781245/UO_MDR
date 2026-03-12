@@ -106,7 +106,7 @@
         <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light bg-opacity-50">
             <div class="d-flex align-items-center gap-3">
                 <h5 class="fw-bold mb-0">處理狀態</h5>
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2" id="status-badge-container">
                     {% if step_runs %}
                     <span class="status-badge status-badge-completed">
                         <i class="bi bi-check-circle-fill"></i> {{ step_ok_count }} 成功
@@ -143,8 +143,25 @@
         </div>
 
         <div class="px-4 py-4">
+            {% if outputs %}
+            <div class="bg-light p-4 rounded-3 border mb-4">
+                <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
+                    <i class="bi bi-file-earmark-text"></i>
+                    產出文件
+                </h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for name in outputs %}
+                    <a class="d-flex align-items-center gap-2 p-2 bg-white border rounded-2 text-decoration-none text-dark hover-shadow transition-all" style="max-width: 100%;" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=name) }}">
+                        <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
+                        <span class="text-truncate small fw-medium">{{ name }}</span>
+                        <i class="bi bi-download ms-auto text-muted small flex-shrink-0"></i>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
             {% if step_runs %}
-            <div class="list-group list-group-flush border rounded-3 overflow-hidden mb-4">
+            <div class="list-group list-group-flush border rounded-3 overflow-hidden mb-2">
                 {% for step in step_runs %}
                 <div class="list-group-item py-3">
                     {% if step.status == "error" %}
@@ -196,7 +213,7 @@
             </div>
             {% endif %}
 
-            {% if outputs %}
+            <!-- {% if outputs %}
             <div class="bg-light p-4 rounded-3 border">
                 <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
                     <i class="bi bi-files text-primary"></i>
@@ -212,7 +229,7 @@
                     {% endfor %}
                 </div>
             </div>
-            {% endif %}
+            {% endif %} -->
         </div>
     </div>
     {% endif %}
@@ -227,4 +244,45 @@
     transition: all 0.2s ease;
 }
 </style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+        form.addEventListener('submit', function(e) {
+            // setTimeout ensures this runs after any inline onsubmit handlers (like confirm)
+            setTimeout(() => {
+                if (e.defaultPrevented) return;
+
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    const btnText = submitBtn.innerText.trim();
+                    const isGenerate = btnText.includes('生成文件');
+                    const isCheck = btnText.includes('檢查引用文件');
+                    
+                    if (isGenerate || isCheck) {
+                        // Ensure name/value are sent even when button is disabled
+                        if (submitBtn.name && submitBtn.value) {
+                            const hiddenInput = document.createElement('input');
+                            hiddenInput.type = 'hidden';
+                            hiddenInput.name = submitBtn.name;
+                            hiddenInput.value = submitBtn.value;
+                            form.appendChild(hiddenInput);
+                        }
+
+                        // Disable button and show spinner
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> 處理中...';
+                        
+                        // Update status badge if it exists
+                        const statusContainer = document.getElementById('status-badge-container');
+                        if (statusContainer) {
+                            statusContainer.innerHTML = '<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 處理中...</span>';
+                        }
+                    }
+                }
+            }, 0);
+        });
+    });
+});
+</script>
 {% endblock %}

@@ -127,6 +127,7 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_ref_raw",
             "use_chapter_title",
             "target_chapter_title",
             "explicit_end_title",
@@ -142,6 +143,7 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_ref_raw": "text",
             "use_chapter_title": "bool",
             "target_chapter_title": "text",
             "explicit_end_title": "text",
@@ -160,6 +162,7 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_ref_raw",
             "target_chapter_title",
             "target_subtitle",
             "target_caption_label",
@@ -173,6 +176,7 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_ref_raw": "text",
             "target_chapter_title": "text",
             "target_subtitle": "text",
             "target_caption_label": "text",
@@ -189,6 +193,7 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_ref_raw",
             "target_chapter_title",
             "target_caption_label",
             "target_table_title",
@@ -202,6 +207,7 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_ref_raw": "text",
             "target_chapter_title": "text",
             "target_caption_label": "text",
             "target_table_title": "text",

@@ -11,6 +11,9 @@ from docx.enum.text import WD_LINE_SPACING
 from docx.oxml.ns import qn
 from spire.doc import *
 from spire.doc.common import *
+from modules.chapter_section_parse import (
+    parse_chapter_section_expression as _parse_chapter_section_expression,
+)
 from modules.extract_word_all_content import extract_body_with_options
 from modules.extract_word_chapter import extract_section_docx_xml
 from modules.extract_specific_figure_xml import extract_specific_figure_from_word_xml
@@ -311,17 +314,14 @@ def extract_word_chapter(
     end_title = (explicit_end_title or "").strip()
 
     # Support direct-call range syntax like "1.1.1-1.1.3" (or with title suffix),
-    # so unit tests and script usage behave the same as workflow parsing.
-    range_match = re.match(
-        r"^(\d+(?:\.\d+)*)(?:\s*[-~～至到]\s*(\d+(?:\.\d+)*))?(?:\s+(.+))?$",
-        raw_section,
-    )
-    if range_match:
-        start_section = range_match.group(1)
-        if not end_section and range_match.group(2):
-            end_section = range_match.group(2)
-        if not heading_text and range_match.group(3):
-            heading_text = range_match.group(3).strip()
+    # including trailing dots like "1. 測試1.1".
+    parsed_start, parsed_end, parsed_title = _parse_chapter_section_expression(raw_section)
+    if parsed_start:
+        start_section = parsed_start
+        if not end_section and parsed_end:
+            end_section = parsed_end
+        if not heading_text and parsed_title:
+            heading_text = parsed_title
 
     if not heading_text and use_chapter_title:
         heading_text = start_section

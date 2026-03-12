@@ -801,9 +801,13 @@ const { submitPostForm, escapeHtml } = window.UiUtils;
 
 function parseChapterRef(raw){
   const text = (raw || "").trim();
-  const match = text.match(/^(\d+(?:\.\d+)*)(?:\s+(.+))?$/);
+  const match = text.match(/^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$/);
   if (match) {
     return { section: match[1], title: (match[2] || "").trim() };
+  }
+  const inline = text.match(/\b(\d+(?:\.\d+)*)\b/);
+  if (inline) {
+    return { section: inline[1], title: text };
   }
   return { section: text, title: "" };
 }
@@ -813,12 +817,15 @@ function syncChapterRefInput(input){
   const card = input.closest(".card");
   const sectionName = input.dataset.section;
   const titleName = input.dataset.title;
+  const rawName = input.dataset.raw;
   if (!sectionName || !titleName) return;
   const parsed = parseChapterRef(input.value);
   const sectionInput = card ? card.querySelector(`input[name="${sectionName}"]`) : null;
   const titleInput = card ? card.querySelector(`input[name="${titleName}"]`) : null;
+  const rawInput = rawName && card ? card.querySelector(`input[name="${rawName}"]`) : null;
   if (sectionInput) sectionInput.value = parsed.section;
   if (titleInput) titleInput.value = parsed.title;
+  if (rawInput) rawInput.value = input.value;
 }
 
 function buildInsertMenu(sid, position){
@@ -1519,7 +1526,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const titleLabel = (FIELD_META[titleKey] || {}).label || titleKey;
     const titlePlaceholder = (FIELD_META[titleKey] || {}).placeholder || titleLabel;
     const titleVal = getValue(titleKey);
-    const chapterRefVal = [sectionVal, titleVal].filter(Boolean).join(" ");
+    const rawChapterRef = getValue("target_chapter_ref_raw");
+    const chapterRefVal = rawChapterRef || [sectionVal, titleVal].filter(Boolean).join(" ");
 
     const subheadingVal = getValue("target_subtitle");
     let targetTitleVal = getBoolValue("use_chapter_title");
@@ -1606,9 +1614,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                     </div>
                   </div>
                 </div>
-                <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${sectionPlaceholder} ${titlePlaceholder}" data-section="step_${sid}_${sectionKey}" data-title="step_${sid}_target_chapter_title">
+                <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${sectionPlaceholder} ${titlePlaceholder}" data-section="step_${sid}_${sectionKey}" data-title="step_${sid}_target_chapter_title" data-raw="step_${sid}_target_chapter_ref_raw">
                 <input type="hidden" name="step_${sid}_${sectionKey}" value="${sectionVal}">
                 <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
+                <input type="hidden" name="step_${sid}_target_chapter_ref_raw" value="${rawChapterRef}">
               </div>
             </div>
           </div>
@@ -1945,7 +1954,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       const targetVal = targetRaw === undefined || targetRaw === null ? "" : String(targetRaw);
       const sectionVal = getValue("target_chapter_section");
       const titleVal = getValue("target_chapter_title");
-      const chapterRefVal = [sectionVal, titleVal].filter(Boolean).join(" ");
+      const rawChapterRef = getValue("target_chapter_ref_raw");
+      const chapterRefVal = rawChapterRef || [sectionVal, titleVal].filter(Boolean).join(" ");
       const checkboxHtml = `
         <div class="form-check d-flex align-items-center gap-1 m-0">
           <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
@@ -1958,9 +1968,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
             ${checkboxHtml}
           </div>
-          <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"} ${FIELD_META.target_chapter_title?.placeholder || ""}" data-section="step_${sid}_target_chapter_section" data-title="step_${sid}_target_chapter_title">
+          <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"} ${FIELD_META.target_chapter_title?.placeholder || ""}" data-section="step_${sid}_target_chapter_section" data-title="step_${sid}_target_chapter_title" data-raw="step_${sid}_target_chapter_ref_raw">
           <input type="hidden" name="step_${sid}_target_chapter_section" value="${sectionVal}">
           <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
+          <input type="hidden" name="step_${sid}_target_chapter_ref_raw" value="${rawChapterRef}">
         </div>
         <div class="col-md-6">
           <label class="form-label">${targetLabel}</label>
@@ -1968,6 +1979,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         </div>
       `);
       handledKeys.add("target_chapter_section");
+      handledKeys.add("target_chapter_ref_raw");
       handledKeys.add(targetKey);
       handledKeys.add("use_chapter_title");
     }

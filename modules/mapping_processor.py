@@ -305,14 +305,18 @@ def process_mapping_excel(
                     extract_word_all_content(infile, output_doc=doc, section=section)
                     logs.append(f"Extract {input_name} (all content)")
                 else:
-                    chapter = chapter_match.group(1)
-                    if "," in instruction:
+                    parsed_chapter, parsed_title, _parsed_sub = _parse_chapter_parts(instruction)
+                    chapter = parsed_chapter or chapter_match.group(1)
+                    title_inline = parsed_title or ""
+                    if "," in instruction and not title_inline:
                         _prefix, after = instruction.split(",", 1)
+                        title_inline = after.strip()
+                    if title_inline:
                         result = extract_word_chapter(
                             infile,
                             chapter,
                             use_chapter_title=True,
-                            target_chapter_title=after.strip(),
+                            target_chapter_title=title_inline,
                             output_doc=doc,
                             section=section,
                         )
@@ -323,7 +327,7 @@ def process_mapping_excel(
                                 trimmed = captured.strip()
                                 if trimmed and trimmed not in hidden_titles[out_name]:
                                     hidden_titles[out_name].append(trimmed)
-                        logs.append(f"Extract {input_name} (chapter {chapter}, title {after.strip()})")
+                        logs.append(f"Extract {input_name} (chapter {chapter}, title {title_inline})")
                     else:
                         result = extract_word_chapter(
                             infile,
@@ -454,14 +458,14 @@ def process_mapping_excel(
             first, after = re.split(r"[\\/]+", text, maxsplit=1)
             first = first.strip()
             after = after.strip()
-            first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", first)
+            first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", first)
             if first_match:
                 chapter = first_match.group(1)
                 title = (first_match.group(2) or "").strip()
             if after:
                 subheading = after
         else:
-            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", text.strip())
+            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", text.strip())
             if inline_match:
                 chapter = inline_match.group(1)
                 title = (inline_match.group(2) or "").strip()
@@ -661,7 +665,7 @@ def process_mapping_excel(
             head_parts = [p.strip() for p in re.split(r"[\\/|]+", head_text) if p.strip()]
             if not head_parts:
                 head_parts = [head_text.strip()]
-            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", head_parts[0])
+            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", head_parts[0])
             if inline_match:
                 parsed_chapter = inline_match.group(1).rstrip(".")
                 inline_title = (inline_match.group(2) or "").strip()
@@ -832,7 +836,7 @@ def process_mapping_excel(
                 first, after = re.split(split_pattern, instruction_core, maxsplit=1)
                 first = first.strip()
                 after = after.strip()
-                first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", first)
+                first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", first)
                 title_inline = ""
                 if first_match:
                     chapter = first_match.group(1)
@@ -858,7 +862,7 @@ def process_mapping_excel(
                 if "use_chapter_title" not in params:
                     params["use_chapter_title"] = False
             else:
-                inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", instruction_core.strip())
+                inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", instruction_core.strip())
                 title_inline = ""
                 if inline_match:
                     chapter = inline_match.group(1)

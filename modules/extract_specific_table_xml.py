@@ -7,6 +7,9 @@ from typing import Optional
 
 from lxml import etree
 
+from modules.chapter_section_parse import (
+    parse_chapter_section_expression as _parse_chapter_section_expression,
+)
 from modules.extract_word_chapter import (
     NS,
     build_style_outline_map,
@@ -247,6 +250,12 @@ def extract_specific_table_from_word_xml(
     """
 
     chapter_section = (target_chapter_section or "").strip()
+    chapter_title = (target_chapter_title or "").strip()
+    parsed_start, _parsed_end, parsed_title = _parse_chapter_section_expression(chapter_section)
+    if parsed_start:
+        chapter_section = parsed_start
+        if not chapter_title and parsed_title:
+            chapter_title = parsed_title
 
     caption_label = (target_caption_label or "").strip()
     table_title = (target_table_title or "").strip()
@@ -257,7 +266,6 @@ def extract_specific_table_from_word_xml(
     if table_index is not None and table_index <= 0:
         raise ValueError("target_table_index must be >= 1")
 
-    chapter_title = (target_chapter_title or "").strip()
     subtitle = (target_subtitle or "").strip()
     use_chapter = bool(chapter_section or chapter_title)
     start_heading_text = chapter_title or chapter_section

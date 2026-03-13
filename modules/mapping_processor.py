@@ -220,6 +220,7 @@ def process_mapping_excel(
     output_dir: str,
     log_dir: str | None = None,
     validate_only: bool = False,
+    validate_extract_only: bool = False,
 ) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
 
@@ -236,6 +237,9 @@ def process_mapping_excel(
         logs: list of messages
         outputs: list of generated docx paths
     """
+    if validate_only and validate_extract_only:
+        raise ValueError("validate_only and validate_extract_only cannot both be True")
+
     logs: List[str] = []
     outputs: List[str] = []
     row_errors: Dict[int, List[str]] = defaultdict(list)
@@ -279,7 +283,7 @@ def process_mapping_excel(
         start_row = 3 if ws.max_row and ws.max_row >= 3 else 2
         docs: Dict[str, Tuple[Document, Any]] = {}
         hidden_titles: Dict[str, List[str]] = defaultdict(list)
-        if validate_only:
+        if validate_only or validate_extract_only:
             for row in ws.iter_rows(min_row=start_row, values_only=True):
                 raw_out, _raw_title, raw_folder, raw_input, raw_instruction = row[:5]
                 out_name = str(raw_out).strip() if raw_out else ""
@@ -1014,6 +1018,45 @@ def process_mapping_excel(
             )
             continue
 
+        if validate_extract_only:
+            workdir = os.path.join(tempfile.gettempdir(), f"mapping_validate_{uuid.uuid4().hex[:8]}")
+            os.makedirs(workdir, exist_ok=True)
+            template_cfg = None
+            if template_path:
+                template_cfg = {
+                    "path": template_path,
+                    "paragraphs": payload.get("parsed") or [],
+                    "default_mode": "insert_after",
+                }
+            try:
+                workflow_result = run_workflow(payload.get("steps", []), workdir=workdir, template=template_cfg)
+                workflow_log = workflow_result.get("log_json", [])
+                has_error = any((entry.get("status") == "error") for entry in workflow_log if isinstance(entry, dict))
+                run_logs.append(
+                    {
+                        "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
+                        "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
+                        "steps": payload.get("steps", []),
+                        "workflow_log": workflow_log,
+                        "status": "error" if has_error else "ok",
+                    }
+                )
+            except Exception as e:
+                logs.append(f"ERROR: 驗證擷取參數失敗: {os.path.basename(output_path)} :: {e}")
+                run_logs.append(
+                    {
+                        "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
+                        "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
+                        "steps": payload.get("steps", []),
+                        "status": "error",
+                        "error": str(e),
+                        "workflow_log": [],
+                    }
+                )
+            finally:
+                shutil.rmtree(workdir, ignore_errors=True)
+            continue
+
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         workdir = os.path.join(tempfile.gettempdir(), f"mapping_{uuid.uuid4().hex[:8]}")
         os.makedirs(workdir, exist_ok=True)
@@ -1072,7 +1115,7 @@ def process_mapping_excel(
             )
 
     zip_file = None
-    if not validate_only and outputs:
+    if not validate_only and not validate_extract_only and outputs:
         zip_filename = f"mapping_outputs_{uuid.uuid4().hex[:8]}.zip"
         zip_path = os.path.join(output_dir, zip_filename)
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:

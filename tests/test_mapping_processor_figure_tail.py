@@ -38,6 +38,8 @@ def _run_validate_mapping(
     include_title: str = "",
     source_name: str = "source.docx",
     source_files: list[str] | None = None,
+    *,
+    validate_extract_only: bool = False,
 ) -> tuple[dict, dict]:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"
@@ -60,7 +62,8 @@ def _run_validate_mapping(
         str(files_dir),
         str(out_dir),
         log_dir=str(log_dir),
-        validate_only=True,
+        validate_only=not validate_extract_only,
+        validate_extract_only=validate_extract_only,
     )
 
     log_data = {"messages": [], "runs": []}
@@ -305,3 +308,38 @@ def test_mapping_outputs_are_packaged_into_zip(tmp_path: Path, monkeypatch) -> N
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = sorted(zf.namelist())
     assert names == ["pkg/A/a.docx", "pkg/B/b.docx"]
+
+
+def test_mapping_validate_extract_only_runs_workflow_validation(tmp_path: Path, monkeypatch) -> None:
+    result, log_data = None, None
+
+    def fake_run_workflow(steps, workdir, template=None):
+        return {
+            "result_docx": str(Path(workdir) / "result.docx"),
+            "log_json": [
+                {
+                    "step": 1,
+                    "type": "extract_word_chapter",
+                    "params": steps[0]["params"],
+                    "status": "error",
+                    "error": "No content extracted",
+                }
+            ],
+        }
+
+    monkeypatch.setattr("modules.mapping_processor.run_workflow", fake_run_workflow)
+
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description",
+        validate_extract_only=True,
+    )
+
+    runs = log_data.get("runs") or []
+    assert runs
+    workflow_log = runs[0].get("workflow_log") or []
+    assert workflow_log
+    assert workflow_log[0].get("status") == "error"
+    assert workflow_log[0].get("error") == "No content extracted"
+    assert result.get("outputs") == []
+    assert result.get("zip_file") is None

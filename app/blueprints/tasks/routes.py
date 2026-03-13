@@ -226,7 +226,13 @@ def task_mapping(task_id):
     zip_file = None
     step_runs = []
     last_mapping_marker = os.path.join(tdir, "mapping_last.txt")
+    validation_state_path = os.path.join(tdir, "mapping_validation_state.json")
     last_mapping_file = None
+    validation_state = {
+        "mapping_file": "",
+        "reference_ok": False,
+        "extract_ok": False,
+    }
 
     # 如果是頁面跳轉/重新整理 (GET)，則清掉之前的暫存紀錄與檔案
     if request.method == "GET":
@@ -239,6 +245,11 @@ def task_mapping(task_id):
                 os.remove(last_mapping_marker)
             except Exception:
                 pass
+        try:
+            if os.path.isfile(validation_state_path):
+                os.remove(validation_state_path)
+        except Exception:
+            pass
     else:
         # POST 請求時才讀取暫存紀錄
         if os.path.isfile(last_mapping_marker):
@@ -249,6 +260,19 @@ def task_mapping(task_id):
                     last_mapping_file = cached_name
             except Exception:
                 last_mapping_file = None
+        if os.path.isfile(validation_state_path):
+            try:
+                loaded_state = json.loads(Path(validation_state_path).read_text(encoding="utf-8"))
+                if isinstance(loaded_state, dict):
+                    validation_state.update(
+                        {
+                            "mapping_file": str(loaded_state.get("mapping_file") or ""),
+                            "reference_ok": bool(loaded_state.get("reference_ok")),
+                            "extract_ok": bool(loaded_state.get("extract_ok")),
+                        }
+                    )
+            except Exception:
+                pass
 
     def _format_step_label(entry: dict) -> tuple[str, str]:
         stype = entry.get("type") or ""
@@ -361,9 +385,7 @@ def task_mapping(task_id):
                 mapping_path = os.path.join(tdir, last_mapping_file)
         else:
             f = request.files.get("mapping_file")
-            if not f or not f.filename:
-                messages.append("請選擇檔案")
-            else:
+            if f and f.filename:
                 filename = _safe_uploaded_filename(
                     f.filename,
                     default_stem=f"mapping_{uuid.uuid4().hex[:8]}",
@@ -373,8 +395,21 @@ def task_mapping(task_id):
                 try:
                     Path(last_mapping_marker).write_text(filename, encoding="utf-8")
                     last_mapping_file = filename
+                    validation_state = {
+                        "mapping_file": filename,
+                        "reference_ok": False,
+                        "extract_ok": False,
+                    }
                 except Exception:
                     pass
+            elif last_mapping_file:
+                mapping_path = os.path.join(tdir, last_mapping_file)
+            else:
+                messages.append("請選擇檔案")
+
+        if action == "check_extract" and not validation_state.get("reference_ok"):
+            messages.append("請先通過檢查引用文件。")
+            mapping_path = None
         if mapping_path:
             try:
                 from modules.mapping_processor import process_mapping_excel
@@ -384,11 +419,34 @@ def task_mapping(task_id):
                     out_dir,
                     log_dir=log_dir,
                     validate_only=(action == "check"),
+                    validate_extract_only=(action == "check_extract"),
                 )
                 messages = result["logs"]
                 outputs = result["outputs"]
                 log_file = result.get("log_file")
                 zip_file = result.get("zip_file")
+                current_has_error = any("ERROR" in (m or "") for m in messages)
+                current_mapping_name = os.path.basename(mapping_path)
+                if action == "check":
+                    validation_state = {
+                        "mapping_file": current_mapping_name,
+                        "reference_ok": not current_has_error,
+                        "extract_ok": False,
+                    }
+                elif action == "check_extract":
+                    validation_state = {
+                        "mapping_file": current_mapping_name,
+                        "reference_ok": bool(validation_state.get("reference_ok")),
+                        "extract_ok": not current_has_error,
+                    }
+                if action in {"check", "check_extract"}:
+                    try:
+                        Path(validation_state_path).write_text(
+                            json.dumps(validation_state, ensure_ascii=False),
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
             except Exception as e:
                 messages = [str(e)]
     if log_file:
@@ -546,10 +604,17 @@ def task_mapping(task_id):
         step_error_count=step_error_count,
         error_messages=error_messages,
         last_mapping_file=last_mapping_file,
+        allow_check_extract=bool(
+            last_mapping_file
+            and validation_state.get("mapping_file") == last_mapping_file
+            and validation_state.get("reference_ok")
+        ),
         allow_direct_run=bool(
             last_mapping_file
+            and validation_state.get("mapping_file") == last_mapping_file
+            and validation_state.get("extract_ok")
             and request.method == "POST"
-            and (request.form.get("action") == "check")
+            and (request.form.get("action") == "check_extract")
             and not has_error
         ),
     )

@@ -8,11 +8,8 @@
 
     <!-- 上傳表單 -->
     <div class="main-card mb-4">
-        <!-- <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
-            <h5 class="fw-bold mb-0">上傳 Mapping 定義文件</h5>
-        </div> -->
         <div class="px-4 py-4">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                 <button
                     class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2"
                     type="button"
@@ -22,15 +19,11 @@
                     <i class="bi bi-info-circle text-primary"></i>
                     Mapping 定義說明
                 </button>
-                <!-- <a class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}">
-                    <i class="bi bi-download text-primary"></i>
-                    下載 Mapping 範例
-                </a> -->
             </div>
 
             <form method="post" enctype="multipart/form-data">
                 {% if last_mapping_file %}
-                <div class="mb-4 d-flex align-items-center gap-2">
+                <div class="mb-3 d-flex align-items-center gap-2">
                     <span class="small fw-bold text-uppercase text-muted">當前使用檔案：</span>
                     <span class="status-badge status-badge-queued">
                         <i class="bi bi-file-earmark-excel"></i> {{ last_mapping_file }}
@@ -38,13 +31,19 @@
                 </div> 
                 {% endif %}     
                 <div class="row g-3">
-                    <div class="col-md-9">
+                    <div class="col-lg-8">
                         <input class="form-control form-control-custom rounded-2" type="file" name="mapping_file" accept=".xlsx" {% if not last_mapping_file %}required{% endif %}>
                     </div>
-                    <div class="col-md-3 d-grid align-items-end">
-                        <button class="btn btn-primary fw-bold px-3" name="action" value="check" type="submit">
+                    <div class="col-sm-6 col-lg-2 d-grid align-items-end">
+                        <button class="btn btn-outline-primary fw-bold px-2" name="action" value="check" type="submit">
                             <i class="bi bi-search me-1"></i>
                             檢查引用文件
+                        </button>
+                    </div>
+                    <div class="col-sm-6 col-lg-2 d-grid align-items-end">
+                        <button class="btn btn-primary fw-bold px-2" name="action" value="check_extract" type="submit" {% if not allow_check_extract %}disabled title="請先通過檢查引用文件"{% endif %}>
+                            <i class="bi bi-sliders me-1"></i>
+                            檢查擷取參數
                         </button>
                     </div>
                 </div>
@@ -84,6 +83,7 @@
 
                     <div class="small fw-semibold text-dark mb-2">操作欄語法範例</div>
                     <div class="small text-muted mb-2">若需隱藏標題，請在 <code>包含標題</code> 欄位填入 <code>否</code> 或 <code>FALSE</code>。</div>
+                    <div class="small text-muted mb-2">頁面上的 <code>檢查引用文件</code> 會驗證檔案、模板與欄位格式；<code>檢查擷取參數</code> 會額外實際驗證章節、圖片、表格是否可被擷取。</div>
                     <div class="small font-monospace mb-1">章節擷取範例1（類型 空白）：<span class="text-primary">1.1.1 General description</span></div>
                     <div class="small font-monospace mb-1">表格擷取範例2（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|Figure 1.</span></div>
                     <div class="small font-monospace mb-1">表格擷取範例3（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|index=1</span></div>
@@ -220,24 +220,6 @@
                 </ul>
             </div>
             {% endif %}
-
-            <!-- {% if outputs %}
-            <div class="bg-light p-4 rounded-3 border">
-                <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
-                    <i class="bi bi-files text-primary"></i>
-                    產出文件
-                </h6>
-                <div class="d-flex flex-wrap gap-2">
-                    {% for name in outputs %}
-                    <a class="d-flex align-items-center gap-2 p-2 bg-white border rounded-2 text-decoration-none text-dark hover-shadow transition-all" style="max-width: 100%;" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=name) }}">
-                        <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
-                        <span class="text-truncate small fw-medium">{{ name }}</span>
-                        <i class="bi bi-download ms-auto text-muted small flex-shrink-0"></i>
-                    </a>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %} -->
         </div>
     </div>
     {% endif %}
@@ -261,11 +243,11 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => {
                 if (e.defaultPrevented) return;
 
-                const submitBtn = form.querySelector('button[type="submit"]');
+                const submitBtn = e.submitter || document.activeElement;
                 if (submitBtn) {
                     const btnText = submitBtn.innerText.trim();
                     const isGenerate = btnText.includes('生成文件');
-                    const isCheck = btnText.includes('檢查引用文件');
+                    const isCheck = btnText.includes('檢查引用文件') || btnText.includes('檢查擷取參數');
                     
                     if (isGenerate || isCheck) {
                         // Ensure name/value are sent even when button is disabled
@@ -277,14 +259,21 @@ document.addEventListener('DOMContentLoaded', function() {
                             form.appendChild(hiddenInput);
                         }
 
-                        // Disable button and show spinner
+                        // Disable all submit buttons in this form to prevent concurrent actions
+                        const submitButtons = form.querySelectorAll('button[type="submit"]');
+                        submitButtons.forEach(btn => {
+                            btn.disabled = true;
+                        });
+
+                        // Show spinner only on the button that triggered submit
+                        const loadingText = isCheck ? '檢查中...' : '處理中...';
                         submitBtn.disabled = true;
-                        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> 處理中...';
+                        submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> ${loadingText}`;
                         
                         // Update status badge if it exists
                         const statusContainer = document.getElementById('status-badge-container');
                         if (statusContainer) {
-                            statusContainer.innerHTML = '<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 處理中...</span>';
+                            statusContainer.innerHTML = `<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> ${loadingText}</span>`;
                         }
                     }
                 }

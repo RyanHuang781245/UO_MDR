@@ -23,6 +23,7 @@ from .template_manager import (
     parse_template_paragraphs,
     render_template_with_mappings,
 )
+from modules.extract_pdf_img import extract_pdf_pages_to_docx
 
 
 def _resolve_fragment_path(workdir: str, user_path: str | None, idx: int) -> str:
@@ -118,6 +119,15 @@ SUPPORTED_STEPS = {
             "input_file": "file:docx",
             "ignore_toc": "bool",
             "ignore_header_footer": "bool",
+            "template_index": "text",
+            "template_mode": "text",
+        }
+    },
+    "extract_pdf_pages_as_images": {
+        "label": "擷取 PDF 標籤",
+        "inputs": ["input_file", "template_index", "template_mode"],
+        "accepts": {
+            "input_file": "file:pdf",
             "template_index": "text",
             "template_mode": "text",
         }
@@ -452,6 +462,21 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 if out_path:
                     _route_fragment(out_path, params, stype)
 
+            elif stype == "extract_pdf_pages_as_images":
+                infile = params["input_file"]
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                result = extract_pdf_pages_to_docx(
+                    infile,
+                    frag_path,
+                )
+                out_path = None
+                if isinstance(result, dict):
+                    out_path = result.get("output_docx") or frag_path
+                    log[-1]["output_docx"] = out_path
+                    log[-1]["pages"] = result.get("pages")
+                if out_path:
+                    _route_fragment(out_path, params, stype)
+
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
                 tsec = params.get("target_chapter_section", "")
@@ -666,6 +691,11 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
             if not out_path or not _docx_has_content(out_path):
                 entry["status"] = "error"
                 entry["error"] = "No content extracted"
+        elif stype == "extract_pdf_pages_as_images":
+            out_path = entry.get("output_docx")
+            if not out_path or not _docx_has_content(out_path):
+                entry["status"] = "error"
+                entry["error"] = "No PDF pages extracted"
         elif stype == "extract_specific_table_from_word":
             out_path = entry.get("output_docx")
             if not out_path or not _docx_has_content(out_path):

@@ -56,8 +56,8 @@ def test_update_flow_format_updates_existing_metadata(task_env, client):
         updated = json.load(fh)
 
     assert updated["document_format"] == "modern"
-    assert updated["line_spacing"] == 2.0
-    assert updated["center_titles"] is False
+    assert updated["line_spacing"] == "2"
+    assert "center_titles" not in updated
     assert updated["created"] == original["created"]
     assert updated["steps"] == original["steps"]
 
@@ -87,6 +87,6 @@ def test_update_flow_format_converts_legacy_flow_list(task_env, client):
     assert isinstance(updated, dict)
     assert updated["steps"] == legacy_steps
     assert updated["document_format"] in DOCUMENT_FORMAT_PRESETS
-    assert updated["line_spacing"] == 1.25
-    assert updated["center_titles"] is True
+    assert updated["line_spacing"] == "1.25"
+    assert "center_titles" not in updated
     assert isinstance(updated.get("created"), str)

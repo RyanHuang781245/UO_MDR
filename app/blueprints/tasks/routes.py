@@ -46,10 +46,36 @@ from app.services.task_service import (
 )
 
 from app.services.nas_service import get_configured_nas_roots, resolve_nas_path, validate_nas_path
+from app.utils import normalize_docx_output_filename
 from modules.auth_models import ROLE_ADMIN, user_has_role
 from modules.file_copier import copy_files
 
 tasks_bp = Blueprint("tasks_bp", __name__, template_folder="templates")
+_INVALID_UPLOAD_FILENAME_CHARS = '\\/:*?"<>|'
+_WINDOWS_RESERVED_FILE_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
 
 
 def _get_actor_info():
@@ -63,6 +89,29 @@ def _get_actor_info():
             label = display_name or work_id
         return work_id, label
     return "", ""
+
+
+def _safe_uploaded_filename(filename: str, default_stem: str = "upload") -> str:
+    raw_name = os.path.basename((filename or "").replace("\\", "/")).strip()
+    secured = secure_filename(raw_name)
+    raw_stem, raw_ext = os.path.splitext(raw_name)
+    secured_raw_stem = secure_filename(raw_stem) if raw_stem else ""
+    if secured and (not raw_stem or secured_raw_stem):
+        return secured
+
+    cleaned = "".join(
+        "_" if (ord(ch) < 32 or ch in _INVALID_UPLOAD_FILENAME_CHARS) else ch
+        for ch in raw_name
+    ).strip().strip(".")
+    if cleaned in {"", ".", ".."}:
+        cleaned = default_stem
+
+    stem, ext = os.path.splitext(cleaned)
+    if not stem:
+        stem = default_stem
+    if stem.upper() in _WINDOWS_RESERVED_FILE_NAMES:
+        stem = f"_{stem}"
+    return f"{stem}{ext}" if ext else stem
 
 
 def _apply_last_edit(meta: dict) -> None:
@@ -174,68 +223,152 @@ def task_mapping(task_id):
     messages = []
     outputs = []
     log_file = None
+    zip_file = None
     step_runs = []
     last_mapping_marker = os.path.join(tdir, "mapping_last.txt")
+    validation_state_path = os.path.join(tdir, "mapping_validation_state.json")
     last_mapping_file = None
-    if os.path.isfile(last_mapping_marker):
+    validation_state = {
+        "mapping_file": "",
+        "reference_ok": False,
+        "extract_ok": False,
+    }
+
+    # 如果是頁面跳轉/重新整理 (GET)，則清掉之前的暫存紀錄與檔案
+    if request.method == "GET":
+        if os.path.isfile(last_mapping_marker):
+            try:
+                cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
+                cached_path = os.path.join(tdir, cached_name)
+                if cached_name and os.path.isfile(cached_path):
+                    os.remove(cached_path)
+                os.remove(last_mapping_marker)
+            except Exception:
+                pass
         try:
-            cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
-            cached_path = os.path.join(tdir, cached_name)
-            if cached_name and os.path.isfile(cached_path):
-                last_mapping_file = cached_name
+            if os.path.isfile(validation_state_path):
+                os.remove(validation_state_path)
         except Exception:
-            last_mapping_file = None
+            pass
+    else:
+        # POST 請求時才讀取暫存紀錄
+        if os.path.isfile(last_mapping_marker):
+            try:
+                cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
+                cached_path = os.path.join(tdir, cached_name)
+                if cached_name and os.path.isfile(cached_path):
+                    last_mapping_file = cached_name
+            except Exception:
+                last_mapping_file = None
+        if os.path.isfile(validation_state_path):
+            try:
+                loaded_state = json.loads(Path(validation_state_path).read_text(encoding="utf-8"))
+                if isinstance(loaded_state, dict):
+                    validation_state.update(
+                        {
+                            "mapping_file": str(loaded_state.get("mapping_file") or ""),
+                            "reference_ok": bool(loaded_state.get("reference_ok")),
+                            "extract_ok": bool(loaded_state.get("extract_ok")),
+                        }
+                    )
+            except Exception:
+                pass
 
     def _format_step_label(entry: dict) -> tuple[str, str]:
         stype = entry.get("type") or ""
         params = entry.get("params") or {}
 
+        def _boolish(value, default: bool = False) -> bool:
+            if value in (None, ""):
+                return default
+            return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
         def _base(path: str) -> str:
-            return os.path.basename(path) if path else "?"
+            if not path: return "?"
+            name = os.path.basename(path)
+            # 移除 "Section 1_", "Section 2_" 等前綴
+            import re
+            name = re.sub(r"^Section\s+\d+_", "", name)
+            return name
 
         row_no = params.get("mapping_row")
         row_prefix = f"(Row {row_no}) " if row_no not in (None, "", "None") else ""
         if stype == "extract_word_chapter":
             src = _base(params.get("input_file", ""))
-            chapter = params.get("target_chapter_section", "")
-            title = params.get("target_chapter_title") or params.get("target_title_section", "")
-            sub = params.get("target_subtitle") or params.get("subheading_text", "")
-            parts = [f"chapter {chapter}"] if chapter else []
-            if title:
-                parts.append(f"title {title}")
+            chapter = (params.get("target_chapter_section") or "").strip()
+            title = (params.get("target_chapter_title") or params.get("target_title_section") or "").strip()
+            sub = (params.get("target_subtitle") or params.get("subheading_text") or "").strip()
+            
+            # 組合章節與標題: "1.1.1 General description"
+            main_header = f"{chapter} {title}".strip()
+            
+            parts = [src]
+            if main_header:
+                parts.append(main_header)
             if sub:
-                parts.append(f"subheading {sub}")
-            detail = ", ".join(parts)
-            suffix = f" ({detail})" if detail else ""
-            return f"{row_prefix}Extract chapter", f"{src}{suffix}".strip()
+                parts.append(sub)
+            if _boolish(params.get("hide_chapter_title"), default=False):
+                parts.append("不含標題")
+            
+            return f"{row_prefix}擷取章節", " | ".join(parts)
         if stype == "extract_word_all_content":
             src = _base(params.get("input_file", ""))
-            return f"{row_prefix}Extract all", src.strip()
+            return f"{row_prefix}擷取全文", src.strip()
         if stype == "extract_specific_table_from_word":
             src = _base(params.get("input_file", ""))
+            section = (params.get("target_chapter_section") or "").strip()
+            title = (params.get("target_chapter_title") or params.get("target_title_section") or "").strip()
+            main_header = f"{section} {title}".strip()
             label = (
                 params.get("target_caption_label")
                 or params.get("target_table_label", "")
                 or params.get("target_figure_label", "")
-            )
-            detail = f"{src} ({label})" if label else src
-            return f"{row_prefix}Extract table", detail.strip()
+            ).strip()
+            table_title = (params.get("target_table_title") or "").strip()
+            table_index = str(params.get("target_table_index") or "").strip()
+            parts = [src]
+            if main_header:
+                parts.append(main_header)
+            if label:
+                parts.append(label)
+            if table_title:
+                parts.append(f"title={table_title}")
+            if table_index:
+                parts.append(f"index={table_index}")
+            if not _boolish(params.get("include_caption"), default=True):
+                parts.append("不含標題")
+            return f"{row_prefix}擷取表格", " | ".join(parts)
         if stype == "extract_specific_figure_from_word":
             src = _base(params.get("input_file", ""))
+            section = (params.get("target_chapter_section") or "").strip()
+            title = (params.get("target_chapter_title") or params.get("target_title_section") or "").strip()
+            main_header = f"{section} {title}".strip()
             label = (
                 params.get("target_caption_label")
                 or params.get("target_figure_label", "")
                 or params.get("target_table_label", "")
-            )
-            detail = f"{src} ({label})" if label else src
-            return f"{row_prefix}Extract figure", detail.strip()
+            ).strip()
+            figure_title = (params.get("target_figure_title") or "").strip()
+            figure_index = str(params.get("target_figure_index") or "").strip()
+            parts = [src]
+            if main_header:
+                parts.append(main_header)
+            if label:
+                parts.append(label)
+            if figure_title:
+                parts.append(f"title={figure_title}")
+            if figure_index:
+                parts.append(f"index={figure_index}")
+            if not _boolish(params.get("include_caption"), default=True):
+                parts.append("不含標題")
+            return f"{row_prefix}擷取圖片", " | ".join(parts)
         if stype == "insert_text":
             text_val = (params.get("text") or "").strip()
-            return f"{row_prefix}Append text", text_val
+            return f"{row_prefix}插入文字", text_val
         if stype == "template_merge":
             tpl = _base(entry.get("template_file", ""))
-            return f"{row_prefix}Template merge", tpl.strip()
-        return stype or "step", ""
+            return f"{row_prefix}模版合併", tpl.strip()
+        return stype or "步驟", ""
 
     def _truncate_detail(text: str, limit: int = 160) -> tuple[str, bool]:
         if len(text) <= limit:
@@ -252,17 +385,31 @@ def task_mapping(task_id):
                 mapping_path = os.path.join(tdir, last_mapping_file)
         else:
             f = request.files.get("mapping_file")
-            if not f or not f.filename:
-                messages.append("請選擇檔案")
-            else:
-                filename = secure_filename(f.filename)
+            if f and f.filename:
+                filename = _safe_uploaded_filename(
+                    f.filename,
+                    default_stem=f"mapping_{uuid.uuid4().hex[:8]}",
+                )
                 mapping_path = os.path.join(tdir, filename)
                 f.save(mapping_path)
                 try:
                     Path(last_mapping_marker).write_text(filename, encoding="utf-8")
                     last_mapping_file = filename
+                    validation_state = {
+                        "mapping_file": filename,
+                        "reference_ok": False,
+                        "extract_ok": False,
+                    }
                 except Exception:
                     pass
+            elif last_mapping_file:
+                mapping_path = os.path.join(tdir, last_mapping_file)
+            else:
+                messages.append("請選擇檔案")
+
+        if action == "check_extract" and not validation_state.get("reference_ok"):
+            messages.append("請先通過檢查引用文件。")
+            mapping_path = None
         if mapping_path:
             try:
                 from modules.mapping_processor import process_mapping_excel
@@ -272,10 +419,34 @@ def task_mapping(task_id):
                     out_dir,
                     log_dir=log_dir,
                     validate_only=(action == "check"),
+                    validate_extract_only=(action == "check_extract"),
                 )
                 messages = result["logs"]
                 outputs = result["outputs"]
                 log_file = result.get("log_file")
+                zip_file = result.get("zip_file")
+                current_has_error = any("ERROR" in (m or "") for m in messages)
+                current_mapping_name = os.path.basename(mapping_path)
+                if action == "check":
+                    validation_state = {
+                        "mapping_file": current_mapping_name,
+                        "reference_ok": not current_has_error,
+                        "extract_ok": False,
+                    }
+                elif action == "check_extract":
+                    validation_state = {
+                        "mapping_file": current_mapping_name,
+                        "reference_ok": bool(validation_state.get("reference_ok")),
+                        "extract_ok": not current_has_error,
+                    }
+                if action in {"check", "check_extract"}:
+                    try:
+                        Path(validation_state_path).write_text(
+                            json.dumps(validation_state, ensure_ascii=False),
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
             except Exception as e:
                 messages = [str(e)]
     if log_file:
@@ -323,7 +494,21 @@ def task_mapping(task_id):
         warning_confirm = "Warnings found. Run anyway?\n" + "\n".join(trimmed)
 
     error_messages = [m for m in messages if (m or "").startswith("ERROR:")]
-    if error_messages and step_runs:
+    if error_messages:
+        def _norm_error_text(text: str) -> str:
+            return re.sub(r"\s+", " ", (text or "").strip())
+
+        existing_row_errors: dict[int | None, set[str]] = {}
+        for step in step_runs:
+            if step.get("status") != "error":
+                continue
+            row_no = step.get("row_no")
+            bucket = existing_row_errors.setdefault(row_no, set())
+            for candidate in (step.get("error"), step.get("detail")):
+                normalized = _norm_error_text(str(candidate or ""))
+                if normalized:
+                    bucket.add(normalized)
+
         error_steps = []
         for msg in error_messages:
             raw = (msg or "").replace("ERROR:", "", 1).strip()
@@ -353,6 +538,13 @@ def task_mapping(task_id):
                     action = f"{row_prefix}{base_action}".strip()
                 detail = tail.strip()
             display_detail = detail or error_text
+            parsed_row_no = int(row_match.group(1)) if row_match else None
+            norm_error_text = _norm_error_text(error_text)
+            norm_display_detail = _norm_error_text(display_detail)
+            existing_bucket = existing_row_errors.get(parsed_row_no, set())
+            if norm_error_text in existing_bucket or norm_display_detail in existing_bucket:
+                continue
+
             detail_short, detail_long = _truncate_detail(display_detail)
             error_steps.append(
                 {
@@ -360,12 +552,13 @@ def task_mapping(task_id):
                     "detail": display_detail,
                     "detail_short": detail_short,
                     "detail_long": detail_long,
-                    "row_no": int(row_match.group(1)) if row_match else None,
+                    "row_no": parsed_row_no,
                     "status": "error",
                     "error": error_text,
                 }
             )
-        step_runs = error_steps + step_runs
+        if error_steps:
+            step_runs = error_steps + step_runs
         error_messages = []
     if step_runs:
         step_runs = sorted(
@@ -402,6 +595,7 @@ def task_mapping(task_id):
         messages=messages,
         outputs=rel_outputs,
         log_file=log_file,
+        zip_file=zip_file,
         has_error=has_error,
         has_warning=has_warning,
         warning_confirm=warning_confirm,
@@ -409,17 +603,71 @@ def task_mapping(task_id):
         step_ok_count=step_ok_count,
         step_error_count=step_error_count,
         error_messages=error_messages,
+        last_mapping_file=last_mapping_file,
+        allow_check_extract=bool(
+            last_mapping_file
+            and validation_state.get("mapping_file") == last_mapping_file
+            and validation_state.get("reference_ok")
+        ),
         allow_direct_run=bool(
             last_mapping_file
+            and validation_state.get("mapping_file") == last_mapping_file
+            and validation_state.get("extract_ok")
             and request.method == "POST"
-            and (request.form.get("action") == "check")
+            and (request.form.get("action") == "check_extract")
             and not has_error
         ),
     )
 
-@tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
-def task_download_output(task_id, filename):
-    safe_name = filename.replace("\\", "/")
+
+@tasks_bp.get("/tasks/<task_id>/mapping/example", endpoint="task_download_mapping_example")
+def task_download_mapping_example(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    if not os.path.isdir(tdir):
+        abort(404)
+
+    static_dir = current_app.static_folder or ""
+    rel_sample = "samples/mapping_example.xlsx"
+    sample_path = os.path.join(static_dir, rel_sample)
+    checked_paths: list[str] = [sample_path]
+
+    if os.path.isfile(sample_path):
+        return send_from_directory(
+            static_dir,
+            rel_sample,
+            as_attachment=True,
+            download_name="mapping_example.xlsx",
+        )
+
+    project_root = Path(current_app.root_path).parent
+    fallback_candidates = [
+        project_root / "Mapping.xlsx",
+        project_root / "mapping.xlsx",
+        project_root / "MAPPING.xlsx",
+    ]
+    for candidate in fallback_candidates:
+        checked_paths.append(str(candidate))
+        if candidate.is_file():
+            return send_file(
+                str(candidate),
+                as_attachment=True,
+                download_name="mapping_example.xlsx",
+            )
+
+    current_app.logger.error(
+        "Mapping example file not found. checked_paths=%s",
+        checked_paths,
+    )
+    return (
+        "找不到 Mapping 範例檔案。請確認 static/samples/mapping_example.xlsx 或專案根目錄 Mapping.xlsx 是否存在。",
+        404,
+    )
+
+def _send_mapping_output_file(task_id: str, filename: str):
+    safe_name = (filename or "").replace("\\", "/").strip("/")
+    if not safe_name:
+        abort(404)
+
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     mapping_job_dir = os.path.join(tdir, "mapping_job")
     mapping_log_dir = os.path.join(tdir, "mapping_logs")
@@ -431,9 +679,37 @@ def task_download_output(task_id, filename):
             return send_from_directory(base_dir, safe_name, as_attachment=True)
     abort(404)
 
+
+@tasks_bp.get("/tasks/<task_id>/output/download", endpoint="task_download_output_query")
+def task_download_output_query(task_id):
+    return _send_mapping_output_file(task_id, request.args.get("filename", ""))
+
+
+@tasks_bp.get("/tasks/<task_id>/output/<path:filename>", endpoint="task_download_output")
+def task_download_output(task_id, filename):
+    return _send_mapping_output_file(task_id, filename)
+
 @tasks_bp.get("/", endpoint="tasks")
 def tasks():
-    task_list = list_tasks()
+    task_list_all = list_tasks()
+    pin_scope_key, _ = _get_actor_info()
+    
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = 10
+    total_count = len(task_list_all)
+    total_pages = (total_count + per_page - 1) // per_page
+    start = (page - 1) * per_page
+    task_list = task_list_all[start : start + per_page]
+    
+    pagination = {
+        "page": page,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages
+    }
+    
     for t in task_list:
         meta = {
             "creator_work_id": t.get("creator_work_id", ""),
@@ -443,6 +719,9 @@ def tasks():
     return render_template(
         "tasks/tasks.html",
         tasks=task_list,
+        pagination=pagination,
+        all_task_ids=[(t.get("id") or "").strip() for t in task_list_all if (t.get("id") or "").strip()],
+        pin_scope_key=pin_scope_key or "anonymous",
         allowed_nas_roots=get_configured_nas_roots(),
     )
 
@@ -570,6 +849,72 @@ def copy_task(task_id):
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
+    source_nas_path = (meta.get("nas_path", "") or "").strip()
+
+    requested_nas_path = request.form.get("nas_path")
+    requested_root_index = request.form.get("nas_root_index", "").strip()
+    target_nas_path = source_nas_path
+    if requested_nas_path is not None:
+        raw_nas_path = requested_nas_path.strip()
+        if not raw_nas_path:
+            target_nas_path = ""
+        elif raw_nas_path == source_nas_path:
+            target_nas_path = source_nas_path
+        else:
+            try:
+                if os.path.isabs(raw_nas_path):
+                    resolved_path = os.path.abspath(raw_nas_path)
+                    roots = get_configured_nas_roots()
+                    if roots and not requested_root_index:
+                        for idx, root in enumerate(roots):
+                            root_abs = os.path.abspath(root)
+                            try:
+                                if os.path.commonpath([root_abs, resolved_path]) == root_abs:
+                                    rel = os.path.relpath(resolved_path, root_abs).replace("\\", "/")
+                                    raw_nas_path = "." if rel == "." else rel
+                                    requested_root_index = str(idx)
+                                    break
+                            except ValueError:
+                                continue
+                    if roots:
+                        allowed = False
+                        for root in roots:
+                            root_abs = os.path.abspath(root)
+                            try:
+                                if os.path.commonpath([root_abs, resolved_path]) == root_abs:
+                                    allowed = True
+                                    break
+                            except ValueError:
+                                continue
+                        if not allowed:
+                            return _fail("NAS 路徑不在允許的根目錄內。")
+                    if not os.path.isdir(resolved_path):
+                        return _fail("NAS 路徑不存在或不是資料夾。")
+                    target_nas_path = resolved_path
+                else:
+                    resolved_path = resolve_nas_path(
+                        raw_nas_path,
+                        allow_recursive=current_app.config.get("NAS_ALLOW_RECURSIVE", True),
+                        root_index=requested_root_index or None,
+                    )
+                    if not os.path.isdir(resolved_path):
+                        return _fail("NAS 路徑不存在或不是資料夾。")
+                    target_nas_path = resolved_path
+                    if requested_root_index:
+                        roots = get_configured_nas_roots()
+                        try:
+                            idx = int(requested_root_index)
+                            if 0 <= idx < len(roots):
+                                root_clean = roots[idx].rstrip("/\\")
+                                sep = "\\" if "\\" in root_clean else "/"
+                                rel = re.sub(r"^[./\\]+", "", raw_nas_path).replace("/", sep)
+                                target_nas_path = f"{root_clean}{sep}{rel}" if rel else root_clean
+                        except ValueError:
+                            pass
+            except ValueError as exc:
+                return _fail(str(exc))
+            except FileNotFoundError as exc:
+                return _fail(str(exc))
 
     created_at = datetime.now()
     work_id, creator = _get_actor_info()
@@ -593,6 +938,7 @@ def copy_task(task_id):
     new_meta = {
         "name": new_name,
         "description": meta.get("description", ""),
+        "nas_path": target_nas_path,
         "created": created_at.strftime("%Y-%m-%d %H:%M"),
         "last_edited": created_at.strftime("%Y-%m-%d %H:%M"),
     }
@@ -612,6 +958,18 @@ def copy_task(task_id):
         creator=creator or None,
         nas_path=new_meta.get("nas_path") or None,
         created_at=created_at,
+    )
+    record_audit(
+        action="task_copy",
+        actor={"work_id": work_id, "label": creator},
+        detail={
+            "task_id": new_id,
+            "task_name": new_name,
+            "nas_path": new_meta.get("nas_path"),
+            "source_nas_path": source_nas_path,
+            "source_task_id": task_id
+        },
+        task_id=new_id,
     )
     flash("已複製任務", "success")
     return redirect(url_for("tasks_bp.tasks"))
@@ -760,20 +1118,39 @@ def task_nas_diff(task_id):
                 empties.add(rel.replace("\\", "/") + "/")
             return empties
 
-        task_files = {p.replace("\\", "/") for p in list_files(files_dir)}
-        nas_files = {p.replace("\\", "/") for p in list_files(nas_path)}
-        task_entries = task_files | _list_empty_dirs(files_dir)
-        nas_entries = nas_files | _list_empty_dirs(nas_path)
+        task_files_map = {p.replace("\\", "/"): os.path.join(files_dir, p) for p in list_files(files_dir)}
+        nas_files_map = {p.replace("\\", "/"): os.path.join(nas_path, p) for p in list_files(nas_path)}
+        task_entries = set(task_files_map.keys()) | _list_empty_dirs(files_dir)
+        nas_entries = set(nas_files_map.keys()) | _list_empty_dirs(nas_path)
+
         added = sorted(nas_entries - task_entries)
         removed = sorted(task_entries - nas_entries)
-        if not added and not removed:
+        updated = []
+
+        # Check for modified files among common files
+        common_files = set(task_files_map.keys()) & set(nas_files_map.keys())
+        for rel in common_files:
+            try:
+                t_stat = os.stat(task_files_map[rel])
+                n_stat = os.stat(nas_files_map[rel])
+                # 同步邏輯使用：size 不同或 NAS 檔案較新
+                if n_stat.st_size != t_stat.st_size or int(n_stat.st_mtime) > int(t_stat.st_mtime):
+                    updated.append(rel)
+            except Exception:
+                continue
+        updated.sort()
+
+        if not added and not removed and not updated:
             return jsonify({"ok": True, "diff": None, "message": "未偵測到變更"}), 200
+
         limit = 5
         diff = {
             "added": added[:limit],
             "removed": removed[:limit],
+            "updated": updated[:limit],
             "added_count": len(added),
             "removed_count": len(removed),
+            "updated_count": len(updated),
             "limit": limit,
         }
         return jsonify({"ok": True, "diff": diff}), 200
@@ -1400,10 +1777,25 @@ def task_download(task_id, job_id, kind):
             remove_paragraphs_with_text(download_path, titles_to_remove)
         if not SKIP_DOCX_CLEANUP:
             remove_hidden_runs(download_path)
+        download_name = f"result_{job_id}.docx"
+        meta_path = os.path.join(job_dir, "meta.json")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                if isinstance(meta, dict):
+                    candidate_name, candidate_error = normalize_docx_output_filename(
+                        meta.get("output_filename"),
+                        default="",
+                    )
+                    if not candidate_error and candidate_name:
+                        download_name = candidate_name
+            except Exception:
+                pass
         return send_file(
             download_path,
             as_attachment=True,
-            download_name=f"result_{job_id}.docx",
+            download_name=download_name,
         )
     elif kind == "log":
         return send_file(

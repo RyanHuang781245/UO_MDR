@@ -31,6 +31,7 @@ def test_compare_view_includes_titles_to_hide(tmp_path: Path, app) -> None:
             "params": {
                 "input_file": str(src_path),
                 "target_chapter_section": "1.1",
+                "hide_chapter_title": "true",
             },
         }
     ]

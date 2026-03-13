@@ -1,0 +1,48 @@
+/* Global responsive hardening shared by Bootstrap 4/5 pages. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas,
+iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+.form-control,
+.form-select,
+.input-group {
+  min-width: 0;
+}
+
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table td,
+.table th {
+  word-break: break-word;
+}
+
+.table code,
+pre code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 767.98px) {
+  .btn-group {
+    flex-wrap: wrap;
+  }
+}

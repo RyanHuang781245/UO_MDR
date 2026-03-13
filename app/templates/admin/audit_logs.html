@@ -3,129 +3,212 @@
 {% block body %}
 <div class="container-fluid">
   <style>
-    .audit-summary {
-      row-gap: 6px;
-    }
     .audit-pill {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: #f8f9fa;
-      border: 1px solid #e5e7eb;
-      font-size: 0.85rem;
-    }
-    .audit-summary code {
-      background: transparent;
-      padding: 0 4px;
-    }
-    .audit-status {
-      text-transform: uppercase;
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      background: var(--bs-blue-50);
+      color: var(--bs-blue-600);
       font-size: 0.75rem;
-      letter-spacing: 0.02em;
+      font-weight: 500;
+      border: 1px solid var(--bs-blue-100);
     }
-    .task-select {
-      max-width: 360px;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    
+    .audit-table thead th {
+      background: #f8fafc;
+      font-size: 0.875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--bs-gray-500);
+      border-bottom: 2px solid var(--bs-gray-200);
+      padding: 0.75rem 1rem;
       white-space: nowrap;
     }
-    .audit-table-scroll {
-      max-height: 560px;
-      overflow-y: auto;
+
+    .audit-table td {
+      font-size: 0.875rem;
+      padding: 0.75rem 1rem;
+      vertical-align: middle !important;
     }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+
+    .badge-status-completed { background-color: var(--bs-emerald-50); color: var(--bs-emerald-700); border: 1px solid rgba(4, 120, 87, 0.2); }
+    .badge-status-failed { background-color: #fef2f2; color: #b91c1c; border: 1px solid rgba(185, 28, 28, 0.2); }
   </style>
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h3>操作紀錄</h3>
-    <div class="col-auto ms-auto">
-      {% if task_id and has_file %}
-        <a class="btn btn-sm btn-secondary" href="{{ url_for('audit_logs.download', task_id=task_id) }}">下載</a>
-      {% endif %}
-    </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0 font-weight-bold">操作紀錄</h3>
+    {% if has_file %}
+      <a class="btn btn-primary shadow-sm btn-sm px-3" href="{{ url_for('audit_logs.download', task_id=task_id, q=q, action=action, start_date=start_date, end_date=end_date) }}">
+        <i class="fas fa-download mr-1"></i> 匯出日誌
+      </a>
+    {% endif %}
   </div>
 
-  <form class="row g-2 align-items-end mb-3" method="get">
-    <div class="col-sm-6 col-lg-4">
-      <select class="form-select task-select" name="task_id" onchange="this.form.submit()">
-        <option value="">請選擇任務</option>
-        {% for t in tasks %}
-          <option value="{{ t.id }}" title="{{ t.name }} ({{ t.id }})" {% if t.id == task_id %}selected{% endif %}>
-            {{ t.name }} ({{ t.id }})
-          </option>
-        {% endfor %}
-      </select>
+  <!-- 篩選列 (Filter Bar) -->
+  <form method="get" id="auditFilterForm" class="filter-bar shadow-sm mb-4">
+    <div class="input-group input-group-sm" style="max-width: 200px;">
+      <div class="input-group-prepend">
+        <span class="input-group-text bg-white border-right-0"><i class="fas fa-fingerprint text-muted"></i></span>
+      </div>
+      <input type="text" name="task_id" value="{{ task_id or '' }}" class="form-control border-left-0" placeholder="任務 ID">
     </div>
-    <!-- <div class="col-auto ms-auto">
-      {% if task_id and has_file %}
-        <a class="btn btn-secondary" href="{{ url_for('audit_logs.download', task_id=task_id) }}">下載</a>
-      {% endif %}
-    </div> -->
+
+    <div class="input-group input-group-sm" style="max-width: 200px;">
+      <div class="input-group-prepend">
+        <span class="input-group-text bg-light border-right-0"><i class="fas fa-search text-muted"></i></span>
+      </div>
+      <input type="text" name="q" value="{{ q or '' }}" class="form-control border-left-0" placeholder="工號/關鍵字">
+    </div>
+
+    <select name="action" class="form-control form-control-sm" style="max-width: 160px;">
+      <option value="">所有動作</option>
+      <option value="flow_run" {% if action == 'flow_run' %}selected{% endif %}>執行流程</option>
+      <option value="flow_batch" {% if action == 'flow_batch' %}selected{% endif %}>批次執行</option>
+      <option value="task_create" {% if action == 'task_create' %}selected{% endif %}>建立任務</option>
+      <option value="login" {% if action == 'login' %}selected{% endif %}>登入系統</option>
+    </select>
+
+    <div class="input-group input-group-sm d-none d-lg-flex" style="flex: 0 0 300px;">
+      <div class="input-group-prepend">
+        <span class="input-group-text bg-light"><i class="fas fa-calendar-alt text-muted"></i></span>
+      </div>
+      <input type="date" name="start_date" value="{{ start_date or '' }}" class="form-control" title="開始日期">
+      <div class="input-group-prepend input-group-append">
+        <span class="input-group-text bg-light px-2 border-left-0 border-right-0 text-muted small">至</span>
+      </div>
+      <input type="date" name="end_date" value="{{ end_date or '' }}" class="form-control" title="結束日期">
+    </div>
+
+    <button type="submit" class="btn btn-sm btn-dark px-3 ml-auto">
+      <i class="fas fa-filter mr-1"></i> 套用篩選
+    </button>
+    <a href="{{ url_for('audit_logs.index') }}" class="btn btn-sm btn-outline-secondary px-3">
+      <i class="fas fa-undo mr-1"></i> 重設
+    </a>
   </form>
 
   {% if task_id and not entries %}
-    <div class="alert alert-warning">此任務尚無操作紀錄。</div>
+    <div class="alert alert-light border shadow-sm text-center py-5">
+      <i class="fas fa-info-circle text-primary fs-2 d-block mb-3"></i>
+      此任務目前尚無任何操作紀錄。
+    </div>
   {% endif %}
 
   {% if entries %}
-  <div class="table-responsive audit-table-scroll">
-    <table class="table table-sm table-striped align-middle audit-table">
-      <style>
-        .audit-table td, .audit-table th { vertical-align: middle !important; }
-      </style>
-      <thead>
-        <tr>
-          <th style="width:250px;">時間</th>
-          <th style="width:250px;">動作</th>
-          <th style="width:250px;">操作者</th>
-          <th>摘要</th>
-          <th>詳情</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for e in entries %}
-        {% set actor = e.get('actor', {}) %}
-        {% set detail = e.get('detail', {}) %}
-        {% set status = detail.get('status', '') %}
-        {% set flow = detail.get('flow', '') %}
-        {% set job_id = detail.get('job_id', '') %}
-        {% set batch_id = detail.get('batch_id', '') %}
-        {% set results = detail.get('results', []) %}
-        <tr>
-          <td>{{ e.get('ts', '') }}</td>
-          <td>{{ e.get('action', '') }}</td>
-          <td>{{ actor.get('label') or actor.get('work_id') }}</td>
-          <td>
-            <div class="audit-summary d-flex flex-wrap align-items-center justify-content-center gap-2">
-              {% if status %}
-                <span class="badge audit-status {% if status == 'completed' %}bg-success{% elif status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
-                  {{ status }}
-                </span>
-              {% endif %}
-              {% if flow %}
-                <span class="audit-pill"><span class="text-muted">流程</span> <strong>{{ flow }}</strong></span>
-              {% endif %}
-              {% if job_id %}
-                <span class="audit-pill"><span class="text-muted">Job_ID</span>{{ job_id }}</span>
-              {% endif %}
-              {% if batch_id %}
-                <span class="audit-pill"><span class="text-muted">Batch_ID</span>{{ batch_id }}</span>
-              {% endif %}
-              {% if results %}
-                <span class="audit-pill"><span class="text-muted">流程數</span> {{ results|length }}</span>
-              {% endif %}
-            </div>
-          </td>
-          <td>
-            <details class="mt-1 ms-1">
-              <summary class="small text-muted">詳情</summary>
-              <pre class="small mb-0">{{ detail|tojson(indent=2) }}</pre>
-            </details>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+  <div class="main-card">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 audit-table">
+        <thead>
+          <tr>
+            <th class="ps-4">時間</th>
+            <th class="text-center">任務 ID</th>
+            <th class="text-center">動作</th>
+            <th class="text-center">操作者</th>
+            <th>詳細摘要</th>
+            <th class="text-right pe-4">詳情</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in entries %}
+          {% set actor = e.get('actor', {}) %}
+          {% set detail = e.get('detail', {}) %}
+          {% set status = detail.get('status', '') %}
+          {% set flow = detail.get('flow', '') %}
+          {% set job_id = detail.get('job_id', '') %}
+          {% set batch_id = detail.get('batch_id', '') %}
+          {% set results = detail.get('results', []) %}
+          <tr>
+            <td class="ps-4 text-muted font-monospace">{{ e.get('ts', '') }}</td>
+            <td class="text-center">
+              <code class="text-primary font-weight-bold font-monospace">{{ e.get('task_id', '-') }}</code>
+            </td>
+            <td class="text-center">
+              <span class="badge badge-light border px-2 py-1 text-uppercase x-small font-weight-bold">{{ e.get('action', '') }}</span>
+            </td>
+            <td class="text-center font-weight-bold text-dark">{{ actor.get('label') or actor.get('work_id') }}</td>
+            <td>
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                {% if status %}
+                  <span class="status-badge {{ 'badge-status-completed' if status == 'completed' else 'badge-status-failed' if status == 'failed' else 'bg-light border text-muted' }}">
+                    <i class="fas {{ 'fa-check-circle' if status == 'completed' else 'fa-times-circle' if status == 'failed' else 'fa-info-circle' }}"></i>
+                    {{ status|upper }}
+                  </span>
+                {% endif %}
+                {% if flow %}
+                  <span class="audit-pill shadow-sm">
+                    <i class="fas fa-wind mr-1 opacity-50"></i>
+                    <a href="{{ url_for('flows_bp.flow_builder', task_id=e.get('task_id'), flow=flow) }}" class="text-decoration-none text-inherit">{{ flow }}</a>
+                  </span>
+                {% endif %}
+                {% if job_id %}
+                  <span class="audit-pill border-secondary font-monospace"><i class="fas fa-tasks mr-1 opacity-50"></i>{{ job_id }}</span>
+                {% endif %}
+                {% if batch_id %}
+                  <span class="audit-pill border-info font-monospace" style="color: #6f42c1; background: #f5f3ff;"><i class="fas fa-layer-group mr-1 opacity-50"></i>{{ batch_id }}</span>
+                {% endif %}
+              </div>
+            </td>
+            <td class="text-right pe-4">
+              <button class="btn btn-xs btn-outline-secondary shadow-sm" type="button" data-toggle="collapse" data-target="#detail-{{ loop.index }}" aria-expanded="false">
+                <i class="fas fa-code"></i>
+              </button>
+            </td>
+          </tr>
+          <tr class="collapse" id="detail-{{ loop.index }}">
+            <td colspan="6" class="bg-light px-4 py-3 border-top-0">
+              <div class="rounded bg-dark p-3 shadow-inner">
+                  <pre class="text-light mb-0 small" style="white-space: pre-wrap; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">{{ detail|tojson(indent=2) }}</pre>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 分頁導覽列 -->
+    {% if pagination and pagination.total_pages > 1 %}
+    <div class="px-4 py-3 border-top d-flex justify-content-between align-items-center bg-light bg-opacity-25">
+      <div class="text-muted small">
+        顯示第 {{ (pagination.page - 1) * pagination.per_page + 1 }} - {{ [pagination.page * pagination.per_page, pagination.total_count]|min }} 筆，共 {{ pagination.total_count }} 筆
+      </div>
+      <nav>
+        <ul class="pagination pagination-sm mb-0 gap-1">
+          <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link rounded-2 shadow-sm" href="{{ url_for('audit_logs.index', page=pagination.page-1, task_id=task_id, q=q, action=action, start_date=start_date, end_date=end_date) if pagination.has_prev else '#' }}">上一頁</a>
+          </li>
+          
+          {% set start_p = [1, pagination.page - 2]|max %}
+          {% set end_p = [pagination.total_pages, start_p + 4]|min %}
+          {% set start_p = [1, end_p - 4]|max %}
+
+          {% for p in range(start_p, end_p + 1) %}
+          <li class="page-item {% if p == pagination.page %}active{% endif %}">
+            <a class="page-link rounded-2 shadow-sm" href="{{ url_for('audit_logs.index', page=p, task_id=task_id, q=q, action=action, start_date=start_date, end_date=end_date) }}">{{ p }}</a>
+          </li>
+          {% endfor %}
+
+          <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link rounded-2 shadow-sm" href="{{ url_for('audit_logs.index', page=pagination.page+1, task_id=task_id, q=q, action=action, start_date=start_date, end_date=end_date) if pagination.has_next else '#' }}">下一頁</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 </div>

@@ -2,6 +2,7 @@
 import os
 import hashlib
 import zipfile
+import re
 from datetime import datetime
 from typing import List, Dict, Any
 from docx import Document as DocxDocument
@@ -126,11 +127,14 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_ref_raw",
             "use_chapter_title",
             "target_chapter_title",
             "explicit_end_title",
+            "explicit_end_number",
             "target_subtitle",
             "subheading_strict_match",
+            "hide_chapter_title",
             "ignore_toc",
             "ignore_header_footer",
             "template_index",
@@ -139,11 +143,14 @@ SUPPORTED_STEPS = {
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_ref_raw": "text",
             "use_chapter_title": "bool",
             "target_chapter_title": "text",
             "explicit_end_title": "text",
+            "explicit_end_number": "text",
             "target_subtitle": "text",
             "subheading_strict_match": "bool",
+            "hide_chapter_title": "bool",
             "ignore_toc": "bool",
             "ignore_header_footer": "bool",
             "template_index": "text",
@@ -155,20 +162,28 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_ref_raw",
             "target_chapter_title",
             "target_subtitle",
             "target_caption_label",
+            "target_figure_title",
+            "target_figure_index",
             "include_caption",
+            "ignore_header_footer",
             "template_index",
             "template_mode",
         ],
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_ref_raw": "text",
             "target_chapter_title": "text",
             "target_subtitle": "text",
             "target_caption_label": "text",
+            "target_figure_title": "text",
+            "target_figure_index": "int",
             "include_caption": "bool",
+            "ignore_header_footer": "bool",
             "template_index": "text",
             "template_mode": "text",
         }
@@ -178,20 +193,28 @@ SUPPORTED_STEPS = {
         "inputs": [
             "input_file",
             "target_chapter_section",
+            "target_chapter_ref_raw",
             "target_chapter_title",
             "target_caption_label",
+            "target_table_title",
+            "target_table_index",
             "target_subtitle",
             "include_caption",
+            "ignore_header_footer",
             "template_index",
             "template_mode",
         ],
         "accepts": {
             "input_file": "file:docx",
             "target_chapter_section": "text",
+            "target_chapter_ref_raw": "text",
             "target_chapter_title": "text",
             "target_caption_label": "text",
+            "target_table_title": "text",
+            "target_table_index": "int",
             "target_subtitle": "text",
             "include_caption": "bool",
+            "ignore_header_footer": "bool",
             "template_index": "text",
             "template_mode": "text",
         }
@@ -380,6 +403,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     "mode": mode,
                     "content_docx_path": path,
                     "source_step": stype,
+                    "source_order": len(template_mappings),
                 }
             )
             log[-1]["template_index"] = t_idx
@@ -430,9 +454,20 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
 
             elif stype == "extract_word_chapter":
                 infile = params["input_file"]
-                tsec = params.get("target_chapter_section","")
+                tsec = params.get("target_chapter_section", "")
                 use_title = boolish(params.get("use_chapter_title", params.get("target_title", "false")))
                 title_text = params.get("target_chapter_title", params.get("target_title_section", ""))
+                end_number = params.get("explicit_end_number", "") or ""
+                raw_tsec = str(tsec or "").strip()
+                range_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s*-\s*(\d+(?:\.\d+)*))?(?:\s+(.+))?$", raw_tsec)
+                if range_match:
+                    tsec = range_match.group(1)
+                    if not end_number and range_match.group(2):
+                        end_number = range_match.group(2)
+                    if (not title_text or title_text == raw_tsec) and range_match.group(3):
+                        title_text = range_match.group(3)
+                    elif title_text == raw_tsec and not range_match.group(3):
+                        title_text = ""
                 target_subtitle = params.get("target_subtitle", params.get("subheading_text"))
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 result = extract_word_chapter(
@@ -441,8 +476,10 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     use_chapter_title=use_title,
                     target_chapter_title=title_text,
                     explicit_end_title=params.get("explicit_end_title") or None,
+                    explicit_end_number=end_number or None,
                     target_subtitle=target_subtitle,
                     subheading_strict_match=boolish(params.get("subheading_strict_match", "true")),
+                    hide_chapter_title=boolish(params.get("hide_chapter_title", "false")),
                     ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
                     ignore_toc=boolish(params.get("ignore_toc", "true")),
                     output_docx_path=frag_path,
@@ -465,37 +502,32 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     or params.get("target_table_label")
                     or ""
                 )
+                figure_title_raw = params.get("target_figure_title")
+                figure_index_raw = params.get("target_figure_index")
+                figure_title = str(figure_title_raw).strip() if figure_title_raw is not None else ""
+                figure_index = str(figure_index_raw).strip() if figure_index_raw is not None else ""
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                include_caption = boolish(params.get("include_caption", "true"))
                 result = extract_specific_figure_from_word(
                     infile,
                     params.get("target_chapter_section", ""),
                     caption_label,
                     target_subtitle=params.get("target_subtitle", params.get("subheading_text")),
                     target_chapter_title=params.get("target_chapter_title", params.get("target_title_section")),
-                    output_image_path=os.path.join(workdir, "images"),
+                    target_figure_title=figure_title or None,
+                    target_figure_index=figure_index or None,
+                    output_docx_path=frag_path,
+                    include_caption=include_caption,
+                    ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
+                    save_output=True,
+                    return_reason=True,
                     output_doc=None,
                     section=None,
                 )
-                image_dir = os.path.join(workdir, "images")
-                os.makedirs(image_dir, exist_ok=True)
-                include_caption = boolish(params.get("include_caption", "true"))
-                added = False
-                doc = DocxDocument()
                 if isinstance(result, dict):
-                    image_filename = result.get("image_filename")
-                    caption_text = result.get("caption")
-                    log[-1]["image_filename"] = image_filename
-                    log[-1]["caption"] = caption_text
-                    if image_filename:
-                        img_path = os.path.join(image_dir, image_filename)
-                        if os.path.exists(img_path):
-                            doc.add_picture(img_path)
-                            added = True
-                    if include_caption and caption_text:
-                        doc.add_paragraph(caption_text)
-                        added = True
-                if added:
-                    doc.save(frag_path)
+                    log[-1]["result"] = result
+                if os.path.isfile(frag_path):
+                    log[-1]["output_docx"] = frag_path
                     _route_fragment(frag_path, params, stype)
 
             elif stype == "extract_specific_table_from_word":
@@ -506,6 +538,10 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     or params.get("target_figure_label")
                     or ""
                 )
+                table_title_raw = params.get("target_table_title")
+                table_index_raw = params.get("target_table_index")
+                table_title = str(table_title_raw).strip() if table_title_raw is not None else ""
+                table_index = str(table_index_raw).strip() if table_index_raw is not None else ""
                 frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
                 extract_specific_table_from_word(
                     infile,
@@ -514,7 +550,10 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     caption_label,
                     params.get("target_subtitle", params.get("subheading_text")) or None,
                     target_chapter_title=params.get("target_chapter_title", params.get("target_title_section")),
-                    include_caption=boolish(params.get("include_caption", "false")),
+                    target_table_title=table_title or None,
+                    target_table_index=table_index or None,
+                    include_caption=boolish(params.get("include_caption", "true")),
+                    ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
                     save_output=True,
                 )
                 if os.path.isfile(frag_path):
@@ -633,9 +672,14 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 entry["status"] = "error"
                 entry["error"] = "Table not found"
         elif stype == "extract_specific_figure_from_word":
-            if not entry.get("image_filename") and not entry.get("caption"):
+            out_path = entry.get("output_docx")
+            if not out_path or not _docx_has_content(out_path):
                 entry["status"] = "error"
-                entry["error"] = "Figure not found"
+                reason = ""
+                result = entry.get("result")
+                if isinstance(result, dict):
+                    reason = str(result.get("reason") or "").strip()
+                entry["error"] = reason or "Figure not found"
 
     if template_cfg.get("path") and template_mappings:
         try:

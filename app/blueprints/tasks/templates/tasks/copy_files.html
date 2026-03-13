@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="h3 mb-3">複製檔案</h1>
+<div class="mb-3">
+  <h1 class="h3 mb-1 fw-bold">複製檔案</h1>
+</div>
 {% if message %}
 <div class="alert alert-info">{{ message }}</div>
 {% endif %}
@@ -30,7 +32,6 @@
   </div>
   <div class="d-flex gap-2">
     <button class="btn btn-primary" type="submit">複製</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_detail', task_id=task_id) }}">返回任務</a>
   </div>
 </form>
 

@@ -1,143 +1,285 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
-  <div>
-    <h1 class="h3 mb-0 fw-bold">Mapping 生成文件</h1>
-  </div>
-  <!-- <div class="d-flex flex-wrap gap-2">
-    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_detail', task_id=task_id) }}">
-      <i class="bi bi-arrow-left"></i>
-      返回任務詳情
-    </a>
-    <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task_id) }}">
-      <i class="bi bi-diagram-3"></i>
-      進入流程管理
-    </a>
-  </div> -->
-</div>
+<div class="container-fluid px-0">
+    <div class="mb-3">
+        <h1 class="h3 mb-1 fw-bold">Mapping 生成文件</h1>
+        <!-- <p class="text-muted">上傳 Mapping 定義檔（Excel）進行文件內容的批次擷取與生成。</p> -->
+    </div>
 
-<form method="post" enctype="multipart/form-data" class="card card-body mb-4">
-  <div class="row g-3">
-    <div class="col-md-10">
-      <input class="form-control" type="file" name="mapping_file" accept=".xlsx" required>
-    </div>
-    <div class="col-md-2 d-flex gap-2">
-      <button class="btn btn-primary flex-fill" name="action" value="check" type="submit">
-        <i class="bi bi-search me-1"></i>
-        檢查對應
-      </button>
-    </div>
-  </div>
-</form>
+    <!-- 上傳表單 -->
+    <div class="main-card mb-4">
+        <div class="px-4 py-4">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <button
+                    class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2"
+                    type="button"
+                    data-bs-toggle="modal"
+                    data-bs-target="#mappingDefinitionModal"
+                >
+                    <i class="bi bi-info-circle text-primary"></i>
+                    Mapping 定義說明
+                </button>
+            </div>
 
-{% if (messages or outputs or step_runs) or (allow_direct_run or log_file) %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
-  {% if messages or outputs or step_runs %}
-  <div class="d-flex align-items-center gap-3">
-    <span class="fw-semibold">處理狀態</span>
-    <div class="d-flex align-items-center gap-2">
-      {% if step_runs %}
-      <span class="d-inline-flex align-items-center gap-1 text-success">
-        <i class="bi bi-check-circle-fill"></i>
-        <span>{{ step_ok_count }}</span>
-      </span>
-      <span class="d-inline-flex align-items-center gap-1 text-danger">
-        <i class="bi bi-exclamation-triangle-fill"></i>
-        <span>{{ step_error_count }}</span>
-      </span>
-      {% else %}
-      {% if has_error %}
-      <i class="bi bi-exclamation-triangle-fill text-danger"></i>
-      {% else %}
-      <i class="bi bi-check-circle-fill text-success"></i>
-      {% endif %}
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-  {% if allow_direct_run or log_file %}
-  <div class="d-flex gap-2 me-3">
-    {% if allow_direct_run %}
-    <form method="post" {% if has_warning and warning_confirm %} onsubmit="return confirm({{ warning_confirm|tojson }});"{% endif %}>
-      <input type="hidden" name="action" value="run_cached">
-      <button class="btn btn-success" type="submit">
-        <i class="bi bi-play-fill me-1"></i> 
-        生成文件
-      </button>
-    </form>
-    {% endif %}
-    {% if log_file %}
-    <a class="btn btn-outline-secondary" href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=log_file) }}">
-      <i class="bi bi-download me-1"></i> 
-      下載 Log
-    </a>
-    {% endif %}
-  </div>
-  {% endif %}
-</div>
-{% endif %}
-{% if step_runs %}
-<ul class="list-group mb-3">
-  {% for step in step_runs %}
-  <li class="list-group-item">
-    {% if step.status == "error" %}
-    <details open>
-      <summary class="d-grid align-items-start" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
-        <div class="d-flex align-items-center gap-2 flex-shrink-0 text-nowrap">
-          <i class="bi bi-exclamation-triangle-fill text-danger"></i>
-          <span class="fw-semibold">{{ step.action }}</span>
+            <form method="post" enctype="multipart/form-data">
+                {% if last_mapping_file %}
+                <div class="mb-3 d-flex align-items-center gap-2">
+                    <span class="small fw-bold text-uppercase text-muted">當前使用檔案：</span>
+                    <span class="status-badge status-badge-queued">
+                        <i class="bi bi-file-earmark-excel"></i> {{ last_mapping_file }}
+                    </span>
+                </div> 
+                {% endif %}     
+                <div class="row g-3">
+                    <div class="col-lg-8">
+                        <input class="form-control form-control-custom rounded-2" type="file" name="mapping_file" accept=".xlsx" {% if not last_mapping_file %}required{% endif %}>
+                    </div>
+                    <div class="col-sm-6 col-lg-2 d-grid align-items-end">
+                        <button class="btn btn-outline-primary fw-bold px-2" name="action" value="check" type="submit">
+                            <i class="bi bi-search me-1"></i>
+                            檢查引用文件
+                        </button>
+                    </div>
+                    <div class="col-sm-6 col-lg-2 d-grid align-items-end">
+                        <button class="btn btn-primary fw-bold px-2" name="action" value="check_extract" type="submit" {% if not allow_check_extract %}disabled title="請先通過檢查引用文件"{% endif %}>
+                            <i class="bi bi-sliders me-1"></i>
+                            檢查擷取參數
+                        </button>
+                    </div>
+                </div>
+            </form>
         </div>
-        {% if step.detail %}
-        <div class="text-muted small text-start" style="min-width: 0; overflow: hidden;">{{ step.detail_short if step.detail_long else step.detail }}</div>
-        {% endif %}
-      </summary>
-      <div class="mt-2 small text-danger">{{ step.error }}</div>
-    </details>
-    {% else %}
-    <div class="d-grid align-items-start" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
-      <div class="d-flex align-items-center gap-2 flex-shrink-0 text-nowrap">
-        <i class="bi bi-check-circle-fill text-success"></i>
-        <span class="fw-semibold">{{ step.action }}</span>
-      </div>
-      {% if step.detail %}
-      {% if step.detail_long %}
-      <details class="text-muted small text-start" style="width: 100%; min-width: 0;">
-        <summary style="display: block; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ step.detail_short }}</summary>
-        <div class="mt-1">{{ step.detail }}</div>
-      </details>
-      {% else %}
-      <div class="text-muted small text-start" style="min-width: 0; overflow: hidden;">{{ step.detail }}</div>
-      {% endif %}
-      {% endif %}
+    </div>
+
+    <div class="modal fade" id="mappingDefinitionModal" tabindex="-1" aria-labelledby="mappingDefinitionModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="mappingDefinitionModalLabel">Mapping 定義說明</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="small fw-semibold text-dark mb-2">欄位順序（建議）</div>
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead style="background-color: #f8fafc;">
+                                <tr>
+                                    <th class="small text-muted">欄位名稱</th>
+                                    <th class="small text-muted">用途</th>
+                                </tr>
+                            </thead>
+                            <tbody class="small">
+                                <tr><td class="font-monospace">檔案名稱/資料夾名稱/文字內容</td><td>來源檔案（或 Add Text 文字）；可填檔名或相對路徑，例如 <code>FolderA/source.docx</code>。若有同名檔案，請改填相對路徑</td></tr>
+                                <tr><td class="font-monospace">擷取段落/操作</td><td>章節/指令內容（可含 <code>|Figure x. or Table x.</code>、<code>|title=</code>、<code>|index=</code>）</td></tr>
+                                <tr><td class="font-monospace">類型</td><td><code>空白</code>=擷取章節、<code>Figure</code>=擷取圖片、<code>Table</code>=擷取表格</td></tr>
+                                <tr><td class="font-monospace">包含標題</td><td>控制是否保留標題；章節=章節標題，圖片/表格=caption/title。留白預設包含，可填 <code>是/否</code>、<code>Y/N</code>、<code>TRUE/FALSE</code></td></tr>
+                                <tr><td class="font-monospace">檔案路徑</td><td>輸出資料夾（相對路徑）</td></tr>
+                                <tr><td class="font-monospace">檔案名稱</td><td>輸出檔名（.docx）</td></tr>
+                                <tr><td class="font-monospace">模板文件</td><td>可空白；需插入模板段落時填入</td></tr>
+                                <tr><td class="font-monospace">插入段落名稱/目的資料夾名稱</td><td>模板模式下的插入段落名稱</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="small fw-semibold text-dark mb-2">操作欄語法範例</div>
+                    <div class="small text-muted mb-2">若需隱藏標題，請在 <code>包含標題</code> 欄位填入 <code>否</code> 或 <code>FALSE</code>。</div>
+                    <div class="small text-muted mb-2">頁面上的 <code>檢查引用文件</code> 會驗證檔案、模板與欄位格式；<code>檢查擷取參數</code> 會額外實際驗證章節、圖片、表格是否可被擷取。</div>
+                    <div class="small font-monospace mb-1">章節擷取範例1（類型 空白）：<span class="text-primary">1.1.1 General description</span></div>
+                    <div class="small font-monospace mb-1">表格擷取範例2（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|Figure 1.</span></div>
+                    <div class="small font-monospace mb-1">表格擷取範例3（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|index=1</span></div>
+                    <div class="small font-monospace mb-1">表格擷取範例4（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|title=table title</span></div>
+                    <div class="small font-monospace mb-1">圖片擷取範例1（類型 Figure）：<span class="text-primary">1.1.1 General description|title=System overview|Figure 2.</span></div>
+                    <div class="small font-monospace mb-1">圖片擷取範例2（類型 Figure）：<span class="text-primary">1.1.1 General description|title=System overview|index=2</span></div>
+                    <div class="small font-monospace mb-1">圖片擷取範例3（類型 Figure）：<span class="text-primary">1.1.1 General description|title=System overview|title=figure title</span></div>
+                </div>
+                <div class="modal-footer">
+                    <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}">
+                        <i class="bi bi-download"></i>
+                        下載 Mapping 範例
+                    </a>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">關閉</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if (messages or outputs or step_runs) or (allow_direct_run or log_file) %}
+    <div class="main-card">
+        <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light bg-opacity-50">
+            <div class="d-flex align-items-center gap-3">
+                <h5 class="fw-bold mb-0">處理狀態</h5>
+                <div class="d-flex align-items-center gap-2" id="status-badge-container">
+                    {% if step_runs %}
+                    <span class="status-badge status-badge-completed">
+                        <i class="bi bi-check-circle-fill"></i> {{ step_ok_count }} 成功
+                    </span>
+                    <span class="status-badge status-badge-failed">
+                        <i class="bi bi-exclamation-triangle-fill"></i> {{ step_error_count }} 錯誤
+                    </span>
+                    {% else %}
+                    {% if has_error %}
+                    <span class="status-badge status-badge-failed"><i class="bi bi-exclamation-triangle-fill"></i> 發生錯誤</span>
+                    {% else %}
+                    <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 檢查完成</span>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                {% if allow_direct_run %}
+                <form method="post" {% if has_warning and warning_confirm %} onsubmit="return confirm({{ warning_confirm|tojson }});"{% endif %}>
+                    <input type="hidden" name="action" value="run_cached">
+                    <button class="btn btn-success fw-bold px-3" type="submit">
+                        <i class="bi bi-play-fill me-1"></i> 
+                        生成文件
+                    </button>
+                </form>
+                {% endif %}
+                {% if log_file %}
+                <a class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=log_file) }}">
+                    <i class="bi bi-file-earmark-text text-muted"></i> 
+                    下載 Log
+                </a>
+                {% endif %}
+                {% if zip_file %}
+                <a class="btn btn-primary fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=zip_file) }}">
+                    <i class="bi bi-file-earmark-zip"></i>
+                    下載 ZIP
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="px-4 py-4">
+            {% if outputs %}
+            <div class="bg-light p-4 rounded-3 border mb-4">
+                <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
+                    <i class="bi bi-file-earmark-text"></i>
+                    產出文件
+                </h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for name in outputs %}
+                    <a class="d-flex align-items-center gap-2 p-2 bg-white border rounded-2 text-decoration-none text-dark hover-shadow transition-all" style="max-width: 100%;" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=name) }}">
+                        <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
+                        <span class="text-truncate small fw-medium">{{ name }}</span>
+                        <i class="bi bi-download ms-auto text-muted small flex-shrink-0"></i>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if step_runs %}
+            <div class="list-group list-group-flush border rounded-3 overflow-hidden mb-2">
+                {% for step in step_runs %}
+                <div class="list-group-item py-3">
+                    {% if step.status == "error" %}
+                    <details open>
+                        <summary class="d-grid align-items-center" style="grid-template-columns: 260px 1fr; column-gap: 12px; list-style: none; cursor: pointer;">
+                            <div class="d-flex align-items-center gap-2 text-danger fw-bold">
+                                <i class="bi bi-exclamation-triangle-fill"></i>
+                                <span>{{ step.action }}</span>
+                            </div>
+                            {% if step.detail %}
+                            <div class="text-muted small text-truncate">{{ step.detail_short if step.detail_long else step.detail }}</div>
+                            {% endif %}
+                        </summary>
+                        <div class="mt-2 p-3 bg-danger bg-opacity-10 border border-danger border-opacity-25 rounded-2 small text-danger font-monospace">
+                            {{ step.error }}
+                        </div>
+                    </details>
+                    {% else %}
+                    <div class="d-grid align-items-center" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
+                        <div class="d-flex align-items-center gap-2 text-success fw-bold">
+                            <i class="bi bi-check-circle-fill"></i>
+                            <span>{{ step.action }}</span>
+                        </div>
+                        {% if step.detail %}
+                        {% if step.detail_long %}
+                        <details class="text-muted small">
+                            <summary class="text-truncate" style="list-style: none; cursor: pointer;">{{ step.detail_short }} <i class="bi bi-chevron-down ms-1 small text-muted"></i></summary>
+                            <div class="mt-2 p-3 bg-light rounded-2 border border-gray-200">{{ step.detail }}</div>
+                        </details>
+                        {% else %}
+                        <div class="text-muted small text-truncate">{{ step.detail }}</div>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if error_messages and not step_runs %}
+            <div class="alert alert-danger border-0 shadow-sm py-3 mb-4">
+                <h6 class="fw-bold mb-2"><i class="bi bi-exclamation-circle-fill me-2"></i>檢查過程中發現錯誤</h6>
+                <ul class="mb-0 small">
+                    {% for m in error_messages %}
+                    <li>{{ m }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
     </div>
     {% endif %}
-  </li>
-  {% endfor %}
-</ul>
-{% endif %}
+</div>
 
+<style>
+.hover-shadow:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    border-color: var(--bs-blue-600) !important;
+}
+.transition-all {
+    transition: all 0.2s ease;
+}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+        form.addEventListener('submit', function(e) {
+            // setTimeout ensures this runs after any inline onsubmit handlers (like confirm)
+            setTimeout(() => {
+                if (e.defaultPrevented) return;
 
-{% if error_messages and not step_runs %}
-<ul class="list-group mb-3">
-  {% for m in error_messages %}
-  <li class="list-group-item">
-    <details open>
-      <summary class="d-flex align-items-center gap-2">
-        <i class="bi bi-exclamation-triangle-fill text-danger"></i>
-        <span>錯誤</span>
-      </summary>
-      <div class="mt-2 small text-danger">{{ m }}</div>
-    </details>
-  </li>
-  {% endfor %}
-</ul>
-{% endif %}
-{% if outputs %}
-<h2 class="h6 fw-semibold mb-3">產出文件</h2>
-<ul class="list-group mb-3">
-  {% for name in outputs %}
-  <li class="list-group-item"><a href="{{ url_for('tasks_bp.task_download_output', task_id=task_id, filename=name) }}">{{ name }}</a></li>
-  {% endfor %}
-</ul>
-{% endif %}
+                const submitBtn = e.submitter || document.activeElement;
+                if (submitBtn) {
+                    const btnText = submitBtn.innerText.trim();
+                    const isGenerate = btnText.includes('生成文件');
+                    const isCheck = btnText.includes('檢查引用文件') || btnText.includes('檢查擷取參數');
+                    
+                    if (isGenerate || isCheck) {
+                        // Ensure name/value are sent even when button is disabled
+                        if (submitBtn.name && submitBtn.value) {
+                            const hiddenInput = document.createElement('input');
+                            hiddenInput.type = 'hidden';
+                            hiddenInput.name = submitBtn.name;
+                            hiddenInput.value = submitBtn.value;
+                            form.appendChild(hiddenInput);
+                        }
+
+                        // Disable all submit buttons in this form to prevent concurrent actions
+                        const submitButtons = form.querySelectorAll('button[type="submit"]');
+                        submitButtons.forEach(btn => {
+                            btn.disabled = true;
+                        });
+
+                        // Show spinner only on the button that triggered submit
+                        const loadingText = isCheck ? '檢查中...' : '處理中...';
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> ${loadingText}`;
+                        
+                        // Update status badge if it exists
+                        const statusContainer = document.getElementById('status-badge-container');
+                        if (statusContainer) {
+                            statusContainer.innerHTML = `<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> ${loadingText}</span>`;
+                        }
+                    }
+                }
+            }, 0);
+        });
+    });
+});
+</script>
 {% endblock %}

@@ -80,6 +80,20 @@ class UserRole(db.Model):
     __table_args__ = (db.UniqueConstraint("user_id", name="uq_user_roles_user_id"),)
 
 
+class AuditLog(db.Model):
+    __tablename__ = "audit_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
+    action = db.Column(db.String(200), nullable=False)
+    work_id = db.Column(db.String(100))
+    detail = db.Column(db.Text)  # Stores JSON string
+    task_id = db.Column(db.String(100))
+
+    def __str__(self) -> str:
+        return f"[{self.created_at}] {self.work_id} - {self.action}"
+
+
 @dataclass(frozen=True)
 class LDAPProfile:
     work_id: str
@@ -104,8 +118,25 @@ def ensure_schema() -> None:
         return
 
     existing_columns = {col["name"].lower() for col in inspector.get_columns("users")}
+    existing_tables = set(inspector.get_table_names())
     with engine.begin() as conn:
         if engine.dialect.name == "mssql":
+            if "audit_logs" not in existing_tables:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE audit_logs (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            created_at DATETIME2 NOT NULL CONSTRAINT DF_audit_logs_created_at DEFAULT(SYSDATETIME()),
+                            action NVARCHAR(200) NOT NULL,
+                            work_id NVARCHAR(100) NULL,
+                            detail NVARCHAR(MAX) NULL,
+                            task_id NVARCHAR(100) NULL
+                        );
+                        """
+                    )
+                )
+
             if "work_id" not in existing_columns and "username" in existing_columns:
                 conn.execute(text("EXEC sp_rename 'users.username', 'work_id', 'COLUMN';"))
                 existing_columns.discard("username")
@@ -153,6 +184,21 @@ def ensure_schema() -> None:
                 )
             )
         elif engine.dialect.name == "sqlite":
+            if "audit_logs" not in existing_tables:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE audit_logs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            action VARCHAR(200) NOT NULL,
+                            work_id VARCHAR(100) NULL,
+                            detail TEXT NULL,
+                            task_id VARCHAR(100) NULL
+                        );
+                        """
+                    )
+                )
             if "work_id" not in existing_columns and "username" in existing_columns:
                 conn.execute(text("ALTER TABLE users ADD COLUMN work_id VARCHAR(100);"))
                 conn.execute(text("UPDATE users SET work_id = username WHERE work_id IS NULL;"))

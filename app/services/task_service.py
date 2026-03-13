@@ -105,25 +105,39 @@ def enforce_max_copy_size(path: str):
             raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
         return
 
+    total_size = 0
     for root, _, files in os.walk(checked_path):
         for fn in files:
             fpath = os.path.join(root, fn)
-            if _check(fpath) > max_bytes:
-                current_app.logger.warning("檔案大小超過限制：%s", fpath)
-                raise ValueError("檔案超過允許的大小限制，請分批處理或聯絡系統管理員")
+            total_size += _check(fpath)
+            if total_size > max_bytes:
+                current_app.logger.warning("資料夾總大小超過限制：%s", checked_path)
+                raise ValueError("資料夾總大小超過允許的大小限制，請分批處理或聯絡系統管理員")
 
-def task_name_exists(name, exclude_id=None):
-    for tid in os.listdir(current_app.config["TASK_FOLDER"]):
-        if exclude_id and tid == exclude_id:
-            continue
-        tdir = os.path.join(current_app.config["TASK_FOLDER"], tid)
+
+def _iter_task_dirs():
+    task_root = current_app.config["TASK_FOLDER"]
+    for tid in os.listdir(task_root):
+        tdir = os.path.join(task_root, tid)
         if not os.path.isdir(tdir):
             continue
         meta_path = os.path.join(tdir, "meta.json")
+        # Keep system folders (e.g. global_batches) out of task listing/name checks.
+        if not os.path.isfile(meta_path):
+            continue
+        yield tid, tdir, meta_path
+
+
+def task_name_exists(name, exclude_id=None):
+    for tid, _tdir, meta_path in _iter_task_dirs():
+        if exclude_id and tid == exclude_id:
+            continue
         tname = tid
-        if os.path.exists(meta_path):
+        try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 tname = json.load(f).get("name", tid)
+        except Exception:
+            tname = tid
         if tname == name:
             return True
     return False
@@ -145,48 +159,47 @@ def gather_available_files(files_dir):
 
 def list_tasks():
     task_list = []
-    for tid in os.listdir(current_app.config["TASK_FOLDER"]):
-        tdir = os.path.join(current_app.config["TASK_FOLDER"], tid)
-        if os.path.isdir(tdir):
-            meta_path = os.path.join(tdir, "meta.json")
-            name = tid
-            description = ""
-            created = None
-            creator = ""
-            creator_work_id = ""
-            last_editor = ""
-            last_edited = ""
-            nas_path = ""
-            if os.path.exists(meta_path):
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-                    name = meta.get("name", tid)
-                    description = meta.get("description", "")
-                    created = meta.get("created")
-                    creator = meta.get("creator", "") or ""
-                    creator_work_id = meta.get("creator_work_id", "") or ""
-                    last_editor = meta.get("last_editor", "") or ""
-                    last_edited = meta.get("last_edited", "") or ""
-                    nas_path = meta.get("nas_path", "") or ""
-            if not created:
-                created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
-            if not last_edited:
-                last_edited = created
-            if not last_editor:
-                last_editor = creator
-            task_list.append(
-                {
-                    "id": tid,
-                    "name": name,
-                    "description": description,
-                    "created": created,
-                    "creator": creator,
-                        "creator_work_id": creator_work_id,
-                        "last_editor": last_editor,
-                        "last_edited": last_edited,
-                        "nas_path": nas_path,
-                    }
-                )
+    for tid, tdir, meta_path in _iter_task_dirs():
+        name = tid
+        description = ""
+        created = None
+        creator = ""
+        creator_work_id = ""
+        last_editor = ""
+        last_edited = ""
+        nas_path = ""
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+                name = meta.get("name", tid)
+                description = meta.get("description", "")
+                created = meta.get("created")
+                creator = meta.get("creator", "") or ""
+                creator_work_id = meta.get("creator_work_id", "") or ""
+                last_editor = meta.get("last_editor", "") or ""
+                last_edited = meta.get("last_edited", "") or ""
+                nas_path = meta.get("nas_path", "") or ""
+        except Exception:
+            pass
+        if not created:
+            created = datetime.fromtimestamp(os.path.getmtime(tdir)).strftime("%Y-%m-%d %H:%M")
+        if not last_edited:
+            last_edited = created
+        if not last_editor:
+            last_editor = creator
+        task_list.append(
+            {
+                "id": tid,
+                "name": name,
+                "description": description,
+                "created": created,
+                "creator": creator,
+                "creator_work_id": creator_work_id,
+                "last_editor": last_editor,
+                "last_edited": last_edited,
+                "nas_path": nas_path,
+            }
+        )
     task_list.sort(key=lambda x: x["created"], reverse=True)
     return task_list
 

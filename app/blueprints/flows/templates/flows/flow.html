@@ -1,97 +1,223 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 {% from "_file_tree.html" import render_file_tree %}
 
 <div id="runStatusContainer" class="run-status-container"></div>
 
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-3">
-  <h1 class="h3 mb-0 fw-bold">流程管理</h1>
-  <!-- <div class="d-flex gap-2">
-    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
-      <i class="bi bi-arrow-left"></i>
-      返回任務詳情
-    </a>
-    <a class="btn btn-sm btn-secondary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
-      <i class="bi bi-clipboard-check"></i>
-      流程執行結果
-    </a>
-    <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
-      <i class="bi bi-calendar2-week"></i>
-      進入排程管理
-    </a>
-  </div> -->
-</div>
-
-<div class="card shadow-sm border mb-4">
-  <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post">
-    <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
-    <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
-
-    <div class="card-body border-bottom">
-      <div class="row g-3">
-        <div class="col-lg-7">
-          <label class="form-label text-muted small">流程名稱</label>
-          <input class="form-control" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 60 字)" value="{{ loaded_name or '' }}" maxlength="60" required>
-          <div class="form-text text-end small" id="flowNameCount">0/60</div>
-        </div>
-        <div class="col-12">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="center_titles" name="center_titles" {% if center_titles %}checked{% endif %}>
-            <label class="form-check-label" for="center_titles">置中 Table/Figure 標題段落</label>
-          </div>
-        </div>
-      </div>
+<div class="container-fluid px-0">
+    <div class="mb-3 d-flex justify-content-between align-items-center">
+        <h1 class="h3 mb-0 fw-bold">流程管理</h1>
     </div>
 
-    <div class="px-4 py-3 bg-light border-bottom">
-      <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
-        <div class="d-flex flex-wrap gap-2">
-          <div class="dropdown">
-            <button class="btn btn-outline-secondary dropdown-toggle d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
-              <i class="bi bi-plus-lg"></i>
-              新增步驟
+    <ul class="nav nav-tabs nav-tabs-custom mb-4" id="flowTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if not request.args.get('fpage') %}active{% endif %}" id="builder-tab" data-bs-toggle="tab" data-bs-target="#builder-pane" type="button" role="tab" aria-controls="builder-pane" aria-selected="{% if not request.args.get('fpage') %}true{% else %}false{% endif %}">
+                <i class="bi bi-plus-square me-2"></i>定義流程
             </button>
-            <ul class="dropdown-menu">
-              {% for key, meta in steps.items() %}
-              <li><a class="dropdown-item" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
-              {% endfor %}
-            </ul>
-          </div>
-          <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">
-            <i class="bi bi-search"></i>
-            模板解析
-          </button>
-          <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
-            <i class="bi bi-folder"></i>
-            檔案結構
-          </button>
-          <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
-            <i class="bi bi-arrows-collapse"></i>
-            全部收合
-          </button>
-        </div>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-          <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1" type="submit" name="action" value="save">
-            <i class="bi bi-save"></i>
-            保存流程
-          </button>
-          <!-- <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
-            <i class="bi bi-calendar2-week"></i>
-            進入排程管理
-          </a> -->
-        </div>
-      </div>
-      <div class="small text-muted mt-2">
-        目前模板：<code id="currentTemplateLabel">{{ template_file or "未選擇" }}</code>
-      </div>
-    </div>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if request.args.get('fpage') %}active{% endif %}" id="saved-tab" data-bs-toggle="tab" data-bs-target="#saved-pane" type="button" role="tab" aria-controls="saved-pane" aria-selected="{% if request.args.get('fpage') %}true{% else %}false{% endif %}">
+                <i class="bi bi-folder-check me-2"></i>已保存流程
+            </button>
+        </li>
+    </ul>
 
-    <div class="card-body">
-      <div id="steps" class="vstack gap-3"></div>
+
+    <div class="tab-content" id="flowTabsContent">
+        <!-- 流程編輯區 -->
+        <div class="tab-pane fade {% if not request.args.get('fpage') %}show active{% endif %}" id="builder-pane" role="tabpanel" aria-labelledby="builder-tab">
+            <div class="main-card mb-4" style="overflow: visible;">
+                <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post">
+                    <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
+                    <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
+
+
+                    <div class="px-4 py-4 border-bottom">
+                        <div class="row g-3">
+                            <div class="col-12 col-lg-7 col-xl-6">
+                                <label class="form-label small fw-bold text-uppercase text-muted">流程名稱</label>
+                                <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" pattern="[^/\\\\]+" title="流程名稱不可包含 / 或 \\" required>
+                                <div class="form-text text-end small" id="flowNameCount">0/50</div>
+                            </div>
+                            <div class="col-12 col-lg-7 col-xl-6">
+                                <label class="form-label small fw-bold text-uppercase text-muted">輸出檔名</label>
+                                <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="留白使用預設下載檔名" value="{{ output_filename or '' }}" maxlength="120" title='可輸入檔名，系統會自動補上 .docx'>
+                                <div class="form-text text-end small">支援自訂下載檔名，副檔名會自動補為 <code>.docx</code></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 操作工具列 -->
+                    <div class="flow-toolbar px-4 py-3 bg-light bg-opacity-50 border-bottom d-flex flex-column flex-lg-row justify-content-between gap-3">
+                        <div class="d-flex flex-wrap gap-2">
+                            <div class="dropdown">
+                                <button class="btn btn-white border bg-white shadow-sm dropdown-toggle d-inline-flex align-items-center gap-1" id="addStepDropdownBtn" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport">
+                                    <i class="bi bi-plus-lg text-primary"></i>
+                                    新增步驟
+                                </button>
+                                <ul class="dropdown-menu shadow-sm border-0">
+                                    {% for key, meta in steps.items() %}
+                                    <li><a class="dropdown-item py-2" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">
+                                <i class="bi bi-search text-primary"></i>
+                                模板解析
+                            </button>
+                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
+                                <i class="bi bi-folder text-primary"></i>
+                                檔案結構
+                            </button>
+                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
+                                <i class="bi bi-arrows-collapse text-primary"></i>
+                                全部收合
+                            </button>
+                            <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded bg-white shadow-sm">
+                                <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="toggleRuleVisibilitySwitch">
+                                <label class="form-check-label small text-muted mb-0" for="toggleRuleVisibilitySwitch">顯示擷取規則</label>
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" type="submit" name="action" value="save">
+                                <i class="bi bi-save"></i>
+                                保存流程
+                            </button>
+                            <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold px-3" type="submit" name="action" value="run">
+                                <i class="bi bi-play-fill"></i>
+                                執行流程
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="px-4 py-2 bg-white border-bottom small text-muted">
+                        <i class="bi bi-file-earmark-text me-1"></i> 目前解析模板：<code class="text-primary fw-bold" id="currentTemplateLabel">{{ template_file or "未選擇" }}</code>
+                    </div>
+
+                    <div class="px-4 py-4">
+                        <div id="steps" class="vstack gap-3"></div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 已保存流程列表 -->
+        <div class="tab-pane fade {% if request.args.get('fpage') %}show active{% endif %}" id="saved-pane" role="tabpanel" aria-labelledby="saved-tab">
+            <div class="main-card">
+                <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0">已保存流程</h5>
+                    <div class="text-muted small">共 <span>{{ flow_pagination.total_count }}</span> 筆流程 (第 {{ flow_pagination.page }} / {{ flow_pagination.total_pages }} 頁)</div>
+                </div>
+                <div>
+                    <div class="table-responsive">
+                        <table class="table mb-0 align-middle">
+                            <thead style="background-color: #f8fafc;">
+                                <tr>
+                                    <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">流程名稱</th>
+                                    <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
+                                    <th class="fw-bold text-uppercase text-muted py-3" style="width: 450px; font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="flowTableBody">
+                                {% for f in flows %}
+                                <tr data-flow="{{ f.name }}">
+                                    <td class="text-start ps-4">
+                                        <span class="fw-bold text-primary" style="font-size: 0.875rem;">{{ f.name }}</span>
+                                    </td>
+                                    <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ f.created }}</td>
+                                    <td>
+                                        <div class="d-flex justify-content-center gap-1">
+                                            <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製檔案步驟，執行前請確認 NAS 與任務資料夾內容一致。')"{% endif %}>
+                                                <input type="hidden" name="apply_formatting" value="false">
+                                                <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
+                                                <button class="btn-action-icon text-success" type="submit" title="快速執行">
+                                                    <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">執行</span>
+                                                </button>
+                                            </form>
+
+                                            <button class="btn-action-icon apply-formatting-btn" type="button" data-bs-toggle="modal" data-bs-target="#applyFormattingModal" data-flow="{{ f.name }}" data-action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" title="套用格式並執行">
+                                                <i class="bi bi-text-paragraph"></i><span class="d-none d-lg-inline small fw-semibold">套用格式並執行</span>
+                                            </button>
+                                            <a class="btn-action-icon" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}" title="編輯流程">
+                                                <i class="bi bi-pencil-square"></i><span class="d-none d-lg-inline small fw-semibold">編輯流程</span>
+                                            </a>
+                                            <button class="btn-action-icon" type="button" onclick="renameFlow('{{ f.name }}')" title="重新命名">
+                                                <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
+                                            </button>
+                                            <!-- <a class="btn-action-icon" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}" title="導出流程">
+                                                <i class="bi bi-box-arrow-up"></i>
+                                            </a> -->
+                                            <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除流程「{{ f.name }}」?')">
+                                                <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
+                                                <button class="btn-action-icon text-danger" type="submit" title="刪除流程">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="3" class="text-center py-5 text-muted">
+                                        <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                        尚無流程
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Pagination Footer for Saved Flows -->
+                    <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+                        <nav>
+                            <ul class="pagination pagination-sm mb-0 gap-1">
+                                <li class="page-item {% if not flow_pagination.has_prev %}disabled{% endif %}">
+                                    <a class="page-link" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page-1) if flow_pagination.has_prev else '#' }}"title="上一頁"><i class="bi bi-chevron-left"></i></a>
+                                </li>
+                                {% for p in range(1, flow_pagination.total_pages + 1) %}
+                                    {% if p >= flow_pagination.page - 2 and p <= flow_pagination.page + 2 %}
+                                    <li class="page-item {% if p == flow_pagination.page %}active{% endif %}">
+                                        <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=p) }}">{{ p }}</a>
+                                    </li>
+                                    {% endif %}
+                                {% endfor %}
+                                <li class="page-item {% if not flow_pagination.has_next %}disabled{% endif %}">
+                                    <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page+1) if flow_pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-  </form>
 </div>
 
+<!-- Modals -->
+<div class="modal fade" id="importFlowModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{{ url_for('flows_bp.import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data">
+        <div class="modal-header">
+          <h5 class="modal-title">匯入流程</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-uppercase text-muted">選擇流程檔案 (.json)</label>
+            <input type="file" name="flow_file" class="form-control form-control-custom" accept=".json" required>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+          <button type="submit" class="btn btn-primary fw-bold">匯入</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modals -->
 <div class="modal fade" id="templateModal" tabindex="-1" aria-labelledby="templateModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl">
     <div class="modal-content">
@@ -99,34 +225,32 @@
         <h5 class="modal-title" id="templateModalLabel">模板解析</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        <div id="templateStatus" class="text-danger small mb-2"></div>
-        <div class="row g-3 mb-3 align-items-end">
+      <div class="modal-body p-4">
+        <div id="templateStatus" class="text-danger small mb-3"></div>
+        <div class="row g-4 mb-4">
           <div class="col-md-7">
-            <label class="form-label">選擇現有模板</label>
-            <select class="form-select" id="existingTemplateSelect">
-              <option value="">（從任務檔案選擇）</option>
-              {% for f in files.docx %}
-              <option value="{{ f }}" {% if template_file == f %}selected{% endif %}>{{ f }}</option>
-              {% endfor %}
-            </select>
+            <label class="form-label small fw-bold text-uppercase text-muted">選擇現有模板</label>
+            <div class="input-group">
+                <select class="form-select form-control-custom" id="existingTemplateSelect">
+                  <option value="">（從任務檔案選擇）</option>
+                  {% for f in files.docx %}
+                  <option value="{{ f }}" {% if template_file == f %}selected{% endif %}>{{ f }}</option>
+                  {% endfor %}
+                </select>
+                <button class="btn btn-primary fw-bold" type="button" id="parseExistingBtn">解析檔案</button>
+            </div>
           </div>
-          <div class="col-md-3 d-grid">
-            <button class="btn btn-outline-primary" type="button" id="parseExistingBtn">解析選擇檔案</button>
-          </div>
-        </div>
-        <div class="row g-3 mb-3 align-items-end">
-          <div class="col-md-9">
-            <label class="form-label">上傳新模板 (docx)</label>
-            <input type="file" class="form-control" id="templateUploadInput" accept=".docx">
-            <div class="form-text">上傳後會存入任務的 files 目錄，並立即解析段落。</div>
-          </div>
-          <div class="col-md-3 d-grid">
-            <button class="btn btn-primary" type="button" id="uploadTemplateBtn">上傳並解析</button>
+          <div class="col-md-5">
+            <label class="form-label small fw-bold text-uppercase text-muted">上傳新模板 (docx)</label>
+            <div class="input-group">
+                <input type="file" class="form-control form-control-custom" id="templateUploadInput" accept=".docx">
+                <button class="btn btn-primary fw-bold" type="button" id="uploadTemplateBtn">上傳解析</button>
+            </div>
+            <div class="form-text small">上傳後會存入任務的 files 目錄。</div>
           </div>
         </div>
-        <div id="templatePreview" class="border rounded p-3 bg-light small">
-          <div class="text-muted">尚未載入模板</div>
+        <div id="templatePreview" class="border rounded-3 p-0 overflow-hidden bg-white shadow-sm">
+          <div class="p-5 text-center text-muted">尚未載入模板</div>
         </div>
       </div>
     </div>
@@ -140,8 +264,8 @@
         <h5 class="modal-title" id="filesModalLabel">檔案結構</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        <div class="file-tree-container">
+      <div class="modal-body p-4">
+        <div class="file-tree-container border rounded-3 p-3 bg-white">
           {{ render_file_tree(files_tree) }}
         </div>
       </div>
@@ -149,6 +273,40 @@
   </div>
 </div>
 
+<div class="modal fade" id="stepFileBrowserModal" tabindex="-1" aria-labelledby="stepFileBrowserModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold" id="stepFileBrowserModalLabel">選擇任務檔案</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="border rounded-3 p-3 bg-white shadow-sm">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <button class="btn btn-sm btn-white border bg-white shadow-sm flex-shrink-0 d-flex align-items-center justify-content-center" type="button" id="stepFileGoUpBtn" title="上一層" style="width: 32px; height: 32px;">
+              <i class="bi bi-arrow-left"></i>
+            </button>
+            <button class="btn btn-sm btn-white border bg-white shadow-sm d-none flex-shrink-0" type="button" id="stepFileSelectCurrentBtn">選擇目前目錄</button>
+            <div class="flex-grow-1 min-width-0 overflow-hidden small text-muted">
+              <div class="d-flex align-items-center gap-1">
+                <span class="flex-shrink-0">位置：</span>
+                <code class="text-primary fw-bold overflow-x-auto custom-scrollbar flex-grow-1 pb-1" id="stepFileCurrentPath" style="white-space: nowrap; display: block; cursor: default;">/</code>
+              </div>
+            </div>
+            <div class="flex-shrink-0 text-muted small text-end" id="stepFileStatus" style="width: 100px;"></div>
+          </div>
+
+          <div class="list-group list-group-flush border rounded-3 mb-3 overflow-y-auto custom-scrollbar" id="stepFileEntryList" style="min-height: 200px; max-height: 300px;"></div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-white border px-4" type="button" data-bs-dismiss="modal">取消</button>
+            <button class="btn btn-primary fw-bold px-4" type="button" id="stepFileApplyBtn">確定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="modal fade" id="applyFormattingModal" tabindex="-1" aria-labelledby="applyFormattingModalLabel" aria-hidden="true">
   <div class="modal-dialog">
@@ -160,26 +318,27 @@
         </div>
         <div class="modal-body">
           <input type="hidden" name="apply_formatting" value="true">
-          <div class="mb-3">
-            <label class="form-label">字型</label>
-            <select class="form-select" name="document_format">
+          <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
+          <div class="mb-4">
+            <label class="form-label small fw-bold text-uppercase text-muted">選擇字型格式</label>
+            <select class="form-select form-control-custom" name="document_format">
               {% for key, preset in document_format_presets.items() %}
               <option value="{{ key }}" {% if document_format == key %}selected{% endif %}>{{ preset.label }}</option>
               {% endfor %}
             </select>
           </div>
-          <div class="mb-3">
-            <label class="form-label">行距</label>
-            <select class="form-select" name="line_spacing">
+          <div class="mb-0">
+            <label class="form-label small fw-bold text-uppercase text-muted">選擇行距</label>
+            <select class="form-select form-control-custom" name="line_spacing">
               {% for key, label in line_spacing_choices %}
               <option value="{{ key }}" {% if line_spacing == key %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">&#21462;&#28040;</button>
-          <button type="submit" class="btn btn-success">套用並執行</button>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+          <button type="submit" class="btn btn-success fw-bold px-3">套用並執行</button>
         </div>
       </form>
     </div>
@@ -190,97 +349,49 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">重新命名</h5>
+        <h5 class="modal-title">重新命名流程</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="renameFlowCurrentName">
         <div class="mb-1">
-          <label for="renameFlowInput" class="form-label">新流程名稱 (最多 60 字)</label>
-          <input type="text" class="form-control" id="renameFlowInput" maxlength="60" required>
-          <div class="form-text text-end small" id="renameFlowCount">0/60</div>
+          <label for="renameFlowInput" class="form-label small fw-bold text-uppercase text-muted">新流程名稱 (最多 50 字)</label>
+          <input type="text" class="form-control form-control-custom" id="renameFlowInput" maxlength="50" required>
+          <div class="form-text text-end small" id="renameFlowCount">0/50</div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-        <button type="button" class="btn btn-primary" id="renameFlowSubmitBtn">確定</button>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary fw-bold" id="renameFlowSubmitBtn">確定</button>
       </div>
     </div>
   </div>
 </div>
 
-<div class="card shadow-sm border mt-4">
-  <div class="card-header bg-white border-bottom">
-    <h2 class="h5 mb-0 fw-bold">已保存流程</h2>
-  </div>
-  <div class="card-body p-0">
-    <div class="table-responsive" style="max-height: 390px; overflow-y: auto;">
-      <table class="table table-striped text-center align-middle flow-table mb-0" id="flowTable">
-        <thead class="bg-white border-bottom" style="position: sticky; top: 0; z-index: 1;">
-          <tr>
-              <th class="text-start ps-3">流程名稱</th>
-              <th class="text-center" style="width: 200px;">建立時間</th>
-              <th class="text-center" style="width: 300px;">操作</th>
-          </tr>
-        </thead>
-        <tbody id="flowTableBody">
-        {% for f in flows %}
-          <tr data-flow="{{ f.name }}">
-            <td class="align-middle text-start ps-3">{{ f.name }}</span></td>
-            <td class="align-middle">{{ f.created }}</td>
-            <td class="align-middle">
-              <div class="d-inline-flex flex-wrap gap-1 justify-content-center">
-                <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('\u6d41\u7a0b\u5305\u542b\u8907\u88fd\u6a94\u6848\u6b65\u9a5f\uff0c\u57f7\u884c\u524d\u8acb\u78ba\u8a8d NAS \u8207\u4efb\u52d9\u8cc7\u6599\u593e\u5167\u5bb9\u4e00\u81f4\u3002')"{% endif %}>
-                  <input type="hidden" name="apply_formatting" value="false">
-                  
-                  <button class="btn btn-sm btn-success d-inline-flex align-items-center gap-1">
-                    <i class="bi bi-play-fill"></i>
-                    執行
-                  </button>
-                </form>
-                <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 apply-formatting-btn"
-                        type="button"
-                        data-bs-toggle="modal"
-                        data-bs-target="#applyFormattingModal"
-                        data-flow="{{ f.name }}"
-                        data-action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}">
-                  <i class="bi bi-text-paragraph"></i>
-                  &#22871;&#29992;&#23383;&#22411;/&#34892;&#36317;
-                </button>
-                <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}">
-                  <i class="bi bi-pencil-square"></i>
-                  編輯
-                </a>
-                <button class="btn btn-sm btn-secondary d-inline-flex align-items-center gap-1" type="button" onclick="renameFlow('{{ f.name }}')">
-                  <i class="bi bi-pencil"></i>
-                  重新命名
-                </button>
-                <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('\u78ba\u5b9a\u522a\u9664?')">
-                  <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1">
-                    <i class="bi bi-trash"></i>
-                    刪除
-                  </button>
-                </form>
-              </div>
-              <!-- <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}">匯出</a> -->
-            </td>
-          </tr>
-        {% else %}
-          <tr><td colspan="3">尚無流程</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
 <style>
 .flow-table {
-  table-layout: fixed;
   width: 100%;
+  min-width: 720px;
+  table-layout: auto;
 }
 .flow-table th,
 .flow-table td {
-  width: 33.3333%;
+  vertical-align: middle;
+}
+.flow-table .flow-col-name,
+.flow-table .flow-name-cell {
+  min-width: 220px;
+}
+.flow-table .flow-col-created {
+  min-width: 170px;
+  white-space: nowrap;
+}
+.flow-table .flow-col-actions,
+.flow-table .flow-actions-cell {
+  min-width: 320px;
+}
+.flow-table .flow-actions-cell .btn {
+  white-space: nowrap;
 }
 .run-status-container {
   position: fixed;
@@ -299,6 +410,13 @@
   border: 1px solid #e6e6e2;
   background: #ffffff;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.run-status-toast.is-hiding {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 .run-status-title {
   font-weight: 700;
@@ -308,11 +426,198 @@
   color: #555;
   font-size: 0.9rem;
 }
+#builder-pane,
+#builder-pane .main-card,
+#builder-pane .flow-toolbar {
+  overflow: visible;
+}
+#builder-pane .main-card {
+  min-height: 460px;
+}
+.flow-toolbar .dropdown-menu {
+  z-index: 1080;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+.flow-toolbar-switch {
+  min-height: 38px;
+  padding-left: 0.75rem !important;
+}
+.flow-toolbar-switch .form-check-input {
+  margin-left: 0 !important;
+  margin-top: 0 !important;
+}
+.flow-toolbar-switch .form-check-label {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+}
 .step-toggle[aria-expanded="true"] .transition-icon {
   transform: rotate(90deg);
 }
 .transition-icon {
   transition: transform 0.2s ease;
+}
+#steps > .card {
+  min-width: 0;
+  border: 1px solid var(--bs-gray-200);
+  border-left: 4px solid var(--bs-gray-300);
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+  margin-bottom: 0.5rem;
+}
+#steps > .card:hover {
+  border-color: var(--bs-blue-200);
+  border-left-color: var(--bs-blue-400);
+  transform: translateX(2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+#steps > .card.is-active {
+  border-color: var(--bs-blue-600);
+  border-left-color: var(--bs-blue-600);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.12);
+  transform: translateX(0);
+}
+#steps > .card .card-header {
+  padding: 0.75rem 1.25rem;
+  background-color: transparent !important;
+  border-bottom: none;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+#steps > .card.is-active .card-header {
+  border-bottom: 1px solid var(--bs-gray-100);
+}
+#steps > .card .step-index {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background-color: var(--bs-gray-100) !important;
+  color: var(--bs-gray-600) !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+#steps > .card.is-active .step-index {
+  background-color: var(--bs-blue-600) !important;
+  color: white !important;
+}
+#steps > .card .step-toggle {
+  min-width: 0;
+  flex: 1 1 420px;
+}
+#steps > .card .step-toggle .fw-bold {
+  color: var(--bs-gray-700);
+}
+#steps > .card.is-active .step-toggle .fw-bold {
+  color: var(--bs-blue-600);
+}
+.step-summary {
+  display: inline-block;
+  min-width: 0;
+  max-width: 120px;
+  color: var(--bs-gray-400);
+  font-weight: 400;
+}
+#steps > .card.is-active .step-summary {
+  color: var(--bs-gray-500);
+}
+#steps > .card .card-header > .btn-group {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 0.35rem;
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
+}
+#steps > .card:hover .card-header > .btn-group,
+#steps > .card.is-active .card-header > .btn-group {
+  opacity: 1;
+}
+@keyframes step-move-flash {
+  0% { 
+    background-color: #fffbeb; 
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2);
+    transform: scale(1.02);
+  }
+  50% {
+    background-color: #fffbeb;
+    border-color: #f59e0b;
+  }
+  100% { 
+    background-color: #fafbfc; 
+    border-color: var(--bs-gray-200);
+    box-shadow: none;
+    transform: scale(1);
+  }
+}
+.step-moved-highlight {
+  animation: step-move-flash 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  z-index: 10;
+}
+#steps > .card .card-body {
+  padding: 1.5rem;
+  background-color: #fafbfc;
+  transition: background-color 0.3s ease;
+}
+/* Nested cards inside a step */
+#steps .card-body .card {
+  border: 1px solid var(--bs-gray-200);
+  border-left-width: 1px !important;
+  border-left-color: var(--bs-gray-200) !important;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  background-color: white;
+  transform: none !important;
+  box-shadow: none !important;
+}
+#steps .card-body .card-body {
+  padding: 1rem;
+  background-color: white;
+}
+
+
+@media (min-width: 576px) {
+  .step-summary {
+    max-width: 300px;
+  }
+}
+@media (min-width: 992px) {
+  .step-summary {
+    max-width: 600px;
+  }
+}
+@media (max-width: 767.98px) {
+  #steps .step-toggle {
+    flex-basis: 100%;
+  }
+  #steps .card-header > .btn-group {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .run-status-container {
+    top: 72px;
+    left: 12px;
+    right: 12px;
+  }
+  .run-status-toast {
+    min-width: 0;
+    max-width: none;
+  }
+  .step-summary {
+    max-width: 160px;
+  }
+}
+@media (max-width: 575.98px) {
+  .flow-table {
+    min-width: 640px;
+  }
+  .step-summary {
+    max-width: 120px;
+  }
 }
 </style>
 
@@ -326,10 +631,53 @@ const TEMPLATE_PARSE_URL = "{{ url_for('tasks_bp.parse_template_doc', task_id=ta
 const TEMPLATE_FILE = {{ template_file|tojson }};
 const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
 const ACTIVE_RUNS_URL = "{{ url_for('flows_bp.flow_run_active', task_id=task.id) }}";
+const TASK_FILE_BROWSER_URL = "{{ url_for('flows_bp.api_flow_list_task_files', task_id=task.id) }}";
 const BOOL_DEFAULTS = {
-  include_caption: "false",
-  use_chapter_title: "false"
+  include_caption: "true",
+  use_chapter_title: "false",
+  hide_chapter_title: "false"
 };
+const RULE_VISIBILITY_STORAGE_KEY = `flow_rule_visibility_${TASK_ID}`;
+let showExtractionRules = false;
+
+function _loadRuleVisibilityPreference(){
+  try{
+    const raw = localStorage.getItem(RULE_VISIBILITY_STORAGE_KEY);
+    if (raw === "1" || raw === "true") return true;
+    if (raw === "0" || raw === "false") return false;
+  }catch(e){
+    // ignore
+  }
+  return false;
+}
+
+function _saveRuleVisibilityPreference(visible){
+  try{
+    localStorage.setItem(RULE_VISIBILITY_STORAGE_KEY, visible ? "1" : "0");
+  }catch(e){
+    // ignore
+  }
+}
+
+function _applyRuleVisibility(scope = document){
+  const root = scope && scope.querySelectorAll ? scope : document;
+  root.querySelectorAll(".extraction-rules-card").forEach((el) => {
+    el.style.display = showExtractionRules ? "" : "none";
+  });
+}
+
+function _syncRuleToggleSwitch(){
+  const toggle = document.getElementById("toggleRuleVisibilitySwitch");
+  if (!toggle) return;
+  toggle.checked = !!showExtractionRules;
+}
+
+function _setRuleVisibility(visible){
+  showExtractionRules = !!visible;
+  _applyRuleVisibility(document);
+  _syncRuleToggleSwitch();
+  _saveRuleVisibilityPreference(showExtractionRules);
+}
 
 const FIELD_META = {
   pdf_zip: {
@@ -355,9 +703,28 @@ const FIELD_META = {
   subheading_strict_match: {
     label: "小標題精確比對"
   },
+  hide_chapter_title: {
+    label: "隱藏章節標題"
+  },
   target_caption_label: {
     label: "圖/表標題前綴",
     placeholder: "例如 Figure 1 或 Table 1"
+  },
+  target_figure_title: {
+    label: "圖片標題全文",
+    placeholder: "例如 Figure showing the system overview."
+  },
+  target_figure_index: {
+    label: "章節內圖片序號",
+    placeholder: "例如 1"
+  },
+  target_table_title: {
+    label: "表格標題全文",
+    placeholder: "例如 General information of the accessories."
+  },
+  target_table_index: {
+    label: "章節內表格序號",
+    placeholder: "例如 1"
   },
   input_file: {
     label: "輸入檔案",
@@ -380,8 +747,8 @@ const FIELD_META = {
     label: "段落前換頁"
   },
   explicit_end_title: {
-    label: "強制結束標題",
-    placeholder: "強制指定章節結束，請完整輸入標題"
+    label: "結束標題",
+    placeholder: "例如 1.1.3 Accessories not included but necessary for use"
   },
   ignore_toc: {
     label: "移除目錄及前言"
@@ -411,6 +778,7 @@ const FIELD_META = {
 };
 
 const RUN_JOB_ID = {{ job_id|tojson }};
+const CURRENT_FLOW_PAGE = {{ flow_pagination.page|tojson }};
 const runStatusContainer = document.getElementById("runStatusContainer");
 const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
 const applyFormattingModal = document.getElementById("applyFormattingModal");
@@ -433,9 +801,13 @@ const { submitPostForm, escapeHtml } = window.UiUtils;
 
 function parseChapterRef(raw){
   const text = (raw || "").trim();
-  const match = text.match(/^(\d+(?:\.\d+)*)(?:\s+(.+))?$/);
+  const match = text.match(/^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$/);
   if (match) {
     return { section: match[1], title: (match[2] || "").trim() };
+  }
+  const inline = text.match(/\b(\d+(?:\.\d+)*)\b/);
+  if (inline) {
+    return { section: inline[1], title: text };
   }
   return { section: text, title: "" };
 }
@@ -445,12 +817,15 @@ function syncChapterRefInput(input){
   const card = input.closest(".card");
   const sectionName = input.dataset.section;
   const titleName = input.dataset.title;
+  const rawName = input.dataset.raw;
   if (!sectionName || !titleName) return;
   const parsed = parseChapterRef(input.value);
   const sectionInput = card ? card.querySelector(`input[name="${sectionName}"]`) : null;
   const titleInput = card ? card.querySelector(`input[name="${titleName}"]`) : null;
+  const rawInput = rawName && card ? card.querySelector(`input[name="${rawName}"]`) : null;
   if (sectionInput) sectionInput.value = parsed.section;
   if (titleInput) titleInput.value = parsed.title;
+  if (rawInput) rawInput.value = input.value;
 }
 
 function buildInsertMenu(sid, position){
@@ -493,6 +868,18 @@ function removeRunJob(jobId){
   if (node) node.remove();
 }
 
+function removeRunJobWithFade(jobId){
+  const node = runStatusContainer?.querySelector(`[data-job-id="${jobId}"]`);
+  if (!node) {
+    removeRunJob(jobId);
+    return;
+  }
+  if (node.dataset.hiding === "1") return;
+  node.dataset.hiding = "1";
+  node.classList.add("is-hiding");
+  setTimeout(() => removeRunJob(jobId), 260);
+}
+
 function renderRunToasts(){
   if (!runStatusContainer) return;
   const list = loadRunJobs();
@@ -532,12 +919,19 @@ async function refreshRunStatus(){
       if (status === "completed"){
         if (titleEl) titleEl.textContent = "流程已完成";
         if (bodyEl) bodyEl.textContent = `已完成：${flowName}`;
-        setTimeout(() => removeRunJob(toast.dataset.jobId), 4000);
+        if (!toast.dataset.autoCloseAt) {
+          toast.dataset.autoCloseAt = String(Date.now() + 4000);
+          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 4000);
+        }
         continue;
       }
       if (status === "failed"){
         if (titleEl) titleEl.textContent = "流程失敗";
         if (bodyEl) bodyEl.textContent = `失敗：${flowName}`;
+        if (!toast.dataset.autoCloseAt) {
+          toast.dataset.autoCloseAt = String(Date.now() + 4000);
+          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 4000);
+        }
         continue;
       }
       if (titleEl) titleEl.textContent = status === "queued" ? "流程排隊中" : "流程執行中";
@@ -611,22 +1005,33 @@ function refreshTemplateSelects(){
 function renderTemplatePreview(){
   if (!templatePreview) return;
   if (!templateFile){
-    templatePreview.innerHTML = '<div class="text-muted">尚未載入模板</div>';
+    templatePreview.innerHTML = '<div class="p-5 text-center text-muted"><i class="bi bi-file-earmark-text fs-2 d-block mb-2"></i>尚未載入模板</div>';
     if (currentTemplateLabel) currentTemplateLabel.textContent = "未選擇";
     return;
   }
   if (currentTemplateLabel) currentTemplateLabel.textContent = templateFile;
   const rows = (templateParagraphs || []).map(p => {
-    return `<tr><td class="mono">${p.index}</td><td class="mono">${escapeHtml(p.display || "")}</td><td>${escapeHtml(p.text || "")}</td></tr>`;
-  }).join("") || '<tr><td colspan="3" class="text-center text-muted">尚未解析到段落</td></tr>';
+    return `<tr>
+      <td class="ps-4 font-monospace small text-primary fw-bold">${p.index}</td>
+      <td class="font-monospace small text-muted">${escapeHtml(p.display || "")}</td>
+      <td class="pe-4 small text-dark">${escapeHtml(p.text || "")}</td>
+    </tr>`;
+  }).join("") || '<tr><td colspan="3" class="text-center py-4 text-muted">尚未解析到段落內容</td></tr>';
+
   templatePreview.innerHTML = `
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <div>當前模板：<code>${escapeHtml(templateFile)}</code></div>
-      <div class="text-muted small">段落總數：${templateParagraphs.length}</div>
+    <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+      <div class="small fw-bold text-uppercase text-muted">解析結果：<span class="text-primary font-monospace">${escapeHtml(templateFile)}</span></div>
+      <div class="badge bg-white border text-muted fw-normal">共 ${templateParagraphs.length} 個段落</div>
     </div>
-    <div class="table-responsive" style="max-height:320px; overflow:auto;">
-      <table class="table table-sm table-hover align-middle mb-0">
-        <thead class="table-light"><tr><th style="width:100px;">index</th><th style="width:140px;">display</th><th>text</th></tr></thead>
+    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+      <table class="table table-hover align-middle mb-0">
+        <thead style="background-color: #f8fafc; position: sticky; top: 0; z-index: 10;">
+          <tr>
+            <th class="ps-4 small fw-bold text-uppercase text-muted py-2" style="width: 100px;">Index</th>
+            <th class="small fw-bold text-uppercase text-muted py-2" style="width: 180px;">Display</th>
+            <th class="pe-4 small fw-bold text-uppercase text-muted py-2">Text Content</th>
+          </tr>
+        </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -746,6 +1151,309 @@ function updateOrder(){
   });
   markDirty();
 }
+
+function truncatePath(str, maxLen = 60) {
+  if (!str || str.length <= maxLen) return str;
+  const front = Math.ceil(maxLen / 2);
+  const back = Math.floor(maxLen / 2) - 3;
+  return str.substring(0, front) + "..." + str.substring(str.length - back);
+}
+
+function escapeAttr(value){
+  return escapeHtml(String(value ?? "")).replace(/"/g, "&quot;");
+}
+
+function normalizeBrowserRelPath(raw){
+  const text = String(raw ?? "").trim().replace(/\\/g, "/");
+  if (!text || text === "." || text === "/") return "";
+  const stripped = text.replace(/^\.\/+/, "").replace(/^\/+/, "");
+  const parts = [];
+  for (const part of stripped.split("/")){
+    if (!part || part === "." || part === "..") continue;
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function getParentRelPath(rel){
+  if (!rel) return "";
+  const parts = rel.split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+function parseFileAccept(accept){
+  const raw = String(accept || "file:docx");
+  const ext = (raw.split(":")[1] || "").toLowerCase();
+  return {
+    raw,
+    mode: ext === "dir" ? "dir" : "file",
+    ext
+  };
+}
+
+function renderTaskFilePickerField({ sid, key, label, value, accept, colClass = "col-md-6", required = true }){
+  const parsed = parseFileAccept(accept);
+  const placeholder = parsed.mode === "dir" ? "選擇資料夾" : "選擇檔案";
+  const inputName = `step_${sid}_${key}`;
+  const options = Array.isArray(AVAILABLE_FILES?.[parsed.ext]) ? [...AVAILABLE_FILES[parsed.ext]] : [];
+  if (value && !options.includes(value)){
+    options.unshift(value);
+  }
+  const placeholderSelected = value ? "" : "selected";
+  const optionHtml = options
+    .map((item) => `<option value="${escapeAttr(item)}" ${item === value ? "selected" : ""}>${escapeHtml(item)}</option>`)
+    .join("");
+  return `<div class="${colClass}">
+    <label class="form-label">${label}</label>
+    <div class="input-group">
+      <select class="form-select step-file-select" name="${inputName}" ${required ? "required" : ""}>
+        <option value="" disabled ${placeholderSelected}>${placeholder}</option>
+        ${optionHtml}
+      </select>
+      <button class="btn btn-outline-secondary step-file-browse-btn" type="button" data-target="${inputName}" data-accept="${escapeAttr(parsed.raw)}">瀏覽</button>
+    </div>
+  </div>`;
+}
+
+const stepFileModalEl = document.getElementById("stepFileBrowserModal");
+const stepFileCurrentPathEl = document.getElementById("stepFileCurrentPath");
+const stepFileStatusEl = document.getElementById("stepFileStatus");
+const stepFileEntryList = document.getElementById("stepFileEntryList");
+const stepFileGoUpBtn = document.getElementById("stepFileGoUpBtn");
+const stepFileApplyBtn = document.getElementById("stepFileApplyBtn");
+const stepFileSelectCurrentBtn = document.getElementById("stepFileSelectCurrentBtn");
+
+const stepFileState = {
+  activeInput: null,
+  accept: "file:docx",
+  mode: "file",
+  ext: "docx",
+  currentRel: "",
+  selectedRel: null,
+  dirs: [],
+  files: [],
+};
+
+function setStepFileStatus(text){
+  if (stepFileStatusEl) stepFileStatusEl.textContent = text || "";
+}
+
+function updateStepFileCurrentPath(){
+  if (!stepFileCurrentPathEl) return;
+  stepFileCurrentPathEl.textContent = stepFileState.currentRel ? `/${stepFileState.currentRel}` : "/";
+}
+
+function updateStepFileModeUI(){
+  if (!stepFileSelectCurrentBtn) return;
+  stepFileSelectCurrentBtn.classList.toggle("d-none", stepFileState.mode !== "dir");
+}
+
+function isAllowedStepFileEntry(path){
+  if (stepFileState.mode === "dir") return false;
+  const ext = stepFileState.ext;
+  if (!ext || ext === "file") return true;
+  return path.toLowerCase().endsWith(`.${ext}`);
+}
+
+function renderStepFileEntries(){
+  if (!stepFileEntryList) return;
+  stepFileEntryList.innerHTML = "";
+
+  const fragment = document.createDocumentFragment();
+  for (const dir of stepFileState.dirs){
+    const row = document.createElement("div");
+    row.className = "list-group-item d-flex align-items-center justify-content-between gap-2";
+    if (stepFileState.mode === "dir" && stepFileState.selectedRel === dir.path){
+      row.classList.add("list-group-item-primary");
+    }
+
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.className = "btn btn-link p-0 text-start flex-grow-1 text-decoration-none";
+    openBtn.textContent = dir.name;
+    openBtn.title = dir.path;
+    openBtn.addEventListener("click", () => {
+      if (stepFileState.mode === "dir"){
+        stepFileState.selectedRel = dir.path;
+        renderStepFileEntries();
+      }
+    });
+    openBtn.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      loadStepFileEntries(dir.path);
+    });
+    row.appendChild(openBtn);
+
+    if (stepFileState.mode === "dir"){
+      const chooseBtn = document.createElement("button");
+      chooseBtn.type = "button";
+      chooseBtn.className = "btn btn-sm btn-outline-primary";
+      chooseBtn.textContent = "選擇";
+      chooseBtn.addEventListener("click", () => {
+        stepFileState.selectedRel = dir.path;
+        renderStepFileEntries();
+      });
+      row.appendChild(chooseBtn);
+    }
+
+    fragment.appendChild(row);
+  }
+
+  if (stepFileState.mode === "file"){
+    const visibleFiles = stepFileState.files.filter((f) => isAllowedStepFileEntry(f.path));
+    for (const file of visibleFiles){
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "list-group-item list-group-item-action text-start";
+      if (stepFileState.selectedRel === file.path){
+        row.classList.add("active");
+      }
+      row.textContent = file.name;
+      row.title = file.path;
+      row.addEventListener("click", () => {
+        stepFileState.selectedRel = file.path;
+        renderStepFileEntries();
+      });
+      row.addEventListener("dblclick", () => {
+        stepFileState.selectedRel = file.path;
+        applyStepFileSelection();
+      });
+      fragment.appendChild(row);
+    }
+  }
+
+  if (!fragment.childNodes.length){
+    const empty = document.createElement("div");
+    empty.className = "text-muted small p-2";
+    empty.textContent = stepFileState.mode === "dir" ? "此層沒有子資料夾" : "此層沒有可選檔案";
+    fragment.appendChild(empty);
+  }
+  stepFileEntryList.appendChild(fragment);
+
+  if (stepFileState.mode === "file" && stepFileState.ext && stepFileState.ext !== "file"){
+    setStepFileStatus(`僅顯示 .${stepFileState.ext}`);
+  } else {
+    setStepFileStatus("");
+  }
+}
+
+async function loadStepFileEntries(rel = ""){
+  if (!TASK_FILE_BROWSER_URL) return;
+  const cleanRel = normalizeBrowserRelPath(rel);
+  setStepFileStatus("讀取中...");
+  updateStepFileCurrentPath();
+  const qs = new URLSearchParams({ path: cleanRel });
+  try {
+    const resp = await fetch(`${TASK_FILE_BROWSER_URL}?${qs.toString()}`, { cache: "no-store" });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok){
+      throw new Error(data.error || "讀取失敗");
+    }
+    stepFileState.currentRel = normalizeBrowserRelPath(data.path || "");
+    stepFileState.dirs = Array.isArray(data.dirs) ? data.dirs : [];
+    stepFileState.files = Array.isArray(data.files) ? data.files : [];
+    updateStepFileCurrentPath();
+    renderStepFileEntries();
+  } catch (err){
+    stepFileState.dirs = [];
+    stepFileState.files = [];
+    renderStepFileEntries();
+    setStepFileStatus(err?.message || "讀取失敗");
+  }
+}
+
+function openStepFileBrowser(input, accept){
+  if (!input || !stepFileModalEl || typeof bootstrap === "undefined") return;
+  const parsed = parseFileAccept(accept);
+  stepFileState.activeInput = input;
+  stepFileState.accept = parsed.raw;
+  stepFileState.mode = parsed.mode;
+  stepFileState.ext = parsed.ext;
+  stepFileState.dirs = [];
+  stepFileState.files = [];
+  updateStepFileModeUI();
+
+  const existing = normalizeBrowserRelPath(input.value);
+  if (stepFileState.mode === "dir"){
+    stepFileState.currentRel = existing;
+    stepFileState.selectedRel = input.value.trim() ? existing : null;
+  } else {
+    stepFileState.selectedRel = existing || null;
+    stepFileState.currentRel = existing.includes("/") ? getParentRelPath(existing) : "";
+  }
+  updateStepFileCurrentPath();
+  loadStepFileEntries(stepFileState.currentRel);
+  bootstrap.Modal.getOrCreateInstance(stepFileModalEl).show();
+}
+
+function applyStepFileSelection(){
+  if (!stepFileState.activeInput) return;
+  let chosen = "";
+  if (stepFileState.mode === "dir"){
+    const rel = stepFileState.selectedRel !== null ? stepFileState.selectedRel : stepFileState.currentRel;
+    chosen = rel ? rel : ".";
+  } else {
+    if (!stepFileState.selectedRel){
+      alert("請先選擇檔案");
+      return;
+    }
+    chosen = stepFileState.selectedRel;
+  }
+  if (stepFileState.activeInput.tagName === "SELECT"){
+    const select = stepFileState.activeInput;
+    const hasOption = Array.from(select.options).some((opt) => opt.value === chosen);
+    if (!hasOption){
+      const opt = document.createElement("option");
+      opt.value = chosen;
+      opt.textContent = chosen;
+      select.appendChild(opt);
+    }
+    select.value = chosen;
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  } else {
+    stepFileState.activeInput.value = chosen;
+    stepFileState.activeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    stepFileState.activeInput.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  markDirty();
+  const modal = bootstrap.Modal.getInstance(stepFileModalEl);
+  if (modal) modal.hide();
+}
+
+if (stepFileGoUpBtn){
+  stepFileGoUpBtn.addEventListener("click", () => {
+    if (!stepFileState.currentRel){
+      loadStepFileEntries("");
+      return;
+    }
+    loadStepFileEntries(getParentRelPath(stepFileState.currentRel));
+  });
+}
+
+if (stepFileSelectCurrentBtn){
+  stepFileSelectCurrentBtn.addEventListener("click", () => {
+    stepFileState.selectedRel = stepFileState.currentRel || "";
+    renderStepFileEntries();
+  });
+}
+
+if (stepFileApplyBtn){
+  stepFileApplyBtn.addEventListener("click", applyStepFileSelection);
+}
+
+document.addEventListener("click", (event) => {
+  const btn = event.target.closest(".step-file-browse-btn");
+  if (!btn) return;
+  const target = btn.getAttribute("data-target");
+  if (!target) return;
+  const scope = btn.closest(".card") || document;
+  const input = scope.querySelector(`[name="${target}"]`) || document.querySelector(`[name="${target}"]`);
+  if (!input) return;
+  openStepFileBrowser(input, btn.getAttribute("data-accept") || "file:docx");
+});
+
 const normalizePreset = (raw = {}) => {
   const preset = { ...raw };
   if (preset.use_chapter_title === undefined && preset.target_title !== undefined) {
@@ -799,7 +1507,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <div class="form-check">
           <input type="hidden" name="step_${sid}_${key}" value="${hiddenVal}">
           <input class="form-check-input bool-toggle${extraClass}" type="checkbox" id="${inputId}" data-target="step_${sid}_${key}" ${checked}>
-          <label class="form-check-label" for="${inputId}">${label}</label>
+          <label class="form-check-label">${label}</label>
         </div>
       </div>`;
   };
@@ -807,9 +1515,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   if (isWordExtractStep){
     const fileVal = getValue("input_file");
     const fileAccept = spec.accepts["input_file"] || "file:docx";
-    const fileExt = fileAccept.split(":")[1];
-    const fileOptions = (AVAILABLE_FILES[fileExt] || []).map(f => `<option value="${f}" ${fileVal===f?"selected": ""}>${f}</option>`).join("");
-    const filePlaceholder = fileExt === "dir" ? "選擇資料夾" : "選擇檔案";
+    const fileLabel = (FIELD_META["input_file"] || {}).label || "輸入檔案";
 
     const sectionKey = spec.inputs.includes("target_section") ? "target_section" : "target_chapter_section";
     const sectionLabel = (FIELD_META[sectionKey] || {}).label || sectionKey;
@@ -820,7 +1526,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const titleLabel = (FIELD_META[titleKey] || {}).label || titleKey;
     const titlePlaceholder = (FIELD_META[titleKey] || {}).placeholder || titleLabel;
     const titleVal = getValue(titleKey);
-    const chapterRefVal = [sectionVal, titleVal].filter(Boolean).join(" ");
+    const rawChapterRef = getValue("target_chapter_ref_raw");
+    const chapterRefVal = rawChapterRef || [sectionVal, titleVal].filter(Boolean).join(" ");
 
     const subheadingVal = getValue("target_subtitle");
     let targetTitleVal = getBoolValue("use_chapter_title");
@@ -834,37 +1541,50 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const explicitLabel = (FIELD_META["explicit_end_title"] || {}).label || "強制結束標題";
     const explicitPlaceholder = (FIELD_META["explicit_end_title"] || {}).placeholder || explicitLabel;
     const explicitVal = getValue("explicit_end_title");
+    const explicitEndNumVal = getValue("explicit_end_number");
+    const explicitCombinedVal = [explicitEndNumVal, explicitVal].filter(Boolean).join(" ");
+    const continuousExtractChecked = explicitCombinedVal.trim() !== "";
+    const continuousExtractStyle = continuousExtractChecked ? "" : "display: none;";
+    const continuousExtractDisabled = continuousExtractChecked ? "" : "disabled";
 
     const tplIndexVal = getValue("template_index");
     const tplDisabled = templateParagraphs.length === 0 ? "disabled" : "";
     const tplModeVal = getValue("template_mode") || "insert_after";
 
-    const ignoreTocLabel = (FIELD_META["ignore_toc"] || {}).label || "移除目錄";
-    const ignoreHeaderLabel = (FIELD_META["ignore_header_footer"] || {}).label || "移除頁首頁尾";
-    const strictLabel = (FIELD_META["subheading_strict_match"] || {}).label || "小標題精確比對";
+  const ignoreTocLabel = (FIELD_META["ignore_toc"] || {}).label || "移除目錄";
+  const ignoreHeaderLabel = (FIELD_META["ignore_header_footer"] || {}).label || "移除頁首頁尾";
+  const strictLabel = (FIELD_META["subheading_strict_match"] || {}).label || "小標題精確比對";
+  const hideChapterTitleLabel = (FIELD_META["hide_chapter_title"] || {}).label || "隱藏章節標題";
+
+    const summaryParts = [];
+    if(fileVal) summaryParts.push(truncatePath(fileVal));
+    if(chapterRefVal) summaryParts.push(chapterRefVal);
+    if(subheadingVal) summaryParts.push(subheadingVal);
+    const initialSummary = summaryParts.join(" | ");
 
     const collapseId = `collapse_${sid}`;
     let body = `
     <div class="card-header d-flex justify-content-between align-items-center py-2 bg-white">
       <div class="d-flex align-items-center step-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
         <i class="bi bi-chevron-right me-2 text-muted small transition-icon"></i>
-        <h2 class="h5 mb-0">
+        <div class="fw-bold mb-0">
           <span class="badge bg-secondary me-2 step-index"></span>
           ${spec.label}
-        </h2>
+        </div>
+        <div class="text-muted small ms-3 text-truncate step-summary">${initialSummary}</div>
       </div>
       <div class="btn-group">
         <div class="btn-group">
-          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" title="插入上方"><i class="bi bi-arrow-bar-up"></i></button>
           <ul class="dropdown-menu">${menuBefore}</ul>
         </div>
         <div class="btn-group">
-          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" title="插入下方"><i class="bi bi-arrow-bar-down"></i></button>
           <ul class="dropdown-menu">${menuAfter}</ul>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
-        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')" title="上移"><i class="bi bi-arrow-up"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')" title="下移"><i class="bi bi-arrow-down"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')" title="刪除"><i class="bi bi-trash"></i></button>
       </div>
     </div>
     <div id="${collapseId}" class="collapse show step-content">
@@ -878,25 +1598,41 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
               來源與章節設定
             </div>
             <div class="row g-3">
+              ${renderTaskFilePickerField({ sid, key: "input_file", label: fileLabel, value: fileVal, accept: fileAccept, colClass: "col-12", required: true })}
               <div class="col-12">
-                <label class="form-label">輸入檔案</label>
-                <select class="form-select" name="step_${sid}_input_file" required>
-                  <option value="" disabled ${fileVal ? "" : "selected"}>${filePlaceholder}</option>
-                  ${fileOptions}
-                </select>
-              </div>
-              <div class="col-12">
-                <label class="form-label d-flex justify-content-between align-items-center">
+                <div class="form-label d-flex justify-content-between align-items-center">
                   <span>${sectionLabel}</span>
-                  <span class="form-check d-flex align-items-center gap-1 m-0">
-                    <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
-                    <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-                    <span class="small text-muted">擷取小標題內容</span>
-                  </span>
-                </label>
-                <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${sectionPlaceholder} ${titlePlaceholder}" data-section="step_${sid}_${sectionKey}" data-title="step_${sid}_target_chapter_title">
+                  <div class="d-flex align-items-center gap-3 m-0">
+                    <div class="form-check d-flex align-items-center gap-1 m-0">
+                      <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
+                      <input class="form-check-input mt-0 bool-toggle toggle-subheading" type="checkbox" id="step_${sid}_use_chapter_title_chk" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+                      <label class="form-check-label small text-muted">擷取小標題內容</label>
+                    </div>
+                    <div class="form-check d-flex align-items-center gap-1 m-0">
+                      <input class="form-check-input mt-0 toggle-continuous-extract" type="checkbox" id="step_${sid}_continuous_extract" ${continuousExtractChecked ? "checked" : ""}>
+                      <label class="form-check-label small text-muted">連續擷取</label>
+                    </div>
+                  </div>
+                </div>
+                <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${sectionPlaceholder} ${titlePlaceholder}" data-section="step_${sid}_${sectionKey}" data-title="step_${sid}_target_chapter_title" data-raw="step_${sid}_target_chapter_ref_raw">
                 <input type="hidden" name="step_${sid}_${sectionKey}" value="${sectionVal}">
                 <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
+                <input type="hidden" name="step_${sid}_target_chapter_ref_raw" value="${rawChapterRef}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card bg-light border mt-3 continuous-card-wrap" style="${continuousExtractStyle}">
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
+              <i class="bi bi-arrow-left-right"></i>
+              連續擷取設定
+            </div>
+            <div class="row g-3">
+              <div class="col-12 continuous-end-wrap">
+                <label class="form-label">${explicitLabel}</label>
+                <input class="form-control continuous-end-input" name="step_${sid}_explicit_end_title" value="${explicitCombinedVal}" placeholder="${explicitPlaceholder}" ${continuousExtractDisabled}>
               </div>
             </div>
           </div>
@@ -913,16 +1649,17 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             </div>
           </div>
 
-          <div class="card bg-light border mt-3">
+        <div class="card bg-light border mt-3 extraction-rules-card">
             <div class="card-body">
               <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
                 <i class="bi bi-list-check"></i>
                 擷取規則
               </div>
               <div class="row g-2">
-                ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-4") : ""}
-                ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-4") : ""}
-                ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-4") : ""}
+                ${spec.inputs.includes("subheading_strict_match") ? renderBoolToggle("subheading_strict_match", strictLabel, "", "col-md-3") : ""}
+                ${spec.inputs.includes("hide_chapter_title") ? renderBoolToggle("hide_chapter_title", hideChapterTitleLabel, "", "col-md-3") : ""}
+                ${spec.inputs.includes("ignore_toc") ? renderBoolToggle("ignore_toc", ignoreTocLabel, "", "col-md-3") : ""}
+                ${spec.inputs.includes("ignore_header_footer") ? renderBoolToggle("ignore_header_footer", ignoreHeaderLabel, "", "col-md-3") : ""}
               </div>
             </div>
           </div>
@@ -984,12 +1721,41 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
       });
     }
+    const continuousExtractToggle = card.querySelector(".toggle-continuous-extract");
+    const continuousCardWrap = card.querySelector(".continuous-card-wrap");
+    const continuousEndWrap = card.querySelector(".continuous-end-wrap");
+    const continuousEndInput = card.querySelector(".continuous-end-input");
+    if (continuousExtractToggle && continuousCardWrap && continuousEndWrap && continuousEndInput) {
+      const syncContinuousExtract = () => {
+        const enabled = continuousExtractToggle.checked;
+        continuousCardWrap.style.display = enabled ? "" : "none";
+        continuousEndInput.disabled = !enabled;
+      };
+      continuousExtractToggle.addEventListener("change", syncContinuousExtract);
+      syncContinuousExtract();
+    }
     card.querySelectorAll(".chapter-ref").forEach(input => {
       input.addEventListener("input", () => syncChapterRefInput(input));
       syncChapterRefInput(input);
     });
     refreshTemplateSelects();
     updateOrder();
+    _applyRuleVisibility(card);
+
+    const updateSummary = () => {
+      const parts = [];
+      const fVal = card.querySelector(`[name="step_${sid}_input_file"]`)?.value;
+      if(fVal) parts.push(truncatePath(fVal));
+      const cRef = card.querySelector(`[name="step_${sid}_chapter_ref"]`)?.value;
+      if(cRef) parts.push(cRef);
+      const subVal = card.querySelector(`[name="step_${sid}_target_subtitle"]`)?.value;
+      if(subVal) parts.push(subVal);
+      const sumEl = card.querySelector(".step-summary");
+      if(sumEl) sumEl.textContent = parts.join(" | ");
+    };
+    card.addEventListener("input", updateSummary);
+    card.addEventListener("change", updateSummary);
+
     return;
   }
 
@@ -1018,14 +1784,15 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
 
     if (k === "input_file" && subtitleToggleSteps.includes(typeKey)) {
       const acceptFile = spec.accepts[k] || "file:docx";
-      const ext = acceptFile.split(":")[1];
-      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
-      const filePlaceholder = ext === "dir" ? "選擇資料夾" : "選擇檔案";
-      const selected = val ? "" : "selected";
-      return `<div class="col-12"><label class="form-label">${label}</label>
-               <select class="form-select" name="step_${sid}_${k}" required>
-                 <option value="" disabled ${selected}>${filePlaceholder}</option>${options}
-               </select></div>`;
+      return renderTaskFilePickerField({
+        sid,
+        key: k,
+        label,
+        value: val,
+        accept: acceptFile,
+        colClass: "col-12",
+        required: true
+      });
     }
 
     if (k === "template_index"){
@@ -1093,7 +1860,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                  <div class="form-check">
                    <input type="hidden" name="step_${sid}_${k}" value="${hiddenVal}">
                    <input class="form-check-input bool-toggle${extraClass}" type="checkbox" id="${inputId}" data-target="step_${sid}_${k}" ${checked}>
-                   <label class="form-check-label" for="${inputId}">${label}</label>
+                   <label class="form-check-label">${label}</label>
                  </div>
                </div>`;
       }
@@ -1147,14 +1914,15 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                <input class="form-control" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
     }
     if (accept.startsWith("file")){
-      const ext = accept.split(":")[1];
-      const options = (AVAILABLE_FILES[ext] || []).map(f => `<option value="${f}" ${val===f?"selected": ""}>${f}</option>`).join("");
-      const filePlaceholder = ext === "dir" ? "選擇資料夾" : "選擇檔案";
-      const selected = val ? "" : "selected";
-      return `<div class="col-md-6"><label class="form-label">${label}</label>
-               <select class="form-select" name="step_${sid}_${k}" required>
-                 <option value="" disabled ${selected}>${filePlaceholder}</option>${options}
-               </select></div>`;
+      return renderTaskFilePickerField({
+        sid,
+        key: k,
+        label,
+        value: val,
+        accept,
+        colClass: "col-md-6",
+        required: true
+      });
     }
     if (k === "align"){
       return `<div class="col-md-3"><label class="form-label">對齊</label>
@@ -1186,22 +1954,24 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       const targetVal = targetRaw === undefined || targetRaw === null ? "" : String(targetRaw);
       const sectionVal = getValue("target_chapter_section");
       const titleVal = getValue("target_chapter_title");
-      const chapterRefVal = [sectionVal, titleVal].filter(Boolean).join(" ");
+      const rawChapterRef = getValue("target_chapter_ref_raw");
+      const chapterRefVal = rawChapterRef || [sectionVal, titleVal].filter(Boolean).join(" ");
       const checkboxHtml = `
-        <span class="form-check d-flex align-items-center gap-1 m-0">
+        <div class="form-check d-flex align-items-center gap-1 m-0">
           <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
-          <input class="form-check-input bool-toggle toggle-subheading" type="checkbox" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-          <span class="small text-muted">擷取小標題內容</span>
-        </span>`;
+          <input class="form-check-input mt-0 bool-toggle toggle-subheading" type="checkbox" id="step_${sid}_use_chapter_title_chk" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
+          <label class="form-check-label small text-muted">擷取小標題內容</label>
+        </div>`;
       basicFields.push(`
         <div class="col-md-6">
-          <label class="form-label d-flex justify-content-between align-items-center">
+          <div class="form-label d-flex justify-content-between align-items-center">
             <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
             ${checkboxHtml}
-          </label>
-          <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"} ${FIELD_META.target_chapter_title?.placeholder || ""}" data-section="step_${sid}_target_chapter_section" data-title="step_${sid}_target_chapter_title">
+          </div>
+          <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"} ${FIELD_META.target_chapter_title?.placeholder || ""}" data-section="step_${sid}_target_chapter_section" data-title="step_${sid}_target_chapter_title" data-raw="step_${sid}_target_chapter_ref_raw">
           <input type="hidden" name="step_${sid}_target_chapter_section" value="${sectionVal}">
           <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
+          <input type="hidden" name="step_${sid}_target_chapter_ref_raw" value="${rawChapterRef}">
         </div>
         <div class="col-md-6">
           <label class="form-label">${targetLabel}</label>
@@ -1209,6 +1979,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         </div>
       `);
       handledKeys.add("target_chapter_section");
+      handledKeys.add("target_chapter_ref_raw");
       handledKeys.add(targetKey);
       handledKeys.add("use_chapter_title");
     }
@@ -1237,28 +2008,56 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     }
   }
 
+  const summaryKeys = [
+    "input_file",
+    "pdf_zip",
+    "target_chapter_section",
+    "target_section",
+    "target_caption_label",
+    "target_figure_title",
+    "target_figure_index",
+    "target_table_title",
+    "target_table_index",
+    "text"
+  ];
+  const getSummaryParts = () => {
+    const parts = [];
+    summaryKeys.forEach(k => {
+      if (spec.inputs.includes(k)) {
+        let val = getValue(k);
+        if (val) {
+          if (k === "text" && val.length > 20) val = val.substring(0, 20) + "...";
+          if (k === "input_file") val = truncatePath(val);
+          parts.push(val);
+        }
+      }
+    });
+    return parts;
+  };
+  const initialSummary = getSummaryParts().join(" | ");
   const collapseId = `collapse_${sid}`;
   let body = `
     <div class="card-header d-flex justify-content-between align-items-center py-2 bg-white">
       <div class="d-flex align-items-center step-toggle" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
         <i class="bi bi-chevron-right me-2 text-muted small transition-icon"></i>
-        <h2 class="h5 mb-0">
+        <div class="fw-bold mb-0">
           <span class="badge bg-secondary me-2 step-index"></span>
           ${spec.label}
-        </h2>
+        </div>
+        <div class="text-muted small ms-3 text-truncate step-summary">${initialSummary}</div>
       </div>
       <div class="btn-group">
         <div class="btn-group">
-          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入上方</button>
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" title="插入上方"><i class="bi bi-arrow-bar-up"></i></button>
           <ul class="dropdown-menu">${menuBefore}</ul>
         </div>
         <div class="btn-group">
-          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">插入下方</button>
+          <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" title="插入下方"><i class="bi bi-arrow-bar-down"></i></button>
           <ul class="dropdown-menu">${menuAfter}</ul>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')">上移</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')">下移</button>
-        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')">刪除</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')" title="上移"><i class="bi bi-arrow-up"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')" title="下移"><i class="bi bi-arrow-down"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')" title="刪除"><i class="bi bi-trash"></i></button>
       </div>
     </div>
     <div id="${collapseId}" class="collapse show step-content">
@@ -1279,11 +2078,11 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         ${subtitleFields.length ? subtitleFields.join("") : ""}
 
         ${ruleFields.length ? `
-        <div class="card bg-light border mt-3">
+        <div class="card bg-light border mt-3 extraction-rules-card">
           <div class="card-body">
             <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
               <i class="bi bi-list-check"></i>
-              選項與規則
+              擷取規則
             </div>
             <div class="row g-3">${ruleFields.join("")}</div>
           </div>
@@ -1334,6 +2133,26 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   }
   refreshTemplateSelects();
   updateOrder();
+  _applyRuleVisibility(card);
+
+  const updateSummary = () => {
+    const parts = [];
+    summaryKeys.forEach(k => {
+      if (spec.inputs.includes(k)) {
+        const el = card.querySelector(`[name="step_${sid}_${k}"]`);
+        let val = el ? el.value : "";
+        if (val) {
+          if (k === "text" && val.length > 20) val = val.substring(0, 20) + "...";
+          if (k === "input_file") val = truncatePath(val);
+          parts.push(val);
+        }
+      }
+    });
+    const sumEl = card.querySelector(".step-summary");
+    if (sumEl) sumEl.textContent = parts.join(" | ");
+  };
+  card.addEventListener("input", updateSummary);
+  card.addEventListener("change", updateSummary);
 }
 function removeStep(sid){
   const el = document.querySelector(`.card[data-sid="${sid}"]`);
@@ -1345,11 +2164,27 @@ function moveStep(sid, direction){
   if (!el) return;
   const sibling = direction === 'up' ? el.previousElementSibling : el.nextElementSibling;
   if (!sibling) return;
+  
+  // Apply move animation
   if (direction === 'up') {
     el.parentNode.insertBefore(el, sibling);
   } else {
     el.parentNode.insertBefore(sibling, el);
   }
+  
+  // Trigger visual feedback flash
+  el.classList.remove('step-moved-highlight');
+  void el.offsetWidth; // Trigger reflow to restart animation
+  el.classList.add('step-moved-highlight');
+
+  // Remove the highlight class after animation finishes to prevent style locking
+  setTimeout(() => {
+    el.classList.remove('step-moved-highlight');
+  }, 1200);
+
+  // Smooth scroll to follow the moved element
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  
   updateOrder();
 }
 function moveUp(sid){ moveStep(sid, 'up'); }
@@ -1361,6 +2196,21 @@ const renameFlowCount = document.getElementById('renameFlowCount');
 const renameFlowCurrentName = document.getElementById('renameFlowCurrentName');
 const renameFlowSubmitBtn = document.getElementById('renameFlowSubmitBtn');
 let renameModalInstance = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const addStepDropdownBtn = document.getElementById('addStepDropdownBtn');
+  if (addStepDropdownBtn && typeof bootstrap !== 'undefined' && bootstrap.Dropdown) {
+    bootstrap.Dropdown.getOrCreateInstance(addStepDropdownBtn, {
+      boundary: document.body,
+      popperConfig(defaultBsPopperConfig) {
+        return {
+          ...defaultBsPopperConfig,
+          strategy: 'fixed',
+        };
+      },
+    });
+  }
+});
 
 document.addEventListener('DOMContentLoaded', () => {
   if (renameFlowModalEl && typeof bootstrap !== 'undefined') {
@@ -1379,11 +2229,11 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('請輸入流程名稱');
         return;
       }
-      if (newName.length > 60) {
-        alert('流程名稱長度不可超過 60 字');
+      if (newName.length > 50) {
+        alert('流程名稱長度不可超過 50 字');
         return;
       }
-      submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name: newName });
+      submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name: newName, fpage: String(CURRENT_FLOW_PAGE) });
       renameModalInstance.hide();
     });
   }
@@ -1396,13 +2246,13 @@ function renameFlow(current){
     renameFlowInput.dispatchEvent(new Event('input'));
     renameModalInstance.show();
   } else {
-    const name = prompt('輸入新流程名稱 (最多 60 字)', current);
+    const name = prompt('輸入新流程名稱 (最多 50 字)', current);
     if(!name) return;
-    if (name.length > 60) {
-      alert('流程名稱長度不可超過 60 字');
+    if (name.length > 50) {
+      alert('流程名稱長度不可超過 50 字');
       return;
     }
-    submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name });
+    submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name, fpage: String(CURRENT_FLOW_PAGE) });
   }
 }
 if (PRESET_FLOW){
@@ -1411,22 +2261,71 @@ if (PRESET_FLOW){
   }
 }
 
+const toggleRuleVisibilitySwitch = document.getElementById('toggleRuleVisibilitySwitch');
+showExtractionRules = _loadRuleVisibilityPreference();
+_syncRuleToggleSwitch();
+_applyRuleVisibility(document);
+
 const toggleAllStepsBtn = document.getElementById('toggleAllStepsBtn');
 let allCollapsed = false;
+let isBulkOperating = false; // Flag to prevent highlighting during bulk actions
+
 document.addEventListener('DOMContentLoaded', () => {
+  if (toggleRuleVisibilitySwitch) {
+    toggleRuleVisibilitySwitch.addEventListener('change', () => {
+      _setRuleVisibility(toggleRuleVisibilitySwitch.checked);
+    });
+  }
   if (toggleAllStepsBtn && typeof bootstrap !== 'undefined') {
     toggleAllStepsBtn.addEventListener('click', () => {
+      isBulkOperating = true; // Lock highlighting
+      
       const collapses = document.querySelectorAll('.step-content');
       allCollapsed = !allCollapsed;
+      
       collapses.forEach(el => {
         const bsCollapse = bootstrap.Collapse.getOrCreateInstance(el);
         if (allCollapsed) bsCollapse.hide();
         else bsCollapse.show();
       });
+      
+      // If collapsing all, remove all active highlights immediately
+      if (allCollapsed) {
+        document.querySelectorAll('#steps > .card.is-active').forEach(c => c.classList.remove('is-active'));
+      }
+      
       toggleAllStepsBtn.innerHTML = allCollapsed ? '<i class="bi bi-arrows-expand"></i> 全部展開' : '<i class="bi bi-arrows-collapse"></i> 全部收合';
+      
+      // Release lock after a short delay to allow events to settle
+      setTimeout(() => { isBulkOperating = false; }, 100);
     });
   }
+
+  // Handle active step highlighting (Exclusive)
+  document.getElementById('steps').addEventListener('show.bs.collapse', (e) => {
+    if (isBulkOperating) return; // Skip during bulk expand
+    
+    if (e.target.classList.contains('step-content')) {
+      // Remove is-active from ALL cards first
+      document.querySelectorAll('#steps > .card.is-active').forEach(c => c.classList.remove('is-active'));
+      
+      const card = e.target.closest('.card');
+      if (card) card.classList.add('is-active');
+    }
+  });
+  
+  document.getElementById('steps').addEventListener('hide.bs.collapse', (e) => {
+    if (isBulkOperating) return; // Skip during bulk collapse
+    
+    if (e.target.classList.contains('step-content')) {
+      const card = e.target.closest('.card');
+      if (card) card.classList.remove('is-active');
+    }
+  });
 });
+
+
+
 
 const flowNameInput = document.getElementById('flowNameInput');
 const flowNameCount = document.getElementById('flowNameCount');
@@ -1444,3 +2343,4 @@ isInitialising = false;
 </script>
 
 {% endblock %}
+

@@ -11,3 +11,25 @@
 .model-list td.col-display_name {
   white-space: nowrap;
 }
+
+/* Sidebar width override to match system sidebar */
+@media (min-width: 768px) {
+  .main-sidebar,
+  .main-sidebar::before,
+  .brand-link {
+    width: clamp(160px, 12vw, 180px) !important;
+  }
+
+  .content-wrapper,
+  .main-header,
+  .main-footer {
+    margin-left: clamp(160px, 12vw, 180px) !important;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .table th,
+  .model-list td.col-display_name {
+    white-space: normal;
+  }
+}

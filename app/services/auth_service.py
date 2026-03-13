@@ -573,58 +573,142 @@ class AuditLogView(BaseView):
             abort(403)
         return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
 
-    def _load_entries(self, task_id: str, limit: int = 200) -> list[dict]:
-        task_root = current_app.config.get("TASK_FOLDER", "")
-        task_dir = os.path.join(task_root, task_id)
-        log_path = os.path.join(task_dir, "task_log.jsonl")
-        if not os.path.isdir(task_dir) or not os.path.exists(log_path):
-            return []
-        entries: list[dict] = []
-        try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        entries.append(json.loads(line))
-                    except Exception:
-                        continue
-        except Exception:
-            current_app.logger.exception("Failed to load audit log")
-            return []
-        entries.reverse()
-        if limit and len(entries) > limit:
-            entries = entries[:limit]
-        return entries
+    def _get_db_logs(
+        self, 
+        task_id: Optional[str] = None, 
+        page: int = 1,
+        per_page: int = 50,
+        q: Optional[str] = None,
+        action: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> tuple[list[dict], dict]:
+        from modules.auth_models import AuditLog
+        from datetime import datetime
+        query = AuditLog.query
+        
+        if task_id:
+            query = query.filter_by(task_id=task_id)
+        if action:
+            query = query.filter(AuditLog.action.ilike(f"%{action}%"))
+        if q:
+            # 搜尋動作、工號或詳情內容
+            search = f"%{q}%"
+            query = query.filter(
+                (AuditLog.action.ilike(search)) | 
+                (AuditLog.work_id.ilike(search)) | 
+                (AuditLog.detail.ilike(search))
+            )
+        if start_date:
+            try:
+                dt_start = datetime.strptime(f"{start_date} 00:00:00", "%Y-%m-%d %H:%M:%S")
+                query = query.filter(AuditLog.created_at >= dt_start)
+            except ValueError: pass
+        if end_date:
+            try:
+                dt_end = datetime.strptime(f"{end_date} 23:59:59", "%Y-%m-%d %H:%M:%S")
+                query = query.filter(AuditLog.created_at <= dt_end)
+            except ValueError: pass
+        
+        total_count = query.count()
+        total_pages = (total_count + per_page - 1) // per_page
+        page = max(1, min(page, total_pages)) if total_pages > 0 else 1
+        
+        logs = query.order_by(AuditLog.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+        
+        entries = []
+        for log in logs:
+            try:
+                detail = json.loads(log.detail) if log.detail else {}
+            except Exception:
+                detail = {"raw": log.detail}
+            
+            entries.append({
+                "ts": log.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "action": log.action,
+                "actor": {"work_id": log.work_id},
+                "detail": detail,
+                "task_id": log.task_id
+            })
+            
+        pagination = {
+            "total_count": total_count,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages
+        }
+        return entries, pagination
 
     @expose("/", methods=["GET"])
     def index(self):
         tasks = list_tasks()
         task_id = (request.args.get("task_id") or "").strip()
-        entries = self._load_entries(task_id) if task_id else []
-        has_file = False
-        if task_id:
-            task_root = current_app.config.get("TASK_FOLDER", "")
-            log_path = os.path.join(task_root, task_id, "task_log.jsonl")
-            has_file = os.path.exists(log_path)
+        q = (request.args.get("q") or "").strip()
+        action = (request.args.get("action") or "").strip()
+        start_date = (request.args.get("start_date") or "").strip()
+        end_date = (request.args.get("end_date") or "").strip()
+        
+        try:
+            page = int(request.args.get("page", 1))
+        except (ValueError, TypeError):
+            page = 1
+
+        entries, pagination = self._get_db_logs(
+            task_id=task_id if task_id else None,
+            page=page,
+            q=q if q else None,
+            action=action if action else None,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None
+        )
+        
+        has_file = True # In DB mode, we can always "generate" a file
         return self.render(
             "admin/audit_logs.html",
             tasks=tasks,
             task_id=task_id,
+            q=q,
+            action=action,
+            start_date=start_date,
+            end_date=end_date,
             entries=entries,
+            pagination=pagination,
             has_file=has_file,
         )
 
     @expose("/download", methods=["GET"])
     def download(self):
+        from io import BytesIO
         task_id = (request.args.get("task_id") or "").strip()
-        task_root = current_app.config.get("TASK_FOLDER", "")
-        task_dir = os.path.join(task_root, task_id)
-        log_path = os.path.join(task_dir, "task_log.jsonl")
-        if not task_id or not os.path.isdir(task_dir) or not os.path.exists(log_path):
-            abort(404)
-        return send_file(log_path, as_attachment=True, download_name=f"audit_{task_id}.jsonl")
+        q = (request.args.get("q") or "").strip()
+        action = (request.args.get("action") or "").strip()
+        start_date = (request.args.get("start_date") or "").strip()
+        end_date = (request.args.get("end_date") or "").strip()
+
+        entries = self._get_db_logs(
+            task_id=task_id if task_id else None,
+            q=q if q else None,
+            action=action if action else None,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None,
+            limit=2000
+        )
+        
+        output = BytesIO()
+        for entry in reversed(entries):
+            line = json.dumps(entry, ensure_ascii=False) + "\n"
+            output.write(line.encode("utf-8"))
+        
+        output.seek(0)
+        filename = f"audit_{task_id if task_id else 'global'}.jsonl"
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/x-jsonlines"
+        )
 
 
 def register_auth_context(app) -> None:

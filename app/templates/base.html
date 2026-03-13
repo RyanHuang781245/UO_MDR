@@ -7,15 +7,204 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="{{ url_for('static', filename='file-tree.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='responsive-fixes.css') }}" rel="stylesheet">
     <style>
-      .navbar .dropdown-toggle::after { display: none; }
-      .navbar { padding-top: 0; padding-bottom: 0; }
-      .navbar .container-fluid { align-items: stretch; }
+      :root {
+        --bs-blue-50: #eff6ff;
+        --bs-blue-100: #dbeafe;
+        --bs-blue-600: #2563eb;
+        --bs-emerald-50: #ecfdf5;
+        --bs-emerald-700: #047857;
+        --bs-gray-200: #e2e8f0;
+        --bs-gray-500: #64748b;
+      }
+
+      body {
+        background-color: #f8fafc;
+        color: #334155;
+      }
+
+      /* 防止 Bootstrap 在 Modal 開啟時造成位移 */
+      body.modal-open {
+        padding-right: 0 !important;
+      }
+      .modal {
+        padding-right: 0 !important;
+      }
+
+      .main-card {
+        border: 1px solid var(--bs-gray-200);
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: white;
+        overflow: hidden;
+        margin-bottom: 2rem;
+      }
+
+      /* Tabs Styling */
+      .nav-tabs-custom {
+        border-bottom: 1px solid var(--bs-gray-200);
+        display: flex;
+        gap: 0.5rem;
+        padding: 0 1rem;
+        margin-bottom: 1rem;
+      }
+      .nav-tabs-custom .nav-link {
+        border: none;
+        color: var(--bs-gray-500);
+        font-weight: 500;
+        padding: 0.75rem 1rem;
+        position: relative;
+        background: none;
+        text-decoration: none;
+      }
+      .nav-tabs-custom .nav-link.active {
+        color: var(--bs-blue-600);
+      }
+      .nav-tabs-custom .nav-link.active::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background-color: var(--bs-blue-600);
+      }
+
+      /* Table Standards */
+      table thead th {
+        background-color: #f8fafc;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 700;
+        color: var(--bs-gray-500);
+        padding: 0.75rem 1rem;
+        text-align: center;
+        border-bottom: 1px solid var(--bs-gray-200);
+      }
+      table tbody td {
+        font-size: 0.875rem;
+        color: #334155;
+        padding: 0.75rem 1rem;
+        vertical-align: middle;
+        text-align: center;
+      }
+      .row-selected {
+        background-color: rgba(37, 99, 235, 0.03) !important;
+      }
+
+      /* Status Badges */
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.65rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        border: 1px solid transparent;
+      }
+      .status-badge-completed {
+        background-color: var(--bs-emerald-50);
+        color: var(--bs-emerald-700);
+        border-color: #d1fae5;
+      }
+      .status-badge-failed {
+        background-color: #fef2f2;
+        color: #b91c1c;
+        border-color: #fee2e2;
+      }
+      .status-badge-running {
+        background-color: var(--bs-blue-50);
+        color: var(--bs-blue-600);
+        border-color: var(--bs-blue-100);
+      }
+      .status-badge-queued {
+        background-color: #f8fafc;
+        color: var(--bs-gray-500);
+        border-color: var(--bs-gray-200);
+      }
+
+      /* Animations */
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .spin {
+        animation: spin 2s linear infinite;
+        display: inline-block;
+      }
+
+      /* Action Icons */
+      .btn-action-icon {
+        color: #94a3b8;
+        padding: 0.4rem;
+        border-radius: 0.375rem;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        text-decoration: none;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+      }
+      .btn-action-icon:hover {
+        color: var(--bs-blue-600);
+        background-color: var(--bs-blue-50);
+      }
+
+      /* Custom Scrollbar */
+      .custom-scrollbar::-webkit-scrollbar {
+        height: 4px;
+        width: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #e2e8f0;
+        border-radius: 10px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #cbd5e1;
+      }
+
+      .navbar { 
+        padding-top: 0; 
+        padding-bottom: 0; 
+        min-height: 56px; 
+        position: fixed;
+        top: 0;
+        width: 100%;
+        z-index: 1030;
+      }
+      .navbar .container-fluid { align-items: stretch; min-width: 0; gap: 0.5rem; }
       .navbar .navbar-brand,
       .navbar .navbar-actions {
         display: flex;
         align-items: center;
         height: 100%;
+      }
+      .navbar .navbar-brand {
+        min-width: 0;
+        max-width: min(58vw, 420px);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .navbar .navbar-actions {
+        min-width: 0;
+      }
+      .navbar .dropdown-toggle .fw-semibold {
+        display: inline-block;
+        min-width: 0;
+        max-width: min(42vw, 240px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: middle;
       }
       .navbar .dropdown,
       .navbar .dropdown-toggle {
@@ -23,20 +212,91 @@
         display: flex;
         align-items: center;
       }
+      .row > main {
+        min-width: 0;
+        padding-top: 56px; /* Offset for fixed navbar */
+      }
       @media (min-width: 768px) {
         .sidebar-width {
-          width: 200px;
+          width: clamp(160px, 12vw, 180px);
+          position: fixed;
+          top: 56px;
+          bottom: 0;
+          overflow-y: auto;
+          z-index: 1025;
         }
+        main.col-md {
+          margin-left: clamp(160px, 12vw, 180px) !important;
+        }
+      }
+      @media (max-width: 767.98px) {
+        #sidebarMenu {
+          display: none;
+        }
+        #sidebarMenu.sidebar-mobile-open {
+          display: block;
+        }
+        #sidebarMenu .position-sticky {
+          position: static !important;
+          top: auto !important;
+          height: auto !important;
+          max-height: 45vh;
+          overflow-y: auto;
+        }
+        .navbar .navbar-brand {
+          max-width: 42vw;
+        }
+        .navbar .dropdown-toggle {
+          max-width: 52vw;
+        }
+      }
+      .sidebar-collapsed {
+        display: none !important;
+      }
+      .sidebar-collapsed + main.col-md {
+        margin-left: 0 !important;
+      }
+
+      /* Sidebar Active States */
+      #sidebarMenu .nav-link {
+        border-radius: 0.375rem;
+        margin: 0.1rem 0.75rem;
+        padding: 0.6rem 0.75rem;
+        transition: all 0.2s;
+      }
+      #sidebarMenu .nav-link:hover {
+        background-color: var(--bs-blue-50);
+        color: var(--bs-blue-600) !important;
+      }
+      #sidebarMenu .nav-link.active {
+        background-color: var(--bs-blue-50);
+        color: var(--bs-blue-600) !important;
+        font-weight: 600;
+      }
+      #sidebarMenu .nav-link.active i {
+        color: var(--bs-blue-600);
       }
     </style>
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
+    <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
       <div class="container-fluid d-flex justify-content-between">
-        <a class="navbar-brand fw-bold me-auto d-flex align-items-center" href="{{ url_for('tasks_bp.tasks') }}">
-          <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="me-2" style="height:30px;">
-          法規文件轉換平台
-        </a>
+        <button class="btn btn-link link-dark p-0 me-3" id="sidebarToggle" type="button">
+          <i class="bi bi-list fs-4"></i>
+        </button>
+        <div class="d-flex align-items-center me-auto overflow-hidden">
+          <a class="navbar-brand fw-bold d-flex align-items-center me-2" href="{{ url_for('tasks_bp.tasks') }}">
+            <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="me-2" style="height:30px;">
+            <span class="d-none d-sm-inline">法規文件轉換平台</span>
+          </a>
+          {% if task and task.name %}
+          <div class="d-flex align-items-center text-muted gap-2 overflow-hidden" style="font-size: 0.975rem;">
+            <i class="bi bi-chevron-right small"></i>
+              {{ task.name }}
+            </span>
+          </div>
+          {% endif %}
+        </div>
         <div class="navbar-actions d-flex align-items-center gap-2">
           {% if not auth_enabled %}
             <span class="text-muted small">Auth disabled</span>
@@ -46,7 +306,7 @@
             <div class="dropdown">
               <button class="btn btn-link text-dark text-decoration-none dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="bi bi-person-circle fs-5 me-2"></i>
-                <span class="fw-semibold">{{ current_user.work_id }}</span>
+                <span class="fw-semibold">{{ current_user.display_name }}</span>
               </button>
               <ul class="dropdown-menu dropdown-menu-end shadow">
                 <li class="px-3 py-2">
@@ -63,7 +323,7 @@
                     </a>
                   </li>
                 {% endif %}
-                <li><hr class="dropdown-divider"></li>
+                <!-- <li><hr class="dropdown-divider"></li> -->
                 <li>
                   <a class="dropdown-item text-danger" href="{{ url_for('auth_bp.logout') }}">
                     <i class="bi bi-box-arrow-right me-2"></i>登出
@@ -81,48 +341,50 @@
     {% endset %}
     {% set show_sidebar = sidebar_setting|trim == 'true' %}
     <div class="{{ 'container-fluid' if show_sidebar else 'container' }}">
-      <div class="row">
+      <div class="row g-0">
         {% if show_sidebar %}
-        <nav class="col-md-auto d-md-block bg-light border-end sidebar-width" style="min-height: calc(100vh - 56px);">
+        <nav id="sidebarMenu" class="col-12 col-md-auto bg-light border-end sidebar-width" style="min-height: calc(100vh - 56px);">
           <div class="position-sticky pt-3" style="top: 56px; height: calc(100vh - 56px); overflow-y: auto;">
             {% block sidebar %}
               <ul class="nav flex-column">
                 <li class="nav-item">
-                  <a class="nav-link link-dark" href="{{ url_for('tasks_bp.tasks') }}">
+                  <a class="nav-link link-dark {{ 'active' if request.path == url_for('tasks_bp.tasks') else '' }}" href="{{ url_for('tasks_bp.tasks') }}">
                     <i class="bi bi-list-task me-2"></i>
                     任務管理
                   </a>
-                  <a class="nav-link link-dark" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
+                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flows_bp.global_batch_page' else '' }}" href="{{ url_for('flows_bp.global_batch_page') }}">
+                    <i class="bi bi-calendar2-week me-2"></i>
+                    排程中心
+                  </a>
+                  {% if task and task.id %}
+                  <a class="nav-link link-dark {{ 'active' if request.path == url_for('tasks_bp.task_detail', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
                     <i class="bi bi-info-circle me-2"></i>
                     任務詳情
                   </a>
-                  <a class="nav-link link-dark" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
+                  <a class="nav-link link-dark {{ 'active' if request.path == url_for('tasks_bp.task_mapping', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
                     <i class="bi bi-diagram-3-fill me-2"></i>
                     Mapping
                   </a>
-                  <a class="nav-link link-dark" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
+                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flows_bp.flow_builder' and '/batch' not in request.path else '' }}" href="{{ url_for('flows_bp.flow_builder', task_id=task.id) }}">
                     <i class="bi bi-diagram-3 me-2"></i>
                     流程管理
                   </a>
-                  <a class="nav-link link-dark" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
+                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flows_bp.flow_results' else '' }}" href="{{ url_for('flows_bp.flow_results', task_id=task.id) }}">
                     <i class="bi bi-clipboard-check me-2"></i>
                     執行結果
                   </a>
-                  <a class="nav-link link-dark" href="{{ url_for('flows_bp.flow_batch_page', task_id=task.id) }}">
-                    <i class="bi bi-calendar2-week me-2"></i>
-                    排程管理
-                  </a>
-                  <a class="nav-link link-dark" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
+                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'tasks_bp.task_copy_files' else '' }}" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
                     <i class="bi bi-folder-symlink me-2"></i>
                     複製檔案
                   </a>
+                  {% endif %}
                 </li>
               </ul>
             {% endblock %}
           </div>
         </nav>
         {% endif %}
-        <main class="{{ 'col-md ms-sm-auto px-md-4' if show_sidebar else 'col-12' }} my-4">
+        <main class="{{ 'col-12 col-md ms-sm-auto px-2 px-md-4' if show_sidebar else 'col-12 px-2 px-md-0' }} my-4">
           <div id="flashMessages">
             {% with messages = get_flashed_messages(with_categories=true) %}
               {% if messages %}
@@ -138,5 +400,50 @@
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='file-tree.js') }}"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const toggleBtn = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebarMenu');
+
+        if (toggleBtn && sidebar) {
+          const mobileQuery = window.matchMedia('(max-width: 767.98px)');
+
+          const applySidebarState = () => {
+            sidebar.classList.remove('sidebar-mobile-open');
+            if (mobileQuery.matches) {
+              sidebar.classList.remove('sidebar-collapsed');
+              return;
+            }
+            const collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+            sidebar.classList.toggle('sidebar-collapsed', collapsed);
+          };
+
+          applySidebarState();
+
+          if (mobileQuery.addEventListener) {
+            mobileQuery.addEventListener('change', applySidebarState);
+          } else if (mobileQuery.addListener) {
+            mobileQuery.addListener(applySidebarState);
+          }
+
+          toggleBtn.addEventListener('click', () => {
+            if (mobileQuery.matches) {
+              sidebar.classList.toggle('sidebar-mobile-open');
+              return;
+            }
+            sidebar.classList.toggle('sidebar-collapsed');
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('sidebar-collapsed'));
+          });
+
+          sidebar.addEventListener('click', (event) => {
+            if (!mobileQuery.matches) return;
+            if (!event.target.closest('a')) return;
+            sidebar.classList.remove('sidebar-mobile-open');
+          });
+        } else if (toggleBtn && !sidebar) {
+          toggleBtn.style.display = 'none';
+        }
+      });
+    </script>
   </body>
 </html>

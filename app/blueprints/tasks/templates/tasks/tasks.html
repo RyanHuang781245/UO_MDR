@@ -1,112 +1,453 @@
 ﻿{% extends "base.html" %}
 {% block enable_sidebar %}false{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3 fw-bold">任務管理列表</h1>
-<p class="form-text">請輸入任務名稱，選擇 NAS 存取路徑，任務描述可選填，設定完成後建立新任務。</p>
+<style>
+    :root {
+        --bs-blue-50: #eff6ff;
+        --bs-blue-100: #dbeafe;
+        --bs-blue-600: #2563eb;
+        --bs-emerald-50: #ecfdf5;
+        --bs-emerald-700: #047857;
+    }
 
-<form action="{{ url_for('tasks_bp.create_task') }}" method="post" class="card card-body mb-4" id="createTaskForm">
-  <div class="row g-3">
-    <div class="col-md-5">
-      <label class="form-label fw-bold">任務名稱</label>
-      <input class="form-control" name="task_name" placeholder="輸入任務名稱 (中英文)">
-    </div>
-    <div class="col-md-5">
-      <label class="form-label fw-bold">NAS 存取路徑</label>
-      <div class="input-group">
-        <input class="form-control" type="text" name="nas_path" id="nasPathInput" placeholder="輸入相對路徑，例如 /1-系統開發/測試專案" required>
-        <button
-          class="btn btn-outline-secondary"
-          type="button"
-          data-bs-toggle="modal"
-          data-bs-target="#nasBrowserModal"
-          id="openNasBrowserBtn"
-          {% if not allowed_nas_roots %}disabled{% endif %}
-        >瀏覽</button>
-      </div>
-      <input type="hidden" name="nas_root_index" id="nasRootIndexInput" value="">
-    </div>
-    <div class="col-md-2 d-grid align-items-end">
-      <button class="btn btn-primary" type="submit">建立任務</button>
-    </div>
-    <div class="col-md-12">
-      <label class="form-label fw-bold">任務描述</label>
-      <textarea class="form-control" name="task_desc" placeholder="輸入任務描述 (可選填，中英文皆可)"></textarea>
-    </div>
-  </div>
-</form>
+    .main-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        background: white;
+        overflow: hidden;
+    }
 
-<div class="task-loading-overlay d-none" id="taskLoadingOverlay" aria-live="polite" aria-busy="false">
-  <div class="task-loading-box">
-    <div class="spinner-border text-secondary me-3" role="status" aria-hidden="true"></div>
-    <div class="fw-semibold">處理中，請稍候...</div>
-  </div>
+    /* Dynamic Toolbar */
+    .toolbar-container {
+        min-height: 80px;
+        padding: 1rem 1.5rem;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .filter-bar {
+        display: flex;
+        width: 100%;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .action-bar {
+        background-color: var(--bs-blue-50);
+        border: 1px solid var(--bs-blue-100);
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+        display: none; /* 預設隱藏 */
+        width: 100%;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    /* Form Controls */
+    .form-control-custom {
+        border: 1px solid #e2e8f0;
+        font-size: 0.875rem;
+        padding: 0.5rem 0.75rem;
+    }
+    textarea.form-control-custom {
+        resize: vertical;
+        min-height: 60px;
+        max-height: 250px;
+    }
+    .search-wrapper {
+        position: relative;
+        flex: 1;
+        min-width: 250px;
+    }
+    .search-wrapper i {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+    }
+    .search-wrapper input {
+        padding-left: 2.25rem;
+    }
+
+    .btn-action-icon {
+        background: transparent;
+        border: 1px solid #e2e8f0;
+        color: #64748b;
+        padding: 0.4rem 0.75rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+    .btn-action-icon:hover {
+        background: #f8fafc;
+        color: var(--bs-blue-600);
+        border-color: var(--bs-blue-100);
+    }
+    .btn-action-icon.text-danger:hover {
+        color: #dc3545;
+        background: #fff5f5;
+        border-color: #feb2b2;
+    }
+    .task-pin-toggle.is-pinned {
+        color: var(--bs-blue-600);
+        border-color: var(--bs-blue-100);
+        background: var(--bs-blue-50);
+    }
+    .task-pinned-row:not(.row-selected) {
+        background: rgba(37, 99, 235, 0.03);
+    }
+
+    /* Loading Overlay & Drawer */
+    .task-loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        pointer-events: all;
+    }
+    .task-loading-box {
+        background: #fff;
+        border-radius: 8px;
+        padding: 16px 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        min-width: 260px;
+        justify-content: center;
+    }
+    .task-desc-drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.35);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+        z-index: 1040;
+    }
+    .task-desc-drawer-backdrop.is-open {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .task-desc-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100vh;
+        width: min(90vw, 420px);
+        background: #fff;
+        box-shadow: -12px 0 28px rgba(0, 0, 0, 0.18);
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+        z-index: 1050;
+        display: flex;
+        flex-direction: column;
+    }
+    .task-desc-drawer.is-open {
+        transform: translateX(0);
+    }
+    .task-desc-drawer-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .task-desc-drawer-body {
+        padding: 16px;
+        word-break: break-word;
+        overflow: auto;
+        flex: 1;
+    }
+    .task-detail-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        margin-bottom: 10px;
+    }
+    .task-detail-label {
+        color: #64748b;
+        font-weight: 600;
+        min-width: 90px;
+    }
+    .task-detail-value {
+        color: #0f172a;
+        text-align: right;
+        flex: 1;
+        word-break: break-word;
+    }
+    .task-desc-truncate {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 250px; /* 設定一個最大寬度以觸發省略號 */
+    }
+    .task-desc-drawer-open {
+        overflow: hidden;
+    }
+
+    .task-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        z-index: 1052;
+    }
+    .task-modal-overlay.is-open {
+        display: flex;
+    }
+    .task-modal-panel {
+        width: min(560px, 96vw);
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.28);
+        overflow: hidden;
+    }
+    .task-modal-panel.task-modal-panel-sm {
+        width: min(420px, 96vw);
+    }
+    .task-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.875rem 1rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .task-modal-body {
+        padding: 1rem;
+    }
+    .task-modal-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        padding: 0.875rem 1rem;
+        border-top: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+    .task-copy-warning {
+        margin-top: 0.75rem;
+        border: 1px solid #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+        border-radius: 0.5rem;
+        padding: 0.625rem 0.75rem;
+        font-size: 0.875rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+</style>
+<div class="container-fluid px-0">
+    <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">任務管理</h1>
+            <p class="text-muted mb-0 small">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑</p>
+        </div>
+        <a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('flows_bp.global_batch_page') }}">
+            <i class="bi bi-calendar2-week"></i>
+            排程中心
+        </a>
+    </div>
+
+    <!-- 建立任務表單 -->
+    <div class="main-card p-4 mb-4">
+        <form action="{{ url_for('tasks_bp.create_task') }}" method="post" id="createTaskForm">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold text-uppercase text-muted">任務名稱</label>
+                    <input class="form-control form-control-custom rounded-2" name="task_name" placeholder="輸入任務名稱 (中英文)">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small fw-bold text-uppercase text-muted">NAS 存取路徑</label>
+                    <div class="input-group">
+                        <input class="form-control form-control-custom rounded-2" type="text" name="nas_path" id="nasPathInput" placeholder="例如 /1-系統開發/測試專案" required>
+                        <button class="btn btn-outline-secondary px-3" type="button" data-bs-toggle="modal" data-bs-target="#nasBrowserModal" id="openNasBrowserBtn" {% if not allowed_nas_roots %}disabled{% endif %}>瀏覽</button>
+                    </div>
+                    <input type="hidden" name="nas_root_index" id="nasRootIndexInput" value="">
+                </div>
+                <div class="col-md-2 d-grid align-items-end">
+                    <button class="btn btn-primary fw-bold" type="submit">
+                        <i class="bi bi-plus-lg me-1"></i>
+                        建立任務
+                    </button>
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label small fw-bold text-uppercase text-muted">任務描述 (選填)</label>
+                    <textarea class="form-control form-control-custom rounded-2" name="task_desc" rows="2" placeholder="輸入任務描述..."></textarea>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="task-loading-overlay d-none" id="taskLoadingOverlay" aria-live="polite" aria-busy="false">
+        <div class="task-loading-box">
+            <div class="spinner-border text-primary me-3" role="status" aria-hidden="true"></div>
+            <div class="fw-semibold">處理中，請稍候...</div>
+        </div>
+    </div>
+
+    <!-- 任務列表 -->
+    <div class="main-card">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0">現有任務</h5>
+            <!-- <div class="text-muted small">共 <span id="totalTaskCount">{{ tasks|length }}</span> 個任務</div> -->
+            <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆任務 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
+        </div>
+
+        <!-- Toolbar Section -->
+        <div class="toolbar-container">
+            <!-- Filter Bar -->
+            <div id="filterBar" class="filter-bar">
+                <div class="search-wrapper">
+                    <i class="bi bi-search"></i>
+                    <input type="text" id="taskSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋任務名稱或描述...">
+                </div>
+            </div>
+
+            <!-- Action Bar (Show when selected) -->
+            <div id="actionBar" class="action-bar">
+                <div class="d-flex align-items-center gap-3">
+                    <button class="btn btn-link p-1 text-primary" id="clearSelectionBtn">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                    <span class="fw-semibold text-primary small" id="selectionText">已選取 0 項任務</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary btn-sm px-3 d-flex align-items-center gap-2 shadow-sm" id="createGlobalBatchBtn">
+                        <i class="bi bi-calendar2-week"></i> 加入排程執行
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="table-responsive" style="overflow: visible;">
+            <table class="table mb-0 align-middle">
+                <thead style="background-color: #f8fafc;">
+                    <tr>
+                        <th style="width: 60px;" class="text-center py-3 align-middle">
+                            <input type="checkbox" class="form-check-input" id="masterCheckbox">
+                        </th>
+                        <th class="fw-bold text-uppercase text-muted py-3 text-start" style="width: 25%; letter-spacing: 0.05em;">任務名稱</th>
+                        <th class="fw-bold text-uppercase text-muted py-3 text-start" style="letter-spacing: 0.05em;">任務描述</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="width: 15%; letter-spacing: 0.05em;">建立人員</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="width: 18%; letter-spacing: 0.05em;">建立時間</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="letter-spacing: 0.05em;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="taskTableBody">
+                    {% for t in tasks %}
+                    <tr class="task-row" data-task-id="{{ t.id }}">
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input task-select" value="{{ t.id }}">
+                        </td>
+                        <td class="text-start">
+                            <a class="text-decoration-none fw-bold text-primary task-desc-truncate d-block" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}" title="{{ t.name }}">
+                                {{ t.name }}
+                            </a>
+                        </td>
+                        <td class="text-start">
+                            {% if t.description %}
+                                <div class="task-desc-truncate text-muted" style="font-size: 0.875rem;" title="{{ t.description }}">{{ t.description }}</div>
+                            {% else %}
+                                <span class="text-muted" style="font-size: 0.875rem;">-</span>
+                            {% endif %}
+                            <span class="task-id-data d-none">{{ t.id }}</span>
+                            <span class="task-desc-data d-none">{{ t.description or "" }}</span>
+                            <span class="task-nas-data d-none">{{ t.nas_path or "" }}</span>
+                            <span class="task-creator-data d-none">{{ t.creator or "-" }}</span>
+                            <span class="task-created-data d-none">{{ t.created }}</span>
+                            <span class="task-last-editor-data d-none">{{ t.last_editor or "-" }}</span>
+                            <span class="task-last-edited-data d-none">{{ t.last_edited or "-" }}</span>
+                        </td>
+                        <td class="text-muted" style="font-size: 0.875rem;">{{ t.creator or '-' }}</td>
+                        <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ t.created }}</td>
+                        <td>
+                            <div class="d-flex justify-content-center gap-1">
+                                <button class="btn-action-icon task-pin-toggle" type="button" title="設為置頂" aria-pressed="false">
+                                    <i class="bi bi-pin-angle"></i>
+                                </button>
+                                <button class="btn-action-icon task-detail-trigger" title="查看詳情">
+                                    <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span>  
+                                </button>
+                                {% if t.can_delete %}
+                                <form action="{{ url_for('tasks_bp.delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除任務「{{ t.name }}」?')">
+                                    <button class="btn-action-icon text-danger" type="submit" title="刪除任務">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                            目前沒有任務
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination Footer -->
+        <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+            <!-- <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆任務 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div> -->
+            <nav>
+                <ul class="pagination pagination-sm mb-0 gap-1">
+                    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page-1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+                    </li>
+                    {% for p in range(1, pagination.total_pages + 1) %}
+                        {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
+                        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=p, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) }}">{{ p }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page+1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </div>
 </div>
 
-<h2 class="h5 fw-bold">現有任務</h2>
-<table class="table table-striped task-table">
-  <thead>
-    <tr>
-      <th class="text-start task-col-name">任務名稱</th>
-      <th class="text-center task-col-desc">任務描述</th>
-      <th class="text-center task-col-creator">建立人員</th>
-      <th class="text-center task-col-created">建立時間</th>
-      <th class="text-center task-col-actions">操作</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for t in tasks %}
-    <tr>
-      <td class="text-start task-col-name"><a class="task-name-link text-decoration-none" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">{{ t.name }}</a></td>
-      <td class="text-center task-col-desc">
-        {% if t.description %}
-          <div class="task-desc-truncate">{{ t.description }}</div>
-        {% else %}
-          <div class="text-muted">-</div>
-        {% endif %}
-        <span class="task-desc-data d-none">{{ t.description or "" }}</span>
-        <span class="task-nas-data d-none">{{ t.nas_path or "" }}</span>
-        <span class="task-creator-data d-none">{{ t.creator or "-" }}</span>
-        <span class="task-created-data d-none">{{ t.created }}</span>
-        <span class="task-last-editor-data d-none">{{ t.last_editor or "-" }}</span>
-        <span class="task-last-edited-data d-none">{{ t.last_edited or "-" }}</span>
-      </td>
-      <td class="text-center task-col-creator">{{ t.creator or '-' }}</td>
-      <td class="text-center task-col-created">{{ t.created }}</td>
-      <td class="text-center task-col-actions">
-        <div class="btn-group">
-          <button class="btn btn-sm btn-success d-inline-flex align-items-center gap-1 task-detail-trigger" type="button">
-            <i class="bi bi-eye"></i>
-            查看詳情
-          </button>
-          <button class="btn btn-sm btn-success dropdown-toggle dropdown-toggle-split" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-            <span class="visually-hidden">更多操作</span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end">
-            <li><button class="dropdown-item" type="button" onclick='renameTask("{{ t.id }}", {{ t.name|tojson }})'><i class="bi bi-pencil me-1"></i>重新命名</button></li>
-            <li><button class="dropdown-item" type="button" onclick='editTaskDesc("{{ t.id }}", {{ (t.description or "")|tojson }})'><i class="bi bi-card-text me-1"></i>修改描述</button></li>
-            <li><button class="dropdown-item" type="button" onclick='copyTask("{{ t.id }}", {{ t.name|tojson }})'><i class="bi bi-files me-1"></i>複製任務</button></li>
-          </ul>
-        </div>
-        {% if t.can_delete %}
-        <form action="{{ url_for('tasks_bp.delete_task', task_id=t.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除?')">
-          <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1">
-            <i class="bi bi-trash"></i>
-            刪除
-          </button>
-        </form>
-        {% else %}
-        <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1" type="button" disabled>
-          <i class="bi bi-trash"></i>
-          刪除
-        </button>
-        {% endif %}
-      </td>
-    </tr>
-  {% else %}
-    <tr><td colspan="5" class="text-center">目前沒有任務</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<style>
+.task-item {
+    transition: background-color 0.2s ease;
+}
+.task-item:hover {
+    background-color: #f8fafc;
+}
+.task-item:last-child {
+    border-bottom: none !important;
+}
+.dropdown-menu {
+    z-index: 1051; /* 確保選單在所有元素之上 */
+}
+</style>
 
 <div class="task-desc-drawer-backdrop" id="taskDescDrawerBackdrop" aria-hidden="true" hidden></div>
 <aside class="task-desc-drawer" id="taskDescDrawer" aria-hidden="true" aria-label="任務資訊" hidden>
@@ -116,6 +457,62 @@
   </div>
   <div class="task-desc-drawer-body" id="taskDescDrawerBody"></div>
 </aside>
+
+<div class="task-modal-overlay" id="copyTaskModalOverlay" aria-hidden="true" hidden>
+  <div class="task-modal-panel" role="dialog" aria-modal="true" aria-labelledby="copyTaskModalTitle">
+    <div class="task-modal-header">
+      <div class="fw-semibold" id="copyTaskModalTitle"><i class="bi bi-files me-2 text-primary"></i>複製任務</div>
+      <button type="button" class="btn-close" id="copyTaskModalCloseBtn" aria-label="關閉"></button>
+    </div>
+    <div class="task-modal-body">
+      <div class="mb-3">
+        <label class="small fw-bold text-uppercase text-muted d-block mb-1">新任務名稱</label>
+        <input type="text" class="form-control form-control-custom" id="copyTaskNameInput" maxlength="120">
+      </div>
+      <div>
+        <label class="small fw-bold text-uppercase text-muted d-block mb-1">NAS 存取路徑</label>
+        <div class="input-group">
+          <input type="text" class="form-control form-control-custom font-monospace" id="copyTaskNasInput" placeholder="留空表示不設定">
+          <button
+            class="btn btn-outline-secondary px-3"
+            type="button"
+            id="copyTaskNasBrowseBtn"
+            data-bs-toggle="modal"
+            data-bs-target="#nasBrowserModal"
+            {% if not allowed_nas_roots %}disabled{% endif %}
+          >
+            瀏覽
+          </button>
+        </div>
+      </div>
+      <div class="task-copy-warning d-none" id="copyTaskNasWarning">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        任務內流程可能會失效
+      </div>
+      <div class="small text-danger mt-2 d-none" id="copyTaskError"></div>
+    </div>
+    <div class="task-modal-footer">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="copyTaskCancelBtn">取消</button>
+      <button type="button" class="btn btn-primary btn-sm" id="copyTaskSubmitBtn">確認複製</button>
+    </div>
+  </div>
+</div>
+
+<div class="task-modal-overlay" id="copyTaskConfirmOverlay" aria-hidden="true" hidden>
+  <div class="task-modal-panel task-modal-panel-sm" role="dialog" aria-modal="true" aria-labelledby="copyTaskConfirmTitle">
+    <div class="task-modal-header">
+      <div class="fw-semibold" id="copyTaskConfirmTitle"><i class="bi bi-exclamation-triangle me-2 text-warning"></i>確認變更</div>
+      <button type="button" class="btn-close" id="copyTaskConfirmCloseBtn" aria-label="關閉"></button>
+    </div>
+    <div class="task-modal-body">
+      任務內流程可能會失效，確定要更新 NAS 路徑嗎？
+    </div>
+    <div class="task-modal-footer">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="copyTaskConfirmCancelBtn">返回編輯</button>
+      <button type="button" class="btn btn-warning btn-sm" id="copyTaskConfirmSubmitBtn">仍要複製</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal fade" id="nasBrowserModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -191,6 +588,9 @@ function getRowText(row, selector){
 }
 
 function renderDetailBody(details){
+  const copyTaskIdArg = JSON.stringify(details.id || "");
+  const copyTaskNameArg = JSON.stringify(details.name || "");
+  const copyTaskNasArg = JSON.stringify(details.nasPath || "");
   const rows = [
     { label: '建立人員', value: details.creator || '-' },
     { label: '建立時間', value: details.created || '-' },
@@ -203,38 +603,307 @@ function renderDetailBody(details){
       <div class="task-detail-value">${escapeHtml(row.value)}</div>
     </div>`
   )).join('');
-  const descHtml = details.desc
-    ? `<div class="task-detail-desc">
-        <div class="task-detail-desc-label">任務描述</div>
-        <div class="task-detail-desc-value">${escapeHtml(details.desc)}</div>
-      </div>`
-    : '';
-  return `<div class="task-detail-list">${rowsHtml}${descHtml}</div>`;
+
+  return `
+    <div class="task-detail-list">
+      <!-- 任務名稱編輯 -->
+      <div class="mb-4">
+        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務名稱</label>
+        <input type="text" class="form-control form-control-custom shadow-sm" id="drawerTaskName" value="${escapeHtml(details.name)}">
+        <div class="mt-2 text-end">
+          <button class="btn btn-sm btn-outline-primary px-3 fw-bold" onclick="renameTask('${details.id}', document.getElementById('drawerTaskName').value, true)">
+            更新名稱
+          </button>
+        </div>
+      </div>
+
+      <!-- 任務描述編輯 -->
+      <div class="mb-4">
+        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務描述</label>
+        <textarea class="form-control form-control-custom shadow-sm" id="drawerTaskDesc" rows="4" placeholder="輸入任務描述...">${escapeHtml(details.desc || "")}</textarea>
+        <div class="mt-2 text-end">
+          <button class="btn btn-sm btn-outline-primary px-3 fw-bold" onclick="editTaskDesc('${details.id}', document.getElementById('drawerTaskDesc').value, true)">
+            更新描述
+          </button>
+        </div>
+      </div>
+
+      <div class="mb-2">
+        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務資訊</label>
+        ${rowsHtml}
+      </div>
+
+      <div class="mt-4 pt-3 border-top text-end">
+        <button class="btn btn-link btn-sm text-primary text-decoration-none p-0" onclick='copyTask(${copyTaskIdArg}, ${copyTaskNameArg}, ${copyTaskNasArg})'>
+          <i class="bi bi-files"></i> 複製此任務
+        </button>
+      </div>
+    </div>
+  `;
 }
 
-function renameTask(id, current){
-  const name = prompt('輸入新名稱', current);
-  if(!name) return;
+function renameTask(id, current, isDirect = false){
+  const name = isDirect ? current : prompt('輸入新名稱', current);
+  if(!name) {
+    if(!isDirect) return;
+    alert('任務名稱不能為空');
+    return;
+  }
   submitPostForm(`/tasks/${id}/rename`, { name });
 }
 
-function editTaskDesc(id, currentDesc){
-  const desc = prompt('輸入新的任務描述（可為空）', currentDesc || '');
+function editTaskDesc(id, currentDesc, isDirect = false){
+  const desc = isDirect ? currentDesc : prompt('輸入新的任務描述（可為空）', currentDesc || '');
   if(desc === null) return;
   submitPostForm(`/tasks/${id}/description`, { description: desc });
 }
 
-function copyTask(id, currentName){
-  const defaultName = currentName ? `${currentName} (複製)` : '任務複製';
-  const name = prompt('輸入新任務名稱', defaultName);
-  if(!name) return;
-  submitPostForm(`/tasks/${id}/copy`, { name });
+const copyTaskModalOverlay = document.getElementById('copyTaskModalOverlay');
+const copyTaskConfirmOverlay = document.getElementById('copyTaskConfirmOverlay');
+const copyTaskModalCloseBtn = document.getElementById('copyTaskModalCloseBtn');
+const copyTaskCancelBtn = document.getElementById('copyTaskCancelBtn');
+const copyTaskSubmitBtn = document.getElementById('copyTaskSubmitBtn');
+const copyTaskConfirmCloseBtn = document.getElementById('copyTaskConfirmCloseBtn');
+const copyTaskConfirmCancelBtn = document.getElementById('copyTaskConfirmCancelBtn');
+const copyTaskConfirmSubmitBtn = document.getElementById('copyTaskConfirmSubmitBtn');
+const copyTaskNameInput = document.getElementById('copyTaskNameInput');
+const copyTaskNasInput = document.getElementById('copyTaskNasInput');
+const copyTaskNasBrowseBtn = document.getElementById('copyTaskNasBrowseBtn');
+const copyTaskNasWarning = document.getElementById('copyTaskNasWarning');
+const copyTaskError = document.getElementById('copyTaskError');
+
+let copyTaskDraft = null;
+let copyTaskLastFocused = null;
+let copyTaskNasRootIndex = '';
+
+function isOverlayOpen(el){
+  return !!el && el.classList.contains('is-open');
 }
+
+function setOverlayOpen(el, open){
+  if(!el) return;
+  if(open){
+    el.hidden = false;
+    el.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => el.classList.add('is-open'));
+  } else {
+    el.classList.remove('is-open');
+    el.setAttribute('aria-hidden', 'true');
+    setTimeout(() => {
+      if(!el.classList.contains('is-open')) el.hidden = true;
+    }, 180);
+  }
+}
+
+function syncTaskModalBodyScroll(){
+  const hasOpen = isOverlayOpen(copyTaskModalOverlay) || isOverlayOpen(copyTaskConfirmOverlay);
+  const drawerOpen = document.getElementById('taskDescDrawer')?.classList.contains('is-open');
+  document.body.classList.toggle('task-desc-drawer-open', hasOpen || !!drawerOpen);
+}
+
+function setCopyTaskError(message){
+  if(!copyTaskError) return;
+  const text = (message || '').trim();
+  copyTaskError.textContent = text;
+  copyTaskError.classList.toggle('d-none', !text);
+}
+
+function isAbsoluteNasPath(path){
+  const value = String(path || '').trim();
+  return /^([A-Za-z]:[\\/]|\\\\|\/)/.test(value);
+}
+
+function normalizeNasForCompare(path){
+  return String(path || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+}
+
+function findRootIndexForPath(path){
+  if(!isAbsoluteNasPath(path)) return null;
+  const pathKey = normalizeNasForCompare(path);
+  if(!pathKey) return null;
+  for(let i = 0; i < allowedNasRoots.length; i += 1){
+    const rootKey = normalizeNasForCompare(allowedNasRoots[i]);
+    if(!rootKey) continue;
+    if(pathKey === rootKey || pathKey.startsWith(`${rootKey}/`)){
+      return i;
+    }
+  }
+  return null;
+}
+
+function getRelativePathUnderRoot(path, rootIndex){
+  const raw = String(path || '').trim();
+  if(!raw || raw === '.') return '';
+  const cleaned = raw.replace(/\\/g, '/').replace(/\/+$/, '');
+  if(!isAbsoluteNasPath(cleaned)){
+    return cleaned.replace(/^\.?[\\/]+/, '').replace(/\\/g, '/');
+  }
+  const rootRaw = String(allowedNasRoots[rootIndex] || '').trim();
+  if(!rootRaw) return null;
+  const rootNorm = rootRaw.replace(/\\/g, '/').replace(/\/+$/, '');
+  const pathNormKey = normalizeNasForCompare(cleaned);
+  const rootNormKey = normalizeNasForCompare(rootNorm);
+  if(pathNormKey === rootNormKey) return '';
+  if(pathNormKey.startsWith(`${rootNormKey}/`)){
+    return cleaned.slice(rootNorm.length + 1);
+  }
+  return null;
+}
+
+function currentCopyNasPath(){
+  return (copyTaskNasInput?.value || '').trim();
+}
+
+function sourceCopyNasPath(){
+  return (copyTaskDraft?.sourceNasPath || '').trim();
+}
+
+function hasNasPathChanged(){
+  return currentCopyNasPath() !== sourceCopyNasPath();
+}
+
+function refreshNasWarning(){
+  if(!copyTaskNasWarning) return;
+  copyTaskNasWarning.classList.toggle('d-none', !hasNasPathChanged());
+}
+
+function openCopyTaskModal(id, currentName, currentNasPath){
+  if(!copyTaskModalOverlay || !copyTaskNameInput || !copyTaskNasInput) return;
+  const sourceRaw = (currentNasPath || '').trim();
+  let sourceDisplayPath = sourceRaw;
+  let sourceRootIndex = '';
+  const matchedRoot = findRootIndexForPath(sourceRaw);
+  if(matchedRoot !== null){
+    const rel = getRelativePathUnderRoot(sourceRaw, matchedRoot);
+    if(rel !== null){
+      sourceDisplayPath = rel || '.';
+      sourceRootIndex = String(matchedRoot);
+    }
+  }
+  copyTaskDraft = {
+    id: String(id || ''),
+    sourceNasPath: sourceDisplayPath,
+  };
+  copyTaskLastFocused = document.activeElement;
+  copyTaskNameInput.value = currentName ? `${currentName} (複製)` : '任務複製';
+  copyTaskNasInput.value = sourceDisplayPath;
+  copyTaskNasRootIndex = sourceRootIndex;
+  setCopyTaskError('');
+  refreshNasWarning();
+  setOverlayOpen(copyTaskModalOverlay, true);
+  syncTaskModalBodyScroll();
+  setTimeout(() => copyTaskNameInput.focus(), 0);
+}
+
+function closeCopyTaskConfirmModal(){
+  setOverlayOpen(copyTaskConfirmOverlay, false);
+  syncTaskModalBodyScroll();
+}
+
+function closeCopyTaskModal(){
+  closeCopyTaskConfirmModal();
+  setOverlayOpen(copyTaskModalOverlay, false);
+  syncTaskModalBodyScroll();
+  setCopyTaskError('');
+  if(copyTaskLastFocused && typeof copyTaskLastFocused.focus === 'function'){
+    copyTaskLastFocused.focus();
+  }
+}
+
+function submitCopyTaskForm(){
+  if(!copyTaskDraft?.id) return;
+  const name = (copyTaskNameInput?.value || '').trim();
+  let nasPath = currentCopyNasPath();
+  let nasRootIndex = copyTaskNasRootIndex || '';
+  if(!name){
+    setCopyTaskError('任務名稱不能為空');
+    copyTaskNameInput?.focus();
+    return;
+  }
+
+  if(isAbsoluteNasPath(nasPath)){
+    const matchedRoot = findRootIndexForPath(nasPath);
+    if(matchedRoot !== null){
+      const rel = getRelativePathUnderRoot(nasPath, matchedRoot);
+      if(rel !== null){
+        nasPath = rel || '.';
+        nasRootIndex = String(matchedRoot);
+      }
+    }
+  }
+
+  closeCopyTaskModal();
+  submitPostForm(`/tasks/${copyTaskDraft.id}/copy`, {
+    name,
+    nas_path: nasPath,
+    nas_root_index: nasRootIndex,
+  });
+}
+
+function copyTask(id, currentName, currentNasPath = ''){
+  openCopyTaskModal(id, currentName, currentNasPath);
+}
+
+copyTaskNasInput?.addEventListener('input', () => {
+  setCopyTaskError('');
+  const raw = currentCopyNasPath();
+  if(isAbsoluteNasPath(raw)){
+    const matchedRoot = findRootIndexForPath(raw);
+    copyTaskNasRootIndex = matchedRoot === null ? '' : String(matchedRoot);
+  }
+  refreshNasWarning();
+});
+copyTaskNameInput?.addEventListener('input', () => setCopyTaskError(''));
+copyTaskModalCloseBtn?.addEventListener('click', closeCopyTaskModal);
+copyTaskCancelBtn?.addEventListener('click', closeCopyTaskModal);
+copyTaskConfirmCloseBtn?.addEventListener('click', closeCopyTaskConfirmModal);
+copyTaskConfirmCancelBtn?.addEventListener('click', closeCopyTaskConfirmModal);
+copyTaskSubmitBtn?.addEventListener('click', () => {
+  const name = (copyTaskNameInput?.value || '').trim();
+  if(!name){
+    setCopyTaskError('任務名稱不能為空');
+    copyTaskNameInput?.focus();
+    return;
+  }
+  if(hasNasPathChanged()){
+    setOverlayOpen(copyTaskConfirmOverlay, true);
+    syncTaskModalBodyScroll();
+    return;
+  }
+  submitCopyTaskForm();
+});
+copyTaskConfirmSubmitBtn?.addEventListener('click', submitCopyTaskForm);
+copyTaskModalOverlay?.addEventListener('click', (event) => {
+  if(event.target === copyTaskModalOverlay){
+    closeCopyTaskModal();
+  }
+});
+copyTaskConfirmOverlay?.addEventListener('click', (event) => {
+  if(event.target === copyTaskConfirmOverlay){
+    closeCopyTaskConfirmModal();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if(event.key !== 'Escape') return;
+  if(isOverlayOpen(copyTaskConfirmOverlay)){
+    closeCopyTaskConfirmModal();
+    return;
+  }
+  if(isOverlayOpen(copyTaskModalOverlay)){
+    closeCopyTaskModal();
+  }
+});
 
 const allowedNasRoots = {{ allowed_nas_roots | tojson }};
 const nasModalEl = document.getElementById('nasBrowserModal');
 const nasPathInput = document.getElementById('nasPathInput');
 const nasRootIndexInput = document.getElementById('nasRootIndexInput');
+const openNasBrowserBtn = document.getElementById('openNasBrowserBtn');
 const nasRootSelect = document.getElementById('nasRootSelect');
 const nasStatus = document.getElementById('nasStatus');
 const nasGoUpBtn = document.getElementById('nasGoUpBtn');
@@ -249,6 +918,26 @@ const nasRootRemoveBtn = document.getElementById('nasRootRemoveBtn');
 const nasAddUrl = "{{ url_for('nas_bp.add_nas_root_route') }}";
 const nasRemoveUrl = "{{ url_for('nas_bp.remove_nas_root_route') }}";
 const nasRootInputs = [nasRootSelect, nasRootRemoveSelect];
+let nasPickerTarget = 'create';
+
+function getNasPickerContext(){
+  if(nasPickerTarget === 'copy'){
+    return {
+      inputEl: copyTaskNasInput,
+      rootIndex: copyTaskNasRootIndex,
+      setRootIndex(value){
+        copyTaskNasRootIndex = value || '';
+      },
+    };
+  }
+  return {
+    inputEl: nasPathInput,
+    rootIndex: nasRootIndexInput?.value || '',
+    setRootIndex(value){
+      if(nasRootIndexInput) nasRootIndexInput.value = value || '';
+    },
+  };
+}
 
 function refreshRootSelects(){
   if(nasRootSelect){
@@ -315,7 +1004,7 @@ function updateCurrentPathDisplay(){
   const root = allowedNasRoots[nasState.rootIndex] || '';
   const sep = root.includes('\\') ? '\\' : '/';
   const rootClean = root.replace(/[\\/]+$/, '');
-  const relRaw = nasState.selectedRel !== null ? nasState.selectedRel : (nasState.currentRel || '');
+  const relRaw = nasState.currentRel || '';
   const rel = relRaw.replace(/^\/+/, '').replace(/\//g, sep);
   nasCurrentPathEl.textContent = rel ? `${rootClean}${sep}${rel}` : (rootClean || '/');
 }
@@ -333,6 +1022,11 @@ function selectFolder(rel){
   nasState.selectedRel = rel || '';
   updateSelectedPathDisplay();
   updateCurrentPathDisplay();
+}
+
+function clearNasSelection(){
+  nasState.selectedRel = null;
+  updateSelectedPathDisplay();
 }
 
 function renderFolders(folders){
@@ -358,6 +1052,7 @@ function renderFolders(folders){
     nameBtn.addEventListener('click', () => selectFolder(folder.path));
     nameBtn.addEventListener('dblclick', (event) => {
       event.preventDefault();
+      clearNasSelection();
       loadFolders(folder.path);
     });
 
@@ -396,20 +1091,30 @@ if(nasPathInput){
 
 if(nasModalEl){
   nasModalEl.addEventListener('shown.bs.modal', () => {
-    const savedRootIndex = nasRootIndexInput?.value;
+    const ctx = getNasPickerContext();
+    const rawPath = (ctx.inputEl?.value || '').trim();
+    let savedRootIndex = ctx.rootIndex;
+    if(savedRootIndex === '' || savedRootIndex === null || savedRootIndex === undefined){
+      const matched = findRootIndexForPath(rawPath);
+      if(matched !== null) savedRootIndex = String(matched);
+    }
     if(nasRootSelect){
       if(savedRootIndex !== undefined && savedRootIndex !== ''){
         nasRootSelect.value = savedRootIndex;
       }
       nasState.rootIndex = parseInt(nasRootSelect.value || '0', 10);
     }
-    const rawPath = (nasPathInput?.value || '').trim();
-    const rel = rawPath === '.' ? '' : rawPath.replace(/^\.?[\\/]+/, '');
-    nasState.currentRel = rel;
-    nasState.selectedRel = rawPath ? rel : null;
+    const rel = getRelativePathUnderRoot(rawPath, nasState.rootIndex);
+    if(rel === null){
+      nasState.currentRel = '';
+      nasState.selectedRel = null;
+    } else {
+      nasState.currentRel = rel;
+      nasState.selectedRel = rawPath ? rel : null;
+    }
     updateCurrentPathDisplay();
     updateSelectedPathDisplay();
-    loadFolders(rel);
+    loadFolders(nasState.currentRel);
   });
 }
 
@@ -487,19 +1192,32 @@ if(nasGoUpBtn){
     if(!nasState.currentRel) return;
     const parts = nasState.currentRel.split('/').filter(Boolean);
     parts.pop();
+    clearNasSelection();
     loadFolders(parts.join('/'));
   });
 }
 
 if(nasApplyBtn){
   nasApplyBtn.addEventListener('click', () => {
-    if(!nasPathInput) return;
+    const ctx = getNasPickerContext();
+    if(!ctx.inputEl) return;
     const rel = nasState.selectedRel === null ? (nasState.currentRel || '') : nasState.selectedRel;
     const chosen = rel === '' ? '.' : rel;
-    nasPathInput.value = chosen;
-    if(nasRootIndexInput) nasRootIndexInput.value = String(nasState.rootIndex);
+    ctx.inputEl.value = chosen;
+    ctx.setRootIndex(String(nasState.rootIndex));
+    if(nasPickerTarget === 'copy'){
+      setCopyTaskError('');
+      refreshNasWarning();
+    }
   });
 }
+
+openNasBrowserBtn?.addEventListener('click', () => {
+  nasPickerTarget = 'create';
+});
+copyTaskNasBrowseBtn?.addEventListener('click', () => {
+  nasPickerTarget = 'copy';
+});
 
 const createTaskForm = document.getElementById('createTaskForm');
 const taskSubmittingAlert = document.getElementById('taskSubmittingAlert');
@@ -571,7 +1289,8 @@ function initTaskDescDrawer(){
     btn.addEventListener('click', (event) => {
       event.preventDefault();
       const row = btn.closest('tr');
-      const name = getRowText(row, '.task-name-link');
+      const id = getRowText(row, '.task-id-data');
+      const name = getRowText(row, '.text-primary');
       const desc = getRowText(row, '.task-desc-data');
       const creator = getRowText(row, '.task-creator-data');
       const created = getRowText(row, '.task-created-data');
@@ -580,6 +1299,8 @@ function initTaskDescDrawer(){
       const nasPath = getRowText(row, '.task-nas-data');
       const title = name ? `任務詳情 : ${name}` : '任務詳情';
       const detailHtml = renderDetailBody({
+        id,
+        name,
         creator,
         created,
         lastEditor,
@@ -601,6 +1322,252 @@ function initTaskDescDrawer(){
       closeDrawer();
     }
   });
+
+  // Task Search Logic
+  const taskSearchInput = document.getElementById('taskSearchInput');
+  const taskTableBody = document.getElementById('taskTableBody');
+  const totalTaskCount = document.getElementById('totalTaskCount');
+
+  if(taskSearchInput && taskTableBody){
+    taskSearchInput.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase();
+      const rows = taskTableBody.querySelectorAll('.task-row');
+      let visibleCount = 0;
+      rows.forEach(row => {
+        const name = row.querySelector('.text-primary')?.textContent?.toLowerCase() || '';
+        const desc = row.querySelector('.task-desc-data')?.textContent?.toLowerCase() || '';
+        const isVisible = name.includes(term) || desc.includes(term);
+        row.style.display = isVisible ? '' : 'none';
+        if(isVisible) visibleCount++;
+      });
+      if(totalTaskCount) totalTaskCount.textContent = visibleCount;
+      updateTaskUI();
+    });
+  }
+
+  // Multi-select Logic
+  const masterCheckbox = document.getElementById('masterCheckbox');
+  const taskCheckboxes = () => Array.from(document.querySelectorAll('.task-select'));
+  const allTaskIds = ({{ all_task_ids|tojson }});
+  const filterBar = document.getElementById('filterBar');
+  const actionBar = document.getElementById('actionBar');
+  const selectionText = document.getElementById('selectionText');
+  const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+  const pageUrlParams = new URLSearchParams(window.location.search);
+  const appendToBatch = pageUrlParams.get('append_to_batch') === '1';
+  const pinScopeKey = String({{ pin_scope_key|tojson }} || 'anonymous').trim() || 'anonymous';
+  const PIN_STORAGE_KEY = `uo_mdr.task_pins.v1.${pinScopeKey}`;
+  const persistedIdsRaw = appendToBatch
+      ? (pageUrlParams.get('existing_task_ids') || '')
+      : (pageUrlParams.get('selected_task_ids') || pageUrlParams.get('existing_task_ids') || '');
+  const existingTaskIds = persistedIdsRaw
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean);
+  const selectedTaskIds = new Set();
+  const pinnedTaskIds = new Set();
+
+  function loadPinnedTaskIds() {
+      try {
+          const raw = localStorage.getItem(PIN_STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return;
+          parsed.forEach(id => {
+              const tid = String(id || '').trim();
+              if (tid) pinnedTaskIds.add(tid);
+          });
+      } catch (_err) {
+      }
+  }
+
+  function savePinnedTaskIds() {
+      try {
+          localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(Array.from(pinnedTaskIds)));
+      } catch (_err) {
+      }
+  }
+
+  function refreshPinState() {
+      const rows = Array.from(taskTableBody?.querySelectorAll('.task-row') || []);
+      rows.sort((a, b) => {
+          const aPinned = pinnedTaskIds.has(a.dataset.taskId || '');
+          const bPinned = pinnedTaskIds.has(b.dataset.taskId || '');
+          if (aPinned !== bPinned) return aPinned ? -1 : 1;
+          const aOrder = Number(a.dataset.defaultOrder || 0);
+          const bOrder = Number(b.dataset.defaultOrder || 0);
+          return aOrder - bOrder;
+      });
+      rows.forEach((row) => {
+          const taskId = row.dataset.taskId || '';
+          const isPinned = pinnedTaskIds.has(taskId);
+          row.classList.toggle('task-pinned-row', isPinned);
+          const btn = row.querySelector('.task-pin-toggle');
+          if (btn) {
+              btn.classList.toggle('is-pinned', isPinned);
+              btn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+              btn.setAttribute('title', isPinned ? '取消置頂' : '設為置頂');
+              btn.innerHTML = isPinned
+                  ? '<i class="bi bi-pin-angle-fill"></i>'
+                  : '<i class="bi bi-pin-angle"></i>';
+          }
+          taskTableBody?.appendChild(row);
+      });
+  }
+
+  existingTaskIds.forEach(id => {
+      if (allTaskIds.includes(id)) selectedTaskIds.add(id);
+  });
+  loadPinnedTaskIds();
+  Array.from(pinnedTaskIds).forEach(id => {
+      if (!allTaskIds.includes(id)) pinnedTaskIds.delete(id);
+  });
+  savePinnedTaskIds();
+  Array.from(taskTableBody?.querySelectorAll('.task-row') || []).forEach((row, index) => {
+      row.dataset.defaultOrder = String(index);
+  });
+
+  function syncVisibleCheckboxes() {
+      taskCheckboxes().forEach(cb => {
+          cb.checked = selectedTaskIds.has(cb.value);
+      });
+  }
+
+  function syncPaginationLinks() {
+      const idsCsv = Array.from(selectedTaskIds).join(',');
+      document.querySelectorAll('.pagination a.page-link').forEach(link => {
+          const href = link.getAttribute('href') || '';
+          if (!href || href === '#') return;
+          const url = new URL(href, window.location.origin);
+          if (appendToBatch) {
+              url.searchParams.set('append_to_batch', '1');
+              if (idsCsv) url.searchParams.set('existing_task_ids', idsCsv);
+              else url.searchParams.delete('existing_task_ids');
+          } else {
+              if (idsCsv) url.searchParams.set('selected_task_ids', idsCsv);
+              else url.searchParams.delete('selected_task_ids');
+              url.searchParams.delete('append_to_batch');
+              url.searchParams.delete('existing_task_ids');
+          }
+          link.href = url.toString();
+      });
+  }
+
+  function syncCurrentUrlState() {
+      const idsCsv = Array.from(selectedTaskIds).join(',');
+      const url = new URL(window.location.href);
+      if (appendToBatch) {
+          url.searchParams.set('append_to_batch', '1');
+          if (idsCsv) url.searchParams.set('existing_task_ids', idsCsv);
+          else url.searchParams.delete('existing_task_ids');
+      } else {
+          if (idsCsv) url.searchParams.set('selected_task_ids', idsCsv);
+          else url.searchParams.delete('selected_task_ids');
+          url.searchParams.delete('append_to_batch');
+          url.searchParams.delete('existing_task_ids');
+      }
+      window.history.replaceState(null, '', url.toString());
+  }
+
+  function updateTaskUI() {
+      refreshPinState();
+      syncVisibleCheckboxes();
+      const count = selectedTaskIds.size;
+
+      if (count > 0) {
+          if(filterBar) filterBar.style.display = 'none';
+          if(actionBar) actionBar.style.display = 'flex';
+          if(selectionText) {
+              selectionText.textContent = appendToBatch
+                  ? `已加入 ${count} 項任務（含既有排程）`
+                  : `已選取 ${count} 項任務`;
+          }
+      } else {
+          if(filterBar) filterBar.style.display = 'flex';
+          if(actionBar) actionBar.style.display = 'none';
+      }
+
+      taskCheckboxes().forEach(cb => {
+          const row = cb.closest('tr');
+          if (selectedTaskIds.has(cb.value)) row.classList.add('row-selected');
+          else row.classList.remove('row-selected');
+      });
+
+      if (masterCheckbox) {
+          masterCheckbox.disabled = allTaskIds.length === 0;
+          if (selectedTaskIds.size === 0) {
+              masterCheckbox.checked = false;
+              masterCheckbox.indeterminate = false;
+          } else if (selectedTaskIds.size === allTaskIds.length) {
+              masterCheckbox.checked = true;
+              masterCheckbox.indeterminate = false;
+          } else {
+              masterCheckbox.checked = false;
+              masterCheckbox.indeterminate = true;
+          }
+      }
+      syncPaginationLinks();
+      syncCurrentUrlState();
+  }
+
+  if (masterCheckbox) {
+      masterCheckbox.addEventListener('change', (e) => {
+          if (e.target.checked) {
+              allTaskIds.forEach(id => selectedTaskIds.add(id));
+          } else {
+              selectedTaskIds.clear();
+          }
+          updateTaskUI();
+      });
+  }
+
+  if (taskTableBody) {
+      taskTableBody.addEventListener('click', (e) => {
+          const pinBtn = e.target.closest('.task-pin-toggle');
+          if (!pinBtn) return;
+          e.preventDefault();
+          const row = pinBtn.closest('.task-row');
+          const tid = row?.dataset.taskId || '';
+          if (!tid) return;
+          if (pinnedTaskIds.has(tid)) pinnedTaskIds.delete(tid);
+          else pinnedTaskIds.add(tid);
+          savePinnedTaskIds();
+          updateTaskUI();
+      });
+
+      taskTableBody.addEventListener('change', (e) => {
+          if (e.target.classList.contains('task-select')) {
+              const tid = e.target.value;
+              if (e.target.checked) selectedTaskIds.add(tid);
+              else selectedTaskIds.delete(tid);
+              updateTaskUI();
+          }
+      });
+  }
+
+  if (clearSelectionBtn) {
+      clearSelectionBtn.addEventListener('click', () => {
+          selectedTaskIds.clear();
+          updateTaskUI();
+      });
+  }
+
+  // Batch Scheduling Action
+  const createGlobalBatchBtn = document.getElementById('createGlobalBatchBtn');
+  if (createGlobalBatchBtn) {
+      if (appendToBatch) {
+          createGlobalBatchBtn.innerHTML = '<i class="bi bi-calendar2-week"></i> 更新排程清單';
+      }
+      createGlobalBatchBtn.addEventListener('click', () => {
+          const selected = Array.from(selectedTaskIds);
+          if (!selected.length) return;
+          // Redirect to global batch page with selected task IDs
+          const url = new URL("{{ url_for('flows_bp.global_batch_page') }}", window.location.origin);
+          url.searchParams.set('task_ids', selected.join(','));
+          window.location.href = url.toString();
+      });
+  }
+  updateTaskUI();
 }
 
 if(document.readyState === 'loading'){
@@ -609,152 +1576,4 @@ if(document.readyState === 'loading'){
   initTaskDescDrawer();
 }
 </script>
-<style>
-.task-loading-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  pointer-events: all;
-}
-.task-loading-box {
-  background: #fff;
-  border-radius: 8px;
-  padding: 16px 20px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-  display: flex;
-  align-items: center;
-  min-width: 260px;
-  justify-content: center;
-}
-.task-table {
-  table-layout: fixed;
-}
-.task-table th,
-.task-table td {
-  vertical-align: middle;
-}
-.task-table .task-col-name {
-  width: 16%;
-}
-.task-table .task-col-desc {
-  width: 18%;
-}
-.task-table .task-col-creator {
-  width: 12%;
-}
-.task-table .task-col-created {
-  width: 10%;
-}
-.task-table .task-col-actions {
-  width: 18%;
-}
-.task-table .task-col-name {
-  word-break: break-word;
-  white-space: normal;
-}
-.task-table .task-col-desc {
-  white-space: nowrap;
-}
-.task-table .task-col-actions {
-  white-space: normal;
-}
-.task-desc-truncate {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.task-desc-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.35);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-  z-index: 1040;
-}
-.task-desc-drawer-backdrop.is-open {
-  opacity: 1;
-  pointer-events: auto;
-}
-.task-desc-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  height: 100vh;
-  width: min(90vw, 420px);
-  background: #fff;
-  box-shadow: -12px 0 28px rgba(0, 0, 0, 0.18);
-  transform: translateX(100%);
-  transition: transform 0.25s ease;
-  z-index: 1050;
-  display: flex;
-  flex-direction: column;
-}
-.task-desc-drawer.is-open {
-  transform: translateX(0);
-}
-.task-desc-drawer-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.task-desc-drawer-body {
-  padding: 16px;
-  word-break: break-word;
-  overflow: auto;
-  flex: 1;
-}
-.task-detail-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.task-detail-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-}
-.task-detail-label {
-  color: #64748b;
-  font-weight: 600;
-  min-width: 90px;
-}
-.task-detail-value {
-  color: #0f172a;
-  text-align: right;
-  flex: 1;
-  word-break: break-word;
-}
-.task-detail-desc {
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px dashed #cbd5f5;
-  background: #f8fafc;
-}
-.task-detail-desc-label {
-  font-weight: 600;
-  color: #0f172a;
-  margin-bottom: 6px;
-}
-.task-detail-desc-value {
-  white-space: pre-wrap;
-  color: #1f2937;
-}
-.task-desc-drawer-open {
-  overflow: hidden;
-}
-</style>
 {% endblock %}

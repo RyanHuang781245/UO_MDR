@@ -173,12 +173,23 @@ function updateSources(ch, element) {
 const iframe = document.getElementById('htmlFrame');
 let doc;
 let isSaved = true;
+let editSeq = 0;
+let savedSeq = 0;
+let autosaveTimer = null;
+let autosaveInFlight = false;
+let autosaveQueued = false;
+const AUTOSAVE_DELAY_MS = 1200;
 const statusEl = document.getElementById('saveStatus');
 function setSaved(saved) {
   isSaved = saved;
   statusEl.textContent = saved ? '已保存' : '未保存';
   statusEl.classList.toggle('text-success', saved);
   statusEl.classList.toggle('text-danger', !saved);
+}
+
+function setSaving() {
+  statusEl.textContent = 'Saving...';
+  statusEl.classList.remove('text-success', 'text-danger');
 }
 
 function ensureVersionPlaceholder() {
@@ -217,11 +228,76 @@ function hideChapterTitles() {
   });
 }
 setSaved(true);
+editSeq = 0;
+savedSeq = 0;
+
+function queueAutosave() {
+  if (autosaveTimer) {
+    clearTimeout(autosaveTimer);
+  }
+  autosaveTimer = setTimeout(() => {
+    autosaveTimer = null;
+    saveNow({silent: true});
+  }, AUTOSAVE_DELAY_MS);
+}
+
+async function saveNow({silent = false} = {}) {
+  if (autosaveTimer) {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+  }
+  if (savedSeq >= editSeq) {
+    setSaved(true);
+    return true;
+  }
+  if (autosaveInFlight) {
+    autosaveQueued = true;
+    return false;
+  }
+  autosaveInFlight = true;
+  setSaving();
+  const seqAtStart = editSeq;
+  try {
+    const r = await saveHtml();
+    if (!r.ok) {
+      setSaved(false);
+      if (!silent) {
+        alert('Save failed');
+      }
+      return false;
+    }
+    savedSeq = Math.max(savedSeq, seqAtStart);
+    const fullySaved = savedSeq >= editSeq;
+    setSaved(fullySaved);
+    if (!fullySaved) {
+      autosaveQueued = true;
+    } else if (!silent) {
+      alert('Saved');
+    }
+    return fullySaved;
+  } catch (err) {
+    setSaved(false);
+    if (!silent) {
+      alert('Save failed');
+    }
+    return false;
+  } finally {
+    autosaveInFlight = false;
+    if (autosaveQueued) {
+      autosaveQueued = false;
+      queueAutosave();
+    }
+  }
+}
 
 iframe.addEventListener('load', () => {
   doc = iframe.contentDocument || iframe.contentWindow.document;
   doc.designMode = 'off';
-  doc.addEventListener('input', () => setSaved(false));
+  doc.addEventListener('input', () => {
+    editSeq += 1;
+    setSaved(false);
+    queueAutosave();
+  });
   hideChapterTitles();
   let found = false;
   let unhandled = [];
@@ -273,20 +349,16 @@ function saveHtml(targetUrl = '{{ save_url }}', extraData = {}) {
 }
 
 document.getElementById('saveBtn').addEventListener('click', () => {
-  saveHtml().then(r => {
-    if (r.ok) {
-      setSaved(true);
-      alert('已保存');
-    } else {
-      alert('保存失敗');
-    }
-  });
+  saveNow({silent: false});
 });
 
-document.getElementById('downloadBtn').addEventListener('click', () => {
+document.getElementById('downloadBtn').addEventListener('click', async () => {
   if (!isSaved) {
-    alert('請先保存才可下載');
-    return;
+    const ok = await saveNow({silent: true});
+    if (!ok && !isSaved) {
+      alert('Save failed. Please save before download.');
+      return;
+    }
   }
   window.location = '{{ download_url }}';
 });

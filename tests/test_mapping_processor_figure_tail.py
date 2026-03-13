@@ -34,6 +34,8 @@ def _run_validate_mapping(
     operation: str,
     item_type: str = "",
     include_title: str = "",
+    source_name: str = "source.docx",
+    source_files: list[str] | None = None,
 ) -> tuple[dict, dict]:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"
@@ -42,11 +44,13 @@ def _run_validate_mapping(
     (out_dir / "out").mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    src = files_dir / "source.docx"
-    src.write_text("dummy", encoding="utf-8")
+    for rel_path in source_files or ["source.docx"]:
+        src = files_dir / rel_path
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_text("dummy", encoding="utf-8")
 
     mapping_path = tmp_path / "mapping.xlsx"
-    rows = [["source.docx", operation, item_type, include_title, "out", "result.docx", "", ""]]
+    rows = [[source_name, operation, item_type, include_title, "out", "result.docx", "", ""]]
     _write_mapping(mapping_path, rows)
 
     result = process_mapping_excel(
@@ -226,3 +230,29 @@ def test_mapping_include_title_invalid_value_errors(tmp_path: Path) -> None:
     assert any("包含標題欄位值無效: maybe" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert not runs or all(not (run.get("steps") or []) for run in runs)
+
+
+def test_mapping_source_relative_path_resolves_file(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description",
+        source_name="FolderA/source.docx",
+        source_files=["FolderA/source.docx"],
+    )
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("input_file", ""))).name == "source.docx"
+    assert "FolderA" in str(params.get("input_file", ""))
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_duplicate_filename_requires_relative_path(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description",
+        source_name="source.docx",
+        source_files=["FolderA/source.docx", "FolderB/source.docx"],
+    )
+    assert any("multiple files found for source.docx" in msg for msg in result.get("logs", []))
+    runs = log_data.get("runs") or []
+    assert runs
+    assert all(not (run.get("steps") or []) for run in runs)

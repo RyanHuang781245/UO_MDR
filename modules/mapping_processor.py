@@ -39,19 +39,29 @@ from app.services.flow_service import (
 )
 
 
-def _find_file(base: str, filename: str) -> str | None:
+def _split_rel_parts(path: str) -> list[str]:
+    return [part for part in re.split(r"[\\/]+", str(path or "").strip()) if part]
+
+
+def _find_files(base: str, filename: str) -> list[str]:
     """Search *base* recursively for *filename* ignoring case."""
     target = filename.lower()
+    matches: list[str] = []
     for root, _dirs, files in os.walk(base):
         for fn in files:
             if fn.lower() == target:
-                return os.path.join(root, fn)
-    return None
+                matches.append(os.path.join(root, fn))
+    return matches
+
+
+def _find_file(base: str, filename: str) -> str | None:
+    matches = _find_files(base, filename)
+    return matches[0] if matches else None
 
 
 def _find_directory(base: str, path: str) -> str | None:
     """Locate a directory relative to *base* ignoring case."""
-    parts = [p for p in os.path.normpath(path).split(os.sep) if p]
+    parts = _split_rel_parts(path)
     current = base
     for part in parts:
         match = None
@@ -66,24 +76,66 @@ def _find_directory(base: str, path: str) -> str | None:
     return current
 
 
-def _resolve_input_file(base: str, name: str) -> str | None:
+def _resolve_relative_file(base: str, path: str) -> str | None:
+    parts = _split_rel_parts(path)
+    if not parts:
+        return None
+    current = base
+    for part in parts[:-1]:
+        match = None
+        for name in os.listdir(current):
+            candidate = os.path.join(current, name)
+            if os.path.isdir(candidate) and name.lower() == part.lower():
+                match = candidate
+                break
+        if match is None:
+            return None
+        current = match
+    target_name = parts[-1].lower()
+    for name in os.listdir(current):
+        candidate = os.path.join(current, name)
+        if os.path.isfile(candidate) and name.lower() == target_name:
+            return candidate
+    return None
+
+
+def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
     """Resolve *name* to a file path.
 
-    If *name* includes an extension, it is treated as a filename and searched
-    within *base*. If it has no extension, it is treated as a directory and the
-    first document file inside that directory is returned.
+    If *name* includes an extension and contains path separators, it is treated
+    as a relative file path under *base* and resolved case-insensitively.
+    If *name* includes an extension without path separators, it is treated as a
+    filename and searched within *base*.
+    If it has no extension, it is treated as a directory and the first document
+    file inside that directory is returned.
     """
 
-    if "." in os.path.basename(name):
-        return _find_file(base, name)
+    raw_name = str(name or "").strip()
+    if not raw_name:
+        return None, "empty input name"
 
-    dir_path = _find_directory(base, name)
+    if "." in os.path.basename(raw_name):
+        if "/" in raw_name or "\\" in raw_name:
+            resolved = _resolve_relative_file(base, raw_name)
+            if resolved:
+                return resolved, ""
+            return None, f"file not found: {raw_name}"
+        matches = _find_files(base, raw_name)
+        if not matches:
+            return None, f"file not found: {raw_name}"
+        if len(matches) > 1:
+            rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
+            joined = "; ".join(rel_matches)
+            return None, f"multiple files found for {raw_name}: {joined}"
+        return matches[0], ""
+
+    dir_path = _find_directory(base, raw_name)
     if not dir_path:
-        return None
+        return None, f"directory not found: {raw_name}"
     for fn in os.listdir(dir_path):
         if fn.lower().endswith((".docx", ".doc")):
-            return os.path.join(dir_path, fn)
-    return None
+            return os.path.join(dir_path, fn), ""
+    return None, f"no Word file found in directory: {raw_name}"
 
 
 
@@ -250,9 +302,9 @@ def process_mapping_excel(
                     if not input_name:
                         logs.append(f"ERROR: {out_name or '?'} missing source filename")
                         continue
-                    infile = _resolve_input_file(base_dir, input_name)
+                    infile, resolve_error = _resolve_input_file(base_dir, input_name)
                     if not infile:
-                        logs.append(f"ERROR: {out_name or '?'} file not found {input_name}")
+                        logs.append(f"ERROR: {out_name or '?'} {resolve_error}")
                         continue
 
             log_file = None
@@ -291,9 +343,9 @@ def process_mapping_excel(
                 if not input_name:
                     logs.append(f"{out_name or '?'}: missing source filename")
                     continue
-                infile = _resolve_input_file(base_dir, input_name)
+                infile, resolve_error = _resolve_input_file(base_dir, input_name)
                 if not infile:
-                    logs.append(f"{out_name or '?'}: file not found {input_name}")
+                    logs.append(f"{out_name or '?'}: {resolve_error}")
                     continue
 
                 doc, section = docs.get(out_name, (None, None))
@@ -354,7 +406,7 @@ def process_mapping_excel(
                 search_root = base_dir
                 if input_name:
                     if "." in os.path.basename(input_name):
-                        found = _resolve_input_file(base_dir, input_name)
+                        found, _resolve_error = _resolve_input_file(base_dir, input_name)
                         if found:
                             search_root = os.path.dirname(found)
                     else:
@@ -764,9 +816,9 @@ def process_mapping_excel(
             continue
 
         if tf_kind:
-            infile = _resolve_input_file(task_files_dir, src_name)
+            infile, resolve_error = _resolve_input_file(task_files_dir, src_name)
             if not infile:
-                _log("error", f"未找到輸入檔案: {src_name}", row_num, action_label, detail_label)
+                _log("error", f"來源檔案解析失敗: {resolve_error}", row_num, action_label, detail_label)
                 continue
             params = {
                 "input_file": infile,
@@ -860,9 +912,9 @@ def process_mapping_excel(
             _log("error", f"unsupported operation: {instruction_core}", row_num, action_label, detail_label)
             continue
 
-        infile = _resolve_input_file(task_files_dir, src_name)
+        infile, resolve_error = _resolve_input_file(task_files_dir, src_name)
         if not infile:
-            _log("error", f"未找到輸入檔案: {src_name}", row_num, action_label, detail_label)
+            _log("error", f"來源檔案解析失敗: {resolve_error}", row_num, action_label, detail_label)
             continue
 
         if is_all:

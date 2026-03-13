@@ -403,6 +403,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     "mode": mode,
                     "content_docx_path": path,
                     "source_step": stype,
+                    "source_order": len(template_mappings),
                 }
             )
             log[-1]["template_index"] = t_idx

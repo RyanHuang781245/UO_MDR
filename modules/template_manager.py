@@ -186,7 +186,31 @@ def render_template_with_mappings(
     var_records: List[Tuple[str, Dict[str, Any]]] = []
     replaced_once = set()
 
-    mappings_sorted = sorted(mappings, key=lambda x: int(x["index"]), reverse=True)
+    def _ordered_mappings(raw_mappings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        annotated: List[Tuple[int, int, str, Dict[str, Any]]] = []
+        for seq, mp in enumerate(raw_mappings):
+            idx = int(mp["index"])
+            source_order = int(mp.get("source_order", seq))
+            mode = (mp.get("mode") or "insert_after").strip() or "insert_after"
+            annotated.append((idx, source_order, mode, mp))
+
+        ordered: List[Dict[str, Any]] = []
+        for idx in sorted({item[0] for item in annotated}, reverse=True):
+            same_index = [item for item in annotated if item[0] == idx]
+            replace_items = sorted(
+                [item for item in same_index if item[2] == "replace"],
+                key=lambda item: item[1],
+            )
+            insert_after_items = sorted(
+                [item for item in same_index if item[2] != "replace"],
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            ordered.extend(item[3] for item in replace_items)
+            ordered.extend(item[3] for item in insert_after_items)
+        return ordered
+
+    mappings_sorted = _ordered_mappings(mappings)
     for mp in mappings_sorted:
         idx = int(mp["index"])
         display, text = meta.get(idx, ("", ""))

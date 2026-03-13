@@ -175,6 +175,7 @@ def task_mapping(task_id):
     messages = []
     outputs = []
     log_file = None
+    zip_file = None
     step_runs = []
     last_mapping_marker = os.path.join(tdir, "mapping_last.txt")
     last_mapping_file = None
@@ -336,6 +337,7 @@ def task_mapping(task_id):
                 messages = result["logs"]
                 outputs = result["outputs"]
                 log_file = result.get("log_file")
+                zip_file = result.get("zip_file")
             except Exception as e:
                 messages = [str(e)]
     if log_file:
@@ -484,6 +486,7 @@ def task_mapping(task_id):
         messages=messages,
         outputs=rel_outputs,
         log_file=log_file,
+        zip_file=zip_file,
         has_error=has_error,
         has_warning=has_warning,
         warning_confirm=warning_confirm,

@@ -141,6 +141,12 @@
                     下載 Log
                 </a>
                 {% endif %}
+                {% if zip_file %}
+                <a class="btn btn-primary fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=zip_file) }}">
+                    <i class="bi bi-file-earmark-zip"></i>
+                    下載 ZIP
+                </a>
+                {% endif %}
             </div>
         </div>
 

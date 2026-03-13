@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
+from docx import Document as DocxDocument
 from openpyxl import Workbook
 
 from modules.mapping_processor import process_mapping_excel
@@ -256,3 +258,50 @@ def test_mapping_duplicate_filename_requires_relative_path(tmp_path: Path) -> No
     runs = log_data.get("runs") or []
     assert runs
     assert all(not (run.get("steps") or []) for run in runs)
+
+
+def test_mapping_outputs_are_packaged_into_zip(tmp_path: Path, monkeypatch) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    src = files_dir / "source.docx"
+    src.write_text("dummy", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [
+        ["source.docx", "1.1 General description", "", "", "pkg/A", "a.docx", "", ""],
+        ["source.docx", "1.2 General description", "", "", "pkg/B", "b.docx", "", ""],
+    ]
+    _write_mapping(mapping_path, rows)
+
+    def fake_run_workflow(steps, workdir, template=None):
+        result_docx = Path(workdir) / "result.docx"
+        doc = DocxDocument()
+        doc.add_paragraph(f"generated-{len(steps)}")
+        doc.save(result_docx)
+        return {"result_docx": str(result_docx), "log_json": []}
+
+    monkeypatch.setattr("modules.mapping_processor.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("modules.mapping_processor.apply_basic_style", lambda *args, **kwargs: True)
+    monkeypatch.setattr("modules.mapping_processor.remove_hidden_runs", lambda *args, **kwargs: True)
+    monkeypatch.setattr("modules.mapping_processor.hide_paragraphs_with_text", lambda *args, **kwargs: True)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=False,
+    )
+
+    zip_file = result.get("zip_file")
+    assert zip_file
+    zip_path = out_dir / zip_file
+    assert zip_path.is_file()
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == ["pkg/A/a.docx", "pkg/B/b.docx"]

@@ -4,6 +4,7 @@ import tempfile
 import uuid
 import shutil
 import json
+import zipfile
 from collections import defaultdict
 from typing import Dict, List, Tuple, Any
 
@@ -126,7 +127,7 @@ def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
         if len(matches) > 1:
             rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
             joined = "; ".join(rel_matches)
-            return None, f"multiple files found for {raw_name}: {joined}"
+            return None, f"找到多個名稱相同檔案 {raw_name}: {joined}"
         return matches[0], ""
 
     dir_path = _find_directory(base, raw_name)
@@ -1070,6 +1071,16 @@ def process_mapping_excel(
                 }
             )
 
+    zip_file = None
+    if not validate_only and outputs:
+        zip_filename = f"mapping_outputs_{uuid.uuid4().hex[:8]}.zip"
+        zip_path = os.path.join(output_dir, zip_filename)
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for output_path in outputs:
+                arcname = os.path.relpath(output_path, output_dir).replace("\\", "/")
+                zf.write(output_path, arcname)
+        zip_file = zip_filename
+
     log_file = None
     if run_logs or logs:
         target_log_dir = log_dir or output_dir
@@ -1080,4 +1091,4 @@ def process_mapping_excel(
             json.dump({"messages": logs, "runs": run_logs}, f, ensure_ascii=False, indent=2)
         log_file = log_filename
 
-    return {"logs": logs, "outputs": outputs, "log_file": log_file}
+    return {"logs": logs, "outputs": outputs, "log_file": log_file, "zip_file": zip_file}

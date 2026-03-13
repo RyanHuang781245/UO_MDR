@@ -98,6 +98,34 @@ def test_mapping_blank_type_defaults_to_extract_chapter(tmp_path: Path) -> None:
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_type_add_text_blank_operation_creates_insert_text(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "",
+        item_type="Add Text",
+        source_name="這是一段說明文字",
+        source_files=[],
+    )
+    assert _first_step_type(log_data) == "insert_text"
+    params = _first_step_params(log_data)
+    assert params.get("text") == "這是一段說明文字"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_type_add_text_rejects_other_operation(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description",
+        item_type="Add Text",
+        source_name="這是一段說明文字",
+        source_files=[],
+    )
+    assert any("類型 Add Text 時，操作欄僅支援留白或 Add Text" in msg for msg in result.get("logs", []))
+    runs = log_data.get("runs") or []
+    assert runs
+    assert all(not (run.get("steps") or []) for run in runs)
+
+
 def test_mapping_pdf_image_blank_operation_creates_pdf_step(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(
         tmp_path,

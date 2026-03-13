@@ -255,7 +255,7 @@ def process_mapping_excel(
 
     header_aliases = {
         "source": ["檔案名稱/資料夾名稱/文字內容", "來源檔案"],
-        "operation": ["擷取段落/操作"],
+        "operation": ["擷取段落"],
         "out_path": ["檔案路徑", "輸出路徑"],
         "out_name": ["檔案名稱", "輸出檔案名稱"],
         "template": ["模板文件"],
@@ -486,7 +486,9 @@ def process_mapping_excel(
             return "figure"
         if text in {"table", "表格", "表"}:
             return "table"
-        if text in {"pdf image", "pdf images", "pdfimage", "pdf_img", "pdf圖片", "pdf图", "pdf 圖片", "pdf 图片","label"}:
+        if text in {"add text", "text", "文字", "加入文字", "新增文字"}:
+            return "add_text"
+        if text in {"pdf image", "pdf images", "pdfimage", "pdf_img", "pdf圖片", "pdf图", "pdf 圖片", "pdf 图片"}:
             return "pdf_image"
         return ""
 
@@ -532,6 +534,8 @@ def process_mapping_excel(
         return True, f"包含標題欄位值無效: {text}"
 
     def _guess_action(instruction: str, item_type: str = "") -> str:
+        if item_type == "add_text":
+            return "Append text"
         if item_type == "figure":
             return "Extract figure"
         if item_type == "table":
@@ -679,16 +683,16 @@ def process_mapping_excel(
         if include_title_error:
             _log("error", include_title_error, row_num, action_label, detail_label)
             continue
-        if not instruction and item_type != "pdf_image":
+        if not instruction and item_type not in {"pdf_image", "add_text"}:
             _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
         if not out_name:
             _log("error", "缺少輸出文件檔名", row_num, action_label, detail_label)
             continue
-        if instruction.lower() != "add text" and not src_name:
+        if item_type != "add_text" and instruction.lower() != "add text" and not src_name:
             _log("error", "缺少輸入文件檔名", row_num, action_label, detail_label)
             continue
-        if instruction.lower() == "add text" and not src_name:
+        if (item_type == "add_text" or instruction.lower() == "add text") and not src_name:
             _log("error", "Add Text 需要文字內容", row_num, action_label, detail_label)
             continue
         if insert_label and not template_name:
@@ -737,6 +741,19 @@ def process_mapping_excel(
         group_key = (output_path, template_path)
         if group_key not in groups:
             groups[group_key] = {"steps": [], "parsed": parsed, "template": template_path}
+
+        if item_type == "add_text":
+            if instruction and instruction.lower() != "add text":
+                _log("error", f"類型 Add Text 時，操作欄僅支援留白或 Add Text: {instruction}", row_num, action_label, detail_label)
+                continue
+            params = {"text": src_name}
+            if template_path is not None:
+                params["template_index"] = target_idx
+                params["template_mode"] = "insert_after"
+            params["mapping_row"] = row_num
+            groups[group_key]["steps"].append({"type": "insert_text", "params": params})
+            _log("info", f"append text into {out_name}", row_num)
+            continue
 
         if instruction.lower() == "add text":
             params = {"text": src_name}

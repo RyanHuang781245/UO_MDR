@@ -314,6 +314,13 @@ def task_mapping(task_id):
         if stype == "extract_word_all_content":
             src = _base(params.get("input_file", ""))
             return f"{row_prefix}擷取全文", src.strip()
+        if stype == "extract_pdf_pages_as_images":
+            src = _base(params.get("input_file", ""))
+            pages = params.get("pages")
+            parts = [src.strip()]
+            if pages:
+                parts.append(f"pages={pages}")
+            return f"{row_prefix}擷取 PDF 圖片", " | ".join(p for p in parts if p)
         if stype == "extract_specific_table_from_word":
             src = _base(params.get("input_file", ""))
             section = (params.get("target_chapter_section") or "").strip()
@@ -1572,6 +1579,10 @@ def task_compare(task_id, job_id):
             if base in converted_docx:
                 source_urls[base] = url_for("tasks_bp.task_view_file", task_id=task_id, job_id=job_id, filename=converted_docx[base]
                 )
+        elif stype == "extract_pdf_pages_as_images":
+            infile = params.get("input_file", "")
+            base = os.path.basename(infile)
+            chapter_sources.setdefault(current or "未分類", []).append(base)
 
     chapters = list(chapter_sources.keys())
     html_url = url_for("tasks_bp.task_view_file", task_id=task_id, job_id=job_id, filename=html_name)

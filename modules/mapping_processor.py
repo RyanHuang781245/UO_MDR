@@ -486,6 +486,8 @@ def process_mapping_excel(
             return "figure"
         if text in {"table", "表格", "表"}:
             return "table"
+        if text in {"pdf image", "pdf images", "pdfimage", "pdf_img", "pdf圖片", "pdf图", "pdf 圖片", "pdf 图片","label"}:
+            return "pdf_image"
         return ""
 
     def _parse_include_title(raw_value: str) -> tuple[bool, str]:
@@ -534,6 +536,8 @@ def process_mapping_excel(
             return "Extract figure"
         if item_type == "table":
             return "Extract table"
+        if item_type == "pdf_image":
+            return "Extract PDF images"
         ins = (instruction or "").strip()
         if not ins:
             return "Mapping"
@@ -622,6 +626,8 @@ def process_mapping_excel(
             return src_base
         if action == "Extract all":
             return src_base
+        if action == "Extract PDF images":
+            return src_base
         return src_base or instruction_core
 
     def _parse_instruction_tail_options(raw_instruction: str) -> tuple[str, dict[str, str], str]:
@@ -673,7 +679,7 @@ def process_mapping_excel(
         if include_title_error:
             _log("error", include_title_error, row_num, action_label, detail_label)
             continue
-        if not instruction:
+        if not instruction and item_type != "pdf_image":
             _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
         if not out_name:
@@ -799,7 +805,7 @@ def process_mapping_excel(
                     detail_label,
                 )
                 continue
-        elif forced_kind:
+        elif forced_kind in {"figure", "table"}:
             tf_kind = forced_kind
             tf_label = ""
             head = instruction_core.strip().strip(",，\u3001")
@@ -906,6 +912,28 @@ def process_mapping_excel(
                 params["template_mode"] = "insert_after"
             params["mapping_row"] = row_num
             groups[group_key]["steps"].append({"type": step_type, "params": params})
+            continue
+
+        if item_type == "pdf_image":
+            instruction_text = (instruction or "").strip().lower()
+            if instruction_text not in {"", "all pages", "all", "pages"}:
+                _log("error", f"PDF Image 僅支援留白、All Pages 或 All: {instruction}", row_num, action_label, detail_label)
+                continue
+            infile, resolve_error = _resolve_input_file(task_files_dir, src_name)
+            if not infile:
+                _log("error", f"來源檔案解析失敗: {resolve_error}", row_num, action_label, detail_label)
+                continue
+            if not str(infile).lower().endswith(".pdf"):
+                _log("error", f"PDF Image 類型僅支援 PDF 檔案: {src_name}", row_num, action_label, detail_label)
+                continue
+
+            params = {"input_file": infile}
+            if template_path is not None:
+                params["template_index"] = target_idx
+                params["template_mode"] = "insert_after"
+            params["mapping_row"] = row_num
+            groups[group_key]["steps"].append({"type": "extract_pdf_pages_as_images", "params": params})
+            _log("info", f"extract pdf pages as images: {src_name}", row_num)
             continue
 
         is_all = instruction.lower() == "all"

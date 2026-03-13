@@ -124,7 +124,7 @@ SUPPORTED_STEPS = {
         }
     },
     "extract_pdf_pages_as_images": {
-        "label": "擷取 PDF 標籤",
+        "label": "擷取 PDF 每頁圖片",
         "inputs": ["input_file", "template_index", "template_mode"],
         "accepts": {
             "input_file": "file:pdf",

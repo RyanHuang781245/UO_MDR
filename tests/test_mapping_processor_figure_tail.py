@@ -98,6 +98,34 @@ def test_mapping_blank_type_defaults_to_extract_chapter(tmp_path: Path) -> None:
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_pdf_image_blank_operation_creates_pdf_step(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "",
+        item_type="PDF Image",
+        source_name="source.pdf",
+        source_files=["source.pdf"],
+    )
+    assert _first_step_type(log_data) == "extract_pdf_pages_as_images"
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("input_file", ""))).name == "source.pdf"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_pdf_image_requires_pdf_file(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "All Pages",
+        item_type="PDF Image",
+        source_name="source.docx",
+        source_files=["source.docx"],
+    )
+    assert any("PDF Image 類型僅支援 PDF 檔案" in msg for msg in result.get("logs", []))
+    runs = log_data.get("runs") or []
+    assert runs
+    assert all(not (run.get("steps") or []) for run in runs)
+
+
 def test_mapping_figure_tail_title(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 1|title=Overview Figure")
     params = _first_step_params(log_data)

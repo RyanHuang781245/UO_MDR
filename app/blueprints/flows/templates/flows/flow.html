@@ -712,11 +712,11 @@ const FIELD_META = {
     placeholder: "請輸入完整章節標題"
   },
   target_subtitle: {
-    label: "小標題",
-    placeholder: "請完整輸入小標題"
+    label: "子標題",
+    placeholder: "請完整輸入子標題"
   },
   subheading_strict_match: {
-    label: "小標題精確比對"
+    label: "子標題精確比對"
   },
   hide_chapter_title: {
     label: "隱藏章節標題"
@@ -756,7 +756,7 @@ const FIELD_META = {
     placeholder: "以逗號分隔，例如 a,b,c"
   },
   use_chapter_title: {
-    label: "擷取小標題內容"
+    label: "指定子標題內容"
   },
   page_break_before: {
     label: "段落前換頁"
@@ -850,6 +850,24 @@ function buildInsertMenu(sid, position){
       `<li><a class="dropdown-item" href="#" onclick="addStep('${key}', {}, '${sid}', '${position}'); return false;">${SUPPORTED_STEPS[key].label}</a></li>`
     ))
     .join('');
+}
+
+function bindSubheadingToggle(card){
+  const subheadingToggle = card.querySelector(".toggle-subheading");
+  const subheadingInputWrap = card.querySelector(".subheading-input");
+  if (!subheadingToggle || !subheadingInputWrap) return;
+
+  const syncSubheadingState = () => {
+    const enabled = subheadingToggle.checked;
+    subheadingInputWrap.style.display = enabled ? "" : "none";
+    if (!enabled) {
+      subheadingInputWrap.querySelectorAll('input[name$="_target_subtitle"]').forEach((input) => {
+        input.value = "";
+      });
+    }
+  };
+
+  subheadingToggle.addEventListener("change", syncSubheadingState);
 }
 
 function loadRunJobs(){
@@ -1624,7 +1642,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                     <div class="form-check d-flex align-items-center gap-1 m-0">
                       <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
                       <input class="form-check-input mt-0 bool-toggle toggle-subheading" type="checkbox" id="step_${sid}_use_chapter_title_chk" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-                      <label class="form-check-label small text-muted">擷取小標題內容</label>
+                      <label class="form-check-label small text-muted">指定子標題內容</label>
                     </div>
                     <div class="form-check d-flex align-items-center gap-1 m-0">
                       <input class="form-check-input mt-0 toggle-continuous-extract" type="checkbox" id="step_${sid}_continuous_extract" ${continuousExtractChecked ? "checked" : ""}>
@@ -1660,7 +1678,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             <div class="card-body">
               <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
                 <i class="bi bi-card-text"></i>
-                指定擷取的小標題
+                子標題
               </div>
               <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
               <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
@@ -1732,13 +1750,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         if (hidden) hidden.value = toggle.checked ? "true" : "false";
       });
     });
-    const subheadingToggle = card.querySelector(".toggle-subheading");
-    const subheadingInput = card.querySelector(".subheading-input");
-    if (subheadingToggle && subheadingInput) {
-      subheadingToggle.addEventListener("change", () => {
-        subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
-      });
-    }
+    bindSubheadingToggle(card);
     const continuousExtractToggle = card.querySelector(".toggle-continuous-extract");
     const continuousCardWrap = card.querySelector(".continuous-card-wrap");
     const continuousEndWrap = card.querySelector(".continuous-end-wrap");
@@ -1850,7 +1862,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                       <div class="card-body">
                         <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
                           <i class="bi bi-card-text"></i>
-                          指定擷取的小標題
+                          子標題
                         </div>
                         <input class="form-control subtitle-input" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}">
                         <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
@@ -1978,7 +1990,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <div class="form-check d-flex align-items-center gap-1 m-0">
           <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
           <input class="form-check-input mt-0 bool-toggle toggle-subheading" type="checkbox" id="step_${sid}_use_chapter_title_chk" data-target="step_${sid}_use_chapter_title" ${targetTitleVal !== "false" ? "checked" : ""}>
-          <label class="form-check-label small text-muted">擷取小標題內容</label>
+          <label class="form-check-label small text-muted">指定子標題內容</label>
         </div>`;
       basicFields.push(`
         <div class="col-md-6">
@@ -2142,13 +2154,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       if (hidden) hidden.value = toggle.checked ? "true" : "false";
     });
   });
-  const subheadingToggle = card.querySelector(".toggle-subheading");
-  const subheadingInput = card.querySelector(".subheading-input");
-  if (subheadingToggle && subheadingInput) {
-    subheadingToggle.addEventListener("change", () => {
-      subheadingInput.style.display = subheadingToggle.checked ? "" : "none";
-    });
-  }
+  bindSubheadingToggle(card);
   refreshTemplateSelects();
   updateOrder();
   _applyRuleVisibility(card);

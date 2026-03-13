@@ -214,7 +214,7 @@ def extract_word_all_content(
     extract_body_with_options(
         input_docx=input_file,
         output_docx=out_path,
-        ignore_toc=ignore_toc,
+        ignore_toc_and_before=ignore_toc,
         ignore_header_footer=ignore_header_footer,
     )
 

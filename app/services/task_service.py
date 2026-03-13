@@ -18,6 +18,10 @@ ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
 ALLOWED_EXCEL = {".xlsx", ".xls"}
 
+
+def _normalize_rel_path(rel_path: str) -> str:
+    return (rel_path or "").replace("\\", "/")
+
 def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel")):
     ext = os.path.splitext(filename)[1].lower()
     if "docx" in kinds and ext in ALLOWED_DOCX:
@@ -34,7 +38,7 @@ def list_files(base_dir):
     files = []
     for root, _, fns in os.walk(base_dir):
         for fn in fns:
-            rel = os.path.relpath(os.path.join(root, fn), base_dir)
+            rel = _normalize_rel_path(os.path.relpath(os.path.join(root, fn), base_dir))
             files.append(rel)
     return sorted(files)
 
@@ -54,7 +58,7 @@ def list_dirs(base_dir):
     for root, dirnames, _ in os.walk(base_dir):
         rel_root = os.path.relpath(root, base_dir)
         for d in dirnames:
-            path = os.path.normpath(os.path.join(rel_root, d))
+            path = _normalize_rel_path(os.path.normpath(os.path.join(rel_root, d)))
             dirs.append(path)
     return sorted(dirs)
 

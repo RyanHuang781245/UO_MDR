@@ -101,16 +101,16 @@ def _to_roman(num: int) -> str:
     return "".join(result)
 
 SUPPORTED_STEPS = {
-    "extract_pdf_chapter_to_table": {
-        "label": "擷取 PDF 章節至表格（上傳 ZIP）",
-        "inputs": ["pdf_zip", "target_section", "template_index", "template_mode"],
-        "accepts": {
-            "pdf_zip": "file:zip",
-            "target_section": "text",
-            "template_index": "text",
-            "template_mode": "text",
-        }
-    },
+    # "extract_pdf_chapter_to_table": {
+    #     "label": "擷取 PDF 章節至表格（上傳 ZIP）",
+    #     "inputs": ["pdf_zip", "target_section", "template_index", "template_mode"],
+    #     "accepts": {
+    #         "pdf_zip": "file:zip",
+    #         "target_section": "text",
+    #         "template_index": "text",
+    #         "template_mode": "text",
+    #     }
+    # },
     "extract_word_all_content": {
         "label": "擷取 Word 全部內容",
         "inputs": ["input_file", "ignore_toc", "ignore_header_footer", "template_index", "template_mode"],
@@ -232,18 +232,6 @@ SUPPORTED_STEPS = {
             "template_mode": "text",
         }
     },
-    "insert_numbered_heading": {
-        "label": "插入阿拉伯數字標題",
-        "inputs": ["text", "level", "bold", "font_size", "template_index", "template_mode"],
-        "accepts": {
-            "text": "text",
-            "level": "int",
-            "bold": "bool",
-            "font_size": "float",
-            "template_index": "text",
-            "template_mode": "text",
-        }
-    },
     "insert_roman_heading": {
         "label": "插入羅馬數字標題",
         "inputs": ["text", "level", "bold", "font_size", "template_index", "template_mode"],
@@ -267,6 +255,18 @@ SUPPORTED_STEPS = {
             "template_mode": "text",
         }
     },
+     "insert_numbered_heading": {
+        "label": "插入阿拉伯數字標題",
+        "inputs": ["text", "level", "bold", "font_size", "template_index", "template_mode"],
+        "accepts": {
+            "text": "text",
+            "level": "int",
+            "bold": "bool",
+            "font_size": "float",
+            "template_index": "text",
+            "template_mode": "text",
+        }
+    },
     "copy_files": {
         "label": "複製檔案",
         "inputs": ["source_dir", "dest_dir", "keywords"],
@@ -276,15 +276,15 @@ SUPPORTED_STEPS = {
             "keywords": "text"
         }
     },
-    "renumber_figures_tables": {
-        "label": "重新編號圖表並更新參照",
-        "inputs": ["numbering_scope", "figure_start", "table_start"],
-        "accepts": {
-            "numbering_scope": "text",
-            "figure_start": "int",
-            "table_start": "int",
-        }
-    }
+    # "renumber_figures_tables": {
+    #     "label": "重新編號圖表並更新參照",
+    #     "inputs": ["numbering_scope", "figure_start", "table_start"],
+    #     "accepts": {
+    #         "numbering_scope": "text",
+    #         "figure_start": "int",
+    #         "table_start": "int",
+    #     }
+    # }
 }
 
 def boolish(v:str)->bool:

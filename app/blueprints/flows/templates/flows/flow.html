@@ -625,6 +625,11 @@
 <script>
 const TASK_ID = '{{ task.id }}';
 const SUPPORTED_STEPS = {{ steps|tojson }};
+const ORDERED_STEP_KEYS = [
+  {% for key, meta in steps.items() %}
+  "{{ key }}",
+  {% endfor %}
+];
 const AVAILABLE_FILES = {{ files|tojson }};
 const PRESET_FLOW = {{ preset|tojson }};
 const TEMPLATE_PARSE_URL = "{{ url_for('tasks_bp.parse_template_doc', task_id=task.id) }}";
@@ -829,9 +834,12 @@ function syncChapterRefInput(input){
 }
 
 function buildInsertMenu(sid, position){
-  return Object.entries(SUPPORTED_STEPS).map(([key, meta]) => (
-    `<li><a class="dropdown-item" href="#" onclick="addStep('${key}', {}, '${sid}', '${position}'); return false;">${meta.label}</a></li>`
-  )).join('');
+  return ORDERED_STEP_KEYS
+    .filter((key) => SUPPORTED_STEPS[key])
+    .map((key) => (
+      `<li><a class="dropdown-item" href="#" onclick="addStep('${key}', {}, '${sid}', '${position}'); return false;">${SUPPORTED_STEPS[key].label}</a></li>`
+    ))
+    .join('');
 }
 
 function loadRunJobs(){

@@ -51,6 +51,31 @@ from modules.auth_models import ROLE_ADMIN, user_has_role
 from modules.file_copier import copy_files
 
 tasks_bp = Blueprint("tasks_bp", __name__, template_folder="templates")
+_INVALID_UPLOAD_FILENAME_CHARS = '\\/:*?"<>|'
+_WINDOWS_RESERVED_FILE_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
 
 
 def _get_actor_info():
@@ -64,6 +89,29 @@ def _get_actor_info():
             label = display_name or work_id
         return work_id, label
     return "", ""
+
+
+def _safe_uploaded_filename(filename: str, default_stem: str = "upload") -> str:
+    raw_name = os.path.basename((filename or "").replace("\\", "/")).strip()
+    secured = secure_filename(raw_name)
+    raw_stem, raw_ext = os.path.splitext(raw_name)
+    secured_raw_stem = secure_filename(raw_stem) if raw_stem else ""
+    if secured and (not raw_stem or secured_raw_stem):
+        return secured
+
+    cleaned = "".join(
+        "_" if (ord(ch) < 32 or ch in _INVALID_UPLOAD_FILENAME_CHARS) else ch
+        for ch in raw_name
+    ).strip().strip(".")
+    if cleaned in {"", ".", ".."}:
+        cleaned = default_stem
+
+    stem, ext = os.path.splitext(cleaned)
+    if not stem:
+        stem = default_stem
+    if stem.upper() in _WINDOWS_RESERVED_FILE_NAMES:
+        stem = f"_{stem}"
+    return f"{stem}{ext}" if ext else stem
 
 
 def _apply_last_edit(meta: dict) -> None:
@@ -316,7 +364,10 @@ def task_mapping(task_id):
             if not f or not f.filename:
                 messages.append("請選擇檔案")
             else:
-                filename = secure_filename(f.filename)
+                filename = _safe_uploaded_filename(
+                    f.filename,
+                    default_stem=f"mapping_{uuid.uuid4().hex[:8]}",
+                )
                 mapping_path = os.path.join(tdir, filename)
                 f.save(mapping_path)
                 try:

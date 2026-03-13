@@ -254,7 +254,7 @@ def test_mapping_duplicate_filename_requires_relative_path(tmp_path: Path) -> No
         source_name="source.docx",
         source_files=["FolderA/source.docx", "FolderB/source.docx"],
     )
-    assert any("multiple files found for source.docx" in msg for msg in result.get("logs", []))
+    assert any("找到多個名稱相同檔案 source.docx" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
     assert all(not (run.get("steps") or []) for run in runs)

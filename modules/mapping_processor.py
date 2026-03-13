@@ -251,11 +251,11 @@ def process_mapping_excel(
         raise RuntimeError("openpyxl is required to process mapping files") from e
 
     wb = load_workbook(mapping_path)
-    ws = wb.active
+    ws = wb.worksheets[0]
 
     header_aliases = {
         "source": ["檔案名稱/資料夾名稱/文字內容", "來源檔案"],
-        "operation": ["擷取段落"],
+        "operation": ["擷取段落", "擷取段落"],
         "out_path": ["檔案路徑", "輸出路徑"],
         "out_name": ["檔案名稱", "輸出檔案名稱"],
         "template": ["模板文件"],

@@ -205,6 +205,11 @@ def task_mapping(task_id):
         stype = entry.get("type") or ""
         params = entry.get("params") or {}
 
+        def _boolish(value, default: bool = False) -> bool:
+            if value in (None, ""):
+                return default
+            return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
         def _base(path: str) -> str:
             if not path: return "?"
             name = os.path.basename(path)
@@ -229,6 +234,8 @@ def task_mapping(task_id):
                 parts.append(main_header)
             if sub:
                 parts.append(sub)
+            if _boolish(params.get("hide_chapter_title"), default=False):
+                parts.append("不含標題")
             
             return f"{row_prefix}擷取章節", " | ".join(parts)
         if stype == "extract_word_all_content":
@@ -255,6 +262,8 @@ def task_mapping(task_id):
                 parts.append(f"title={table_title}")
             if table_index:
                 parts.append(f"index={table_index}")
+            if not _boolish(params.get("include_caption"), default=True):
+                parts.append("不含標題")
             return f"{row_prefix}擷取表格", " | ".join(parts)
         if stype == "extract_specific_figure_from_word":
             src = _base(params.get("input_file", ""))
@@ -277,6 +286,8 @@ def task_mapping(task_id):
                 parts.append(f"title={figure_title}")
             if figure_index:
                 parts.append(f"index={figure_index}")
+            if not _boolish(params.get("include_caption"), default=True):
+                parts.append("不含標題")
             return f"{row_prefix}擷取圖片", " | ".join(parts)
         if stype == "insert_text":
             text_val = (params.get("text") or "").strip()

@@ -173,10 +173,12 @@ def process_mapping_excel(
     New format columns:
         A: Source file or text
         B: Section/Operation
-        C: Output path
-        D: Output filename
-        E: Template file
-        F: Insert paragraph
+        C: Type
+        D: Include title/caption
+        E: Output path
+        F: Output filename
+        G: Template file
+        H: Insert paragraph
     Returns a dict with keys:
         logs: list of messages
         outputs: list of generated docx paths
@@ -204,6 +206,7 @@ def process_mapping_excel(
     }
     optional_header_aliases = {
         "item_type": ["類型", "Type", "擷取類型"],
+        "include_title": ["包含標題", "是否包含標題", "顯示標題", "Include Title", "Include Caption"],
     }
     header_row = None
     max_row = ws.max_row or 0
@@ -428,6 +431,47 @@ def process_mapping_excel(
             return "table"
         return ""
 
+    def _parse_include_title(raw_value: str) -> tuple[bool, str]:
+        text = (raw_value or "").strip()
+        if not text:
+            return True, ""
+        normalized = re.sub(r"\s+", "", text).lower()
+        if normalized in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+            "include",
+            "show",
+            "keep",
+            "包含",
+            "顯示",
+            "保留",
+            "是",
+            "要",
+        }:
+            return True, ""
+        if normalized in {
+            "0",
+            "false",
+            "no",
+            "n",
+            "off",
+            "exclude",
+            "hide",
+            "omit",
+            "remove",
+            "不包含",
+            "不顯示",
+            "隱藏",
+            "否",
+            "不要",
+            "移除",
+        }:
+            return False, ""
+        return True, f"包含標題欄位值無效: {text}"
+
     def _guess_action(instruction: str, item_type: str = "") -> str:
         if item_type == "figure":
             return "Extract figure"
@@ -565,9 +609,13 @@ def process_mapping_excel(
         template_name = _cell(col_idx.get("template", 4))
         insert_label = _cell(col_idx.get("insert", 5))
         item_type = _normalize_item_type(_cell(col_idx.get("item_type", -1)))
+        include_title, include_title_error = _parse_include_title(_cell(col_idx.get("include_title", -1)))
 
         action_label = _guess_action(instruction, item_type=item_type)
         detail_label = _build_detail(action_label, src_name, instruction, item_type=item_type)
+        if include_title_error:
+            _log("error", include_title_error, row_num, action_label, detail_label)
+            continue
         if not instruction:
             _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
@@ -723,7 +771,7 @@ def process_mapping_excel(
             params = {
                 "input_file": infile,
                 "target_chapter_section": tf_chapter,
-                "include_caption": True,
+                "include_caption": include_title,
             }
             if tf_chapter_title:
                 params["target_chapter_title"] = tf_chapter_title
@@ -829,6 +877,7 @@ def process_mapping_excel(
             params["ignore_header_footer"] = True
             params["subheading_strict_match"] = True
             params["explicit_end_title"] = ""
+            params["hide_chapter_title"] = not include_title
 
             split_pattern = r"[\\/]+"
             has_split = re.search(split_pattern, instruction_core)

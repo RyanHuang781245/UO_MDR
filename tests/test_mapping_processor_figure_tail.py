@@ -11,11 +11,12 @@ from modules.mapping_processor import process_mapping_excel
 HEADERS = [
     "檔案名稱/資料夾名稱/文字內容",
     "擷取段落/操作",
+    "類型",
+    "包含標題",
     "檔案路徑",
     "檔案名稱",
     "模板文件",
     "插入段落名稱/目的資料夾名稱",
-    "類型",
 ]
 
 
@@ -28,7 +29,12 @@ def _write_mapping(path: Path, rows: list[list[str]]) -> None:
     wb.save(path)
 
 
-def _run_validate_mapping(tmp_path: Path, operation: str, item_type: str = "") -> tuple[dict, dict]:
+def _run_validate_mapping(
+    tmp_path: Path,
+    operation: str,
+    item_type: str = "",
+    include_title: str = "",
+) -> tuple[dict, dict]:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"
     log_dir = tmp_path / "logs"
@@ -40,7 +46,7 @@ def _run_validate_mapping(tmp_path: Path, operation: str, item_type: str = "") -
     src.write_text("dummy", encoding="utf-8")
 
     mapping_path = tmp_path / "mapping.xlsx"
-    rows = [["source.docx", operation, "out", "result.docx", "", "", item_type]]
+    rows = [["source.docx", operation, item_type, include_title, "out", "result.docx", "", ""]]
     _write_mapping(mapping_path, rows)
 
     result = process_mapping_excel(
@@ -176,3 +182,47 @@ def test_mapping_table_tail_behavior_unchanged(tmp_path: Path) -> None:
     assert "target_figure_title" not in params
     assert "target_figure_index" not in params
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_chapter_include_title_false_sets_hide_flag(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description",
+        include_title="FALSE",
+    )
+    params = _first_step_params(log_data)
+    assert params.get("hide_chapter_title") is True
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_figure_include_title_false_disables_caption(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 Figure 1|title=Overview Figure",
+        include_title="否",
+    )
+    params = _first_step_params(log_data)
+    assert params.get("include_caption") is False
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_table_include_title_false_disables_caption(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 Table 1|title=Table Name",
+        include_title="N",
+    )
+    params = _first_step_params(log_data)
+    assert params.get("include_caption") is False
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_include_title_invalid_value_errors(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description",
+        include_title="maybe",
+    )
+    assert any("包含標題欄位值無效: maybe" in msg for msg in result.get("logs", []))
+    runs = log_data.get("runs") or []
+    assert not runs or all(not (run.get("steps") or []) for run in runs)

@@ -73,6 +73,7 @@
                                 <tr><td class="font-monospace">檔案名稱/資料夾名稱/文字內容</td><td>來源檔案（或 Add Text 文字）</td></tr>
                                 <tr><td class="font-monospace">擷取段落/操作</td><td>章節/指令內容（可含 <code>|Figure x. or Table x.</code>、<code>|title=</code>、<code>|index=</code>）</td></tr>
                                 <tr><td class="font-monospace">類型</td><td><code>空白</code>=擷取章節、<code>Figure</code>=擷取圖片、<code>Table</code>=擷取表格</td></tr>
+                                <tr><td class="font-monospace">包含標題</td><td>控制是否保留標題；章節=章節標題，圖片/表格=caption/title。留白預設包含，可填 <code>是/否</code>、<code>Y/N</code>、<code>TRUE/FALSE</code></td></tr>
                                 <tr><td class="font-monospace">檔案路徑</td><td>輸出資料夾（相對路徑）</td></tr>
                                 <tr><td class="font-monospace">檔案名稱</td><td>輸出檔名（.docx）</td></tr>
                                 <tr><td class="font-monospace">模板文件</td><td>可空白；需插入模板段落時填入</td></tr>
@@ -82,6 +83,7 @@
                     </div>
 
                     <div class="small fw-semibold text-dark mb-2">操作欄語法範例</div>
+                    <div class="small text-muted mb-2">若需隱藏標題，請在 <code>包含標題</code> 欄位填入 <code>否</code> 或 <code>FALSE</code>。</div>
                     <div class="small font-monospace mb-1">章節擷取範例1（類型 空白）：<span class="text-primary">1.1.1 General description</span></div>
                     <div class="small font-monospace mb-1">表格擷取範例2（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|Figure 1.</span></div>
                     <div class="small font-monospace mb-1">表格擷取範例3（類型 Table）：<span class="text-primary">1.1.1 General description|title=Table summary|index=1</span></div>

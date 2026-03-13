@@ -676,9 +676,6 @@ def process_mapping_excel(
         if not instruction:
             _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
-        if not out_rel:
-            _log("error", "缺少輸出路徑", row_num, action_label, detail_label)
-            continue
         if not out_name:
             _log("error", "缺少輸出文件檔名", row_num, action_label, detail_label)
             continue

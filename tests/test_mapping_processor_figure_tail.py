@@ -263,6 +263,39 @@ def test_mapping_duplicate_filename_requires_relative_path(tmp_path: Path) -> No
     assert all(not (run.get("steps") or []) for run in runs)
 
 
+def test_mapping_blank_output_path_defaults_to_output_root(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    src = files_dir / "source.docx"
+    src.write_text("dummy", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["source.docx", "1.1 General description", "", "", "", "result.docx", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=True,
+    )
+
+    assert not any("缺少輸出路徑" in msg for msg in result.get("logs", []))
+    log_file = result.get("log_file")
+    assert log_file
+    with open(log_dir / log_file, "r", encoding="utf-8") as f:
+        log_data = json.load(f)
+    runs = log_data.get("runs") or []
+    assert runs
+    assert runs[0].get("output") == "result.docx"
+
+
 def test_mapping_outputs_are_packaged_into_zip(tmp_path: Path, monkeypatch) -> None:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"

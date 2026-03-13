@@ -383,7 +383,7 @@ def task_mapping(task_id):
         warning_confirm = "Warnings found. Run anyway?\n" + "\n".join(trimmed)
 
     error_messages = [m for m in messages if (m or "").startswith("ERROR:")]
-    if error_messages and step_runs:
+    if error_messages:
         def _norm_error_text(text: str) -> str:
             return re.sub(r"\s+", " ", (text or "").strip())
 

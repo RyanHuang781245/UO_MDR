@@ -863,6 +863,10 @@ def find_section_range_children(
 
             lvl = get_effective_outline_level(p, style_outline, style_based)
             if start_outline is not None and lvl is not None and lvl <= start_outline:
+                if start_ilvl is None:
+                    cur_ilvl = get_ilvl(p)
+                    if cur_ilvl is not None:
+                        continue
                 return start_idx, j
 
             if start_outline is None:

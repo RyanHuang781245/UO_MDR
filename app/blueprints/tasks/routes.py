@@ -293,6 +293,10 @@ def task_mapping(task_id):
 
         row_no = params.get("mapping_row")
         row_prefix = f"(Row {row_no}) " if row_no not in (None, "", "None") else ""
+        preset_action = (params.get("mapping_action_label") or "").strip()
+        preset_detail = (params.get("mapping_detail_label") or "").strip()
+        if preset_action:
+            return f"{row_prefix}{preset_action}", preset_detail
         if stype == "extract_word_chapter":
             src = _base(params.get("input_file", ""))
             chapter_start = (params.get("target_chapter_section") or "").strip()
@@ -374,10 +378,30 @@ def task_mapping(task_id):
         if stype == "insert_text":
             text_val = (params.get("text") or "").strip()
             return f"{row_prefix}插入文字", text_val
+        if stype == "copy_file":
+            src = _base(params.get("source", ""))
+            dest = (params.get("destination") or "").strip().replace("\\", "/")
+            target_name = (params.get("target_name") or "").strip()
+            parts = [src]
+            if target_name:
+                parts.append(f"目標名稱={target_name}")
+            if dest:
+                parts.append(dest)
+            return f"{row_prefix}複製檔案", " | ".join(p for p in parts if p)
+        if stype == "copy_folder":
+            src = _base(params.get("source", ""))
+            dest = (params.get("destination") or "").strip().replace("\\", "/")
+            target_name = (params.get("target_name") or "").strip()
+            parts = [src]
+            if target_name:
+                parts.append(f"目標名稱={target_name}")
+            if dest:
+                parts.append(dest)
+            return f"{row_prefix}複製資料夾", " | ".join(p for p in parts if p)
         if stype == "template_merge":
             tpl = _base(entry.get("template_file", ""))
             return f"{row_prefix}模版合併", tpl.strip()
-        return stype or "步驟", ""
+        return f"{row_prefix}{stype or '步驟'}", ""
 
     def _truncate_detail(text: str, limit: int = 160) -> tuple[str, bool]:
         if len(text) <= limit:

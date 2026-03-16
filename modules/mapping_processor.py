@@ -673,7 +673,14 @@ def process_mapping_excel(
         start_section, end_section, parsed_title = parse_chapter_section_expression(main_part)
         return start_section, end_section, parsed_title, "", subheading
 
-    def _build_detail(action: str, src: str, instruction: str, item_type: str = "") -> str:
+    def _build_detail(
+        action: str,
+        src: str,
+        instruction: str,
+        item_type: str = "",
+        out_rel: str = "",
+        out_name: str = "",
+    ) -> str:
         instruction_core = (instruction or "").split("|", 1)[0].strip()
         tail_title_match = re.search(r"(?:^|\|)\s*title\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
         tail_index_match = re.search(r"(?:^|\|)\s*index\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
@@ -683,7 +690,12 @@ def process_mapping_excel(
         if action == "Append text":
             return src
         if action in {"Copy file", "Copy folder"}:
-            return src_base or src
+            parts = [src_base or src]
+            if out_rel:
+                parts.append(out_rel.replace("\\", "/"))
+            if out_name:
+                parts.append(f"目標名稱={out_name}")
+            return " | ".join(p for p in parts if p)
         if action == "Extract chapter":
             chapter, title, subheading = _parse_chapter_parts(instruction_core)
             parts = [f"chapter {chapter}"] if chapter else []
@@ -752,6 +764,12 @@ def process_mapping_excel(
                 options[key] = value
         return core, options, ""
 
+    def _attach_mapping_meta(params: Dict[str, Any], row_num: int, action: str, detail: str) -> Dict[str, Any]:
+        params["mapping_row"] = row_num
+        params["mapping_action_label"] = action
+        params["mapping_detail_label"] = detail
+        return params
+
     for row_num, row in enumerate(
         ws.iter_rows(min_row=header_row + 1, values_only=True),
         start=header_row + 1,
@@ -774,7 +792,14 @@ def process_mapping_excel(
         include_title, include_title_error = _parse_include_title(_cell(col_idx.get("include_title", -1)))
 
         action_label = _guess_action(instruction, item_type=item_type)
-        detail_label = _build_detail(action_label, src_name, instruction, item_type=item_type)
+        detail_label = _build_detail(
+            action_label,
+            src_name,
+            instruction,
+            item_type=item_type,
+            out_rel=out_rel_normalized,
+            out_name=out_name,
+        )
         if include_title_error:
             _log("error", include_title_error, row_num, action_label, detail_label)
             continue
@@ -864,6 +889,8 @@ def process_mapping_excel(
                                     "destination": target_dir,
                                     "target_name": out_name,
                                     "mapping_row": row_num,
+                                    "mapping_action_label": "複製檔案" if item_type == "copy_file" else "複製資料夾",
+                                    "mapping_detail_label": detail_label,
                                 },
                             }
                         ],
@@ -876,6 +903,8 @@ def process_mapping_excel(
                                     "destination": target_dir,
                                     "target_name": out_name,
                                     "mapping_row": row_num,
+                                    "mapping_action_label": "複製檔案" if item_type == "copy_file" else "複製資料夾",
+                                    "mapping_detail_label": detail_label,
                                 },
                                 "status": "ok",
                                 "error": "",
@@ -926,6 +955,8 @@ def process_mapping_excel(
                                     "destination": target_dir,
                                     "target_name": out_name,
                                     "mapping_row": row_num,
+                                    "mapping_action_label": "複製檔案" if item_type == "copy_file" else "複製資料夾",
+                                    "mapping_detail_label": detail_label,
                                 },
                             }
                         ],
@@ -967,7 +998,7 @@ def process_mapping_excel(
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = "insert_after"
-            params["mapping_row"] = row_num
+            _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": "insert_text", "params": params})
             _log("info", f"append text into {out_name}", row_num)
             continue
@@ -977,7 +1008,7 @@ def process_mapping_excel(
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = "insert_after"
-            params["mapping_row"] = row_num
+            _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": "insert_text", "params": params})
             _log("info", f"append text into {out_name}", row_num)
             continue
@@ -1144,7 +1175,7 @@ def process_mapping_excel(
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = "insert_after"
-            params["mapping_row"] = row_num
+            _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": step_type, "params": params})
             continue
 
@@ -1165,7 +1196,7 @@ def process_mapping_excel(
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = "insert_after"
-            params["mapping_row"] = row_num
+            _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": "extract_pdf_pages_as_images", "params": params})
             _log("info", f"extract pdf pages as images: {src_name}", row_num)
             continue
@@ -1225,7 +1256,7 @@ def process_mapping_excel(
         if template_path is not None:
             params["template_index"] = target_idx
             params["template_mode"] = "insert_after"
-        params["mapping_row"] = row_num
+        _attach_mapping_meta(params, row_num, action_label, detail_label)
         groups[group_key]["steps"].append({"type": step_type, "params": params})
 
     for (output_path, template_path), payload in groups.items():

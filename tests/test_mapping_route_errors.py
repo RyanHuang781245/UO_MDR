@@ -223,3 +223,75 @@ def test_mapping_route_only_shows_generate_after_extract_check(app, client, monk
     html_extract = response_extract.get_data(as_text=True)
     assert response_extract.status_code == 200
     assert 'value="run_cached"' in html_extract
+
+
+def test_mapping_route_renders_copy_steps_with_row_labels(app, client, monkeypatch) -> None:
+    task_id = "mapping-copy-rows"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_process_mapping_excel(
+        mapping_path,
+        task_files_dir,
+        output_dir,
+        log_dir=None,
+        validate_only=False,
+        validate_extract_only=False,
+    ):
+        log_path = Path(log_dir or output_dir) / "mapping_log_copy_rows.json"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "messages": [],
+            "runs": [
+                {
+                    "output": "pkg",
+                    "workflow_log": [
+                        {
+                            "step": 1,
+                            "type": "copy_folder",
+                            "params": {
+                                "mapping_row": 3,
+                                "source": r"C:\tmp\IFU",
+                                "destination": r"C:\dest\pkg\folders",
+                            },
+                            "status": "ok",
+                            "error": "",
+                        },
+                        {
+                            "step": 2,
+                            "type": "copy_file",
+                            "params": {
+                                "mapping_row": 4,
+                                "source": r"C:\tmp\labeling.pdf",
+                                "destination": r"C:\dest\pkg\files",
+                            },
+                            "status": "ok",
+                            "error": "",
+                        },
+                    ],
+                }
+            ],
+        }
+        log_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return {"logs": [], "outputs": [], "log_file": log_path.name, "zip_file": None}
+
+    monkeypatch.setattr("modules.mapping_processor.process_mapping_excel", fake_process_mapping_excel)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={
+            "action": "check",
+            "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "(Row 3) 複製資料夾" in html
+    assert "(Row 4) 複製檔案" in html
+    assert r"C:/dest/pkg/folders" in html or r"C:\dest\pkg\folders" in html
+    assert r"C:/dest/pkg/files" in html or r"C:\dest\pkg\files" in html

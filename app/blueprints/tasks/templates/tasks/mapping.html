@@ -181,13 +181,13 @@
                 <div class="list-group-item py-3">
                     {% if step.status == "error" %}
                     <details open>
-                        <summary class="d-grid align-items-center" style="grid-template-columns: 260px 1fr; column-gap: 12px; list-style: none; cursor: pointer;">
+                        <summary class="d-grid align-items-center mapping-step-grid" style="list-style: none; cursor: pointer;">
                             <div class="d-flex align-items-center gap-2 text-danger fw-bold">
                                 <i class="bi bi-exclamation-triangle-fill"></i>
                                 <span>{{ step.action }}</span>
                             </div>
                             {% if step.detail %}
-                            <div class="text-muted small text-truncate">{{ step.detail_short if step.detail_long else step.detail }}</div>
+                            <div class="text-muted small text-truncate mapping-step-detail-cell">{{ step.detail_short if step.detail_long else step.detail }}</div>
                             {% endif %}
                         </summary>
                         <div class="mt-2 p-3 bg-danger bg-opacity-10 border border-danger border-opacity-25 rounded-2 small text-danger font-monospace">
@@ -195,19 +195,23 @@
                         </div>
                     </details>
                     {% else %}
-                    <div class="d-grid align-items-center" style="grid-template-columns: 260px 1fr; column-gap: 12px;">
+                    <div class="d-grid align-items-center mapping-step-grid">
                         <div class="d-flex align-items-center gap-2 text-success fw-bold">
                             <i class="bi bi-check-circle-fill"></i>
                             <span>{{ step.action }}</span>
                         </div>
                         {% if step.detail %}
                         {% if step.detail_long %}
-                        <details class="text-muted small">
-                            <summary class="text-truncate" style="list-style: none; cursor: pointer;">{{ step.detail_short }} <i class="bi bi-chevron-down ms-1 small text-muted"></i></summary>
-                            <div class="mt-2 p-3 bg-light rounded-2 border border-gray-200">{{ step.detail }}</div>
+                        <details class="text-muted small mapping-step-detail-expand">
+                            <summary class="mapping-step-detail-summary" style="list-style: none; cursor: pointer;">{{ step.detail_short }} <i class="bi bi-chevron-down ms-1 small text-muted"></i></summary>
+                            <div class="mt-2 p-3 bg-light rounded-2 border border-gray-200 mapping-step-detail-body">{{ step.detail }}</div>
                         </details>
                         {% else %}
-                        <div class="text-muted small text-truncate">{{ step.detail }}</div>
+                        <div class="text-muted small text-truncate mapping-step-detail-inline" data-expand-target="mapping-step-detail-{{ loop.index0 }}">{{ step.detail }}</div>
+                        <details class="text-muted small mapping-step-detail-expand d-none" id="mapping-step-detail-{{ loop.index0 }}">
+                            <summary class="mapping-step-detail-summary" style="list-style: none; cursor: pointer;">{{ step.detail }} <i class="bi bi-chevron-down ms-1 small text-muted"></i></summary>
+                            <div class="mt-2 p-3 bg-light rounded-2 border border-gray-200 mapping-step-detail-body">{{ step.detail }}</div>
+                        </details>
                         {% endif %}
                         {% endif %}
                     </div>
@@ -240,9 +244,51 @@
 .transition-all {
     transition: all 0.2s ease;
 }
+.mapping-step-grid {
+    grid-template-columns: 260px minmax(0, 1fr);
+    column-gap: 12px;
+}
+.mapping-step-detail-cell,
+.mapping-step-detail-inline,
+.mapping-step-detail-expand {
+    min-width: 0;
+    width: 100%;
+}
+.mapping-step-detail-summary {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mapping-step-detail-body {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
 </style>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    function syncMappingStepDetailOverflow() {
+        document.querySelectorAll('.mapping-step-detail-inline').forEach((inlineEl) => {
+            const targetId = inlineEl.getAttribute('data-expand-target');
+            const detailsEl = targetId ? document.getElementById(targetId) : null;
+            if (!detailsEl) return;
+
+            const isOverflowing = inlineEl.scrollWidth > inlineEl.clientWidth + 1;
+            if (isOverflowing) {
+                inlineEl.classList.add('d-none');
+                detailsEl.classList.remove('d-none');
+            } else {
+                inlineEl.classList.remove('d-none');
+                detailsEl.classList.add('d-none');
+                detailsEl.removeAttribute('open');
+            }
+        });
+    }
+
+    syncMappingStepDetailOverflow();
+    window.addEventListener('resize', syncMappingStepDetailOverflow);
+
     const forms = document.querySelectorAll('form');
     forms.forEach(form => {
         form.addEventListener('submit', function(e) {

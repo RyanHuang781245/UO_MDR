@@ -22,6 +22,17 @@ def normalize_text(t: str) -> str:
 def get_p_text(p: etree._Element) -> str:
     return normalize_text("".join(p.xpath(".//w:t/text()", namespaces=NS)))
 
+def _get_w_val(el: etree._Element | None, default=None):
+    if el is None:
+        return default
+    return el.get(qn("w:val"), default)
+
+def _safe_int(value, default=None):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 def get_pStyle(p: etree._Element) -> str | None:
     pPr = p.find("w:pPr", namespaces=NS)
     if pPr is None: return None
@@ -83,27 +94,41 @@ def parse_numbering(numbering_xml: bytes | None):
 
     # 1. 解析 w:num (編號實例)
     for num in root.xpath(".//w:num", namespaces=NS):
-        nid = int(num.get(qn("w:numId")))
+        nid = _safe_int(num.get(qn("w:numId")))
+        if nid is None:
+            continue
         abs_el = num.find("w:abstractNumId", namespaces=NS)
         if abs_el is not None:
-            num_to_abstract[nid] = int(abs_el.get(qn("w:val")))
+            abs_id = _safe_int(_get_w_val(abs_el))
+            if abs_id is not None:
+                num_to_abstract[nid] = abs_id
         # 關鍵：讀取 w:startOverride
         for override in num.xpath("./w:lvlOverride", namespaces=NS):
-            ilvl = int(override.get(qn("w:ilvl")))
+            ilvl = _safe_int(override.get(qn("w:ilvl")))
+            if ilvl is None:
+                continue
             s_ov = override.find("./w:startOverride", namespaces=NS)
-            if s_ov is not None:
-                num_id_overrides[nid][ilvl] = int(s_ov.get(qn("w:val")))
+            start_override = _safe_int(_get_w_val(s_ov))
+            if start_override is not None:
+                num_id_overrides[nid][ilvl] = start_override
 
     # 2. 解析 w:abstractNum (編號模板)
     for absn in root.xpath(".//w:abstractNum", namespaces=NS):
-        aid = int(absn.get(qn("w:abstractNumId")))
+        aid = _safe_int(absn.get(qn("w:abstractNumId")))
+        if aid is None:
+            continue
         levels = {}
         for lvl in absn.xpath("./w:lvl", namespaces=NS):
-            ilvl = int(lvl.get(qn("w:ilvl")))
+            ilvl = _safe_int(lvl.get(qn("w:ilvl")))
+            if ilvl is None:
+                continue
+            num_fmt = _get_w_val(lvl.find("w:numFmt", namespaces=NS), "decimal") or "decimal"
+            lvl_text = _get_w_val(lvl.find("w:lvlText", namespaces=NS), "") or ""
+            start = _safe_int(_get_w_val(lvl.find("w:start", namespaces=NS)), 1) or 1
             levels[ilvl] = {
-                "numFmt": (lvl.find("w:numFmt", namespaces=NS).get(qn("w:val")) or "decimal"),
-                "lvlText": (lvl.find("w:lvlText", namespaces=NS).get(qn("w:val")) or ""),
-                "start": int(lvl.find("w:start", namespaces=NS).get(qn("w:val")) or "1"),
+                "numFmt": num_fmt,
+                "lvlText": lvl_text,
+                "start": start,
             }
         abstract_levels[aid] = levels
     return num_to_abstract, abstract_levels, num_id_overrides
@@ -197,6 +222,16 @@ def parse_paragraph_numbering(docx_path: str):
                 display = compute_display_label(l_info.get("lvlText",""), l_info.get("numFmt",""), counters_by_numId[numId], ilvl)
 
         results.append({"index": idx, "display": display, "text": txt, "style": s_id})
+
+    if not results and paragraphs:
+        results.append(
+            {
+                "index": 0,
+                "display": "",
+                "text": "空白模板起始段落",
+                "style": get_pStyle(paragraphs[0]),
+            }
+        )
 
     return results
 

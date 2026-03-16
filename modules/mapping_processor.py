@@ -369,7 +369,7 @@ def process_mapping_excel(
             if logs:
                 target_log_dir = log_dir or output_dir
                 os.makedirs(target_log_dir, exist_ok=True)
-                log_filename = f"mapping_log_{uuid.uuid4().hex[:8]}.json"
+                log_filename = "mapping_log.json"
                 log_path = os.path.join(target_log_dir, log_filename)
                 with open(log_path, "w", encoding="utf-8") as f:
                     json.dump({"messages": logs, "runs": []}, f, ensure_ascii=False, indent=2)
@@ -1283,7 +1283,6 @@ def process_mapping_excel(
                 {
                     "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
                     "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
-                    "steps": payload.get("steps", []),
                     "workflow_log": workflow_log,
                     "status": "error" if has_error else "ok",
                 }
@@ -1308,7 +1307,6 @@ def process_mapping_excel(
                     {
                         "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
                         "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
-                        "steps": payload.get("steps", []),
                         "workflow_log": workflow_log,
                         "status": "error" if has_error else "ok",
                     }
@@ -1319,7 +1317,6 @@ def process_mapping_excel(
                     {
                         "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
                         "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
-                        "steps": payload.get("steps", []),
                         "status": "error",
                         "error": str(e),
                         "workflow_log": [],
@@ -1370,7 +1367,6 @@ def process_mapping_excel(
                 {
                     "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
                     "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
-                    "steps": payload.get("steps", []),
                     "workflow_log": workflow_result.get("log_json", []),
                     "status": "ok",
                 }
@@ -1381,7 +1377,6 @@ def process_mapping_excel(
                 {
                     "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
                     "template": os.path.relpath(template_path, task_files_dir).replace("\\", "/") if template_path else None,
-                    "steps": payload.get("steps", []),
                     "status": "error",
                     "error": str(e),
                 }
@@ -1428,7 +1423,7 @@ def process_mapping_excel(
     if run_logs or logs:
         target_log_dir = log_dir or output_dir
         os.makedirs(target_log_dir, exist_ok=True)
-        log_filename = f"mapping_log_{uuid.uuid4().hex[:8]}.json"
+        log_filename = "mapping_log.json"
         log_path = os.path.join(target_log_dir, log_filename)
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump({"messages": logs, "runs": run_logs}, f, ensure_ascii=False, indent=2)

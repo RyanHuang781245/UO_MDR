@@ -77,22 +77,27 @@ def _run_validate_mapping(
 def _first_step_params(log_data: dict) -> dict:
     runs = log_data.get("runs") or []
     assert runs, "expected at least one run entry"
-    steps = runs[0].get("steps") or []
-    assert steps, "expected at least one workflow step"
-    return (steps[0].get("params") or {})
+    workflow_log = runs[0].get("workflow_log") or []
+    assert workflow_log, "expected at least one workflow log entry"
+    return (workflow_log[0].get("params") or {})
 
 
 def _first_step_type(log_data: dict) -> str:
     runs = log_data.get("runs") or []
     assert runs, "expected at least one run entry"
-    steps = runs[0].get("steps") or []
-    assert steps, "expected at least one workflow step"
-    return str(steps[0].get("type") or "")
+    workflow_log = runs[0].get("workflow_log") or []
+    assert workflow_log, "expected at least one workflow log entry"
+    return str(workflow_log[0].get("type") or "")
 
 
 def test_mapping_blank_type_defaults_to_extract_chapter(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "1.1 General description", item_type="")
+    assert result.get("log_file") == "mapping_log.json"
     assert _first_step_type(log_data) == "extract_word_chapter"
+    runs = log_data.get("runs") or []
+    assert runs[0].get("workflow_log")
+    assert "steps" not in runs[0]
+    assert "validation_log" not in runs[0]
     params = _first_step_params(log_data)
     assert params.get("target_chapter_section") == "1.1"
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
@@ -162,7 +167,7 @@ def test_mapping_type_add_text_rejects_other_operation(tmp_path: Path) -> None:
     assert any("類型 Add Text 時，操作欄僅支援留白或 Add Text" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
-    assert all(not (run.get("steps") or []) for run in runs)
+    assert all(not (run.get("workflow_log") or []) for run in runs)
 
 
 def test_mapping_pdf_image_blank_operation_creates_pdf_step(tmp_path: Path) -> None:
@@ -190,7 +195,7 @@ def test_mapping_pdf_image_requires_pdf_file(tmp_path: Path) -> None:
     assert any("PDF Image 類型僅支援 PDF 檔案" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
-    assert all(not (run.get("steps") or []) for run in runs)
+    assert all(not (run.get("workflow_log") or []) for run in runs)
 
 
 def test_mapping_copy_file_blank_operation_creates_copy_file_step(tmp_path: Path) -> None:
@@ -229,6 +234,7 @@ def test_mapping_copy_folder_blank_operation_creates_copy_folder_step(tmp_path: 
     )
 
     log_file = result.get("log_file")
+    assert log_file == "mapping_log.json"
     assert log_file
     with open(log_dir / log_file, "r", encoding="utf-8") as f:
         log_data = json.load(f)
@@ -268,7 +274,7 @@ def test_mapping_tail_requires_figure_or_table_label(tmp_path: Path) -> None:
     assert any("使用 title/index 參數時必須指定 Figure 或 Table 標籤" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
-    assert all(not (run.get("steps") or []) for run in runs)
+    assert all(not (run.get("workflow_log") or []) for run in runs)
 
 
 def test_mapping_type_figure_allows_tail_without_label(tmp_path: Path) -> None:
@@ -304,7 +310,7 @@ def test_mapping_type_conflicts_with_label(tmp_path: Path) -> None:
     assert any("類型欄位與操作內容不一致" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
-    assert all(not (run.get("steps") or []) for run in runs)
+    assert all(not (run.get("workflow_log") or []) for run in runs)
 
 
 def test_mapping_type_figure_requires_caption_or_title_or_index(tmp_path: Path) -> None:
@@ -312,7 +318,7 @@ def test_mapping_type_figure_requires_caption_or_title_or_index(tmp_path: Path) 
     assert any("Figure 擷取至少需提供 caption、title 或 index 其中之一" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
-    assert all(not (run.get("steps") or []) for run in runs)
+    assert all(not (run.get("workflow_log") or []) for run in runs)
 
 
 def test_mapping_figure_index_validation(tmp_path: Path) -> None:
@@ -374,7 +380,7 @@ def test_mapping_include_title_invalid_value_errors(tmp_path: Path) -> None:
     )
     assert any("包含標題欄位值無效: maybe" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
-    assert not runs or all(not (run.get("steps") or []) for run in runs)
+    assert not runs or all(not (run.get("workflow_log") or []) for run in runs)
 
 
 def test_mapping_source_relative_path_resolves_file(tmp_path: Path) -> None:
@@ -400,7 +406,7 @@ def test_mapping_duplicate_filename_requires_relative_path(tmp_path: Path) -> No
     assert any("找到多個名稱相同檔案 source.docx" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
-    assert all(not (run.get("steps") or []) for run in runs)
+    assert all(not (run.get("workflow_log") or []) for run in runs)
 
 
 def test_mapping_blank_output_path_defaults_to_output_root(tmp_path: Path) -> None:
@@ -565,6 +571,7 @@ def test_mapping_copy_outputs_use_conflict_suffix_and_zip(tmp_path: Path) -> Non
         validate_only=False,
     )
 
+    assert result.get("log_file") == "mapping_log.json"
     assert sorted(Path(p).name for p in result.get("outputs", [])) == ["labeling_hip.pdf", "labeling_knee.pdf"]
     zip_file = result.get("zip_file")
     assert zip_file

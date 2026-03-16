@@ -215,6 +215,285 @@ def _strip_leading_whitespace_after_prefix(p: etree._Element, prefix_run: etree.
             t.text = new_text
             break
 
+def _get_paragraph_numpr(p: etree._Element) -> tuple[int, int] | None:
+    pPr = p.find("w:pPr", namespaces=NS)
+    if pPr is None:
+        return None
+    numPr = pPr.find("w:numPr", namespaces=NS)
+    if numPr is None:
+        return None
+    num_id_node = numPr.find("w:numId", namespaces=NS)
+    ilvl_node = numPr.find("w:ilvl", namespaces=NS)
+    if num_id_node is None or ilvl_node is None:
+        return None
+    num_id_raw = (num_id_node.get(qn("w:val")) or "").strip()
+    ilvl_raw = (ilvl_node.get(qn("w:val")) or "").strip()
+    if not num_id_raw.isdigit() or not ilvl_raw.isdigit():
+        return None
+    return int(num_id_raw), int(ilvl_raw)
+
+def _format_number_token(value: int, num_fmt: str) -> str:
+    fmt = (num_fmt or "decimal").strip().lower()
+    if fmt in {"decimal", "decimalzero"}:
+        return str(value)
+    if fmt == "upperroman":
+        return _to_roman_number(value).upper()
+    if fmt == "lowerroman":
+        return _to_roman_number(value).lower()
+    if fmt == "upperletter":
+        return _to_alpha_number(value).upper()
+    if fmt == "lowerletter":
+        return _to_alpha_number(value).lower()
+    return str(value)
+
+def _to_roman_number(value: int) -> str:
+    if value <= 0:
+        return str(value)
+    pairs = [
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ]
+    parts: list[str] = []
+    current = value
+    for arabic, roman in pairs:
+        while current >= arabic:
+            parts.append(roman)
+            current -= arabic
+    return "".join(parts)
+
+def _to_alpha_number(value: int) -> str:
+    if value <= 0:
+        return str(value)
+    chars: list[str] = []
+    current = value
+    while current > 0:
+        current -= 1
+        chars.append(chr(ord("A") + (current % 26)))
+        current //= 26
+    return "".join(reversed(chars))
+
+def _load_numbering_maps(numbering_xml: bytes | None) -> tuple[dict[int, dict], dict[int, dict]]:
+    if not numbering_xml:
+        return {}, {}
+
+    root = etree.fromstring(numbering_xml)
+    abstract_map: dict[int, dict] = {}
+    num_map: dict[int, dict] = {}
+
+    for abstract in root.findall("w:abstractNum", namespaces=NS):
+        abs_raw = (abstract.get(qn("w:abstractNumId")) or "").strip()
+        if not abs_raw.isdigit():
+            continue
+        abs_id = int(abs_raw)
+        levels: dict[int, dict] = {}
+        for lvl in abstract.findall("w:lvl", namespaces=NS):
+            ilvl_raw = (lvl.get(qn("w:ilvl")) or "").strip()
+            if not ilvl_raw.isdigit():
+                continue
+            ilvl = int(ilvl_raw)
+            start_node = lvl.find("w:start", namespaces=NS)
+            num_fmt_node = lvl.find("w:numFmt", namespaces=NS)
+            lvl_text_node = lvl.find("w:lvlText", namespaces=NS)
+            levels[ilvl] = {
+                "start": int((start_node.get(qn("w:val")) or "1")) if start_node is not None else 1,
+                "num_fmt": (num_fmt_node.get(qn("w:val")) or "decimal") if num_fmt_node is not None else "decimal",
+                "lvl_text": (lvl_text_node.get(qn("w:val")) or "") if lvl_text_node is not None else "",
+            }
+        abstract_map[abs_id] = levels
+
+    for num in root.findall("w:num", namespaces=NS):
+        num_raw = (num.get(qn("w:numId")) or "").strip()
+        if not num_raw.isdigit():
+            continue
+        num_id = int(num_raw)
+        abs_ref = num.find("w:abstractNumId", namespaces=NS)
+        abs_raw = (abs_ref.get(qn("w:val")) or "").strip() if abs_ref is not None else ""
+        if not abs_raw.isdigit():
+            continue
+        overrides: dict[int, dict] = {}
+        for override in num.findall("w:lvlOverride", namespaces=NS):
+            ilvl_raw = (override.get(qn("w:ilvl")) or "").strip()
+            if not ilvl_raw.isdigit():
+                continue
+            ilvl = int(ilvl_raw)
+            start_override = override.find("w:startOverride", namespaces=NS)
+            override_data: dict[str, int | str] = {}
+            if start_override is not None:
+                start_raw = (start_override.get(qn("w:val")) or "").strip()
+                if start_raw.isdigit():
+                    override_data["start"] = int(start_raw)
+            lvl = override.find("w:lvl", namespaces=NS)
+            if lvl is not None:
+                num_fmt_node = lvl.find("w:numFmt", namespaces=NS)
+                lvl_text_node = lvl.find("w:lvlText", namespaces=NS)
+                if num_fmt_node is not None:
+                    override_data["num_fmt"] = num_fmt_node.get(qn("w:val")) or "decimal"
+                if lvl_text_node is not None:
+                    override_data["lvl_text"] = lvl_text_node.get(qn("w:val")) or ""
+            if override_data:
+                overrides[ilvl] = override_data
+        num_map[num_id] = {
+            "abstract_id": int(abs_raw),
+            "overrides": overrides,
+        }
+
+    return abstract_map, num_map
+
+def _resolve_numbering_level(
+    abstract_map: dict[int, dict],
+    num_map: dict[int, dict],
+    *,
+    num_id: int,
+    ilvl: int,
+) -> dict:
+    num_info = num_map.get(num_id) or {}
+    abstract_id = num_info.get("abstract_id")
+    base = {}
+    if isinstance(abstract_id, int):
+        base = dict((abstract_map.get(abstract_id) or {}).get(ilvl) or {})
+    override = dict((num_info.get("overrides") or {}).get(ilvl) or {})
+    if override:
+        base.update(override)
+    if "start" not in base:
+        base["start"] = 1
+    if "num_fmt" not in base:
+        base["num_fmt"] = "decimal"
+    if "lvl_text" not in base:
+        base["lvl_text"] = f"%{ilvl + 1}"
+    return base
+
+def _render_numbering_prefix(
+    p: etree._Element,
+    content_children: list[etree._Element],
+    numbering_xml: bytes | None,
+) -> str:
+    numpr = _get_paragraph_numpr(p)
+    if numpr is None:
+        return ""
+
+    target_num_id, target_ilvl = numpr
+    abstract_map, num_map = _load_numbering_maps(numbering_xml)
+    states: dict[int, dict[int, int]] = {}
+
+    for block in content_children:
+        for para in iter_paragraphs(block):
+            para_numpr = _get_paragraph_numpr(para)
+            if para_numpr is None:
+                continue
+            num_id, ilvl = para_numpr
+            level_info = _resolve_numbering_level(abstract_map, num_map, num_id=num_id, ilvl=ilvl)
+            counters = states.setdefault(num_id, {})
+
+            for depth in list(counters.keys()):
+                if depth > ilvl:
+                    del counters[depth]
+
+            start_value = int(level_info.get("start") or 1)
+            counters[ilvl] = counters.get(ilvl, start_value - 1) + 1
+
+            lvl_text = str(level_info.get("lvl_text") or f"%{ilvl + 1}")
+            for token_idx in range(1, 10):
+                token = f"%{token_idx}"
+                if token not in lvl_text:
+                    continue
+                current_level = token_idx - 1
+                current_info = _resolve_numbering_level(
+                    abstract_map,
+                    num_map,
+                    num_id=num_id,
+                    ilvl=current_level,
+                )
+                current_value = counters.get(current_level)
+                if current_value is None:
+                    current_value = int(current_info.get("start") or 1)
+                lvl_text = lvl_text.replace(
+                    token,
+                    _format_number_token(current_value, str(current_info.get("num_fmt") or "decimal")),
+                )
+
+            if para is p and num_id == target_num_id and ilvl == target_ilvl:
+                return normalize_text(lvl_text)
+
+    return ""
+
+def materialize_paragraph_numpr_as_text(
+    p: etree._Element | None,
+    content_children: list[etree._Element],
+    numbering_xml: bytes | None,
+) -> bool:
+    if p is None or p.tag != qn("w:p"):
+        return False
+    if _get_paragraph_numpr(p) is None:
+        return False
+
+    prefix = _render_numbering_prefix(p, content_children, numbering_xml)
+    _remove_paragraph_numpr(p)
+    _strip_paragraph_indents(p)
+
+    if not prefix:
+        return True
+
+    paragraph_text = normalize_text(get_all_text(p))
+    normalized_prefix = normalize_text(prefix)
+    if paragraph_text.startswith(normalized_prefix):
+        return True
+    if not prefix.endswith(" "):
+        prefix = f"{prefix} "
+    _prepend_paragraph_text(p, prefix)
+    return True
+
+def normalize_paragraph_to_plain_text_run(
+    p: etree._Element | None,
+    *,
+    prefer_following_text_run: bool = False,
+) -> None:
+    if p is None or p.tag != qn("w:p"):
+        return
+
+    original_children = list(p)
+    line_texts = _paragraph_line_texts(p)
+    if not line_texts:
+        text = normalize_text(get_all_text(p))
+        line_texts = [text] if text else []
+
+    pPr = p.find("w:pPr", namespaces=NS)
+    text_runs = []
+    for child in original_children:
+        if child.tag != qn("w:r"):
+            continue
+        run_text = "".join(child.xpath(".//w:t/text()", namespaces=NS))
+        if run_text and normalize_text(run_text):
+            text_runs.append(child)
+
+    style_source = None
+    if prefer_following_text_run and len(text_runs) >= 2:
+        style_source = text_runs[1]
+    elif text_runs:
+        style_source = text_runs[0]
+
+    for child in original_children:
+        if child is pPr:
+            continue
+        p.remove(child)
+
+    if not line_texts:
+        return
+
+    run = etree.Element(qn("w:r"))
+    if style_source is not None:
+        r_pr = style_source.find("w:rPr", namespaces=NS)
+        if r_pr is not None:
+            run.append(deepcopy(r_pr))
+    for idx, line in enumerate(line_texts):
+        if idx > 0:
+            etree.SubElement(run, qn("w:br"))
+        text_node = etree.SubElement(run, qn("w:t"))
+        if line.startswith(" ") or line.endswith(" "):
+            text_node.set(f"{{{XML_NS}}}space", "preserve")
+        text_node.text = line
+    p.append(run)
+
 def _ensure_numbering_instance(
     file_map: dict[str, bytes],
     start_parts: list[int],

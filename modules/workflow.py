@@ -112,6 +112,15 @@ SUPPORTED_STEPS = {
     #         "template_mode": "text",
     #     }
     # },
+    "extract_pdf_pages_as_images": {
+        "label": "擷取 PDF 標籤圖片",
+        "inputs": ["input_file", "template_index", "template_mode"],
+        "accepts": {
+            "input_file": "file:pdf",
+            "template_index": "text",
+            "template_mode": "text",
+        }
+    },
     "extract_word_all_content": {
         "label": "擷取 Word 全部內容",
         "inputs": ["input_file", "ignore_toc", "ignore_header_footer", "template_index", "template_mode"],
@@ -119,15 +128,6 @@ SUPPORTED_STEPS = {
             "input_file": "file:docx",
             "ignore_toc": "bool",
             "ignore_header_footer": "bool",
-            "template_index": "text",
-            "template_mode": "text",
-        }
-    },
-    "extract_pdf_pages_as_images": {
-        "label": "擷取 PDF 每頁圖片",
-        "inputs": ["input_file", "template_index", "template_mode"],
-        "accepts": {
-            "input_file": "file:pdf",
             "template_index": "text",
             "template_mode": "text",
         }

@@ -18,6 +18,8 @@ from modules.extract_word_chapter import (
     get_pStyle,
     normalize_text,
     qn,
+    materialize_paragraph_numpr_as_text,
+    normalize_paragraph_to_plain_text_run,
     remove_all_header_footer_references,
     trim_to_subheading_range,
 )
@@ -383,8 +385,26 @@ def extract_specific_table_from_word_xml(
 
     kept_blocks: list[etree._Element] = []
     if include_caption and saved_caption_block is not None:
+        materialized = materialize_paragraph_numpr_as_text(
+            saved_caption_block,
+            content_children,
+            file_map.get("word/numbering.xml"),
+        )
+        normalize_paragraph_to_plain_text_run(
+            saved_caption_block,
+            prefer_following_text_run=materialized,
+        )
         kept_blocks.append(saved_caption_block)
     elif include_caption and saved_title_block is not None:
+        materialized = materialize_paragraph_numpr_as_text(
+            saved_title_block,
+            content_children,
+            file_map.get("word/numbering.xml"),
+        )
+        normalize_paragraph_to_plain_text_run(
+            saved_title_block,
+            prefer_following_text_run=materialized,
+        )
         kept_blocks.append(saved_title_block)
     kept_blocks.append(saved_table_block)
 

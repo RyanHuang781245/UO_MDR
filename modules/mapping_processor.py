@@ -255,7 +255,7 @@ def process_mapping_excel(
     ws = wb.worksheets[0]
 
     header_aliases = {
-        "source": ["檔案名稱/資料夾名稱/文字內容", "來源檔案"],
+        "source": ["輸入檔案名稱/資料夾名稱/文字內容", "來源檔案"],
         "operation": ["擷取段落/操作", "擷取段落"],
         "out_path": ["檔案路徑", "輸出路徑"],
         "out_name": ["檔案名稱", "輸出檔案名稱"],

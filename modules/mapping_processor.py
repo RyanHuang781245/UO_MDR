@@ -30,6 +30,7 @@ from .file_copier import copy_files
 from .docx_merger import merge_word_docs
 from .template_manager import parse_template_paragraphs, render_template_with_mappings
 from .workflow import run_workflow
+from .chapter_section_parse import parse_chapter_section_expression
 from app.services.flow_service import (
     DEFAULT_APPLY_FORMATTING,
     DEFAULT_DOCUMENT_FORMAT_KEY,
@@ -255,7 +256,7 @@ def process_mapping_excel(
 
     header_aliases = {
         "source": ["檔案名稱/資料夾名稱/文字內容", "來源檔案"],
-        "operation": ["擷取段落", "擷取段落"],
+        "operation": ["擷取段落/操作", "擷取段落"],
         "out_path": ["檔案路徑", "輸出路徑"],
         "out_name": ["檔案名稱", "輸出檔案名稱"],
         "template": ["模板文件"],
@@ -579,6 +580,35 @@ def process_mapping_excel(
                 chapter = inline_match.group(1)
                 title = (inline_match.group(2) or "").strip()
         return chapter, title, subheading
+
+    def _parse_mapping_chapter_instruction(text: str) -> tuple[str, str, str, str, str]:
+        raw = (text or "").strip()
+        if not raw:
+            return "", "", "", "", ""
+
+        main_part = raw
+        subheading = ""
+        split_match = re.search(r"[\\/]+", raw)
+        if split_match:
+            main_part = raw[:split_match.start()].strip()
+            subheading = raw[split_match.end():].strip()
+
+        range_title_match = re.match(
+            r"^(\d+(?:\.\d+)*\.?)(?:\s+(.+?))?\s*[-~～至到]\s*(\d+(?:\.\d+)*\.?)(?:\s+(.+))?$",
+            main_part,
+        )
+        if range_title_match:
+            start_section = (range_title_match.group(1) or "").rstrip(".")
+            start_title = (range_title_match.group(2) or "").strip()
+            end_section = (range_title_match.group(3) or "").rstrip(".")
+            end_title = (range_title_match.group(4) or "").strip()
+            if not start_title and end_title:
+                start_title = end_title
+                end_title = ""
+            return start_section, end_section, start_title, end_title, subheading
+
+        start_section, end_section, parsed_title = parse_chapter_section_expression(main_part)
+        return start_section, end_section, parsed_title, "", subheading
 
     def _build_detail(action: str, src: str, instruction: str, item_type: str = "") -> str:
         instruction_core = (instruction or "").split("|", 1)[0].strip()
@@ -978,50 +1008,32 @@ def process_mapping_excel(
             params["explicit_end_title"] = ""
             params["hide_chapter_title"] = not include_title
 
-            split_pattern = r"[\\/]+"
-            has_split = re.search(split_pattern, instruction_core)
-            if has_split:
-                first, after = re.split(split_pattern, instruction_core, maxsplit=1)
-                first = first.strip()
-                after = after.strip()
-                first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", first)
-                title_inline = ""
-                if first_match:
-                    chapter = first_match.group(1)
-                    params["target_chapter_section"] = chapter
-                    title_inline = (first_match.group(2) or "").strip()
-                if after:
-                    if title_inline:
-                        params["target_chapter_title"] = title_inline
-                    params["use_chapter_title"] = True
-                    params["target_subtitle"] = after
-                    if title_inline:
-                        _log(
-                            f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline}, subheading {after})"
-                            , row_num
-                        )
-                    else:
-                        _log(f"Extract chapter: {src_name} (chapter {chapter}, subheading {after})", row_num)
-                else:
-                    if title_inline:
-                        _log(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})", row_num)
-                    else:
-                        _log(f"Extract chapter: {src_name} (chapter {chapter})", row_num)
-                if "use_chapter_title" not in params:
-                    params["use_chapter_title"] = False
-            else:
-                inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", instruction_core.strip())
-                title_inline = ""
-                if inline_match:
-                    chapter = inline_match.group(1)
-                    params["target_chapter_section"] = chapter
-                    title_inline = (inline_match.group(2) or "").strip()
-                params["use_chapter_title"] = False
-                if title_inline:
-                    params["target_chapter_title"] = title_inline
-                    _log(f"Extract chapter: {src_name} (chapter {chapter}, title {title_inline})", row_num)
-                else:
-                    _log(f"Extract chapter: {src_name} (chapter {chapter})", row_num)
+            start_section, end_section, start_title, end_title, subheading = _parse_mapping_chapter_instruction(
+                instruction_core.strip()
+            )
+            if start_section:
+                chapter = start_section
+                params["target_chapter_section"] = chapter
+            if end_section:
+                params["explicit_end_number"] = end_section
+            if start_title:
+                params["target_chapter_title"] = start_title
+            if end_title:
+                params["explicit_end_title"] = end_title
+
+            params["use_chapter_title"] = bool(subheading)
+            if subheading:
+                params["target_subtitle"] = subheading
+
+            range_hint = f"{chapter}-{params['explicit_end_number']}" if params.get("explicit_end_number") else chapter
+            detail_parts = [f"chapter {range_hint}"]
+            if start_title:
+                detail_parts.append(f"title {start_title}")
+            if end_title:
+                detail_parts.append(f"end title {end_title}")
+            if subheading:
+                detail_parts.append(f"subheading {subheading}")
+            _log(f"Extract chapter: {src_name} ({', '.join(detail_parts)})", row_num)
             step_type = "extract_word_chapter"
         if template_path is not None:
             params["template_index"] = target_idx

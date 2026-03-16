@@ -295,7 +295,9 @@ def task_mapping(task_id):
         row_prefix = f"(Row {row_no}) " if row_no not in (None, "", "None") else ""
         if stype == "extract_word_chapter":
             src = _base(params.get("input_file", ""))
-            chapter = (params.get("target_chapter_section") or "").strip()
+            chapter_start = (params.get("target_chapter_section") or "").strip()
+            chapter_end = (params.get("explicit_end_number") or "").strip()
+            chapter = f"{chapter_start}-{chapter_end}" if chapter_start and chapter_end else chapter_start
             title = (params.get("target_chapter_title") or params.get("target_title_section") or "").strip()
             sub = (params.get("target_subtitle") or params.get("subheading_text") or "").strip()
             
@@ -1536,7 +1538,9 @@ def task_compare(task_id, job_id):
         elif stype == "extract_word_chapter":
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
-            sec = params.get("target_chapter_section", "")
+            sec_start = params.get("target_chapter_section", "")
+            sec_end = params.get("explicit_end_number", "")
+            sec = f"{sec_start}-{sec_end}" if sec_start and sec_end else sec_start
             use_title = str(params.get("use_chapter_title", params.get("target_title", ""))).lower() in ["1", "true", "yes", "on"]
             title = params.get("target_chapter_title") or params.get("target_title_section", "")
             info = base

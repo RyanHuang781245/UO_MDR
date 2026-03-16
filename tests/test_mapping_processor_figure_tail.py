@@ -98,6 +98,45 @@ def test_mapping_blank_type_defaults_to_extract_chapter(tmp_path: Path) -> None:
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_chapter_range_sets_explicit_end_number(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, "1.1.1-1.1.3 General description")
+    assert _first_step_type(log_data) == "extract_word_chapter"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "1.1.1"
+    assert params.get("explicit_end_number") == "1.1.3"
+    assert params.get("target_chapter_title") == "General description"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_chapter_range_with_subheading_sets_subtitle(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        r"1.1.1-1.1.3 General description\Device trade name",
+    )
+    assert _first_step_type(log_data) == "extract_word_chapter"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "1.1.1"
+    assert params.get("explicit_end_number") == "1.1.3"
+    assert params.get("target_chapter_title") == "General description"
+    assert params.get("target_subtitle") == "Device trade name"
+    assert params.get("use_chapter_title") is True
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_chapter_range_with_start_and_end_titles_sets_both_titles(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1.1 General description - 1.2.2 Intended users",
+    )
+    assert _first_step_type(log_data) == "extract_word_chapter"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "1.1.1"
+    assert params.get("target_chapter_title") == "General description"
+    assert params.get("explicit_end_number") == "1.2.2"
+    assert params.get("explicit_end_title") == "Intended users"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_type_add_text_blank_operation_creates_insert_text(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(
         tmp_path,

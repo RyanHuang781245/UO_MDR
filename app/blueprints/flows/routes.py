@@ -513,7 +513,7 @@ def _load_saved_flows(flow_dir: str) -> list[dict]:
                 elif isinstance(data, list):
                     steps_data = data
                 has_copy = any(
-                    isinstance(s, dict) and s.get("type") == "copy_files"
+                    isinstance(s, dict) and s.get("type") in {"copy_files", "copy_directory"}
                     for s in steps_data
                 )
             except Exception:

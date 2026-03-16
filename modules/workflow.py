@@ -17,7 +17,7 @@ from .Extract_AllFile_to_FinalWord import (
     extract_specific_figure_from_word,
     extract_specific_table_from_word,
 )
-from .file_copier import copy_files
+from .file_copier import copy_directory, copy_files
 from .docx_merger import merge_word_docs
 from .template_manager import (
     parse_template_paragraphs,
@@ -113,7 +113,7 @@ SUPPORTED_STEPS = {
     #     }
     # },
     "extract_pdf_pages_as_images": {
-        "label": "擷取 PDF 標籤圖片",
+        "label": "擷取 PDF 每頁圖片",
         "inputs": ["input_file", "template_index", "template_mode"],
         "accepts": {
             "input_file": "file:pdf",
@@ -286,6 +286,14 @@ SUPPORTED_STEPS = {
             "keywords": "text"
         }
     },
+    "copy_directory": {
+        "label": "複製資料夾",
+        "inputs": ["source_dir", "dest_dir"],
+        "accepts": {
+            "source_dir": "file:dir",
+            "dest_dir": "file:dir",
+        }
+    },
     # "renumber_figures_tables": {
     #     "label": "重新編號圖表並更新參照",
     #     "inputs": ["numbering_scope", "figure_start", "table_start"],
@@ -372,6 +380,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
     template_mappings: list[Dict[str, Any]] = []
     template_mode_default = (template_cfg.get("default_mode") or "insert_after").strip()
     template_paragraphs = template_cfg.get("paragraphs")
+    copied_dir_registry: dict[str, dict[str, Any]] = {}
     arabic_counters: list[int] = [0, 0, 0]
     roman_counter = 0
 
@@ -661,6 +670,15 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 )
                 log[-1]["copied_files"] = copied
 
+            elif stype == "copy_directory":
+                copied_dir = copy_directory(
+                    params.get("source_dir", ""),
+                    params.get("dest_dir", ""),
+                    copied_dir_registry,
+                    {"log_index": len(log) - 1},
+                )
+                log[-1]["copied_dir"] = copied_dir
+
             elif stype == "renumber_figures_tables":
                 # Skipped here to avoid Spire save (watermark); can be run externally if licensed.
                 log[-1]["status"] = "skipped"
@@ -756,9 +774,17 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     fragments.append(cdoc)
 
     if not fragments:
+        os.makedirs(workdir, exist_ok=True)
         empty_path = os.path.join(workdir, "result.docx")
         DocxDocument().save(empty_path)
         fragments.append(empty_path)
+
+    for final_path, info in copied_dir_registry.items():
+        if not isinstance(info, dict):
+            continue
+        log_index = info.get("log_index")
+        if isinstance(log_index, int) and 0 <= log_index < len(log):
+            log[log_index]["copied_dir"] = final_path
 
     out_docx = os.path.join(workdir, "result.docx")
     merge_word_docs(fragments, out_docx)

@@ -127,7 +127,7 @@
                                     <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ f.created }}</td>
                                     <td>
                                         <div class="d-flex justify-content-center gap-1">
-                                            <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製檔案步驟，執行前請確認 NAS 與任務資料夾內容一致。')"{% endif %}>
+                                            <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製步驟，執行前請確認 NAS 與任務資料夾內容一致。')"{% endif %}>
                                                 <input type="hidden" name="apply_formatting" value="false">
                                                 <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
                                                 <button class="btn-action-icon text-success" type="submit" title="快速執行">
@@ -1113,8 +1113,8 @@ flowForm.addEventListener('submit', (e) => {
   }
   if (action === 'run') {
     const hasCopy = Array.from(flowForm.querySelectorAll('input[name$="_type"]'))
-      .some(el => el.value === 'copy_files');
-    if (hasCopy && !confirm('此流程包含複製檔案步驟，確定要執行嗎？')) {
+      .some(el => ['copy_files', 'copy_directory'].includes(el.value));
+    if (hasCopy && !confirm('此流程包含複製步驟，確定要執行嗎？')) {
       e.preventDefault();
       return;
     }

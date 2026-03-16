@@ -159,9 +159,12 @@ def extract_body_with_options(
                 break
 
         if start_idx is None:
-            raise RuntimeError("找不到正文章節起點（非 TOC 標題）")
-
-        kept_children = children[start_idx:]
+            if last_toc_child_idx is None:
+                kept_children = children
+            else:
+                kept_children = children[search_start:]
+        else:
+            kept_children = children[start_idx:]
     else:
         # 不忽略：整份文件本文全保留
         kept_children = children

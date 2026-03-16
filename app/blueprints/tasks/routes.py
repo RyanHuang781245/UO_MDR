@@ -219,7 +219,6 @@ def task_mapping(task_id):
         abort(404)
     files_dir = os.path.join(tdir, "files")
     out_dir = os.path.join(tdir, "mapping_job")
-    log_dir = os.path.join(tdir, "mapping_logs")
     messages = []
     outputs = []
     log_file = None
@@ -232,7 +231,9 @@ def task_mapping(task_id):
         "mapping_file": "",
         "reference_ok": False,
         "extract_ok": False,
+        "run_id": "",
     }
+    current_run_id = None
 
     # 如果是頁面跳轉/重新整理 (GET)，則清掉之前的暫存紀錄與檔案
     if request.method == "GET":
@@ -269,6 +270,7 @@ def task_mapping(task_id):
                             "mapping_file": str(loaded_state.get("mapping_file") or ""),
                             "reference_ok": bool(loaded_state.get("reference_ok")),
                             "extract_ok": bool(loaded_state.get("extract_ok")),
+                            "run_id": str(loaded_state.get("run_id") or ""),
                         }
                     )
             except Exception:
@@ -411,6 +413,7 @@ def task_mapping(task_id):
     if request.method == "POST":
         action = request.form.get("action") or "run"
         mapping_path = None
+        uploaded_new_mapping = False
         if action == "run_cached":
             if not last_mapping_file:
                 messages.append("找不到上次檢查的檔案，請重新上傳。")
@@ -425,6 +428,7 @@ def task_mapping(task_id):
                 )
                 mapping_path = os.path.join(tdir, filename)
                 f.save(mapping_path)
+                uploaded_new_mapping = True
                 try:
                     Path(last_mapping_marker).write_text(filename, encoding="utf-8")
                     last_mapping_file = filename
@@ -432,6 +436,7 @@ def task_mapping(task_id):
                         "mapping_file": filename,
                         "reference_ok": False,
                         "extract_ok": False,
+                        "run_id": "",
                     }
                 except Exception:
                     pass
@@ -446,18 +451,23 @@ def task_mapping(task_id):
         if mapping_path:
             try:
                 from modules.mapping_processor import process_mapping_excel
+                existing_run_id = str(validation_state.get("run_id") or "").strip()
+                current_run_id = existing_run_id if (existing_run_id and not uploaded_new_mapping) else uuid.uuid4().hex[:8]
+                run_out_dir = os.path.join(out_dir, current_run_id)
                 result = process_mapping_excel(
                     mapping_path,
                     files_dir,
-                    out_dir,
-                    log_dir=log_dir,
+                    run_out_dir,
+                    log_dir=run_out_dir,
                     validate_only=(action == "check"),
                     validate_extract_only=(action == "check_extract"),
                 )
                 messages = result["logs"]
                 outputs = result["outputs"]
-                log_file = result.get("log_file")
-                zip_file = result.get("zip_file")
+                log_file_raw = result.get("log_file")
+                zip_file_raw = result.get("zip_file")
+                log_file = f"{current_run_id}/{log_file_raw}" if log_file_raw else None
+                zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else None
                 current_has_error = any("ERROR" in (m or "") for m in messages)
                 current_mapping_name = os.path.basename(mapping_path)
                 if action == "check":
@@ -465,14 +475,31 @@ def task_mapping(task_id):
                         "mapping_file": current_mapping_name,
                         "reference_ok": not current_has_error,
                         "extract_ok": False,
+                        "run_id": current_run_id,
                     }
                 elif action == "check_extract":
                     validation_state = {
                         "mapping_file": current_mapping_name,
                         "reference_ok": bool(validation_state.get("reference_ok")),
                         "extract_ok": not current_has_error,
+                        "run_id": current_run_id,
+                    }
+                elif action == "run_cached":
+                    validation_state = {
+                        "mapping_file": current_mapping_name,
+                        "reference_ok": bool(validation_state.get("reference_ok")),
+                        "extract_ok": bool(validation_state.get("extract_ok")),
+                        "run_id": current_run_id,
                     }
                 if action in {"check", "check_extract"}:
+                    try:
+                        Path(validation_state_path).write_text(
+                            json.dumps(validation_state, ensure_ascii=False),
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
+                elif action == "run_cached":
                     try:
                         Path(validation_state_path).write_text(
                             json.dumps(validation_state, ensure_ascii=False),
@@ -484,7 +511,6 @@ def task_mapping(task_id):
                 messages = [str(e)]
     if log_file:
         log_candidates = [
-            os.path.join(log_dir, log_file),
             os.path.join(out_dir, log_file),
         ]
         log_path = next((p for p in log_candidates if os.path.isfile(p)), None)
@@ -703,10 +729,9 @@ def _send_mapping_output_file(task_id: str, filename: str):
 
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     mapping_job_dir = os.path.join(tdir, "mapping_job")
-    mapping_log_dir = os.path.join(tdir, "mapping_logs")
     legacy_out_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id)
 
-    for base_dir in (mapping_job_dir, mapping_log_dir, legacy_out_dir):
+    for base_dir in (mapping_job_dir, legacy_out_dir):
         file_path = os.path.join(base_dir, safe_name)
         if os.path.isfile(file_path):
             return send_from_directory(base_dir, safe_name, as_attachment=True)

@@ -193,6 +193,51 @@ def test_mapping_pdf_image_requires_pdf_file(tmp_path: Path) -> None:
     assert all(not (run.get("steps") or []) for run in runs)
 
 
+def test_mapping_copy_file_blank_operation_creates_copy_file_step(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "",
+        item_type="Copy File",
+        source_name="source.pdf",
+        source_files=["source.pdf"],
+    )
+    assert _first_step_type(log_data) == "copy_file"
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("source", ""))).name == "source.pdf"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_copy_folder_blank_operation_creates_copy_folder_step(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "FolderA" / "IFU").mkdir(parents=True, exist_ok=True)
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["FolderA/IFU", "", "Copy Folder", "", "out", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=True,
+    )
+
+    log_file = result.get("log_file")
+    assert log_file
+    with open(log_dir / log_file, "r", encoding="utf-8") as f:
+        log_data = json.load(f)
+    assert _first_step_type(log_data) == "copy_folder"
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("source", ""))).name == "IFU"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_figure_tail_title(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 1|title=Overview Figure")
     params = _first_step_params(log_data)
@@ -436,6 +481,101 @@ def test_mapping_outputs_are_packaged_into_zip(tmp_path: Path, monkeypatch) -> N
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = sorted(zf.namelist())
     assert names == ["pkg/A/a.docx", "pkg/B/b.docx"]
+
+
+def test_mapping_copy_outputs_use_conflict_suffix_and_zip(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    knee_ifu = (
+        files_dir
+        / "輸入-測試路徑"
+        / "TD-III-011-USTAR II Knee System"
+        / "Section 2_Information Supplied by the Manufacturer"
+        / "IFU"
+    )
+    hip_ifu = (
+        files_dir
+        / "輸入-測試路徑"
+        / "TD-III-012-USTAR II Hip System"
+        / "Section 2_Information Supplied by the Manufacturer"
+        / "IFU"
+    )
+    knee_ifu.mkdir(parents=True, exist_ok=True)
+    hip_ifu.mkdir(parents=True, exist_ok=True)
+    (knee_ifu / "knee.txt").write_text("knee", encoding="utf-8")
+    (hip_ifu / "hip.txt").write_text("hip", encoding="utf-8")
+    (files_dir / "輸入-測試路徑" / "TD-III-011-USTAR II Knee System" / "labeling.pdf").write_text("knee pdf", encoding="utf-8")
+    (files_dir / "輸入-測試路徑" / "TD-III-012-USTAR II Hip System" / "labeling.pdf").write_text("hip pdf", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [
+        [
+            "輸入-測試路徑/TD-III-011-USTAR II Knee System/Section 2_Information Supplied by the Manufacturer/IFU",
+            "",
+            "Copy Folder",
+            "",
+            "pkg/folders",
+            "",
+            "",
+            "",
+        ],
+        [
+            "輸入-測試路徑/TD-III-012-USTAR II Hip System/Section 2_Information Supplied by the Manufacturer/IFU",
+            "",
+            "Copy Folder",
+            "",
+            "pkg/folders",
+            "",
+            "",
+            "",
+        ],
+        [
+            "輸入-測試路徑/TD-III-011-USTAR II Knee System/labeling.pdf",
+            "",
+            "Copy File",
+            "",
+            "pkg/files",
+            "",
+            "",
+            "",
+        ],
+        [
+            "輸入-測試路徑/TD-III-012-USTAR II Hip System/labeling.pdf",
+            "",
+            "Copy File",
+            "",
+            "pkg/files",
+            "",
+            "",
+            "",
+        ],
+    ]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=False,
+    )
+
+    assert sorted(Path(p).name for p in result.get("outputs", [])) == ["labeling_hip.pdf", "labeling_knee.pdf"]
+    zip_file = result.get("zip_file")
+    assert zip_file
+    with zipfile.ZipFile(out_dir / zip_file, "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == [
+        "pkg/files/labeling_hip.pdf",
+        "pkg/files/labeling_knee.pdf",
+        "pkg/folders/IFU_hip/hip.txt",
+        "pkg/folders/IFU_knee/knee.txt",
+    ]
 
 
 def test_mapping_validate_extract_only_runs_workflow_validation(tmp_path: Path, monkeypatch) -> None:

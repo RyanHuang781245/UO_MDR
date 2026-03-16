@@ -26,7 +26,7 @@ from .Extract_AllFile_to_FinalWord import (
     remove_hidden_runs,
     hide_paragraphs_with_text,
 )
-from .file_copier import copy_files
+from .file_copier import copy_directory, copy_file, copy_files
 from .docx_merger import merge_word_docs
 from .template_manager import parse_template_paragraphs, render_template_with_mappings
 from .workflow import run_workflow
@@ -76,6 +76,16 @@ def _find_directory(base: str, path: str) -> str | None:
             return None
         current = match
     return current
+
+
+def _find_directories(base: str, dirname: str) -> list[str]:
+    target = dirname.lower()
+    matches: list[str] = []
+    for root, dirs, _files in os.walk(base):
+        for name in dirs:
+            if name.lower() == target:
+                matches.append(os.path.join(root, name))
+    return matches
 
 
 def _resolve_relative_file(base: str, path: str) -> str | None:
@@ -138,6 +148,48 @@ def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
         if fn.lower().endswith((".docx", ".doc")):
             return os.path.join(dir_path, fn), ""
     return None, f"no Word file found in directory: {raw_name}"
+
+
+def _resolve_any_file(base: str, name: str) -> tuple[str | None, str]:
+    raw_name = str(name or "").strip()
+    if not raw_name:
+        return None, "empty input name"
+
+    if "/" in raw_name or "\\" in raw_name:
+        resolved = _resolve_relative_file(base, raw_name)
+        if resolved:
+            return resolved, ""
+        return None, f"file not found: {raw_name}"
+
+    matches = _find_files(base, raw_name)
+    if not matches:
+        return None, f"file not found: {raw_name}"
+    if len(matches) > 1:
+        rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
+        joined = "; ".join(rel_matches)
+        return None, f"找到多個名稱相同檔案 {raw_name}: {joined}"
+    return matches[0], ""
+
+
+def _resolve_input_directory(base: str, name: str) -> tuple[str | None, str]:
+    raw_name = str(name or "").strip()
+    if not raw_name:
+        return None, "empty input name"
+
+    if "/" in raw_name or "\\" in raw_name:
+        resolved = _find_directory(base, raw_name)
+        if resolved:
+            return resolved, ""
+        return None, f"directory not found: {raw_name}"
+
+    matches = _find_directories(base, raw_name)
+    if not matches:
+        return None, f"directory not found: {raw_name}"
+    if len(matches) > 1:
+        rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
+        joined = "; ".join(rel_matches)
+        return None, f"找到多個名稱相同資料夾 {raw_name}: {joined}"
+    return matches[0], ""
 
 
 
@@ -255,7 +307,7 @@ def process_mapping_excel(
     ws = wb.worksheets[0]
 
     header_aliases = {
-        "source": ["輸入檔案名稱/資料夾名稱/文字內容", "來源檔案"],
+        "source": ["檔案名稱/資料夾名稱/文字內容", "輸入檔案名稱/資料夾名稱/文字內容", "來源檔案"],
         "operation": ["擷取段落/操作", "擷取段落"],
         "out_path": ["檔案路徑", "輸出路徑"],
         "out_name": ["檔案名稱", "輸出檔案名稱"],
@@ -461,6 +513,9 @@ def process_mapping_excel(
     groups: Dict[Tuple[str, str | None], Dict[str, Any]] = {}
     run_logs: List[Dict[str, Any]] = []
     output_template_map: Dict[str, str | None] = {}
+    packaged_outputs: List[str] = []
+    copied_file_registry: Dict[str, Dict[str, Any]] = {}
+    copied_dir_registry: Dict[str, Dict[str, Any]] = {}
 
     def _log(
         level: str,
@@ -487,6 +542,10 @@ def process_mapping_excel(
             return "figure"
         if text in {"table", "表格", "表"}:
             return "table"
+        if text in {"copy file", "copyfile", "file copy", "複製檔案", "复制文件", "複製文件"}:
+            return "copy_file"
+        if text in {"copy folder", "copy dir", "copy directory", "copyfolder", "複製資料夾", "复制文件夹", "複製資料夾"}:
+            return "copy_folder"
         if text in {"add text", "text", "文字", "加入文字", "新增文字"}:
             return "add_text"
         if text in {"pdf image", "pdf images", "pdfimage", "pdf_img", "pdf圖片", "pdf图", "pdf 圖片", "pdf 图片"}:
@@ -537,6 +596,10 @@ def process_mapping_excel(
     def _guess_action(instruction: str, item_type: str = "") -> str:
         if item_type == "add_text":
             return "Append text"
+        if item_type == "copy_file":
+            return "Copy file"
+        if item_type == "copy_folder":
+            return "Copy folder"
         if item_type == "figure":
             return "Extract figure"
         if item_type == "table":
@@ -619,6 +682,8 @@ def process_mapping_excel(
         src_base = os.path.basename(src) if src else ""
         if action == "Append text":
             return src
+        if action in {"Copy file", "Copy folder"}:
+            return src_base or src
         if action == "Extract chapter":
             chapter, title, subheading = _parse_chapter_parts(instruction_core)
             parts = [f"chapter {chapter}"] if chapter else []
@@ -713,10 +778,10 @@ def process_mapping_excel(
         if include_title_error:
             _log("error", include_title_error, row_num, action_label, detail_label)
             continue
-        if not instruction and item_type not in {"pdf_image", "add_text"}:
+        if not instruction and item_type not in {"pdf_image", "add_text", "copy_file", "copy_folder"}:
             _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
-        if not out_name:
+        if not out_name and item_type not in {"copy_file", "copy_folder"}:
             _log("error", "缺少輸出文件檔名", row_num, action_label, detail_label)
             continue
         if item_type != "add_text" and instruction.lower() != "add text" and not src_name:
@@ -758,6 +823,128 @@ def process_mapping_excel(
                         _log("error", f"插入段落 '{insert_label}' 未找到", row_num, action_label, detail_label)
                 else:
                     target_idx = last_idx if last_idx is not None else 0
+
+        if item_type in {"copy_file", "copy_folder"}:
+            if template_name:
+                _log("warn", f"{'Copy File' if item_type == 'copy_file' else 'Copy Folder'} 不支援模板插入，將忽略模板設定", row_num)
+            instruction_text = (instruction or "").strip().lower()
+            if instruction_text not in {"", "copy"}:
+                _log(
+                    "error",
+                    f"{'Copy File' if item_type == 'copy_file' else 'Copy Folder'} 僅支援留白或 Copy: {instruction}",
+                    row_num,
+                    action_label,
+                    detail_label,
+                )
+                continue
+
+            target_dir = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir
+            if validate_only and out_rel_normalized and not os.path.isdir(target_dir):
+                _log("warn", f"輸出資料夾不存在: {out_rel}", row_num, action_label, detail_label)
+
+            if item_type == "copy_file":
+                source_path, resolve_error = _resolve_any_file(task_files_dir, src_name)
+            else:
+                source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name)
+            if not source_path:
+                _log("error", f"來源檔案解析失敗: {resolve_error}", row_num, action_label, detail_label)
+                continue
+
+            rel_output = os.path.relpath(target_dir, output_dir).replace("\\", "/") if target_dir != output_dir else "."
+            if validate_only or validate_extract_only:
+                run_logs.append(
+                    {
+                        "output": rel_output,
+                        "template": None,
+                        "steps": [
+                            {
+                                "type": item_type,
+                                "params": {
+                                    "source": source_path,
+                                    "destination": target_dir,
+                                    "target_name": out_name,
+                                    "mapping_row": row_num,
+                                },
+                            }
+                        ],
+                        "workflow_log": [
+                            {
+                                "step": 1,
+                                "type": item_type,
+                                "params": {
+                                    "source": source_path,
+                                    "destination": target_dir,
+                                    "target_name": out_name,
+                                    "mapping_row": row_num,
+                                },
+                                "status": "ok",
+                                "error": "",
+                            }
+                        ],
+                        "status": "ok",
+                    }
+                )
+                _log("info", f"{'copy file' if item_type == 'copy_file' else 'copy folder'}: {src_name}", row_num)
+                continue
+
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+                if item_type == "copy_file":
+                    copied_path = copy_file(
+                        source_path,
+                        target_dir,
+                        target_name=out_name,
+                        copied_registry=copied_file_registry,
+                        registry_entry={"row_num": row_num},
+                    )
+                    packaged_outputs.append(copied_path)
+                    outputs.append(copied_path)
+                    copied_rel = os.path.relpath(copied_path, output_dir).replace("\\", "/")
+                    _log("info", f"copy file: {src_name} -> {copied_rel}", row_num)
+                else:
+                    copied_path = copy_directory(
+                        source_path,
+                        target_dir,
+                        target_name=out_name,
+                        copied_registry=copied_dir_registry,
+                        registry_entry={"row_num": row_num},
+                    )
+                    packaged_outputs.append(copied_path)
+                    copied_rel = os.path.relpath(copied_path, output_dir).replace("\\", "/")
+                    _log("info", f"copy folder: {src_name} -> {copied_rel}", row_num)
+
+                run_logs.append(
+                    {
+                        "output": os.path.relpath(copied_path, output_dir).replace("\\", "/"),
+                        "template": None,
+                        "row_num": row_num,
+                        "steps": [
+                            {
+                                "type": item_type,
+                                "params": {
+                                    "source": source_path,
+                                    "destination": target_dir,
+                                    "target_name": out_name,
+                                    "mapping_row": row_num,
+                                },
+                            }
+                        ],
+                        "workflow_log": [],
+                        "status": "ok",
+                    }
+                )
+            except Exception as e:
+                _log("error", f"複製失敗: {e}", row_num, action_label, detail_label)
+                run_logs.append(
+                    {
+                        "output": rel_output,
+                        "template": None,
+                        "steps": [],
+                        "status": "error",
+                        "error": str(e),
+                    }
+                )
+            continue
 
         output_dir_full = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir
         output_path = os.path.join(output_dir_full, out_name)
@@ -1147,6 +1334,7 @@ def process_mapping_excel(
                 hide_paragraphs_with_text(result_path, titles_to_hide)
             shutil.copyfile(result_path, output_path)
             outputs.append(output_path)
+            packaged_outputs.append(output_path)
             run_logs.append(
                 {
                     "output": os.path.relpath(output_path, output_dir).replace("\\", "/"),
@@ -1168,14 +1356,41 @@ def process_mapping_excel(
                 }
             )
 
+    outputs = [p for p in outputs if os.path.isfile(p)]
+    packaged_outputs = [p for p in packaged_outputs if os.path.exists(p)]
+    for registry in (copied_file_registry, copied_dir_registry):
+        for final_path, info in registry.items():
+            if os.path.isdir(final_path):
+                if final_path not in packaged_outputs:
+                    packaged_outputs.append(final_path)
+            elif os.path.isfile(final_path):
+                if final_path not in outputs:
+                    outputs.append(final_path)
+                if final_path not in packaged_outputs:
+                    packaged_outputs.append(final_path)
+            row_num = info.get("row_num") if isinstance(info, dict) else None
+            if row_num is None:
+                continue
+            rel_output = os.path.relpath(final_path, output_dir).replace("\\", "/")
+            for run in run_logs:
+                if run.get("row_num") == row_num:
+                    run["output"] = rel_output
+
     zip_file = None
-    if not validate_only and not validate_extract_only and outputs:
+    if not validate_only and not validate_extract_only and packaged_outputs:
         zip_filename = f"mapping_outputs_{uuid.uuid4().hex[:8]}.zip"
         zip_path = os.path.join(output_dir, zip_filename)
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for output_path in outputs:
-                arcname = os.path.relpath(output_path, output_dir).replace("\\", "/")
-                zf.write(output_path, arcname)
+            for output_path in packaged_outputs:
+                if os.path.isdir(output_path):
+                    for root, _dirs, files in os.walk(output_path):
+                        for name in files:
+                            file_path = os.path.join(root, name)
+                            arcname = os.path.relpath(file_path, output_dir).replace("\\", "/")
+                            zf.write(file_path, arcname)
+                elif os.path.isfile(output_path):
+                    arcname = os.path.relpath(output_path, output_dir).replace("\\", "/")
+                    zf.write(output_path, arcname)
         zip_file = zip_filename
 
     log_file = None

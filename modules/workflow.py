@@ -674,6 +674,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 copied_dir = copy_directory(
                     params.get("source_dir", ""),
                     params.get("dest_dir", ""),
+                    None,
                     copied_dir_registry,
                     {"log_index": len(log) - 1},
                 )

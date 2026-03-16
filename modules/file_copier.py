@@ -142,6 +142,13 @@ def _build_target_path(destination: str, folder_name: str, suffix: str | None) -
     return os.path.join(destination, final_name)
 
 
+def _build_file_target_path(destination: str, filename: str, suffix: str | None) -> str:
+    stem, ext = os.path.splitext(filename)
+    safe_suffix = re.sub(r"[^0-9A-Za-z]+", "_", (suffix or "").strip("_ ").lower()).strip("_")
+    final_name = filename if not safe_suffix else f"{stem}_{safe_suffix}{ext}"
+    return os.path.join(destination, final_name)
+
+
 def _dedupe_path(path: str) -> str:
     if not os.path.exists(path):
         return path
@@ -158,6 +165,7 @@ def _dedupe_path(path: str) -> str:
 def copy_directory(
     source: str,
     destination: str,
+    target_name: str | None = None,
     copied_registry: Dict[str, Dict[str, Any]] | None = None,
     registry_entry: Dict[str, Any] | None = None,
 ) -> str:
@@ -169,7 +177,7 @@ def copy_directory(
 
     source_abs = os.path.abspath(source)
     destination_abs = os.path.abspath(destination)
-    folder_name = os.path.basename(os.path.normpath(source_abs)) or "copied_folder"
+    folder_name = (target_name or "").strip() or os.path.basename(os.path.normpath(source_abs)) or "copied_folder"
     target_abs = os.path.abspath(os.path.join(destination_abs, folder_name))
 
     if target_abs == source_abs or target_abs.startswith(source_abs + os.sep):
@@ -200,6 +208,62 @@ def copy_directory(
             )
 
     shutil.copytree(source_abs, target_abs, dirs_exist_ok=True)
+    info = dict(registry_entry or {})
+    info["source"] = source_abs
+    registry[os.path.abspath(target_abs)] = info
+    return target_abs
+
+
+def copy_file(
+    source: str,
+    destination: str,
+    target_name: str | None = None,
+    copied_registry: Dict[str, Dict[str, Any]] | None = None,
+    registry_entry: Dict[str, Any] | None = None,
+) -> str:
+    """Copy a file into the destination directory with conflict-aware suffixing."""
+    if not os.path.isfile(source):
+        raise ValueError(f"Source file '{source}' does not exist")
+
+    os.makedirs(destination, exist_ok=True)
+
+    source_abs = os.path.abspath(source)
+    destination_abs = os.path.abspath(destination)
+    source_name = os.path.basename(source_abs)
+    target_filename = (target_name or "").strip() or source_name
+    if not os.path.splitext(target_filename)[1]:
+        target_filename = f"{target_filename}{os.path.splitext(source_name)[1]}"
+    target_abs = os.path.abspath(os.path.join(destination_abs, target_filename))
+
+    if target_abs == source_abs:
+        raise ValueError("Destination cannot be the same as the source file")
+
+    registry = copied_registry if copied_registry is not None else {}
+    existing_info = registry.get(target_abs) or {}
+    existing_source = existing_info.get("source") if isinstance(existing_info, dict) else str(existing_info)
+    folder_name = os.path.splitext(os.path.basename(target_filename))[0] or "copied_file"
+
+    if os.path.exists(target_abs):
+        if existing_source and os.path.abspath(existing_source) != source_abs:
+            existing_suffix = _infer_conflict_suffix(existing_source, source_abs, folder_name)
+            renamed_existing = _dedupe_path(
+                _build_file_target_path(destination_abs, target_filename, existing_suffix)
+            )
+            if os.path.abspath(renamed_existing) != target_abs:
+                shutil.move(target_abs, renamed_existing)
+                registry.pop(target_abs, None)
+                registry[os.path.abspath(renamed_existing)] = existing_info
+
+            current_suffix = _infer_conflict_suffix(source_abs, existing_source, folder_name)
+            target_abs = _dedupe_path(
+                _build_file_target_path(destination_abs, target_filename, current_suffix)
+            )
+        else:
+            target_abs = _dedupe_path(
+                _build_file_target_path(destination_abs, target_filename, _fallback_suffix(source_abs, folder_name))
+            )
+
+    shutil.copy2(source_abs, target_abs)
     info = dict(registry_entry or {})
     info["source"] = source_abs
     registry[os.path.abspath(target_abs)] = info

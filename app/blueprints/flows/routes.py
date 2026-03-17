@@ -617,7 +617,7 @@ def _list_mapping_runs(task_id: str) -> list[dict]:
         results.append(
             {
                 "run_id": name,
-                "mapping_file": (meta.get("mapping_file") or "").strip() or "未命名 Mapping",
+                "mapping_file": (meta.get("mapping_display_name") or meta.get("mapping_file") or "").strip() or "未命名 Mapping",
                 "started_at": started_at,
                 "status": (meta.get("status") or "unknown").strip().lower(),
                 "output_count": int(meta.get("output_count") or len(meta.get("outputs") or [])),

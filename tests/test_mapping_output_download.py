@@ -248,9 +248,11 @@ def test_mapping_run_cached_writes_result_meta(app, client, monkeypatch) -> None
     with app.test_request_context():
         url = url_for("tasks_bp.task_mapping", task_id=task_id)
 
+    original_name = "Mapping_ch1 - 複製.xlsx"
+
     assert client.post(
         url,
-        data={"action": "check", "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx")},
+        data={"action": "check", "mapping_file": (BytesIO(b"dummy"), original_name)},
         content_type="multipart/form-data",
     ).status_code == 200
     assert client.post(
@@ -268,7 +270,8 @@ def test_mapping_run_cached_writes_result_meta(app, client, monkeypatch) -> None
     meta = (run_dir / "meta.json").read_text(encoding="utf-8")
     payload = __import__("json").loads(meta)
     assert payload["record_type"] == "mapping_run"
-    assert payload["mapping_file"] == "mapping.xlsx"
+    assert payload["mapping_file"] == "Mapping_ch1_-_.xlsx"
+    assert payload["mapping_display_name"] == original_name
     assert payload["status"] == "completed"
     assert payload["reference_ok"] is True
     assert payload["extract_ok"] is True
@@ -289,6 +292,7 @@ def test_flow_results_mapping_tab_renders_mapping_runs(app, client) -> None:
                 "record_type": "mapping_run",
                 "run_id": "run12345",
                 "mapping_file": "sample_mapping.xlsx",
+                "mapping_display_name": "Mapping_ch1 - 複製.xlsx",
                 "status": "completed",
                 "started_at": "2026-03-17 10:00:00",
                 "completed_at": "2026-03-17 10:00:10",
@@ -311,7 +315,7 @@ def test_flow_results_mapping_tab_renders_mapping_runs(app, client) -> None:
 
     assert response.status_code == 200
     assert "Mapping 執行結果" in html
-    assert "sample_mapping.xlsx" in html
+    assert "Mapping_ch1 - 複製.xlsx" in html
     assert "run12345" in html
     assert "下載 ZIP" in html
     assert "run12345/mapping_outputs.zip" in html

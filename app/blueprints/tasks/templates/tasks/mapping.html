@@ -26,7 +26,7 @@
                 <div class="mb-3 d-flex align-items-center gap-2">
                     <span class="small fw-bold text-uppercase text-muted">當前使用檔案：</span>
                     <span class="status-badge status-badge-queued">
-                        <i class="bi bi-file-earmark-excel"></i> {{ last_mapping_file }}
+                        <i class="bi bi-file-earmark-excel"></i> {{ current_mapping_display_name or last_mapping_file }}
                     </span>
                 </div> 
                 {% endif %}     

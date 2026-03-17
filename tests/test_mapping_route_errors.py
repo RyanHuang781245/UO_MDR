@@ -113,6 +113,47 @@ def test_mapping_route_accepts_chinese_mapping_filename(app, client, monkeypatch
     assert (task_dir / "全中文測試.xlsx").is_file()
 
 
+def test_mapping_route_displays_original_mixed_language_filename(app, client, monkeypatch) -> None:
+    task_id = "mapping-mixed-display-name"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
+    original_name = "Mapping_ch1 - 複製.xlsx"
+    safe_name = "Mapping_ch1_-_.xlsx"
+
+    def fake_process_mapping_excel(
+        mapping_path,
+        task_files_dir,
+        output_dir,
+        log_dir=None,
+        validate_only=False,
+        validate_extract_only=False,
+    ):
+        assert Path(mapping_path).name == safe_name
+        return {"logs": [], "outputs": [], "log_file": None, "zip_file": None}
+
+    monkeypatch.setattr("modules.mapping_processor.process_mapping_excel", fake_process_mapping_excel)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={
+            "action": "check",
+            "mapping_file": (BytesIO(b"dummy"), original_name),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert original_name in html
+    assert (task_dir / safe_name).is_file()
+    state = json.loads((task_dir / "mapping_validation_state.json").read_text(encoding="utf-8"))
+    assert state["mapping_file"] == safe_name
+    assert state["mapping_display_name"] == original_name
+
+
 def test_mapping_route_check_extract_requires_reference_check_first(app, client, monkeypatch) -> None:
     task_id = "mapping-check-extract"
     task_dir = Path(app.config["TASK_FOLDER"]) / task_id

@@ -231,11 +231,13 @@ def task_mapping(task_id):
     last_mapping_file = None
     validation_state = {
         "mapping_file": "",
+        "mapping_display_name": "",
         "reference_ok": False,
         "extract_ok": False,
         "run_id": "",
     }
     current_run_id = None
+    current_mapping_display_name = ""
 
     # 如果是頁面跳轉/重新整理 (GET)，則清掉之前的暫存紀錄與檔案
     if request.method == "GET":
@@ -270,11 +272,13 @@ def task_mapping(task_id):
                     validation_state.update(
                         {
                             "mapping_file": str(loaded_state.get("mapping_file") or ""),
+                            "mapping_display_name": str(loaded_state.get("mapping_display_name") or ""),
                             "reference_ok": bool(loaded_state.get("reference_ok")),
                             "extract_ok": bool(loaded_state.get("extract_ok")),
                             "run_id": str(loaded_state.get("run_id") or ""),
                         }
                     )
+                    current_mapping_display_name = validation_state.get("mapping_display_name") or ""
             except Exception:
                 pass
 
@@ -424,6 +428,7 @@ def task_mapping(task_id):
         else:
             f = request.files.get("mapping_file")
             if f and f.filename:
+                display_name = os.path.basename((f.filename or "").replace("\\", "/")).strip()
                 filename = _safe_uploaded_filename(
                     f.filename,
                     default_stem=f"mapping_{uuid.uuid4().hex[:8]}",
@@ -431,11 +436,13 @@ def task_mapping(task_id):
                 mapping_path = os.path.join(tdir, filename)
                 f.save(mapping_path)
                 uploaded_new_mapping = True
+                current_mapping_display_name = display_name or filename
                 try:
                     Path(last_mapping_marker).write_text(filename, encoding="utf-8")
                     last_mapping_file = filename
                     validation_state = {
                         "mapping_file": filename,
+                        "mapping_display_name": current_mapping_display_name,
                         "reference_ok": False,
                         "extract_ok": False,
                         "run_id": "",
@@ -444,6 +451,7 @@ def task_mapping(task_id):
                     pass
             elif last_mapping_file:
                 mapping_path = os.path.join(tdir, last_mapping_file)
+                current_mapping_display_name = current_mapping_display_name or last_mapping_file
             else:
                 messages.append("請選擇檔案")
 
@@ -477,9 +485,11 @@ def task_mapping(task_id):
                 zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else None
                 current_has_error = any("ERROR" in (m or "") for m in messages)
                 current_mapping_name = os.path.basename(mapping_path)
+                current_mapping_display_name = current_mapping_display_name or validation_state.get("mapping_display_name") or current_mapping_name
                 if action == "check":
                     validation_state = {
                         "mapping_file": current_mapping_name,
+                        "mapping_display_name": current_mapping_display_name,
                         "reference_ok": not current_has_error,
                         "extract_ok": False,
                         "run_id": current_run_id,
@@ -487,6 +497,7 @@ def task_mapping(task_id):
                 elif action == "check_extract":
                     validation_state = {
                         "mapping_file": current_mapping_name,
+                        "mapping_display_name": current_mapping_display_name,
                         "reference_ok": bool(validation_state.get("reference_ok")),
                         "extract_ok": not current_has_error,
                         "run_id": current_run_id,
@@ -494,6 +505,7 @@ def task_mapping(task_id):
                 elif action == "run_cached":
                     validation_state = {
                         "mapping_file": current_mapping_name,
+                        "mapping_display_name": current_mapping_display_name,
                         "reference_ok": bool(validation_state.get("reference_ok")),
                         "extract_ok": bool(validation_state.get("extract_ok")),
                         "run_id": current_run_id,
@@ -679,6 +691,7 @@ def task_mapping(task_id):
                 "record_type": "mapping_run",
                 "run_id": current_run_id,
                 "mapping_file": validation_state.get("mapping_file") or last_mapping_file or "",
+                "mapping_display_name": current_mapping_display_name or validation_state.get("mapping_display_name") or validation_state.get("mapping_file") or last_mapping_file or "",
                 "status": status_text,
                 "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -709,6 +722,7 @@ def task_mapping(task_id):
         step_error_count=step_error_count,
         error_messages=error_messages,
         last_mapping_file=last_mapping_file,
+        current_mapping_display_name=current_mapping_display_name or last_mapping_file,
         allow_check_extract=bool(
             last_mapping_file
             and validation_state.get("mapping_file") == last_mapping_file

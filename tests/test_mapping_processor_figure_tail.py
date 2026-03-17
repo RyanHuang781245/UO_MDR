@@ -245,6 +245,34 @@ def test_mapping_copy_file_keywords_create_copy_file_step(tmp_path: Path) -> Non
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_copy_file_literal_copy_is_treated_as_keyword(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "source_root").mkdir(parents=True, exist_ok=True)
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["source_root", "Copy", "Copy File", "", "out", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=True,
+    )
+
+    with open(log_dir / result["log_file"], "r", encoding="utf-8") as f:
+        log_data = json.load(f)
+    assert _first_step_type(log_data) == "copy_file"
+    params = _first_step_params(log_data)
+    assert params.get("keywords") == "Copy"
+
+
 def test_mapping_copy_folder_blank_operation_creates_copy_folder_step(tmp_path: Path) -> None:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"
@@ -308,6 +336,35 @@ def test_mapping_copy_folder_keywords_create_copy_folder_step(tmp_path: Path) ->
     assert Path(str(params.get("source", ""))).name == "RootA"
     assert params.get("keywords") == "IFU,Label"
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_copy_folder_literal_copy_is_treated_as_keyword(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "FolderA").mkdir(parents=True, exist_ok=True)
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["FolderA", "Copy", "Copy Folder", "", "out", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=True,
+    )
+
+    assert not any("單一模式請將操作欄留白" in msg for msg in result.get("logs", []))
+    with open(log_dir / result["log_file"], "r", encoding="utf-8") as f:
+        log_data = json.load(f)
+    assert _first_step_type(log_data) == "copy_folder"
+    params = _first_step_params(log_data)
+    assert params.get("keywords") == "Copy"
 
 
 def test_mapping_figure_tail_title(tmp_path: Path) -> None:

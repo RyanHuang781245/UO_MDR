@@ -855,9 +855,9 @@ def process_mapping_excel(
             instruction_text_raw = (instruction or "").strip()
             instruction_text = instruction_text_raw.lower()
             copy_keywords = [k.strip() for k in re.split(r"[,\u3001，]+", instruction_text_raw) if k.strip()]
-            if item_type == "copy_file" and instruction_text in {"", "copy"}:
+            if item_type == "copy_file" and instruction_text == "":
                 copy_keywords = []
-            if item_type == "copy_folder" and instruction_text in {"", "copy"}:
+            if item_type == "copy_folder" and instruction_text == "":
                 copy_keywords = []
 
             target_dir = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir

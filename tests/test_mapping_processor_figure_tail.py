@@ -187,12 +187,26 @@ def test_mapping_pdf_image_blank_operation_creates_pdf_step(tmp_path: Path) -> N
 def test_mapping_pdf_image_requires_pdf_file(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(
         tmp_path,
-        "All Pages",
+        "",
         item_type="PDF Image",
         source_name="source.docx",
         source_files=["source.docx"],
     )
     assert any("PDF Image 類型僅支援 PDF 檔案" in msg for msg in result.get("logs", []))
+    runs = log_data.get("runs") or []
+    assert runs
+    assert all(not (run.get("workflow_log") or []) for run in runs)
+
+
+def test_mapping_pdf_image_rejects_non_blank_operation(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "All Pages",
+        item_type="PDF Image",
+        source_name="source.pdf",
+        source_files=["source.pdf"],
+    )
+    assert any("PDF Image 類型時，操作欄請留白" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
     assert all(not (run.get("workflow_log") or []) for run in runs)

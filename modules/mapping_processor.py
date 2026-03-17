@@ -1232,9 +1232,8 @@ def process_mapping_excel(
             continue
 
         if item_type == "pdf_image":
-            instruction_text = (instruction or "").strip().lower()
-            if instruction_text not in {"", "all pages", "all", "pages"}:
-                _log("error", f"PDF Image 僅支援留白、All Pages 或 All: {instruction}", row_num, action_label, detail_label)
+            if (instruction or "").strip():
+                _log("error", f"PDF Image 類型時，操作欄請留白: {instruction}", row_num, action_label, detail_label)
                 continue
             infile, resolve_error = _resolve_input_file(task_files_dir, src_name)
             if not infile:

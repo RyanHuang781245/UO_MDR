@@ -214,6 +214,67 @@ def copy_directory(
     return target_abs
 
 
+def copy_directories(
+    source: str,
+    destination: str,
+    keywords: Iterable[str],
+    copied_registry: Dict[str, Dict[str, Any]] | None = None,
+    registry_entry_factory=None,
+) -> List[str]:
+    """Copy directories whose basenames contain all provided keywords."""
+    if not os.path.isdir(source):
+        raise ValueError(f"Source directory '{source}' does not exist")
+
+    lowered_keywords = [k.strip().lower() for k in keywords if k and k.strip()]
+    if not lowered_keywords:
+        entry = registry_entry_factory(source) if callable(registry_entry_factory) else None
+        return [copy_directory(source, destination, None, copied_registry, entry)]
+
+    source_abs = os.path.abspath(source)
+    destination_abs = os.path.abspath(destination)
+    os.makedirs(destination_abs, exist_ok=True)
+    matched_sources: List[str] = []
+
+    for root, dirs, _files in os.walk(source_abs):
+        dirs.sort()
+        dirs[:] = [
+            d
+            for d in dirs
+            if os.path.abspath(os.path.join(root, d)) != destination_abs
+            and not os.path.abspath(os.path.join(root, d)).startswith(destination_abs + os.sep)
+        ]
+        for name in list(dirs):
+            lower_name = name.lower()
+            if not all(k in lower_name for k in lowered_keywords):
+                continue
+            src_path = os.path.join(root, name)
+            matched_sources.append(os.path.abspath(src_path))
+            entry = registry_entry_factory(src_path) if callable(registry_entry_factory) else None
+            copy_directory(
+                src_path,
+                destination_abs,
+                None,
+                copied_registry,
+                entry,
+            )
+
+    registry = copied_registry if copied_registry is not None else {}
+    copied_dirs: List[str] = []
+    for src_path in matched_sources:
+        final_path = next(
+            (
+                target_path
+                for target_path, info in registry.items()
+                if isinstance(info, dict) and os.path.abspath(str(info.get("source") or "")) == src_path
+            ),
+            None,
+        )
+        if final_path:
+            copied_dirs.append(final_path)
+
+    return copied_dirs
+
+
 def copy_file(
     source: str,
     destination: str,

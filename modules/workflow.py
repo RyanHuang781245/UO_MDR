@@ -17,7 +17,7 @@ from .Extract_AllFile_to_FinalWord import (
     extract_specific_figure_from_word,
     extract_specific_table_from_word,
 )
-from .file_copier import copy_directory, copy_files
+from .file_copier import copy_directories, copy_directory, copy_files
 from .docx_merger import merge_word_docs
 from .template_manager import (
     parse_template_paragraphs,
@@ -288,10 +288,11 @@ SUPPORTED_STEPS = {
     },
     "copy_directory": {
         "label": "複製資料夾",
-        "inputs": ["source_dir", "dest_dir"],
+        "inputs": ["source_dir", "dest_dir", "keywords"],
         "accepts": {
             "source_dir": "file:dir",
             "dest_dir": "file:dir",
+            "keywords": "text",
         }
     },
     # "renumber_figures_tables": {
@@ -671,14 +672,17 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 log[-1]["copied_files"] = copied
 
             elif stype == "copy_directory":
-                copied_dir = copy_directory(
+                keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
+                copied_dirs = copy_directories(
                     params.get("source_dir", ""),
                     params.get("dest_dir", ""),
-                    None,
+                    keywords,
                     copied_dir_registry,
-                    {"log_index": len(log) - 1},
+                    lambda src_path: {"log_index": len(log) - 1, "source": os.path.abspath(src_path)},
                 )
-                log[-1]["copied_dir"] = copied_dir
+                log[-1]["copied_dirs"] = copied_dirs
+                if len(copied_dirs) == 1:
+                    log[-1]["copied_dir"] = copied_dirs[0]
 
             elif stype == "renumber_figures_tables":
                 # Skipped here to avoid Spire save (watermark); can be run externally if licensed.

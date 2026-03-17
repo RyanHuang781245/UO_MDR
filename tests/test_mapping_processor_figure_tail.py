@@ -241,6 +241,39 @@ def test_mapping_copy_folder_blank_operation_creates_copy_folder_step(tmp_path: 
     assert _first_step_type(log_data) == "copy_folder"
     params = _first_step_params(log_data)
     assert Path(str(params.get("source", ""))).name == "IFU"
+    assert params.get("keywords") == ""
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_copy_folder_keywords_create_copy_folder_step(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "RootA").mkdir(parents=True, exist_ok=True)
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["RootA", "IFU,Label", "Copy Folder", "", "out", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=True,
+    )
+
+    log_file = result.get("log_file")
+    assert log_file == "mapping_log.json"
+    with open(log_dir / log_file, "r", encoding="utf-8") as f:
+        log_data = json.load(f)
+    assert _first_step_type(log_data) == "copy_folder"
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("source", ""))).name == "RootA"
+    assert params.get("keywords") == "IFU,Label"
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
@@ -580,6 +613,47 @@ def test_mapping_copy_outputs_use_conflict_suffix_and_zip(tmp_path: Path) -> Non
     assert names == [
         "pkg/files/labeling_hip.pdf",
         "pkg/files/labeling_knee.pdf",
+        "pkg/folders/IFU_hip/hip.txt",
+        "pkg/folders/IFU_knee/knee.txt",
+    ]
+
+
+def test_mapping_copy_folder_keywords_copy_matching_subfolders(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    knee_ifu = files_dir / "source_root" / "Knee System" / "IFU"
+    hip_ifu = files_dir / "source_root" / "Hip System" / "IFU"
+    other_folder = files_dir / "source_root" / "Misc System" / "Label sample"
+    knee_ifu.mkdir(parents=True, exist_ok=True)
+    hip_ifu.mkdir(parents=True, exist_ok=True)
+    other_folder.mkdir(parents=True, exist_ok=True)
+    (knee_ifu / "knee.txt").write_text("knee", encoding="utf-8")
+    (hip_ifu / "hip.txt").write_text("hip", encoding="utf-8")
+    (other_folder / "label.txt").write_text("label", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["source_root", "IFU", "Copy Folder", "", "pkg/folders", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=False,
+    )
+
+    assert result.get("log_file") == "mapping_log.json"
+    zip_file = result.get("zip_file")
+    assert zip_file
+    with zipfile.ZipFile(out_dir / zip_file, "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == [
         "pkg/folders/IFU_hip/hip.txt",
         "pkg/folders/IFU_knee/knee.txt",
     ]

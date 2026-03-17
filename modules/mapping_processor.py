@@ -26,7 +26,7 @@ from .Extract_AllFile_to_FinalWord import (
     remove_hidden_runs,
     hide_paragraphs_with_text,
 )
-from .file_copier import copy_directory, copy_file, copy_files
+from .file_copier import copy_directories, copy_directory, copy_file, copy_files
 from .docx_merger import merge_word_docs
 from .template_manager import parse_template_paragraphs, render_template_with_mappings
 from .workflow import run_workflow
@@ -852,16 +852,20 @@ def process_mapping_excel(
         if item_type in {"copy_file", "copy_folder"}:
             if template_name:
                 _log("warn", f"{'Copy File' if item_type == 'copy_file' else 'Copy Folder'} 不支援模板插入，將忽略模板設定", row_num)
-            instruction_text = (instruction or "").strip().lower()
-            if instruction_text not in {"", "copy"}:
+            instruction_text_raw = (instruction or "").strip()
+            instruction_text = instruction_text_raw.lower()
+            copy_keywords = [k.strip() for k in re.split(r"[,\u3001，]+", instruction_text_raw) if k.strip()]
+            if item_type == "copy_file" and instruction_text not in {"", "copy"}:
                 _log(
                     "error",
-                    f"{'Copy File' if item_type == 'copy_file' else 'Copy Folder'} 僅支援留白或 Copy: {instruction}",
+                    f"Copy File 僅支援留白或 Copy: {instruction}",
                     row_num,
                     action_label,
                     detail_label,
                 )
                 continue
+            if item_type == "copy_folder" and instruction_text in {"", "copy"}:
+                copy_keywords = []
 
             target_dir = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir
             if validate_only and out_rel_normalized and not os.path.isdir(target_dir):
@@ -888,6 +892,7 @@ def process_mapping_excel(
                                     "source": source_path,
                                     "destination": target_dir,
                                     "target_name": out_name,
+                                    "keywords": ",".join(copy_keywords),
                                     "mapping_row": row_num,
                                     "mapping_action_label": "複製檔案" if item_type == "copy_file" else "複製資料夾",
                                     "mapping_detail_label": detail_label,
@@ -902,6 +907,7 @@ def process_mapping_excel(
                                     "source": source_path,
                                     "destination": target_dir,
                                     "target_name": out_name,
+                                    "keywords": ",".join(copy_keywords),
                                     "mapping_row": row_num,
                                     "mapping_action_label": "複製檔案" if item_type == "copy_file" else "複製資料夾",
                                     "mapping_detail_label": detail_label,
@@ -913,7 +919,10 @@ def process_mapping_excel(
                         "status": "ok",
                     }
                 )
-                _log("info", f"{'copy file' if item_type == 'copy_file' else 'copy folder'}: {src_name}", row_num)
+                if item_type == "copy_folder" and copy_keywords:
+                    _log("info", f"copy folder by keywords: {src_name} ({', '.join(copy_keywords)})", row_num)
+                else:
+                    _log("info", f"{'copy file' if item_type == 'copy_file' else 'copy folder'}: {src_name}", row_num)
                 continue
 
             try:
@@ -931,16 +940,31 @@ def process_mapping_excel(
                     copied_rel = os.path.relpath(copied_path, output_dir).replace("\\", "/")
                     _log("info", f"copy file: {src_name} -> {copied_rel}", row_num)
                 else:
-                    copied_path = copy_directory(
-                        source_path,
-                        target_dir,
-                        target_name=out_name,
-                        copied_registry=copied_dir_registry,
-                        registry_entry={"row_num": row_num},
-                    )
-                    packaged_outputs.append(copied_path)
-                    copied_rel = os.path.relpath(copied_path, output_dir).replace("\\", "/")
-                    _log("info", f"copy folder: {src_name} -> {copied_rel}", row_num)
+                    if copy_keywords:
+                        copied_paths = copy_directories(
+                            source_path,
+                            target_dir,
+                            copy_keywords,
+                            copied_registry=copied_dir_registry,
+                            registry_entry_factory=lambda src_path: {"row_num": row_num, "source": os.path.abspath(src_path)},
+                        )
+                    else:
+                        copied_paths = [
+                            copy_directory(
+                                source_path,
+                                target_dir,
+                                target_name=out_name,
+                                copied_registry=copied_dir_registry,
+                                registry_entry={"row_num": row_num},
+                            )
+                        ]
+                    copied_path = copied_paths[0] if copied_paths else target_dir
+                    packaged_outputs.extend(copied_paths)
+                    copied_rel_values = [os.path.relpath(path, output_dir).replace("\\", "/") for path in copied_paths]
+                    if copied_rel_values:
+                        _log("info", f"copy folder: {src_name} -> {', '.join(copied_rel_values)}", row_num)
+                    else:
+                        _log("warn", f"copy folder: {src_name} 未找到符合條件的資料夾", row_num, action_label, detail_label)
 
                 run_logs.append(
                     {
@@ -954,13 +978,31 @@ def process_mapping_excel(
                                     "source": source_path,
                                     "destination": target_dir,
                                     "target_name": out_name,
+                                    "keywords": ",".join(copy_keywords),
                                     "mapping_row": row_num,
                                     "mapping_action_label": "複製檔案" if item_type == "copy_file" else "複製資料夾",
                                     "mapping_detail_label": detail_label,
                                 },
                             }
                         ],
-                        "workflow_log": [],
+                        "workflow_log": [
+                            {
+                                "step": 1,
+                                "type": item_type,
+                                "params": {
+                                    "source": source_path,
+                                    "destination": target_dir,
+                                    "target_name": out_name,
+                                    "keywords": ",".join(copy_keywords),
+                                    "mapping_row": row_num,
+                                    "mapping_action_label": "複製檔案" if item_type == "copy_file" else "複製資料夾",
+                                    "mapping_detail_label": detail_label,
+                                },
+                                "status": "ok",
+                                "error": "",
+                                "copied_dirs": copied_paths if item_type == "copy_folder" else [],
+                            }
+                        ],
                         "status": "ok",
                     }
                 )

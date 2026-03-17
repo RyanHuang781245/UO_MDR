@@ -855,15 +855,8 @@ def process_mapping_excel(
             instruction_text_raw = (instruction or "").strip()
             instruction_text = instruction_text_raw.lower()
             copy_keywords = [k.strip() for k in re.split(r"[,\u3001，]+", instruction_text_raw) if k.strip()]
-            if item_type == "copy_file" and instruction_text not in {"", "copy"}:
-                _log(
-                    "error",
-                    f"Copy File 僅支援留白或 Copy: {instruction}",
-                    row_num,
-                    action_label,
-                    detail_label,
-                )
-                continue
+            if item_type == "copy_file" and instruction_text in {"", "copy"}:
+                copy_keywords = []
             if item_type == "copy_folder" and instruction_text in {"", "copy"}:
                 copy_keywords = []
 
@@ -872,7 +865,10 @@ def process_mapping_excel(
                 _log("warn", f"輸出資料夾不存在: {out_rel}", row_num, action_label, detail_label)
 
             if item_type == "copy_file":
-                source_path, resolve_error = _resolve_any_file(task_files_dir, src_name)
+                if copy_keywords:
+                    source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name)
+                else:
+                    source_path, resolve_error = _resolve_any_file(task_files_dir, src_name)
             else:
                 source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name)
             if not source_path:
@@ -919,7 +915,9 @@ def process_mapping_excel(
                         "status": "ok",
                     }
                 )
-                if item_type == "copy_folder" and copy_keywords:
+                if copy_keywords:
+                    _log("info", f"copy {'file' if item_type == 'copy_file' else 'folder'} by keywords: {src_name} ({', '.join(copy_keywords)})", row_num)
+                elif item_type == "copy_folder" and copy_keywords:
                     _log("info", f"copy folder by keywords: {src_name} ({', '.join(copy_keywords)})", row_num)
                 else:
                     _log("info", f"{'copy file' if item_type == 'copy_file' else 'copy folder'}: {src_name}", row_num)
@@ -928,17 +926,28 @@ def process_mapping_excel(
             try:
                 os.makedirs(target_dir, exist_ok=True)
                 if item_type == "copy_file":
-                    copied_path = copy_file(
-                        source_path,
-                        target_dir,
-                        target_name=out_name,
-                        copied_registry=copied_file_registry,
-                        registry_entry={"row_num": row_num},
-                    )
-                    packaged_outputs.append(copied_path)
-                    outputs.append(copied_path)
-                    copied_rel = os.path.relpath(copied_path, output_dir).replace("\\", "/")
-                    _log("info", f"copy file: {src_name} -> {copied_rel}", row_num)
+                    if copy_keywords:
+                        copied_paths = copy_files(source_path, target_dir, copy_keywords)
+                        copied_path = copied_paths[0] if copied_paths else target_dir
+                        packaged_outputs.extend(copied_paths)
+                        outputs.extend([p for p in copied_paths if p not in outputs])
+                        copied_rel_values = [os.path.relpath(path, output_dir).replace("\\", "/") for path in copied_paths]
+                        if copied_rel_values:
+                            _log("info", f"copy file: {src_name} -> {', '.join(copied_rel_values)}", row_num)
+                        else:
+                            _log("warn", f"copy file: {src_name} 未找到符合條件的檔案", row_num, action_label, detail_label)
+                    else:
+                        copied_path = copy_file(
+                            source_path,
+                            target_dir,
+                            target_name=out_name,
+                            copied_registry=copied_file_registry,
+                            registry_entry={"row_num": row_num},
+                        )
+                        packaged_outputs.append(copied_path)
+                        outputs.append(copied_path)
+                        copied_rel = os.path.relpath(copied_path, output_dir).replace("\\", "/")
+                        _log("info", f"copy file: {src_name} -> {copied_rel}", row_num)
                 else:
                     if copy_keywords:
                         copied_paths = copy_directories(
@@ -1001,6 +1010,7 @@ def process_mapping_excel(
                                 "status": "ok",
                                 "error": "",
                                 "copied_dirs": copied_paths if item_type == "copy_folder" else [],
+                                "copied_files": copied_paths if item_type == "copy_file" else [],
                             }
                         ],
                         "status": "ok",

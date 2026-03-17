@@ -209,6 +209,39 @@ def test_mapping_copy_file_blank_operation_creates_copy_file_step(tmp_path: Path
     assert _first_step_type(log_data) == "copy_file"
     params = _first_step_params(log_data)
     assert Path(str(params.get("source", ""))).name == "source.pdf"
+    assert params.get("keywords") == ""
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_copy_file_keywords_create_copy_file_step(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "RootA").mkdir(parents=True, exist_ok=True)
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["RootA", "IFU,EO", "Copy File", "", "out", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=True,
+    )
+
+    log_file = result.get("log_file")
+    assert log_file == "mapping_log.json"
+    with open(log_dir / log_file, "r", encoding="utf-8") as f:
+        log_data = json.load(f)
+    assert _first_step_type(log_data) == "copy_file"
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("source", ""))).name == "RootA"
+    assert params.get("keywords") == "IFU,EO"
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
@@ -657,6 +690,40 @@ def test_mapping_copy_folder_keywords_copy_matching_subfolders(tmp_path: Path) -
         "pkg/folders/IFU_hip/hip.txt",
         "pkg/folders/IFU_knee/knee.txt",
     ]
+
+
+def test_mapping_copy_file_keywords_copy_matching_files(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    source_root = files_dir / "source_root"
+    source_root.mkdir(parents=True, exist_ok=True)
+    (source_root / "Shipping simulation test EO.pdf").write_text("eo", encoding="utf-8")
+    (source_root / "Shipping simulation test Gamma.pdf").write_text("gamma", encoding="utf-8")
+    (source_root / "Other file.pdf").write_text("other", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["source_root", "Shipping simulation test,EO", "Copy File", "", "pkg/files", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=False,
+    )
+
+    assert result.get("log_file") == "mapping_log.json"
+    zip_file = result.get("zip_file")
+    assert zip_file
+    with zipfile.ZipFile(out_dir / zip_file, "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == ["pkg/files/Shipping simulation test EO.pdf"]
 
 
 def test_mapping_validate_extract_only_runs_workflow_validation(tmp_path: Path, monkeypatch) -> None:

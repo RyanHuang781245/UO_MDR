@@ -581,6 +581,59 @@ def _list_flow_runs(task_id: str) -> list[dict]:
     return results
 
 
+def _read_mapping_run_meta(run_dir: str) -> dict:
+    meta_path = os.path.join(run_dir, "meta.json")
+    if not os.path.exists(meta_path):
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _list_mapping_runs(task_id: str) -> list[dict]:
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    mapping_dir = os.path.join(tdir, "mapping_job")
+    if not os.path.isdir(mapping_dir):
+        return []
+
+    results = []
+    for name in os.listdir(mapping_dir):
+        run_dir = os.path.join(mapping_dir, name)
+        if not os.path.isdir(run_dir):
+            continue
+        meta = _read_mapping_run_meta(run_dir)
+        if meta.get("record_type") != "mapping_run":
+            continue
+        started_at = meta.get("started_at")
+        if not started_at:
+            started_at = datetime.fromtimestamp(os.path.getmtime(run_dir)).strftime("%Y-%m-%d %H:%M:%S")
+        zip_name = (meta.get("zip_file") or "").strip()
+        log_name = (meta.get("log_file") or "").strip()
+        zip_rel = f"{name}/{zip_name}" if zip_name else ""
+        log_rel = f"{name}/{log_name}" if log_name else ""
+        results.append(
+            {
+                "run_id": name,
+                "mapping_file": (meta.get("mapping_file") or "").strip() or "未命名 Mapping",
+                "started_at": started_at,
+                "status": (meta.get("status") or "unknown").strip().lower(),
+                "output_count": int(meta.get("output_count") or len(meta.get("outputs") or [])),
+                "has_zip": bool(zip_name and os.path.isfile(os.path.join(mapping_dir, zip_rel))),
+                "has_log": bool(log_name and os.path.isfile(os.path.join(mapping_dir, log_rel))),
+                "zip_file": zip_rel,
+                "log_file": log_rel,
+                "reference_ok": bool(meta.get("reference_ok")),
+                "extract_ok": bool(meta.get("extract_ok")),
+                "error": (meta.get("error") or "").strip(),
+            }
+        )
+    results.sort(key=lambda r: r["started_at"], reverse=True)
+    return results
+
+
 @flows_bp.post("/tasks/<task_id>/flows/runs/<job_id>/delete", endpoint="delete_flow_run")
 def delete_flow_run(task_id, job_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -654,6 +707,84 @@ def download_flow_runs_bulk(task_id):
         if os.path.exists(zip_path):
             os.remove(zip_path)
         return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single"))
+    return send_file(zip_path, as_attachment=True, download_name=zip_name)
+
+
+@flows_bp.post("/tasks/<task_id>/mapping/runs/<run_id>/delete", endpoint="delete_mapping_run")
+def delete_mapping_run(task_id, run_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    run_dir = os.path.join(tdir, "mapping_job", run_id)
+    if not os.path.isdir(run_dir):
+        abort(404)
+    try:
+        shutil.rmtree(run_dir)
+        flash("已刪除 Mapping 執行紀錄。", "success")
+    except Exception:
+        current_app.logger.exception("Failed to delete mapping run")
+        flash("刪除失敗，請稍後再試。", "danger")
+    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single", tab="mapping"))
+
+
+@flows_bp.post("/tasks/<task_id>/mapping/runs/delete", endpoint="delete_mapping_runs_bulk")
+def delete_mapping_runs_bulk(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    mapping_dir = os.path.join(tdir, "mapping_job")
+    raw = request.form.get("run_ids", "")
+    run_ids = [j.strip() for j in raw.split(",") if j.strip()]
+    if not run_ids:
+        flash("請先選取要刪除的 Mapping 執行紀錄。", "warning")
+        return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single", tab="mapping"))
+    deleted = 0
+    for run_id in run_ids:
+        run_dir = os.path.join(mapping_dir, run_id)
+        if not os.path.isdir(run_dir):
+            continue
+        try:
+            shutil.rmtree(run_dir)
+            deleted += 1
+        except Exception:
+            current_app.logger.exception("Failed to delete mapping run")
+    if deleted:
+        flash(f"已刪除 {deleted} 筆 Mapping 執行紀錄。", "success")
+    else:
+        flash("沒有可刪除的 Mapping 執行紀錄。", "warning")
+    return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single", tab="mapping"))
+
+
+@flows_bp.post("/tasks/<task_id>/mapping/runs/download", endpoint="download_mapping_runs_bulk")
+def download_mapping_runs_bulk(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    mapping_dir = os.path.join(tdir, "mapping_job")
+    kind = request.form.get("kind", "zip")
+    raw = request.form.get("run_ids", "")
+    run_ids = [j.strip() for j in raw.split(",") if j.strip()]
+    if not run_ids:
+        flash("請先選取要下載的 Mapping 執行紀錄。", "warning")
+        return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single", tab="mapping"))
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    zip_name = f"mapping_runs_{kind}_{stamp}.zip"
+    zip_path = os.path.join(mapping_dir, zip_name)
+    added = 0
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for run_id in run_ids:
+            run_dir = os.path.join(mapping_dir, run_id)
+            if not os.path.isdir(run_dir):
+                continue
+            meta = _read_mapping_run_meta(run_dir)
+            filename = (meta.get("zip_file") if kind == "zip" else meta.get("log_file")) or ""
+            filename = str(filename).strip()
+            if not filename:
+                continue
+            src = os.path.join(run_dir, filename)
+            if not os.path.exists(src):
+                continue
+            zf.write(src, arcname=os.path.join(run_id, filename))
+            added += 1
+    if added == 0:
+        flash("沒有可下載的檔案。", "warning")
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        return redirect(url_for("flows_bp.flow_results", task_id=task_id, view="single", tab="mapping"))
     return send_file(zip_path, as_attachment=True, download_name=zip_name)
 
 
@@ -1254,6 +1385,9 @@ def flow_results(task_id):
     view = (request.args.get("view") or "single").lower()
     if view == "batch":
         return redirect(url_for("flows_bp.global_batch_page"))
+    active_tab = (request.args.get("tab") or "flows").strip().lower()
+    if active_tab not in {"flows", "mapping"}:
+        active_tab = "flows"
 
     page = max(request.args.get("page", 1, type=int), 1)
     per_page = 10
@@ -1275,16 +1409,27 @@ def flow_results(task_id):
             return False
         return True
 
-    runs_all = _list_flow_runs(task_id)
+    flow_runs_all = _list_flow_runs(task_id)
+    mapping_runs_all = _list_mapping_runs(task_id)
+    runs_all = flow_runs_all if active_tab == "flows" else mapping_runs_all
     if q:
         q_lower = q.lower()
-        runs_all = [
-            r
-            for r in runs_all
-            if q_lower in (r.get("flow_name") or "").lower()
-            or q_lower in (r.get("started_at") or "").lower()
-            or q_lower in (r.get("job_id") or "").lower()
-        ]
+        if active_tab == "flows":
+            runs_all = [
+                r
+                for r in runs_all
+                if q_lower in (r.get("flow_name") or "").lower()
+                or q_lower in (r.get("started_at") or "").lower()
+                or q_lower in (r.get("job_id") or "").lower()
+            ]
+        else:
+            runs_all = [
+                r
+                for r in runs_all
+                if q_lower in (r.get("mapping_file") or "").lower()
+                or q_lower in (r.get("started_at") or "").lower()
+                or q_lower in (r.get("run_id") or "").lower()
+            ]
     if status:
         runs_all = [r for r in runs_all if (r.get("status") or "").lower() == status]
     if start_date or end_date:
@@ -1303,16 +1448,21 @@ def flow_results(task_id):
         "has_prev": page > 1,
         "has_next": page < total_pages,
     }
-    running = [r for r in runs_all if r["status"] in ("running", "queued")]
+    running = [r for r in flow_runs_all if r["status"] in ("running", "queued")]
 
     return render_template(
         "flows/results.html",
         task=task_context,
         view="single",
         runs=runs,
+        active_tab=active_tab,
         batches=[],
         running=running,
         pagination=pagination,
+        tab_counts={
+            "flows": len(flow_runs_all),
+            "mapping": len(mapping_runs_all),
+        },
         filters={
             "q": q,
             "status": status,

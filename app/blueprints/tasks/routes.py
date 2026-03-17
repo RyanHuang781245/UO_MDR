@@ -223,6 +223,8 @@ def task_mapping(task_id):
     outputs = []
     log_file = None
     zip_file = None
+    log_file_name = None
+    zip_file_name = None
     step_runs = []
     last_mapping_marker = os.path.join(tdir, "mapping_last.txt")
     validation_state_path = os.path.join(tdir, "mapping_validation_state.json")
@@ -448,6 +450,9 @@ def task_mapping(task_id):
         if action == "check_extract" and not validation_state.get("reference_ok"):
             messages.append("請先通過檢查引用文件。")
             mapping_path = None
+        if action == "run_cached" and not validation_state.get("extract_ok"):
+            messages.append("請先通過檢查擷取參數。")
+            mapping_path = None
         if mapping_path:
             try:
                 from modules.mapping_processor import process_mapping_excel
@@ -466,6 +471,8 @@ def task_mapping(task_id):
                 outputs = result["outputs"]
                 log_file_raw = result.get("log_file")
                 zip_file_raw = result.get("zip_file")
+                log_file_name = log_file_raw
+                zip_file_name = zip_file_raw
                 log_file = f"{current_run_id}/{log_file_raw}" if log_file_raw else None
                 zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else None
                 current_has_error = any("ERROR" in (m or "") for m in messages)
@@ -647,6 +654,45 @@ def task_mapping(task_id):
     for p in outputs:
         rel = os.path.relpath(p, out_dir)
         rel_outputs.append(rel.replace("\\", "/"))
+    if request.method == "POST" and (request.form.get("action") == "run_cached") and current_run_id:
+        run_dir = os.path.join(out_dir, current_run_id)
+        run_outputs = []
+        run_prefix = f"{current_run_id}/"
+        for rel in rel_outputs:
+            run_outputs.append(rel[len(run_prefix):] if rel.startswith(run_prefix) else rel)
+        first_error = ""
+        for step in step_runs:
+            if step.get("status") == "error":
+                first_error = str(step.get("error") or step.get("detail") or "").strip()
+                if first_error:
+                    break
+        if not first_error:
+            for msg in messages:
+                if "ERROR" in (msg or ""):
+                    first_error = str(msg).strip()
+                    break
+        status_text = "failed" if has_error else "completed"
+        work_id, actor_label = _get_actor_info()
+        _write_mapping_run_meta(
+            run_dir,
+            {
+                "record_type": "mapping_run",
+                "run_id": current_run_id,
+                "mapping_file": validation_state.get("mapping_file") or last_mapping_file or "",
+                "status": status_text,
+                "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "reference_ok": bool(validation_state.get("reference_ok")),
+                "extract_ok": bool(validation_state.get("extract_ok")),
+                "outputs": run_outputs,
+                "output_count": len(run_outputs),
+                "zip_file": zip_file_name or "",
+                "log_file": log_file_name or "",
+                "error": first_error,
+                "actor_work_id": work_id,
+                "actor_label": actor_label,
+            },
+        )
     return render_template(
         "tasks/mapping.html",
         task_id=task_id,
@@ -736,6 +782,16 @@ def _send_mapping_output_file(task_id: str, filename: str):
         if os.path.isfile(file_path):
             return send_from_directory(base_dir, safe_name, as_attachment=True)
     abort(404)
+
+
+def _write_mapping_run_meta(run_dir: str, payload: dict) -> None:
+    try:
+        os.makedirs(run_dir, exist_ok=True)
+        meta_path = os.path.join(run_dir, "meta.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception:
+        current_app.logger.exception("Failed to write mapping run meta")
 
 
 @tasks_bp.get("/tasks/<task_id>/output/download", endpoint="task_download_output_query")

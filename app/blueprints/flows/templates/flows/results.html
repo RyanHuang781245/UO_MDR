@@ -121,35 +121,49 @@
 
 <div class="container-fluid px-0">
   <div class="mb-3">
-    <h1 class="h3 mb-1 fw-bold">執行結果</h1>
-    <!-- <p class="text-muted mb-0 small">檢視單次流程執行記錄，並可批次下載或刪除。</p> -->
+    <h1 class="h3 mb-0 fw-bold">執行結果</h1>
   </div>
+
+  <ul class="nav nav-tabs nav-tabs-custom mb-4" id="resultsTabs" role="tablist">
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'flows' %}active{% endif %}" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab='flows') }}">
+        <i class="bi bi-diagram-3 me-2"></i>流程執行結果
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if active_tab == 'mapping' %}active{% endif %}" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab='mapping') }}">
+        <i class="bi bi-diagram-3-fill me-2"></i>Mapping 執行結果
+      </a>
+    </li>
+  </ul>
 
   <div class="main-card">
       <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
-        <h5 class="fw-bold mb-0">單次執行</h5>
-        <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆流程（第 {{ pagination.page }} / {{ pagination.total_pages }} 頁）</div>
+        <h5 class="fw-bold mb-0">{{ '流程執行結果' if active_tab == 'flows' else 'Mapping 執行結果' }}</h5>
+        <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆{{ '流程' if active_tab == 'flows' else 'Mapping' }}（第 {{ pagination.page }} / {{ pagination.total_pages }} 頁）</div>
       </div>
 
     {% if not runs %}
     <div class="p-5 text-center text-muted">
       <i class="bi bi-inbox fs-1 d-block mb-3"></i>
-      目前沒有單次執行結果。
+      目前沒有{{ '流程' if active_tab == 'flows' else 'Mapping' }}執行結果。
     </div>
     {% else %}
     <div class="toolbar-container">
       <div id="filterBar" class="filter-bar">
         <div class="search-wrapper">
           <i class="bi bi-search"></i>
-          <input type="text" id="runSearchInput" value="{{ filters.q }}" class="form-control form-control-custom rounded-2" placeholder="搜尋流程名稱 / Job ID">
+          <input type="text" id="runSearchInput" value="{{ filters.q }}" class="form-control form-control-custom rounded-2" placeholder="{{ '搜尋流程名稱 / Job ID' if active_tab == 'flows' else '搜尋 Mapping 檔名 / Run ID' }}">
         </div>
         <div class="d-flex gap-2">
           <select id="runStatusFilter" class="form-select form-control-custom rounded-2" style="width: 180px;">
             <option value="" {% if not filters.status %}selected{% endif %}>全部狀態</option>
             <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>完成</option>
             <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>失敗</option>
+            {% if active_tab == 'flows' %}
             <option value="running" {% if filters.status == 'running' %}selected{% endif %}>執行中</option>
             <option value="queued" {% if filters.status == 'queued' %}selected{% endif %}>排隊中</option>
+            {% endif %}
           </select>
           <div class="input-group" style="width: 320px;">
             <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-calendar3"></i></span>
@@ -166,9 +180,15 @@
           <span class="fw-semibold text-primary small" id="selectionText">已選取 0 筆</span>
         </div>
         <div class="d-flex gap-2">
+          {% if active_tab == 'flows' %}
           <button class="btn btn-white btn-sm border bg-white text-primary fw-medium px-3" id="downloadSelectedRunsDocxBtn" type="button"><i class="bi bi-download"></i> 下載文件</button>
           <button class="btn btn-white btn-sm border bg-white text-secondary fw-medium px-3" id="downloadSelectedRunsLogBtn" type="button"><i class="bi bi-file-earmark-text"></i> 下載 Log</button>
           <button class="btn btn-danger btn-sm px-3" id="deleteSelectedRunsBtn" type="button"><i class="bi bi-trash3"></i> 刪除</button>
+          {% else %}
+          <button class="btn btn-white btn-sm border bg-white text-primary fw-medium px-3" id="downloadSelectedMappingZipBtn" type="button"><i class="bi bi-download"></i> 下載 ZIP</button>
+          <button class="btn btn-white btn-sm border bg-white text-secondary fw-medium px-3" id="downloadSelectedMappingLogBtn" type="button"><i class="bi bi-file-earmark-text"></i> 下載 Log</button>
+          <button class="btn btn-danger btn-sm px-3" id="deleteSelectedMappingRunsBtn" type="button"><i class="bi bi-trash3"></i> 刪除</button>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -176,6 +196,7 @@
     <div class="table-responsive">
       <table class="table results-table mb-0">
         <thead>
+          {% if active_tab == 'flows' %}
           <tr>
             <th style="width: 56px" class="text-center"><input type="checkbox" class="form-check-input" id="masterCheckbox"></th>
             <th style="width: 36%" class="text-start">流程</th>
@@ -183,8 +204,20 @@
             <th style="width: 14%">狀態</th>
             <th style="width: 20%">操作</th>
           </tr>
+          {% else %}
+          <tr>
+            <th style="width: 56px" class="text-center"><input type="checkbox" class="form-check-input" id="masterCheckbox"></th>
+            <th style="width: 28%" class="text-start">Mapping</th>
+            <th style="width: 18%">Run ID</th>
+            <th style="width: 18%">執行時間</th>
+            <th style="width: 12%">狀態</th>
+            <th style="width: 10%">輸出</th>
+            <th style="width: 14%">操作</th>
+          </tr>
+          {% endif %}
         </thead>
         <tbody id="tableBody">
+          {% if active_tab == 'flows' %}
           {% for r in runs %}
           <tr data-job-id="{{ r.job_id }}">
             <td class="text-center"><input type="checkbox" class="form-check-input run-select" value="{{ r.job_id }}"></td>
@@ -222,6 +255,39 @@
             </td>
           </tr>
           {% endfor %}
+          {% else %}
+          {% for r in runs %}
+          <tr data-run-id="{{ r.run_id }}">
+            <td class="text-center"><input type="checkbox" class="form-check-input run-select" value="{{ r.run_id }}"></td>
+            <td class="text-start">
+              <div class="fw-bold text-primary">{{ r.mapping_file }}</div>
+              <div class="small text-muted">引用檢查 {{ '通過' if r.reference_ok else '未通過' }} / 擷取參數 {{ '通過' if r.extract_ok else '未通過' }}</div>
+            </td>
+            <td class="text-muted font-monospace">{{ r.run_id }}</td>
+            <td class="text-muted font-monospace">{{ r.started_at }}</td>
+            <td>
+              {% if r.status == 'completed' %}
+              <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>
+              {% elif r.status == 'failed' %}
+              <span class="status-badge status-badge-failed"><i class="bi bi-x-circle-fill"></i> 失敗</span>
+              {% else %}
+              <span class="status-badge status-badge-queued"><i class="bi bi-question-circle"></i> 未知</span>
+              {% endif %}
+            </td>
+            <td class="font-monospace">{{ r.output_count }}</td>
+            <td>
+              <div class="d-flex justify-content-center gap-1">
+                {% if r.has_zip %}
+                <a href="{{ url_for('tasks_bp.task_download_output_query', task_id=task.id, filename=r.zip_file) }}" class="btn-action-icon" title="下載 ZIP"><i class="bi bi-file-earmark-zip"></i><span class="d-none d-lg-inline small fw-semibold">ZIP</span></a>
+                {% endif %}
+                {% if r.has_log %}
+                <a href="{{ url_for('tasks_bp.task_download_output_query', task_id=task.id, filename=r.log_file) }}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+          {% endif %}
         </tbody>
       </table>
     </div>
@@ -231,17 +297,17 @@
       <nav>
         <ul class="pagination pagination-sm mb-0 gap-1">
           <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=pagination.page-1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+            <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=pagination.page-1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
           </li>
           {% for p in range(1, pagination.total_pages + 1) %}
             {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
             <li class="page-item {% if p == pagination.page %}active{% endif %}">
-              <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=p, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) }}">{{ p }}</a>
+              <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=p, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) }}">{{ p }}</a>
             </li>
             {% endif %}
           {% endfor %}
           <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-            <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', page=pagination.page+1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+            <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=pagination.page+1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
           </li>
         </ul>
       </nav>
@@ -314,6 +380,7 @@ document.getElementById("clearSelectionBtn")?.addEventListener("click", () => {
   updateRunUI();
 });
 
+{% if active_tab == 'flows' %}
 document.getElementById("deleteSelectedRunsBtn")?.addEventListener("click", () => {
   const selected = getSelectedRunIds();
   if (!selected.length) return;
@@ -332,6 +399,26 @@ document.getElementById("downloadSelectedRunsLogBtn")?.addEventListener("click",
   if (!selected.length) return;
   submitPostForm("{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}", { job_ids: selected.join(","), kind: "log" });
 });
+{% else %}
+document.getElementById("deleteSelectedMappingRunsBtn")?.addEventListener("click", () => {
+  const selected = getSelectedRunIds();
+  if (!selected.length) return;
+  if (!confirm(`確定要刪除 ${selected.length} 筆 Mapping 執行結果嗎？`)) return;
+  submitPostForm("{{ url_for('flows_bp.delete_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(",") });
+});
+
+document.getElementById("downloadSelectedMappingZipBtn")?.addEventListener("click", () => {
+  const selected = getSelectedRunIds();
+  if (!selected.length) return;
+  submitPostForm("{{ url_for('flows_bp.download_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(","), kind: "zip" });
+});
+
+document.getElementById("downloadSelectedMappingLogBtn")?.addEventListener("click", () => {
+  const selected = getSelectedRunIds();
+  if (!selected.length) return;
+  submitPostForm("{{ url_for('flows_bp.download_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(","), kind: "log" });
+});
+{% endif %}
 
 const runSearchInput = document.getElementById("runSearchInput");
 const runStatusFilter = document.getElementById("runStatusFilter");
@@ -342,6 +429,7 @@ let runTimer = null;
 function applyRunFilter() {
   const params = new URLSearchParams();
   params.set("view", "single");
+  params.set("tab", "{{ active_tab }}");
   const q = (runSearchInput?.value || "").trim();
   const status = runStatusFilter?.value || "";
   const startDate = runDateStart?.value || "";

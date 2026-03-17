@@ -312,7 +312,7 @@ def process_mapping_excel(
         "out_path": ["檔案路徑", "輸出路徑"],
         "out_name": ["檔案名稱", "輸出檔案名稱"],
         "template": ["模板文件"],
-        "insert": ["插入段落名稱/目的資料夾名稱", "插入段落"],
+        "insert": ["插入段落名稱", "插入段落"],
     }
     optional_header_aliases = {
         "item_type": ["類型", "Type", "擷取類型"],

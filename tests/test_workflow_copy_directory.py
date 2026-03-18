@@ -125,3 +125,56 @@ def test_workflow_copy_directory_can_copy_matching_named_subfolders(tmp_path: Pa
     assert (dest_root / "IFU_knee" / "knee.txt").read_text(encoding="utf-8") == "knee"
     assert (dest_root / "IFU_hip" / "hip.txt").read_text(encoding="utf-8") == "hip"
     assert not (dest_root / "Label sample").exists()
+
+
+def test_workflow_copy_directory_keywords_can_fallback_to_source_directory_itself(tmp_path: Path) -> None:
+    source_dir = tmp_path / "IFU"
+    source_dir.mkdir(parents=True)
+    (source_dir / "root.txt").write_text("root", encoding="utf-8")
+
+    dest_root = tmp_path / "dest_root"
+    dest_root.mkdir()
+
+    steps = [
+        {
+            "type": "copy_directory",
+            "params": {
+                "source_dir": str(source_dir),
+                "dest_dir": str(dest_root),
+                "keywords": "IFU",
+            },
+        }
+    ]
+
+    result = run_workflow(steps, str(tmp_path / "job_copy_directory_keywords_source"))
+    entry = next(e for e in result["log_json"] if e.get("type") == "copy_directory")
+
+    assert entry["status"] == "ok"
+    assert entry["copied_dirs"] == [str(dest_root / "IFU")]
+    assert (dest_root / "IFU" / "root.txt").read_text(encoding="utf-8") == "root"
+
+
+def test_workflow_copy_directory_keywords_work_when_destination_is_source_ancestor(tmp_path: Path) -> None:
+    files_root = tmp_path / "files"
+    source_dir = files_root / "TD-III-011-USTAR II Knee System" / "Section 2_Information Supplied by the Manufacturer"
+    matched_dir = source_dir / "IFU"
+    matched_dir.mkdir(parents=True)
+    (matched_dir / "ifu.txt").write_text("ifu", encoding="utf-8")
+
+    steps = [
+        {
+            "type": "copy_directory",
+            "params": {
+                "source_dir": str(source_dir),
+                "dest_dir": str(files_root),
+                "keywords": "IFU",
+            },
+        }
+    ]
+
+    result = run_workflow(steps, str(tmp_path / "job_copy_directory_keywords_ancestor"))
+    entry = next(e for e in result["log_json"] if e.get("type") == "copy_directory")
+
+    assert entry["status"] == "ok"
+    assert sorted(Path(p).name for p in entry["copied_dirs"]) == ["IFU"]
+    assert (files_root / "IFU" / "ifu.txt").read_text(encoding="utf-8") == "ifu"

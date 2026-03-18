@@ -235,14 +235,22 @@ def copy_directories(
     os.makedirs(destination_abs, exist_ok=True)
     matched_sources: List[str] = []
 
+    source_name = os.path.basename(os.path.normpath(source_abs)).lower()
+    source_matches = all(k in source_name for k in lowered_keywords)
+    destination_inside_source = (
+        destination_abs == source_abs
+        or destination_abs.startswith(source_abs + os.sep)
+    )
+
     for root, dirs, _files in os.walk(source_abs):
         dirs.sort()
-        dirs[:] = [
-            d
-            for d in dirs
-            if os.path.abspath(os.path.join(root, d)) != destination_abs
-            and not os.path.abspath(os.path.join(root, d)).startswith(destination_abs + os.sep)
-        ]
+        if destination_inside_source:
+            dirs[:] = [
+                d
+                for d in dirs
+                if os.path.abspath(os.path.join(root, d)) != destination_abs
+                and not os.path.abspath(os.path.join(root, d)).startswith(destination_abs + os.sep)
+            ]
         for name in list(dirs):
             lower_name = name.lower()
             if not all(k in lower_name for k in lowered_keywords):
@@ -271,6 +279,17 @@ def copy_directories(
         )
         if final_path:
             copied_dirs.append(final_path)
+
+    if not copied_dirs and source_matches:
+        entry = registry_entry_factory(source_abs) if callable(registry_entry_factory) else None
+        copied_path = copy_directory(
+            source_abs,
+            destination_abs,
+            None,
+            copied_registry,
+            entry,
+        )
+        copied_dirs.append(copied_path)
 
     return copied_dirs
 

@@ -14,7 +14,7 @@ def _create_docx(path: Path, text: str = "result") -> None:
 def test_supported_steps_include_extract_pdf_pages_as_images() -> None:
     step = SUPPORTED_STEPS["extract_pdf_pages_as_images"]
 
-    assert step["label"] == "擷取 PDF 每頁圖片"
+    assert step["label"] == "擷取 PDF 標籤圖片"
     assert step["accepts"]["input_file"] == "file:pdf"
 
 

@@ -30,6 +30,7 @@
                 <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post">
                     <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
                     <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
+                    <input type="hidden" name="save_as_name" id="saveAsNameInput" value="">
 
 
                     <div class="px-4 py-4 border-bottom">
@@ -83,10 +84,15 @@
                                 <i class="bi bi-save"></i>
                                 保存流程
                             </button>
+                            <button class="btn btn-white border d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn">
+                                <i class="bi bi-files"></i>
+                                另存流程
+                            </button>
                             <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold px-3" type="submit" name="action" value="run">
                                 <i class="bi bi-play-fill"></i>
                                 執行流程
                             </button>
+                            <button class="d-none" type="submit" name="action" value="save_as" id="saveAsSubmitTrigger">另存流程</button>
                         </div>
                     </div>
                     
@@ -363,6 +369,28 @@
       <div class="modal-footer border-0 pt-0">
         <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
         <button type="button" class="btn btn-primary fw-bold" id="renameFlowSubmitBtn">確定</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="saveAsFlowModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">另存流程</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-1">
+          <label for="saveAsFlowInput" class="form-label small fw-bold text-uppercase text-muted">新流程名稱 (最多 50 字)</label>
+          <input type="text" class="form-control form-control-custom" id="saveAsFlowInput" maxlength="50" required>
+          <div class="form-text text-end small" id="saveAsFlowCount">0/50</div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary fw-bold" id="saveAsFlowSubmitBtn">確定</button>
       </div>
     </div>
   </div>
@@ -1103,6 +1131,9 @@ window.addEventListener('beforeunload', function(e){
   e.returnValue = '';
 });
 const flowForm = document.getElementById('flow_form');
+const flowNameInput = document.getElementById('flowNameInput');
+const saveAsNameInput = document.getElementById('saveAsNameInput');
+const saveAsSubmitTrigger = document.getElementById('saveAsSubmitTrigger');
 flowForm.addEventListener('submit', (e) => {
   flowForm.querySelectorAll(".chapter-ref").forEach(syncChapterRefInput);
   const action = e.submitter?.value;
@@ -2219,7 +2250,19 @@ const renameFlowInput = document.getElementById('renameFlowInput');
 const renameFlowCount = document.getElementById('renameFlowCount');
 const renameFlowCurrentName = document.getElementById('renameFlowCurrentName');
 const renameFlowSubmitBtn = document.getElementById('renameFlowSubmitBtn');
+const saveAsFlowModalEl = document.getElementById('saveAsFlowModal');
+const saveAsFlowBtn = document.getElementById('saveAsFlowBtn');
+const saveAsFlowInput = document.getElementById('saveAsFlowInput');
+const saveAsFlowCount = document.getElementById('saveAsFlowCount');
+const saveAsFlowSubmitBtn = document.getElementById('saveAsFlowSubmitBtn');
 let renameModalInstance = null;
+let saveAsModalInstance = null;
+
+function buildSaveAsNameSuggestion() {
+  const base = (flowNameInput?.value || "").trim() || "新流程";
+  const suggested = base.endsWith("_副本") ? base : `${base}_副本`;
+  return suggested.slice(0, 50);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   const addStepDropdownBtn = document.getElementById('addStepDropdownBtn');
@@ -2263,6 +2306,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+document.addEventListener('DOMContentLoaded', () => {
+  if (saveAsFlowModalEl && typeof bootstrap !== 'undefined') {
+    saveAsModalInstance = new bootstrap.Modal(saveAsFlowModalEl);
+
+    saveAsFlowInput.addEventListener('input', () => {
+      const len = saveAsFlowInput.value.length;
+      const max = saveAsFlowInput.getAttribute('maxlength');
+      saveAsFlowCount.textContent = `${len}/${max}`;
+    });
+
+    saveAsFlowSubmitBtn.addEventListener('click', () => {
+      const newName = saveAsFlowInput.value.trim();
+      if (!newName) {
+        alert('請輸入流程名稱');
+        return;
+      }
+      if (newName.length > 50) {
+        alert('流程名稱長度不可超過 50 字');
+        return;
+      }
+      if (saveAsNameInput) saveAsNameInput.value = newName;
+      saveAsModalInstance.hide();
+      if (flowForm && saveAsSubmitTrigger) {
+        flowForm.requestSubmit(saveAsSubmitTrigger);
+      }
+    });
+  }
+});
+
 function renameFlow(current){
   if (renameModalInstance) {
     renameFlowCurrentName.value = current;
@@ -2278,6 +2350,29 @@ function renameFlow(current){
     }
     submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name, fpage: String(CURRENT_FLOW_PAGE) });
   }
+}
+
+if (saveAsFlowBtn) {
+  saveAsFlowBtn.addEventListener('click', () => {
+    if (saveAsModalInstance) {
+      saveAsFlowInput.value = buildSaveAsNameSuggestion();
+      saveAsFlowInput.dispatchEvent(new Event('input'));
+      saveAsModalInstance.show();
+      saveAsFlowInput.focus();
+      saveAsFlowInput.select();
+    } else {
+      const name = prompt('輸入另存流程名稱 (最多 50 字)', buildSaveAsNameSuggestion());
+      if (!name) return;
+      if (name.length > 50) {
+        alert('流程名稱長度不可超過 50 字');
+        return;
+      }
+      if (saveAsNameInput) saveAsNameInput.value = name.trim();
+      if (flowForm && saveAsSubmitTrigger) {
+        flowForm.requestSubmit(saveAsSubmitTrigger);
+      }
+    }
+  });
 }
 if (PRESET_FLOW){
   for (const st of PRESET_FLOW){
@@ -2357,11 +2452,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (card) card.classList.remove('dropdown-open');
   });
 });
-
-
-
-
-const flowNameInput = document.getElementById('flowNameInput');
 const flowNameCount = document.getElementById('flowNameCount');
 if (flowNameInput && flowNameCount) {
   const updateCount = () => {

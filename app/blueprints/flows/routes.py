@@ -1548,8 +1548,16 @@ def run_flow(task_id):
         abort(404)
     action = request.form.get("action", "run")
     flow_name = request.form.get("flow_name", "").strip()
+    save_as_name = request.form.get("save_as_name", "").strip()
+    target_flow_name = save_as_name if action == "save_as" else flow_name
     if flow_name:
         name_error = _validate_flow_name(flow_name)
+        if name_error:
+            return name_error, 400
+    if action == "save_as":
+        if not target_flow_name:
+            return "缺少另存流程名稱", 400
+        name_error = _validate_flow_name(target_flow_name)
         if name_error:
             return name_error, 400
     output_filename, output_filename_error = normalize_docx_output_filename(
@@ -1603,9 +1611,11 @@ def run_flow(task_id):
     os.makedirs(flow_dir, exist_ok=True)
     if action == "save" and not flow_name:
         return "缺少流程名稱", 400
-    should_save_flow = action == "save" or (action == "run" and bool(flow_name))
+    should_save_flow = action in {"save", "save_as"} or (action == "run" and bool(flow_name))
     if should_save_flow:
-        path = os.path.join(flow_dir, f"{flow_name}.json")
+        path = os.path.join(flow_dir, f"{target_flow_name}.json")
+        if action == "save_as" and os.path.exists(path):
+            return "流程名稱已存在", 400
         created = datetime.now().strftime("%Y-%m-%d %H:%M")
         if os.path.exists(path):
             try:
@@ -1630,6 +1640,8 @@ def run_flow(task_id):
         if action == "save":
             fpage = request.form.get("fpage")
             return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))
+        if action == "save_as":
+            return redirect(url_for("flows_bp.flow_builder", task_id=task_id, flow=target_flow_name))
 
     runtime_steps = []
     for step in workflow:

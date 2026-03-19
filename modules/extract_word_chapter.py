@@ -1001,6 +1001,41 @@ def is_inline_subtitle_xml(p: etree._Element) -> bool:
 
     return has_text
 
+
+_CAPTION_LIKE_SUBTITLE_RE = re.compile(
+    r"^\s*(?:figure|table)\s+\d+(?:[\.:]\d+)*[\.:]?(?:\s|$)",
+    re.IGNORECASE,
+)
+
+
+def classify_subheading_candidate_xml(p: etree._Element) -> tuple[str | None, str | None]:
+    if is_inline_subtitle_xml(p):
+        return "inline", None
+
+    if not is_all_bold_paragraph(p):
+        return None, None
+
+    text = _strip_toggle_tokens(get_all_text(p))
+    if not text:
+        return None, None
+
+    style = (get_pStyle(p) or "").strip()
+    style_key = style.lower()
+    if not style_key or style_key == "normal":
+        return None, None
+    if style_key.startswith("heading") or style_key.startswith("toc"):
+        return None, None
+
+    if _CAPTION_LIKE_SUBTITLE_RE.match(text):
+        return None, None
+
+    return "styled_bold", style_key
+
+
+def is_subheading_candidate_xml(p: etree._Element) -> bool:
+    kind, _ = classify_subheading_candidate_xml(p)
+    return kind is not None
+
 def match_subheading(p: etree._Element, subheading_text: str, strict: bool = True) -> bool:
     txt = _strip_toggle_tokens(get_all_text(p))
     target = _strip_toggle_tokens(subheading_text)
@@ -1231,12 +1266,17 @@ def trim_to_subheading_range(
     debug: bool = False,
 ) -> list[etree._Element]:
     sub_start = None
+    start_kind: str | None = None
+    start_style_key: str | None = None
 
     # 1) 找小標題起點：優先「inline subtitle + 文字匹配」（且排除表格內段落）
     for i, block in enumerate(section_children):
         for p in iter_paragraphs_no_table(block):
-            if is_inline_subtitle_xml(p) and match_subheading(p, subheading_text, strict=strict_match):
+            kind, style_key = classify_subheading_candidate_xml(p)
+            if kind and match_subheading(p, subheading_text, strict=strict_match):
                 sub_start = i
+                start_kind = kind
+                start_style_key = style_key
                 break
         if sub_start is not None:
             break
@@ -1259,19 +1299,28 @@ def trim_to_subheading_range(
     for j in range(sub_start + 1, len(section_children)):
         blk = section_children[j]
         for p in iter_paragraphs_no_table(blk):
-            # 候選：原本的 inline subtitle 規則（Normal + 全粗體）
-            if is_inline_subtitle_xml(p):
-                # 新增：確認它後面真的跟著正文（不是一路粗體）
-                if has_body_text_after_candidate(section_children, j, lookahead_blocks=1):
-                    sub_end = j
-                    if debug:
-                        print("小標題擷取結束於段落（確認為小標題）：", repr(get_all_text(p)))
-                        print("-" * 60)
-                    break
-                else:
-                    if debug:
-                        print("略過候選小標題（後面無正文）：", repr(get_all_text(p)))
-                        print("-" * 60)
+            # 候選：沿用起點的小標題型別，避免深層零件標題誤切成同層子標題
+            kind, style_key = classify_subheading_candidate_xml(p)
+            if not kind:
+                continue
+
+            if start_kind == "styled_bold":
+                if kind == "styled_bold" and style_key != start_style_key:
+                    continue
+            elif kind != "inline":
+                continue
+
+            # 新增：確認它後面真的跟著正文（不是一路粗體）
+            if has_body_text_after_candidate(section_children, j, lookahead_blocks=1):
+                sub_end = j
+                if debug:
+                    print("小標題擷取結束於段落（確認為小標題）：", repr(get_all_text(p)))
+                    print("-" * 60)
+                break
+            else:
+                if debug:
+                    print("略過候選小標題（後面無正文）：", repr(get_all_text(p)))
+                    print("-" * 60)
         if sub_end != len(section_children):
             break
 

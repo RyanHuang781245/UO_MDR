@@ -944,6 +944,7 @@ def process_mapping_excel(
                             copied_registry=copied_file_registry,
                             registry_entry={"row_num": row_num},
                         )
+                        copied_paths = [copied_path]
                         packaged_outputs.append(copied_path)
                         outputs.append(copied_path)
                         copied_rel = os.path.relpath(copied_path, output_dir).replace("\\", "/")

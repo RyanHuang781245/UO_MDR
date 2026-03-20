@@ -12,6 +12,7 @@ from modules.chapter_section_parse import (
 )
 from modules.extract_word_chapter import (
     NS,
+    build_style_heading_rank_map,
     build_style_outline_map,
     find_section_range_children,
     get_all_text,
@@ -281,6 +282,7 @@ def extract_specific_table_from_word_xml(
         raise RuntimeError("DOCX missing word/styles.xml")
 
     style_outline, style_based = build_style_outline_map(file_map["word/styles.xml"])
+    style_heading_rank = build_style_heading_rank_map(file_map["word/styles.xml"])
     root = etree.fromstring(file_map["word/document.xml"])
     body = root.find("w:body", namespaces=NS)
     if body is None:
@@ -296,6 +298,7 @@ def extract_specific_table_from_word_xml(
             start_number=chapter_section,
             style_outline=style_outline,
             style_based=style_based,
+            style_heading_rank=style_heading_rank,
             ignore_toc=True,
         )
         section_children = content_children[start_idx:end_idx]

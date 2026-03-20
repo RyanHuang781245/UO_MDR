@@ -125,7 +125,14 @@ def _is_plain_text_number_boundary(start_parts: list[int], candidate_parts: list
         return False
     if len(candidate_parts) > len(start_parts):
         return False
-    return candidate_parts != start_parts
+    if candidate_parts == start_parts:
+        return False
+
+    prefix_len = len(candidate_parts) - 1
+    if prefix_len and candidate_parts[:prefix_len] != start_parts[:prefix_len]:
+        return False
+
+    return candidate_parts[-1] != start_parts[prefix_len]
 
 def _is_heading_paragraph_xml(
     p: etree._Element,
@@ -890,6 +897,38 @@ def build_style_outline_map(styles_xml: bytes) -> tuple[dict[str, int], dict[str
 
     return style_outline, style_based
 
+
+_STYLE_NAME_HEADING_RE = re.compile(r"^\s*(\d+(?:[\.．]\d+)+)")
+
+
+def _extract_style_heading_rank(style_name: str | None) -> int | None:
+    name = normalize_text(style_name or "")
+    if not name:
+        return None
+    match = _STYLE_NAME_HEADING_RE.match(name)
+    if not match:
+        return None
+    parts = _parse_number_parts(match.group(1).replace("．", "."))
+    if not parts:
+        return None
+    return max(0, len(parts) - 1)
+
+
+def build_style_heading_rank_map(styles_xml: bytes) -> dict[str, int]:
+    style_rank: dict[str, int] = {}
+
+    root = etree.fromstring(styles_xml)
+    for st in root.xpath(".//w:style[@w:type='paragraph']", namespaces=NS):
+        sid = st.get(qn("w:styleId"))
+        if not sid:
+            continue
+        name = st.find("w:name", namespaces=NS)
+        rank = _extract_style_heading_rank(name.get(qn("w:val")) if name is not None else None)
+        if rank is not None:
+            style_rank[sid] = rank
+
+    return style_rank
+
 def _ensure_style_without_numpr(
     styles_xml: bytes,
     style_id: str,
@@ -943,6 +982,25 @@ def resolve_style_outline(style_id: str | None, style_outline: dict[str, int], s
             break
     return None
 
+
+def resolve_style_heading_rank(
+    style_id: str | None,
+    style_heading_rank: dict[str, int] | None,
+    style_based: dict[str, str],
+) -> int | None:
+    if not style_id or not style_heading_rank:
+        return None
+    cur = style_id
+    best: int | None = None
+    for _ in range(30):
+        if cur in style_heading_rank:
+            rank = style_heading_rank[cur]
+            best = rank if best is None else max(best, rank)
+        cur = style_based.get(cur)
+        if not cur:
+            break
+    return best
+
 def get_effective_outline_level(p: etree._Element, style_outline: dict[str, int], style_based: dict[str, str]) -> int | None:
     pPr = p.find("w:pPr", namespaces=NS)
     if pPr is not None:
@@ -952,6 +1010,20 @@ def get_effective_outline_level(p: etree._Element, style_outline: dict[str, int]
             if v and v.isdigit():
                 return int(v)
     return resolve_style_outline(get_pStyle(p), style_outline, style_based)
+
+
+def get_effective_heading_depth(
+    p: etree._Element,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+) -> int | None:
+    outline_depth = get_effective_outline_level(p, style_outline, style_based)
+    style_depth = resolve_style_heading_rank(get_pStyle(p), style_heading_rank, style_based)
+    depths = [depth for depth in (outline_depth, style_depth) if depth is not None]
+    if not depths:
+        return None
+    return max(depths)
 
 # ---------- 表格排除：只在判斷小標題起/終點時，忽略表格內的段落 ----------
 def is_inside_table(p: etree._Element) -> bool:
@@ -1079,17 +1151,24 @@ def find_section_range_children(
     start_number: str,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
     explicit_end_title: str | None = None,
     explicit_end_number: str | None = None,
     include_end_chapter: bool = True,
     ignore_toc: bool = True,
 ) -> tuple[int, int]:
     start_idx = None
-    start_outline = None
+    start_heading_depth = None
     start_style = None
     start_ilvl = None
+    fallback_start_idx = None
+    fallback_start_heading_depth = None
+    fallback_start_style = None
+    fallback_start_ilvl = None
+    fallback_start_number_parts: list[int] | None = None
     start_heading_is_number = bool(_parse_number_tokens(start_heading_text))
     start_number_parts = _parse_number_parts(normalize_text(start_number).replace("．", ".").rstrip("."))
+    requested_start_depth = (len(start_number_parts) - 1) if start_number_parts else None
     start_num_pattern = _build_heading_number_prefix_regex(start_number)
     found_kind = None  # "exact" | "toc"
 
@@ -1102,20 +1181,43 @@ def find_section_range_children(
             txt = normalize_text(get_all_text(p))
 
             if txt == start_heading_text:
-                start_idx = i
-                start_outline = get_effective_outline_level(p, style_outline, style_based)
-                start_style = get_pStyle(p)
-                start_ilvl = get_ilvl(p)
-                start_number_parts = _extract_leading_number_parts(txt) or start_number_parts
-                found_kind = "exact"
-                break
+                cand_heading_depth = get_effective_heading_depth(
+                    p,
+                    style_outline,
+                    style_based,
+                    style_heading_rank,
+                )
+                cand_style = get_pStyle(p)
+                cand_ilvl = get_ilvl(p)
+                cand_number_parts = _extract_leading_number_parts(txt) or start_number_parts
+
+                if cand_heading_depth is not None or cand_ilvl is not None:
+                    start_idx = i
+                    start_heading_depth = cand_heading_depth
+                    start_style = cand_style
+                    start_ilvl = cand_ilvl
+                    start_number_parts = cand_number_parts
+                    found_kind = "exact"
+                    break
+
+                if fallback_start_idx is None:
+                    fallback_start_idx = i
+                    fallback_start_heading_depth = cand_heading_depth
+                    fallback_start_style = cand_style
+                    fallback_start_ilvl = cand_ilvl
+                    fallback_start_number_parts = cand_number_parts
 
             if start_num_pattern and re.match(start_num_pattern, txt) and (
                 start_heading_is_number or start_heading_text in txt
             ):
                 if found_kind is None:
                     start_idx = i
-                    start_outline = get_effective_outline_level(p, style_outline, style_based)
+                    start_heading_depth = get_effective_heading_depth(
+                        p,
+                        style_outline,
+                        style_based,
+                        style_heading_rank,
+                    )
                     start_style = get_pStyle(p)
                     start_ilvl = get_ilvl(p)
                     start_number_parts = _extract_leading_number_parts(txt) or start_number_parts
@@ -1125,9 +1227,25 @@ def find_section_range_children(
             break
 
     if start_idx is None:
-        raise RuntimeError(f"找不到章節起點：{start_number} / {start_heading_text}")
+        if fallback_start_idx is not None:
+            start_idx = fallback_start_idx
+            start_heading_depth = fallback_start_heading_depth
+            start_style = fallback_start_style
+            start_ilvl = fallback_start_ilvl
+            start_number_parts = fallback_start_number_parts or start_number_parts
+            found_kind = "exact"
+        else:
+            raise RuntimeError(f"找不到章節起點：{start_number} / {start_heading_text}")
+
+    if requested_start_depth is not None:
+        if start_heading_depth is None:
+            start_heading_depth = requested_start_depth
+        else:
+            start_heading_depth = max(start_heading_depth, requested_start_depth)
 
     has_explicit_end = bool((explicit_end_title or "").strip() or (explicit_end_number or "").strip())
+    explicit_end_parts = _parse_number_parts(normalize_text(explicit_end_number or "").replace("．", ".").rstrip("."))
+    explicit_end_depth = (len(explicit_end_parts) - 1) if explicit_end_parts else None
 
     # ---- 找終點 ----
     end_idx = len(body_children)
@@ -1146,7 +1264,18 @@ def find_section_range_children(
                     heading_title=explicit_end_title,
                 ):
                     if include_end_chapter:
-                        end_outline = get_effective_outline_level(p, style_outline, style_based)
+                        end_heading_depth = get_effective_heading_depth(
+                            p,
+                            style_outline,
+                            style_based,
+                            style_heading_rank,
+                        )
+                        if explicit_end_depth is not None:
+                            end_heading_depth = (
+                                explicit_end_depth
+                                if end_heading_depth is None
+                                else max(end_heading_depth, explicit_end_depth)
+                            )
                         end_style = get_pStyle(p)
                         end_ilvl = get_ilvl(p)
                         for k in range(j + 1, len(body_children)):
@@ -1154,10 +1283,19 @@ def find_section_range_children(
                             for next_p in iter_paragraphs(next_block):
                                 if ignore_toc and is_toc_paragraph(next_p):
                                     continue
-                                next_lvl = get_effective_outline_level(next_p, style_outline, style_based)
-                                if end_outline is not None and next_lvl is not None and next_lvl <= end_outline:
+                                next_heading_depth = get_effective_heading_depth(
+                                    next_p,
+                                    style_outline,
+                                    style_based,
+                                    style_heading_rank,
+                                )
+                                if (
+                                    end_heading_depth is not None
+                                    and next_heading_depth is not None
+                                    and next_heading_depth <= end_heading_depth
+                                ):
                                     return start_idx, k
-                                if end_outline is None:
+                                if end_heading_depth is None:
                                     next_style = get_pStyle(next_p)
                                     next_ilvl = get_ilvl(next_p)
                                     if (
@@ -1175,15 +1313,16 @@ def find_section_range_children(
             if has_explicit_end:
                 continue
 
-            lvl = get_effective_outline_level(p, style_outline, style_based)
-            if start_outline is not None and lvl is not None and lvl <= start_outline:
-                if start_ilvl is None:
-                    cur_ilvl = get_ilvl(p)
-                    if cur_ilvl is not None:
-                        continue
+            heading_depth = get_effective_heading_depth(
+                p,
+                style_outline,
+                style_based,
+                style_heading_rank,
+            )
+            if start_heading_depth is not None and heading_depth is not None and heading_depth <= start_heading_depth:
                 return start_idx, j
 
-            if start_outline is None:
+            if start_heading_depth is None:
                 style = get_pStyle(p)
                 ilvl = get_ilvl(p)
                 if (
@@ -1194,7 +1333,7 @@ def find_section_range_children(
                     and ilvl <= start_ilvl
                 ):
                     return start_idx, j
-                if start_ilvl is None:
+                if start_ilvl is None and not is_inside_table(p):
                     candidate_parts = _extract_leading_number_parts(txt)
                     if _is_plain_text_number_boundary(start_number_parts, candidate_parts):
                         return start_idx, j
@@ -1351,6 +1490,7 @@ def extract_section_docx_xml(
         raise RuntimeError("DOCX 中找不到 word/styles.xml（需要用它回推 outlineLvl）")
 
     style_outline, style_based = build_style_outline_map(file_map["word/styles.xml"])
+    style_heading_rank = build_style_heading_rank_map(file_map["word/styles.xml"])
 
     root = etree.fromstring(file_map["word/document.xml"])
     body = root.find("w:body", namespaces=NS)
@@ -1374,6 +1514,7 @@ def extract_section_docx_xml(
         start_number=start_number,
         style_outline=style_outline,
         style_based=style_based,
+        style_heading_rank=style_heading_rank,
         explicit_end_title=explicit_end_title,
         explicit_end_number=explicit_end_number,
         ignore_toc=ignore_toc,

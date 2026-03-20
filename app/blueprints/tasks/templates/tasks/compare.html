@@ -1,531 +1,462 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="h4 mb-3">來源比對</h1>
-<div class="row g-3">
-  <div class="col-md-8">
-    <iframe id="htmlFrame" src="{{ html_url }}" style="width:100%; height:80vh;" class="border"></iframe>
-  </div>
-  <div class="col-md-4">
-    <ul id="sourceList" class="list-group"></ul>
-    <div class="mt-3">
-      <div class="d-flex gap-2">
-        <button id="modeBtn" class="btn btn-outline-secondary" type="button">編輯模式</button>
-        <button id="saveBtn" class="btn btn-primary" type="button">保存</button>
-        <button id="saveAsBtn" class="btn btn-outline-primary" type="button">另存新檔</button>
-        <button id="downloadBtn" class="btn btn-success" type="button">下載</button>
-        <a class="btn btn-secondary" href="{{ back_link }}">返回結果</a>
-      </div>
-      <span id="saveStatus" class="d-block mt-2">已保存</span>
-    </div>
-    <div class="mt-4">
-      <h2 class="h6 mb-2">版本歷程</h2>
-      <ul id="versionList" class="list-group small">
-        {% if versions %}
-          {% for version in versions %}
-            <li class="list-group-item d-flex justify-content-between align-items-start flex-wrap gap-2">
-              <div>
-                <div class="fw-semibold">{{ version.name }}</div>
-                <div class="text-muted">{{ version.created_at_display }}</div>
-              </div>
-              <div class="btn-group btn-group-sm flex-wrap">
-                <a class="btn btn-outline-secondary" href="{{ version.html_url }}" target="_blank">檢視</a>
-                <a class="btn btn-outline-success" href="{{ version.docx_url }}">下載</a>
-                <button class="btn btn-outline-primary restore-version" data-restore-url="{{ version.restore_url }}" data-version-name="{{ version.name }}">恢復</button>
-                <button class="btn btn-outline-danger delete-version" data-delete-url="{{ version.delete_url }}" data-version-name="{{ version.name }}">刪除</button>
-              </div>
-            </li>
-          {% endfor %}
-        {% else %}
-          <li class="list-group-item text-muted" data-placeholder="empty">尚無版本紀錄</li>
-        {% endif %}
-      </ul>
-    </div>
+<style>
+  .compare-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(340px, 0.95fr);
+    gap: 1rem;
+  }
+  .pdf-viewer-shell {
+    height: 75vh;
+    min-height: 640px;
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.9rem;
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    overflow-y: auto;
+    padding: 0.75rem 0 0;
+  }
+  .pdf-viewer-status {
+    padding: 0 1rem 0.75rem;
+  }
+  .page-info-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding: 0.85rem 1rem;
+    background: rgba(248, 250, 252, 0.96);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.9rem;
+  }
+  .viewer-toolbar-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .viewer-divider {
+    width: 1px;
+    height: 1.5rem;
+    background: rgba(255,255,255,0.12);
+  }
+  .page-info-value {
+    color: #0f172a;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  .page-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 4.5rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.35rem;
+    border: 1px solid var(--bs-gray-200);
+    background: white;
+    color: #0f172a;
+    font-size: 0.88rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .viewer-icon-btn {
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.4rem;
+    background: white;
+    color: #475569;
+    transition: 0.2s ease;
+  }
+  .viewer-icon-btn:hover {
+    background: var(--bs-blue-50);
+    color: var(--bs-blue-600);
+    border-color: var(--bs-blue-100);
+  }
+  .pdf-viewer {
+    display: grid;
+    gap: 0.75rem;
+    justify-items: center;
+    padding: 0 0 0.75rem;
+  }
+  .pdf-page {
+    width: min(100%, 980px);
+    background: white;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+  .pdf-page canvas {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 0;
+  }
+  .pdf-page-label {
+    margin: 0;
+    padding: 0.4rem 0.9rem;
+    color: var(--bs-gray-500);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: rgba(255,255,255,0.92);
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .preview-empty {
+    min-height: 420px;
+    background: linear-gradient(145deg, #f8fafc, #eff6ff);
+    color: var(--bs-gray-500);
+  }
+  .sidebar-stack {
+    display: grid;
+    gap: 1rem;
+    max-height: calc(78vh + 96px);
+    overflow-y: auto;
+    padding-right: 0.25rem;
+  }
+  .sidebar-panel {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: white;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .page-source-list .list-group-item {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+  .page-source-btn {
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+  .page-source-btn.active,
+  .page-source-btn:hover {
+    color: var(--bs-blue-600);
+  }
+  .page-source-item-active {
+    background: var(--bs-blue-50);
+  }
+  .source-tag-a {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+  }
+  .source-tag-b {
+    background-color: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+  }
+  .source-tag-c {
+    background-color: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fde68a;
+  }
+  .source-tag-d {
+    background-color: #fdf2f8;
+    color: #be185d;
+    border: 1px solid #fbcfe8;
+  }
+  .source-tag-e {
+    background-color: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid #ddd6fe;
+  }
+  .source-tag-f {
+    background-color: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+  }
+  @media (max-width: 991.98px) {
+    .compare-layout {
+      grid-template-columns: 1fr;
+    }
+    .sidebar-stack {
+      max-height: none;
+      overflow: visible;
+      padding-right: 0;
+    }
+    .pdf-viewer-shell,
+    .preview-empty {
+      min-height: 70vh;
+      height: 70vh;
+    }
+  }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center">
+  <div class="mb-3">
+    <h1 class="h3 mb-0 fw-bold">來源預覽</h1>
   </div>
 </div>
 
-<div class="modal fade" id="sourceModal" tabindex="-1">
-  <div class="modal-dialog modal-xl">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">來源檔案預覽</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+{% if preview_messages %}
+  {% for message in preview_messages %}
+  <div class="alert alert-warning py-2">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+<div class="compare-layout">
+  <section>
+    {% if preview_url %}
+    <div class="page-info-bar">
+      <div class="viewer-toolbar-group">
+        <button class="viewer-icon-btn" id="showResultBtn" type="button" title="回到第一頁">
+          <i class="bi bi-arrow-up-circle"></i>
+        </button>
+        <span class="page-count-badge" id="pageSourceHeadline">1 / 1</span>
+        <button class="viewer-icon-btn" id="prevPageBtn" type="button" title="上一頁">
+          <i class="bi bi-chevron-up"></i>
+        </button>
+        <button class="viewer-icon-btn" id="nextPageBtn" type="button" title="下一頁">
+          <i class="bi bi-chevron-down"></i>
+        </button>
       </div>
-      <div class="modal-body p-0"></div>
     </div>
-  </div>
+    <div id="pdfViewerShell" class="pdf-viewer-shell">
+      <div id="pdfViewerStatus" class="pdf-viewer-status small text-muted">PDF 載入中</div>
+      <div id="pdfViewer" class="pdf-viewer"></div>
+    </div>
+    {% else %}
+    <div class="preview-empty rounded-3 border d-flex flex-column justify-content-center align-items-center text-center p-4">
+      <i class="bi bi-file-earmark-x fs-1 mb-3"></i>
+      <div class="fw-semibold mb-2">目前無法建立 PDF 預覽</div>
+      <div class="small">請確認 LibreOffice 可用，或先下載 Word 檔查看。</div>
+    </div>
+    {% endif %}
+  </section>
+
+  <aside>
+    <div class="sidebar-stack">
+      <section class="sidebar-panel">
+        <div class="p-3 border-bottom">
+          <div class="fw-semibold">目前頁面來源</div>
+          <div class="small text-muted">會隨左側目前可見頁面自動更新</div>
+        </div>
+        <ul class="list-group list-group-flush page-source-list" id="currentPageSourceList"></ul>
+        <div class="p-3 border-top d-flex flex-wrap gap-2">
+          <a class="btn btn-primary" href="{{ download_url }}">
+            <i class="bi bi-download me-1"></i>下載 Word
+          </a>
+        </div>
+      </section>
+    </div>
+  </aside>
 </div>
-<script>
-const CHAPTER_SOURCES = {{ chapter_sources|tojson }};
-const CHAPTERS = {{ chapters|tojson }};
+
+<script type="module">
+import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist/build/pdf.min.mjs';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist/build/pdf.worker.min.mjs';
+
 const SOURCE_URLS = {{ source_urls|tojson }};
 const TITLES_TO_HIDE = {{ titles_to_hide|tojson }};
-const SAVE_AS_URL = '{{ save_as_url }}';
-const COLORS = ['#ffb3ba','#baffc9','#bae1ff','#ffdfba','#ffffba','#baffff','#f4baff'];
-const CHAPTER_SET = new Set(CHAPTERS);
-let highlighted = [];
-let hiddenTitleNodes = [];
+const PAGE_SOURCE_MAP = {{ page_source_map|tojson }};
+const RESULT_PDF_URL = {{ preview_url|tojson }};
 
-function openWindow(url) {
-  window.open(url, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
-}
+const pdfViewerShell = document.getElementById('pdfViewerShell');
+const pdfViewer = document.getElementById('pdfViewer');
+const pdfViewerStatus = document.getElementById('pdfViewerStatus');
+const pageSourceHeadline = document.getElementById('pageSourceHeadline');
+const currentPageSourceList = document.getElementById('currentPageSourceList');
+const showResultBtn = document.getElementById('showResultBtn');
+const prevPageBtn = document.getElementById('prevPageBtn');
+const nextPageBtn = document.getElementById('nextPageBtn');
 
-function formatVersionName(name) {
-  return name || '未命名';
-}
+const SOURCE_COLOR_CLASSES = [
+  {tag: 'source-tag-a'},
+  {tag: 'source-tag-b'},
+  {tag: 'source-tag-c'},
+  {tag: 'source-tag-d'},
+  {tag: 'source-tag-e'},
+  {tag: 'source-tag-f'},
+];
+const sourceColorMap = new Map();
+const pageSourceByNumber = new Map(PAGE_SOURCE_MAP.map((item) => [Number(item.page_number), item]));
 
-async function postJson(url, options = {}) {
-  const resp = await fetch(url, Object.assign({method: 'POST'}, options));
-  let data = null;
-  try {
-    data = await resp.json();
-  } catch (err) {
-    data = null;
+let currentPageNumber = 1;
+let pageDetectScheduled = false;
+let pdfDoc = null;
+const PDF_RENDER_SCALE = 1.35;
+
+function getSourceColorClass(source) {
+  const key = source || '未知來源';
+  if (!sourceColorMap.has(key)) {
+    const next = SOURCE_COLOR_CLASSES[sourceColorMap.size % SOURCE_COLOR_CLASSES.length];
+    sourceColorMap.set(key, next);
   }
-  return {resp, data};
+  return sourceColorMap.get(key);
 }
 
-function clearHighlights() {
-  highlighted.forEach(el => {
-    el.style.backgroundColor = '';
-  });
-  highlighted = [];
+function openSourcePdf(source) {
+  const url = SOURCE_URLS[source];
+  if (!url) return;
+  window.open(url, '_blank', 'width=1200,height=900,scrollbars=yes,resizable=yes');
 }
 
-function updateSources(ch, element) {
-  clearHighlights();
-  const list = document.getElementById('sourceList');
-  list.innerHTML = '';
-  let sequence = [];
-  if (Array.isArray(ch)) {
-    sequence = ch.slice();
-  } else if (ch === null) {
-    const all = Object.values(CHAPTER_SOURCES).flat();
-    sequence = all.slice();
-  } else {
-    sequence = CHAPTER_SOURCES[ch] || [];
+function renderCurrentPageSources() {
+  currentPageSourceList.innerHTML = '';
+  const pageInfo = pageSourceByNumber.get(currentPageNumber);
+  const totalPages = pdfDoc ? pdfDoc.numPages : Math.max(pageSourceByNumber.size, currentPageNumber);
+  const pageLabel = `${currentPageNumber} / ${totalPages}`;
+  pageSourceHeadline.textContent = pageLabel;
+
+  const sources = pageInfo && Array.isArray(pageInfo.sources) ? pageInfo.sources : [];
+  if (!sources.length) {
+    const empty = document.createElement('li');
+    empty.className = 'list-group-item text-muted';
+    empty.textContent = '這一頁沒有可辨識的來源映射';
+    currentPageSourceList.appendChild(empty);
+    return;
   }
-  if (!sequence.length) return;
 
-  const uniqueSources = [...new Set(sequence)];
-  const colorMap = {};
-  let colorIdx = 0;
-  let pdfColor = null;
-  uniqueSources.forEach(src => {
-    let color;
-    if (src.toLowerCase().endsWith('.pdf')) {
-      if (!pdfColor) {
-        pdfColor = COLORS[colorIdx % COLORS.length];
-        colorIdx++;
-      }
-      color = pdfColor;
-    } else {
-      color = COLORS[colorIdx % COLORS.length];
-      colorIdx++;
-    }
-    colorMap[src] = color;
-    const li = document.createElement('li');
-    li.className = 'list-group-item';
-    li.textContent = src;
-    li.style.backgroundColor = color;
-    const url = SOURCE_URLS[src];
-    if (url) {
-      li.style.cursor = 'pointer';
-      li.addEventListener('click', () => openWindow(url));
-    }
-    list.appendChild(li);
-  });
+  const activeSource = pageInfo && pageInfo.dominant_source ? pageInfo.dominant_source : '';
 
-  if (element) {
-    let node = element.nextElementSibling;
-    let idx = 0;
-    const markers = sequence.map(src => {
-      const title = src.match(/標題\s*(.+)/);
-      if (title) return {type: 'title', value: title[1]};
-      const sec = src.match(/章節\s*([\d\.]+)/);
-      return sec ? {type: 'section', value: sec[1]} : null;
+  sources.forEach((entry, index) => {
+    const source = entry.source_file || '未知來源';
+    const colorClass = getSourceColorClass(source);
+    const isActive = activeSource === source || (!activeSource && index === 0);
+    const item = document.createElement('li');
+    item.className = `list-group-item${isActive ? ' page-source-item-active' : ''}`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `page-source-btn${isActive ? ' active' : ''}`;
+    const row = document.createElement('div');
+    row.className = 'd-flex justify-content-between align-items-start gap-3';
+    const textWrap = document.createElement('div');
+    const tag = document.createElement('span');
+    tag.className = `status-badge ${colorClass.tag}`;
+    tag.textContent = source;
+    const hint = document.createElement('div');
+    hint.className = 'small text-muted mt-1';
+    hint.textContent = entry.inherited ? '延續上一頁來源' : `本頁對應段落數：${entry.count}`;
+    const action = document.createElement('i');
+    action.className = 'bi bi-box-arrow-up-right text-muted';
+    textWrap.appendChild(tag);
+    textWrap.appendChild(hint);
+    row.appendChild(textWrap);
+    row.appendChild(action);
+    button.appendChild(row);
+    button.addEventListener('click', () => {
+      openSourcePdf(source);
     });
-    const findNextMarkerIdx = from => {
-      for (let i = from + 1; i < markers.length; i++) {
-        if (markers[i]) return i;
-      }
-      return -1;
-    };
-    let nextIdx = findNextMarkerIdx(0);
-    let nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-    while (node && !CHAPTER_SET.has(node.textContent.trim())) {
-      const text = node.textContent.trim();
-      if (nextMarker && highlighted.length && (
-          (nextMarker.type === 'section' && text.startsWith(nextMarker.value)) ||
-          (nextMarker.type === 'title' && text.includes(nextMarker.value))
-        )) {
-        idx = nextIdx;
-        nextIdx = findNextMarkerIdx(idx);
-        nextMarker = nextIdx !== -1 ? markers[nextIdx] : null;
-      }
-        const src = sequence[idx] || sequence[sequence.length - 1];
-        node.style.backgroundColor = colorMap[src];
-        highlighted.push(node);
-        node = node.nextElementSibling;
-      }
-    }
-  }
-
-const iframe = document.getElementById('htmlFrame');
-let doc;
-let isSaved = true;
-let editSeq = 0;
-let savedSeq = 0;
-let autosaveTimer = null;
-let autosaveInFlight = false;
-let autosaveQueued = false;
-const AUTOSAVE_DELAY_MS = 1200;
-const statusEl = document.getElementById('saveStatus');
-function setSaved(saved) {
-  isSaved = saved;
-  statusEl.textContent = saved ? '已保存' : '未保存';
-  statusEl.classList.toggle('text-success', saved);
-  statusEl.classList.toggle('text-danger', !saved);
-}
-
-function setSaving() {
-  statusEl.textContent = 'Saving...';
-  statusEl.classList.remove('text-success', 'text-danger');
-}
-
-function ensureVersionPlaceholder() {
-  const list = document.getElementById('versionList');
-  if (!list) return;
-  const remaining = list.querySelectorAll('li:not([data-placeholder="empty"])');
-  if (remaining.length === 0) {
-    let placeholder = list.querySelector('[data-placeholder="empty"]');
-    if (!placeholder) {
-      placeholder = document.createElement('li');
-      placeholder.className = 'list-group-item text-muted';
-      placeholder.dataset.placeholder = 'empty';
-      placeholder.textContent = '尚無版本紀錄';
-      list.appendChild(placeholder);
-    }
-  }
-}
-
-function hideChapterTitles() {
-  hiddenTitleNodes = [];
-  if (!doc || !doc.body) return;
-  const titles = Array.isArray(TITLES_TO_HIDE) ? TITLES_TO_HIDE : [];
-  const trimmed = titles.map(t => (t || '').trim()).filter(Boolean);
-  if (!trimmed.length) return;
-  const hideSet = new Set(trimmed);
-  const paragraphs = doc.body.querySelectorAll('p');
-  paragraphs.forEach(p => {
-    const text = p.textContent.trim();
-    if (hideSet.has(text)) {
-      if (!p.dataset.prevDisplay) {
-        p.dataset.prevDisplay = p.style.display || '';
-      }
-      p.style.display = 'none';
-      hiddenTitleNodes.push(p);
-    }
+    item.appendChild(button);
+    currentPageSourceList.appendChild(item);
   });
 }
-setSaved(true);
-editSeq = 0;
-savedSeq = 0;
 
-function queueAutosave() {
-  if (autosaveTimer) {
-    clearTimeout(autosaveTimer);
-  }
-  autosaveTimer = setTimeout(() => {
-    autosaveTimer = null;
-    saveNow({silent: true});
-  }, AUTOSAVE_DELAY_MS);
+function updateCurrentPage(pageNumber) {
+  if (!pageNumber || pageNumber === currentPageNumber) return;
+  currentPageNumber = pageNumber;
+  renderCurrentPageSources();
 }
 
-async function saveNow({silent = false} = {}) {
-  if (autosaveTimer) {
-    clearTimeout(autosaveTimer);
-    autosaveTimer = null;
-  }
-  if (savedSeq >= editSeq) {
-    setSaved(true);
-    return true;
-  }
-  if (autosaveInFlight) {
-    autosaveQueued = true;
-    return false;
-  }
-  autosaveInFlight = true;
-  setSaving();
-  const seqAtStart = editSeq;
+function scrollToPage(pageNumber) {
+  if (!pdfViewerShell || !pdfViewer) return;
+  const target = pdfViewer.querySelector(`.pdf-page[data-page-number="${pageNumber}"]`);
+  if (!target) return;
+  const top = target.offsetTop - 100;
+  pdfViewerShell.scrollTo({top, behavior: 'smooth'});
+  updateCurrentPage(pageNumber);
+}
+
+function detectCurrentPageFromScroll() {
+  if (!pdfViewerShell) return;
+  pageDetectScheduled = false;
+  const pages = Array.from(pdfViewer.querySelectorAll('.pdf-page'));
+  if (!pages.length) return;
+
+  const shellRect = pdfViewerShell.getBoundingClientRect();
+  const focusLine = shellRect.top + shellRect.height * 0.35;
+  let bestPage = 1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  pages.forEach((pageEl) => {
+    const rect = pageEl.getBoundingClientRect();
+    const pageMid = rect.top + rect.height * 0.5;
+    const distance = Math.abs(pageMid - focusLine);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestPage = Number(pageEl.dataset.pageNumber);
+    }
+  });
+
+  updateCurrentPage(bestPage);
+}
+
+function schedulePageDetection() {
+  if (pageDetectScheduled) return;
+  pageDetectScheduled = true;
+  requestAnimationFrame(detectCurrentPageFromScroll);
+}
+
+async function renderResultPdf() {
+  if (!RESULT_PDF_URL || !pdfViewer || !pdfViewerShell) return;
   try {
-    const r = await saveHtml();
-    if (!r.ok) {
-      setSaved(false);
-      if (!silent) {
-        alert('Save failed');
-      }
-      return false;
+    pdfViewerStatus.textContent = 'PDF 載入中';
+    if (!pdfDoc) {
+      pdfDoc = await pdfjsLib.getDocument(RESULT_PDF_URL).promise;
     }
-    savedSeq = Math.max(savedSeq, seqAtStart);
-    const fullySaved = savedSeq >= editSeq;
-    setSaved(fullySaved);
-    if (!fullySaved) {
-      autosaveQueued = true;
-    } else if (!silent) {
-      alert('Saved');
+    pdfViewer.innerHTML = '';
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum += 1) {
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({scale: PDF_RENDER_SCALE});
+      const pageWrap = document.createElement('section');
+      pageWrap.className = 'pdf-page';
+      pageWrap.dataset.pageNumber = String(pageNum);
+      const label = document.createElement('div');
+      label.className = 'pdf-page-label';
+      label.textContent = `Page ${pageNum}`;
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      pageWrap.appendChild(label);
+      pageWrap.appendChild(canvas);
+      pdfViewer.appendChild(pageWrap);
+      await page.render({canvasContext: context, viewport}).promise;
     }
-    return fullySaved;
-  } catch (err) {
-    setSaved(false);
-    if (!silent) {
-      alert('Save failed');
-    }
-    return false;
-  } finally {
-    autosaveInFlight = false;
-    if (autosaveQueued) {
-      autosaveQueued = false;
-      queueAutosave();
-    }
+    pdfViewerStatus.textContent = `共 ${pdfDoc.numPages} 頁`;
+    currentPageNumber = 1;
+    renderCurrentPageSources();
+    pdfViewerShell.removeEventListener('scroll', schedulePageDetection);
+    pdfViewerShell.addEventListener('scroll', schedulePageDetection, {passive: true});
+    schedulePageDetection();
+  } catch (error) {
+    console.error(error);
+    pdfViewerStatus.textContent = 'PDF 載入失敗';
   }
 }
 
-iframe.addEventListener('load', () => {
-  doc = iframe.contentDocument || iframe.contentWindow.document;
-  doc.designMode = 'off';
-  doc.addEventListener('input', () => {
-    editSeq += 1;
-    setSaved(false);
-    queueAutosave();
-  });
-  hideChapterTitles();
-  let found = false;
-  let unhandled = [];
-  CHAPTERS.forEach(ch => {
-    const elements = Array.from(doc.body.querySelectorAll('*')).filter(el => el.textContent.trim() === ch);
-    if (elements.length) {
-      found = true;
-      elements.forEach(el => {
-        el.style.cursor = 'pointer';
-        el.addEventListener('click', () => updateSources(ch, el));
-      });
-    } else {
-      unhandled = unhandled.concat(CHAPTER_SOURCES[ch] || []);
-    }
-  });
-  if (unhandled.length) {
-    updateSources(unhandled);
-  } else if (!found) {
-    updateSources(null);
-  }
-});
-
-document.getElementById('modeBtn').addEventListener('click', () => {
-  if (!doc) return;
-  if (doc.designMode === 'on') {
-    doc.designMode = 'off';
-    document.getElementById('modeBtn').textContent = '編輯模式';
-  } else {
-    doc.designMode = 'on';
-    document.getElementById('modeBtn').textContent = '檢視模式';
-  }
-});
-
-function saveHtml(targetUrl = '{{ save_url }}', extraData = {}) {
-  const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-  hiddenTitleNodes.forEach(node => {
-    node.style.display = node.dataset.prevDisplay || '';
-  });
-  const html = iframeDoc.documentElement.outerHTML;
-  hiddenTitleNodes.forEach(node => {
-    node.style.display = 'none';
-  });
-  const payload = Object.assign({html}, extraData);
-  return fetch(targetUrl, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
+if (showResultBtn) {
+  showResultBtn.addEventListener('click', () => {
+    scrollToPage(1);
   });
 }
 
-document.getElementById('saveBtn').addEventListener('click', () => {
-  saveNow({silent: false});
-});
-
-document.getElementById('downloadBtn').addEventListener('click', async () => {
-  if (!isSaved) {
-    const ok = await saveNow({silent: true});
-    if (!ok && !isSaved) {
-      alert('Save failed. Please save before download.');
-      return;
-    }
-  }
-  window.location = '{{ download_url }}';
-});
-
-function attachRestoreHandler(btn) {
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
-    const url = btn.dataset.restoreUrl;
-    if (!url) return;
-    const name = btn.dataset.versionName || '';
-    const displayName = formatVersionName(name);
-    const message = isSaved
-      ? `確定要恢復版本「${displayName}」嗎？目前內容將被覆蓋。`
-      : `目前有未保存的變更，確定要恢復版本「${displayName}」並覆蓋現有內容嗎？`;
-    if (!confirm(message)) {
-      return;
-    }
-    try {
-      const {resp, data} = await postJson(url);
-      if (!resp.ok) {
-        const errorMessage = data && data.error ? data.error : '恢復版本失敗';
-        alert(errorMessage);
-        return;
-      }
-      setSaved(true);
-      try {
-        if (iframe && iframe.contentWindow) {
-          iframe.contentWindow.location.reload();
-        }
-      } catch (err) {
-        iframe.src = iframe.src;
-      }
-      alert('已恢復指定版本');
-      window.location.reload();
-    } catch (err) {
-      alert('恢復版本失敗');
-    }
+if (prevPageBtn) {
+  prevPageBtn.addEventListener('click', () => {
+    scrollToPage(Math.max(1, currentPageNumber - 1));
   });
 }
 
-function attachDeleteHandler(btn) {
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
-    const url = btn.dataset.deleteUrl;
-    if (!url) return;
-    const name = btn.dataset.versionName || '';
-    const displayName = formatVersionName(name);
-    const message = `確定要刪除版本「${displayName}」嗎？此操作無法復原。`;
-    if (!confirm(message)) {
-      return;
-    }
-    try {
-      const {resp, data} = await postJson(url);
-      if (!resp.ok) {
-        const errorMessage = data && data.error ? data.error : '刪除版本失敗';
-        alert(errorMessage);
-        return;
-      }
-      const item = btn.closest('li');
-      if (item) {
-        item.remove();
-      }
-      ensureVersionPlaceholder();
-      alert('已刪除指定版本');
-    } catch (err) {
-      alert('刪除版本失敗');
-    }
+if (nextPageBtn) {
+  nextPageBtn.addEventListener('click', () => {
+    const totalPages = pdfDoc ? pdfDoc.numPages : currentPageNumber;
+    scrollToPage(Math.min(totalPages, currentPageNumber + 1));
   });
 }
 
-function addVersionToList(version) {
-  if (!version) return;
-  const list = document.getElementById('versionList');
-  if (!list) return;
-  const placeholder = list.querySelector('[data-placeholder="empty"]');
-  if (placeholder) {
-    placeholder.remove();
-  }
-  const item = document.createElement('li');
-  item.className = 'list-group-item d-flex justify-content-between align-items-start flex-wrap gap-2';
-  const infoDiv = document.createElement('div');
-  const nameDiv = document.createElement('div');
-  nameDiv.className = 'fw-semibold';
-  nameDiv.textContent = version.name || version.id || '未命名';
-  const timeDiv = document.createElement('div');
-  timeDiv.className = 'text-muted';
-  timeDiv.textContent = version.created_at_display || '';
-  infoDiv.appendChild(nameDiv);
-  infoDiv.appendChild(timeDiv);
-  const btnGroup = document.createElement('div');
-  btnGroup.className = 'btn-group btn-group-sm flex-wrap';
-  if (version.html_url) {
-    const viewLink = document.createElement('a');
-    viewLink.className = 'btn btn-outline-secondary';
-    viewLink.href = version.html_url;
-    viewLink.target = '_blank';
-    viewLink.textContent = '檢視';
-    btnGroup.appendChild(viewLink);
-  }
-  if (version.docx_url) {
-    const downloadLink = document.createElement('a');
-    downloadLink.className = 'btn btn-outline-success';
-    downloadLink.href = version.docx_url;
-    downloadLink.textContent = '下載';
-    btnGroup.appendChild(downloadLink);
-  }
-  if (version.restore_url) {
-    const restoreBtn = document.createElement('button');
-    restoreBtn.className = 'btn btn-outline-primary restore-version';
-    restoreBtn.dataset.restoreUrl = version.restore_url;
-    restoreBtn.dataset.versionName = version.name || version.id || '';
-    restoreBtn.type = 'button';
-    restoreBtn.textContent = '恢復';
-    btnGroup.appendChild(restoreBtn);
-    attachRestoreHandler(restoreBtn);
-  }
-  if (version.delete_url) {
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-outline-danger delete-version';
-    deleteBtn.dataset.deleteUrl = version.delete_url;
-    deleteBtn.dataset.versionName = version.name || version.id || '';
-    deleteBtn.type = 'button';
-    deleteBtn.textContent = '刪除';
-    btnGroup.appendChild(deleteBtn);
-    attachDeleteHandler(deleteBtn);
-  }
-  item.appendChild(infoDiv);
-  item.appendChild(btnGroup);
-  list.prepend(item);
-}
-
-document.querySelectorAll('.restore-version').forEach(attachRestoreHandler);
-document.querySelectorAll('.delete-version').forEach(attachDeleteHandler);
-
-const saveAsBtn = document.getElementById('saveAsBtn');
-if (saveAsBtn) {
-  saveAsBtn.addEventListener('click', () => {
-    const defaultName = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const input = prompt('請輸入版本名稱', defaultName);
-    if (input === null) {
-      return;
-    }
-    const name = input.trim();
-    if (!name) {
-      alert('版本名稱不可為空');
-      return;
-    }
-    saveHtml(SAVE_AS_URL, {name}).then(async r => {
-      let data = null;
-      try {
-        data = await r.json();
-      } catch (err) {
-        data = null;
-      }
-      if (!r.ok) {
-        const message = data && data.error ? data.error : '另存新檔失敗';
-        alert(message);
-        return;
-      }
-      if (data && data.version) {
-        addVersionToList(data.version);
-      }
-      alert('已另存為新版本');
-    }).catch(() => {
-      alert('另存新檔失敗');
-    });
-  });
-}
+renderCurrentPageSources();
+renderResultPdf();
 </script>
 {% endblock %}

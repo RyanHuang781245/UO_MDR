@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import tempfile
 import uuid
 import zipfile
 from datetime import datetime
@@ -15,7 +17,6 @@ from werkzeug.utils import secure_filename
 
 from app.services.flow_service import (
     SKIP_DOCX_CLEANUP,
-    build_version_context,
     clean_compare_html_content,
     collect_titles_to_hide,
     load_titles_to_hide_from_log,
@@ -77,6 +78,14 @@ _WINDOWS_RESERVED_FILE_NAMES = {
     "LPT9",
 }
 
+_LIBREOFFICE_CANDIDATES = (
+    "soffice",
+    "libreoffice",
+    r"C:\Program Files\LibreOffice\program\soffice.exe",
+    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+)
+_PAGE_SOURCE_MAP_CACHE_VERSION = 2
+
 
 def _get_actor_info():
     if current_user and getattr(current_user, "is_authenticated", False):
@@ -121,6 +130,488 @@ def _apply_last_edit(meta: dict) -> None:
         meta["last_editor"] = label
     if work_id:
         meta["last_editor_work_id"] = work_id
+
+
+def _find_libreoffice_binary() -> str | None:
+    for candidate in _LIBREOFFICE_CANDIDATES:
+        resolved = shutil.which(candidate) if not os.path.isabs(candidate) else candidate
+        if resolved and os.path.isfile(resolved):
+            return resolved
+    return None
+
+
+def _build_preview_pdf_name(source_path: str) -> str:
+    stem = secure_filename(Path(source_path).stem) or "preview"
+    digest = uuid.uuid5(uuid.NAMESPACE_URL, os.path.abspath(source_path)).hex[:10]
+    return f"{stem}_{digest}.pdf"
+
+
+def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[str | None, str | None]:
+    if not source_path or not os.path.isfile(source_path):
+        return None, "找不到要預覽的文件"
+
+    output_dir = os.path.join(job_dir, subdir)
+    os.makedirs(output_dir, exist_ok=True)
+    pdf_name = _build_preview_pdf_name(source_path)
+    pdf_rel = os.path.join(subdir, pdf_name).replace("\\", "/")
+    pdf_path = os.path.join(job_dir, pdf_rel)
+
+    try:
+        if os.path.exists(pdf_path) and os.path.getmtime(pdf_path) >= os.path.getmtime(source_path):
+            return pdf_rel, None
+    except OSError:
+        pass
+
+    libreoffice_bin = _find_libreoffice_binary()
+    if not libreoffice_bin:
+        return None, "找不到 LibreOffice，無法建立 PDF 預覽"
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="lo_pdf_") as temp_dir:
+            result = subprocess.run(
+                [
+                    libreoffice_bin,
+                    "--headless",
+                    "--convert-to",
+                    "pdf:writer_pdf_Export",
+                    "--outdir",
+                    temp_dir,
+                    source_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                check=False,
+            )
+            converted_pdf = os.path.join(temp_dir, f"{Path(source_path).stem}.pdf")
+            if result.returncode != 0 or not os.path.exists(converted_pdf):
+                stdout = (result.stdout or "").strip()
+                stderr = (result.stderr or "").strip()
+                current_app.logger.warning(
+                    "LibreOffice PDF conversion failed for %s (code=%s, stdout=%r, stderr=%r)",
+                    source_path,
+                    result.returncode,
+                    stdout,
+                    stderr,
+                )
+                return None, "LibreOffice 轉 PDF 失敗"
+            shutil.copyfile(converted_pdf, pdf_path)
+            return pdf_rel, None
+    except subprocess.TimeoutExpired:
+        current_app.logger.warning("LibreOffice PDF conversion timed out for %s", source_path)
+        return None, "LibreOffice 轉 PDF 逾時"
+    except Exception:
+        current_app.logger.exception("Unexpected error while converting %s to PDF preview", source_path)
+        return None, "建立 PDF 預覽時發生錯誤"
+
+
+def _normalize_trace_text(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").replace("\xa0", " ")).strip()
+
+
+def _format_source_file_label(path_raw: str) -> str:
+    path = os.path.abspath(str(path_raw))
+    file_path = Path(path)
+    name = file_path.name or str(path_raw)
+    parent_parts = [part for part in file_path.parts[-3:-1] if part not in {"", os.path.sep}]
+    context = "/".join(parent_parts)
+    digest = uuid.uuid5(uuid.NAMESPACE_URL, path).hex[:6]
+    if context:
+        return f"{name} ({context} · {digest})"
+    return f"{name} ({digest})"
+
+
+def _trace_source_label(entry: dict) -> str:
+    params = entry.get("params") or {}
+    input_file = params.get("input_file")
+    if input_file:
+        return _format_source_file_label(str(input_file))
+
+    stype = str(entry.get("type") or "").strip()
+    if stype == "insert_text":
+        return "流程文字"
+    if stype in {"insert_roman_heading", "insert_numbered_heading", "insert_bulleted_heading"}:
+        return "流程標題"
+    if stype == "template_merge":
+        template_file = entry.get("template_file")
+        if template_file:
+            return _format_source_file_label(str(template_file))
+    return stype or "未知來源"
+
+
+def _extract_docx_trace_paragraphs(
+    docx_path: str,
+    *,
+    hide_set: set[str] | None = None,
+) -> list[dict[str, object]]:
+    from docx import Document as DocxDocument
+
+    items: list[dict[str, object]] = []
+    hide_values = hide_set or set()
+    doc = DocxDocument(docx_path)
+    for idx, para in enumerate(doc.paragraphs):
+        raw_text = (para.text or "").strip()
+        normalized = _normalize_trace_text(raw_text)
+        if not normalized or normalized in hide_values:
+            continue
+        items.append(
+            {
+                "paragraph_index": idx,
+                "text": raw_text,
+                "normalized_text": normalized,
+            }
+        )
+    return items
+
+
+def _extract_docx_table_texts(
+    docx_path: str,
+    *,
+    hide_set: set[str] | None = None,
+) -> list[str]:
+    from docx import Document as DocxDocument
+
+    hide_values = hide_set or set()
+    doc = DocxDocument(docx_path)
+    texts: list[str] = []
+    seen: set[str] = set()
+
+    for table in doc.tables:
+        for row in table.rows:
+            row_parts: list[str] = []
+            for cell in row.cells:
+                cell_text = _normalize_trace_text(cell.text or "")
+                if not cell_text or cell_text in hide_values:
+                    continue
+                row_parts.append(cell_text)
+                if len(cell_text) >= 20 and cell_text not in seen:
+                    seen.add(cell_text)
+                    texts.append(cell_text)
+            row_text = _normalize_trace_text(" ".join(row_parts))
+            if len(row_text) >= 24 and row_text not in seen:
+                seen.add(row_text)
+                texts.append(row_text)
+
+    return texts
+
+
+def _build_object_trace_candidates(
+    entries: list[dict],
+    titles_to_hide: list[str],
+) -> list[dict[str, object]]:
+    hide_set = {_normalize_trace_text(title) for title in titles_to_hide if _normalize_trace_text(title)}
+    candidates: list[dict[str, object]] = []
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") == "error":
+            continue
+
+        stype = str(entry.get("type") or "")
+        if stype not in {"extract_specific_figure_from_word", "extract_specific_table_from_word"}:
+            continue
+
+        params = entry.get("params") or {}
+        source_file = _trace_source_label(entry)
+        output_docx = entry.get("output_docx")
+        probe_texts: list[str] = []
+
+        if output_docx and os.path.isfile(str(output_docx)):
+            try:
+                paragraphs = _extract_docx_trace_paragraphs(str(output_docx), hide_set=hide_set)
+                probe_texts.extend([str(item["normalized_text"]) for item in paragraphs if item.get("normalized_text")])
+                if stype == "extract_specific_table_from_word":
+                    probe_texts.extend(_extract_docx_table_texts(str(output_docx), hide_set=hide_set))
+            except Exception:
+                current_app.logger.warning("Failed to extract object trace paragraphs from %s", output_docx, exc_info=True)
+
+        synthetic_parts = [
+            params.get("target_caption_label"),
+            params.get("target_figure_title"),
+            params.get("target_table_title"),
+            params.get("target_chapter_title"),
+            params.get("target_subtitle"),
+        ]
+        synthetic_text = _normalize_trace_text(" ".join(str(part).strip() for part in synthetic_parts if part))
+        if synthetic_text:
+            probe_texts.append(synthetic_text)
+
+        deduped_probes: list[str] = []
+        seen: set[str] = set()
+        for probe in probe_texts:
+            cleaned = _normalize_trace_text(probe)
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            deduped_probes.append(cleaned)
+
+        candidates.append(
+            {
+                "source_file": source_file,
+                "source_step": stype,
+                "probe_texts": deduped_probes,
+            }
+        )
+
+    return candidates
+
+
+def _build_compare_source_label(entry: dict) -> str:
+    params = entry.get("params") or {}
+    base = _trace_source_label(entry)
+    stype = str(entry.get("type") or "")
+
+    if stype == "extract_specific_figure_from_word":
+        label = params.get("target_caption_label") or params.get("target_figure_title") or "圖片"
+        return f"{base} 圖片 {label}".strip()
+    if stype == "extract_specific_table_from_word":
+        label = params.get("target_caption_label") or params.get("target_table_title") or "表格"
+        return f"{base} 表格 {label}".strip()
+    return base
+
+
+def _build_paragraph_trace(
+    job_dir: str,
+    result_docx: str,
+    log_path: str,
+    entries: list[dict],
+    titles_to_hide: list[str],
+) -> list[dict[str, object]]:
+    trace_dir = os.path.join(job_dir, "preview_trace")
+    os.makedirs(trace_dir, exist_ok=True)
+    trace_path = os.path.join(trace_dir, "paragraph_trace.json")
+    hide_set = {_normalize_trace_text(title) for title in titles_to_hide if _normalize_trace_text(title)}
+
+    try:
+        if (
+            os.path.isfile(trace_path)
+            and os.path.getmtime(trace_path) >= os.path.getmtime(result_docx)
+            and os.path.getmtime(trace_path) >= os.path.getmtime(log_path)
+        ):
+            with open(trace_path, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            if isinstance(cached, list):
+                return cached
+    except Exception:
+        current_app.logger.warning("Failed to load cached paragraph trace for %s", job_dir)
+
+    final_paragraphs = _extract_docx_trace_paragraphs(result_docx, hide_set=hide_set)
+    candidates: list[dict[str, object]] = []
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") == "error":
+            continue
+        if entry.get("type") in {"file_metadata", "template_merge", "copy_files", "copy_directory"}:
+            continue
+        output_docx = entry.get("output_docx")
+        if not output_docx or not os.path.isfile(str(output_docx)):
+            continue
+
+        source_file = _trace_source_label(entry)
+        source_step = str(entry.get("type") or "")
+        try:
+            paragraphs = _extract_docx_trace_paragraphs(str(output_docx), hide_set=hide_set)
+        except Exception:
+            current_app.logger.warning("Failed to extract trace paragraphs from %s", output_docx, exc_info=True)
+            continue
+
+        for para in paragraphs:
+            candidates.append(
+                {
+                    "source_file": source_file,
+                    "source_step": source_step,
+                    "source_paragraph_index": para["paragraph_index"],
+                    "text": para["text"],
+                    "normalized_text": para["normalized_text"],
+                }
+            )
+
+    trace: list[dict[str, object]] = []
+    pointer = 0
+    for merged_index, para in enumerate(final_paragraphs):
+        normalized = str(para["normalized_text"])
+        matched: dict[str, object] | None = None
+        matched_index: int | None = None
+
+        for idx in range(pointer, len(candidates)):
+            if candidates[idx]["normalized_text"] == normalized:
+                matched = candidates[idx]
+                matched_index = idx
+                break
+
+        if matched_index is not None:
+            pointer = matched_index + 1
+
+        trace.append(
+            {
+                "merged_paragraph_index": merged_index,
+                "source_file": matched["source_file"] if matched else "未知來源",
+                "source_paragraph_index": matched["source_paragraph_index"] if matched else None,
+                "source_step": matched["source_step"] if matched else "",
+                "match_status": "matched" if matched else "unmatched",
+                "text": para["text"],
+            }
+        )
+
+    try:
+        with open(trace_path, "w", encoding="utf-8") as f:
+            json.dump(trace, f, ensure_ascii=False, indent=2)
+    except Exception:
+        current_app.logger.warning("Failed to save paragraph trace cache for %s", job_dir, exc_info=True)
+
+    return trace
+
+
+def _build_trace_text_probes(normalized_text: str) -> list[str]:
+    text = (normalized_text or "").strip()
+    if not text:
+        return []
+    probes: list[str] = []
+    if len(text) <= 180:
+        probes.append(text)
+    for size in (180, 120, 80, 48):
+        if len(text) > size:
+            probes.append(text[:size].strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for probe in probes:
+        cleaned = probe.strip()
+        if len(cleaned) < 12 or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        deduped.append(cleaned)
+    return deduped
+
+
+def _build_page_source_map(
+    job_dir: str,
+    result_pdf_path: str,
+    paragraph_trace: list[dict[str, object]],
+    object_trace_candidates: list[dict[str, object]] | None = None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    if not result_pdf_path or not os.path.isfile(result_pdf_path):
+        return paragraph_trace, []
+
+    trace_dir = os.path.join(job_dir, "preview_trace")
+    os.makedirs(trace_dir, exist_ok=True)
+    page_map_path = os.path.join(trace_dir, "page_source_map.json")
+
+    try:
+        if os.path.isfile(page_map_path) and os.path.getmtime(page_map_path) >= os.path.getmtime(result_pdf_path):
+            with open(page_map_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if payload.get("version") != _PAGE_SOURCE_MAP_CACHE_VERSION:
+                raise ValueError("stale page source map cache")
+            cached_trace = payload.get("paragraph_trace")
+            cached_pages = payload.get("page_source_map")
+            if isinstance(cached_trace, list) and isinstance(cached_pages, list):
+                return cached_trace, cached_pages
+    except Exception:
+        current_app.logger.warning("Failed to load cached page source map for %s", job_dir, exc_info=True)
+
+    import fitz
+
+    with fitz.open(result_pdf_path) as pdf:
+        page_texts = [
+            _normalize_trace_text(page.get_text("text"))
+            for page in pdf
+        ]
+
+    page_buckets: list[dict[str, object]] = [
+        {
+            "page_number": idx + 1,
+            "dominant_source": "",
+            "sources": [],
+        }
+        for idx in range(len(page_texts))
+    ]
+    source_counts_by_page: list[dict[str, int]] = [dict() for _ in page_texts]
+    annotated_trace: list[dict[str, object]] = []
+    current_page_idx = 0
+
+    for item in paragraph_trace:
+        trace_item = dict(item)
+        normalized = _normalize_trace_text(str(trace_item.get("text") or ""))
+        assigned_page_idx = current_page_idx if page_texts else -1
+        if normalized and page_texts:
+            probes = _build_trace_text_probes(normalized)
+            found_idx = None
+            for page_idx in range(current_page_idx, len(page_texts)):
+                page_text = page_texts[page_idx]
+                if any(probe in page_text for probe in probes):
+                    found_idx = page_idx
+                    break
+            if found_idx is not None:
+                assigned_page_idx = found_idx
+                current_page_idx = found_idx
+
+        trace_item["result_page"] = assigned_page_idx + 1 if assigned_page_idx >= 0 else None
+        annotated_trace.append(trace_item)
+
+        if assigned_page_idx >= 0:
+            source_file = str(trace_item.get("source_file") or "未知來源")
+            source_counts = source_counts_by_page[assigned_page_idx]
+            source_counts[source_file] = source_counts.get(source_file, 0) + 1
+
+    object_candidates = object_trace_candidates or []
+    for candidate in object_candidates:
+        probes = []
+        for raw_probe in candidate.get("probe_texts") or []:
+            probes.extend(_build_trace_text_probes(_normalize_trace_text(str(raw_probe))))
+        if not probes or not page_texts:
+            continue
+
+        matched_pages = [
+            page_idx
+            for page_idx, page_text in enumerate(page_texts)
+            if any(probe in page_text for probe in probes)
+        ]
+        if not matched_pages:
+            continue
+
+        source_file = str(candidate.get("source_file") or "未知來源")
+        for page_idx in matched_pages:
+            source_counts = source_counts_by_page[page_idx]
+            source_counts[source_file] = source_counts.get(source_file, 0) + 1
+
+    for idx, bucket in enumerate(page_buckets):
+        source_counts = source_counts_by_page[idx]
+        ordered_sources = sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
+        if not ordered_sources and idx > 0:
+            previous_bucket = page_buckets[idx - 1]
+            previous_source = str(previous_bucket.get("dominant_source") or "").strip()
+            if previous_source:
+                ordered_sources = [(previous_source, 0)]
+                bucket["inherited_from_previous"] = True
+        bucket["sources"] = [
+            {
+                "source_file": source_file,
+                "count": count,
+                "inherited": bool(bucket.get("inherited_from_previous")) and count == 0,
+            }
+            for source_file, count in ordered_sources
+        ]
+        bucket["dominant_source"] = ordered_sources[0][0] if ordered_sources else ""
+
+    try:
+        with open(page_map_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "version": _PAGE_SOURCE_MAP_CACHE_VERSION,
+                    "paragraph_trace": annotated_trace,
+                    "page_source_map": page_buckets,
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except Exception:
+        current_app.logger.warning("Failed to save page source map cache for %s", job_dir, exc_info=True)
+
+    return annotated_trace, page_buckets
 
 
 def _get_creator_work_id(meta: dict) -> str:
@@ -1616,22 +2107,14 @@ def task_compare(task_id, job_id):
     if not os.path.exists(docx_path) or not os.path.exists(log_path):
         abort(404)
 
-    from spire.doc import Document, FileFormat
-
     with open(log_path, "r", encoding="utf-8") as f:
         entries = json.load(f)
     titles_to_hide = collect_titles_to_hide(entries)
+    preview_messages = []
 
-    html_name = "result.html"
-    html_path = os.path.join(job_dir, html_name)
-    if not os.path.exists(html_path):
-        doc = Document()
-        doc.LoadFromFile(docx_path)
-        doc.HtmlExportOptions.ImageEmbedded = True
-        doc.SaveToFile(html_path, FileFormat.Html)
-        doc.Close()
-        if not SKIP_DOCX_CLEANUP:
-            remove_hidden_runs(docx_path, preserve_texts=titles_to_hide)
+    result_pdf_rel, result_pdf_error = _ensure_pdf_preview(docx_path, job_dir, "preview_pdf")
+    if result_pdf_error:
+        preview_messages.append(f"結果文件預覽失敗: {result_pdf_error}")
 
     chapter_sources = {}
     source_urls = {}
@@ -1657,72 +2140,129 @@ def task_compare(task_id, job_id):
         elif stype == "extract_word_chapter":
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
+            source_label = _trace_source_label(entry)
             sec_start = params.get("target_chapter_section", "")
             sec_end = params.get("explicit_end_number", "")
             sec = f"{sec_start}-{sec_end}" if sec_start and sec_end else sec_start
             use_title = str(params.get("use_chapter_title", params.get("target_title", ""))).lower() in ["1", "true", "yes", "on"]
             title = params.get("target_chapter_title") or params.get("target_title_section", "")
-            info = base
+            info = source_label
             if sec:
                 info += f" 章節 {sec}"
             if title:
                 info += f" 標題 {title}"
             chapter_sources.setdefault(current or "未分類", []).append(info)
-            if base not in converted_docx and infile and os.path.exists(infile):
-                preview_dir = os.path.join(job_dir, "source_html")
-                os.makedirs(preview_dir, exist_ok=True)
-                html_name_src = f"{os.path.splitext(base)[0]}.html"
-                html_rel = os.path.join("source_html", html_name_src)
-                html_path_src = os.path.join(job_dir, html_rel)
-                doc = Document()
-                doc.LoadFromFile(infile)
-                doc.HtmlExportOptions.ImageEmbedded = True
-                doc.SaveToFile(html_path_src, FileFormat.Html)
-                doc.Close()
-                converted_docx[base] = html_rel
-            if base in converted_docx:
-                source_urls[info] = url_for("tasks_bp.task_view_file", task_id=task_id, job_id=job_id, filename=converted_docx[base]
+            source_key = os.path.abspath(infile) if infile else ""
+            if source_key and source_key not in converted_docx and os.path.exists(infile):
+                pdf_rel, pdf_error = _ensure_pdf_preview(infile, job_dir, "source_pdf")
+                if pdf_rel:
+                    converted_docx[source_key] = pdf_rel
+                elif pdf_error:
+                    preview_messages.append(f"{base} 預覽失敗: {pdf_error}")
+            if source_key in converted_docx:
+                source_urls[info] = url_for(
+                    "tasks_bp.task_view_file",
+                    task_id=task_id,
+                    job_id=job_id,
+                    filename=converted_docx[source_key],
+                )
+                source_urls.setdefault(
+                    source_label,
+                    url_for(
+                        "tasks_bp.task_view_file",
+                        task_id=task_id,
+                        job_id=job_id,
+                        filename=converted_docx[source_key],
+                    ),
                 )
         elif stype == "extract_word_all_content":
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
-            chapter_sources.setdefault(current or "未分類", []).append(base)
-            if base not in converted_docx and infile and os.path.exists(infile):
-                preview_dir = os.path.join(job_dir, "source_html")
-                os.makedirs(preview_dir, exist_ok=True)
-                html_name_src = f"{os.path.splitext(base)[0]}.html"
-                html_rel = os.path.join("source_html", html_name_src)
-                html_path_src = os.path.join(job_dir, html_rel)
-                doc = Document()
-                doc.LoadFromFile(infile)
-                doc.HtmlExportOptions.ImageEmbedded = True
-                doc.SaveToFile(html_path_src, FileFormat.Html)
-                doc.Close()
-                converted_docx[base] = html_rel
-            if base in converted_docx:
-                source_urls[base] = url_for("tasks_bp.task_view_file", task_id=task_id, job_id=job_id, filename=converted_docx[base]
+            source_label = _trace_source_label(entry)
+            chapter_sources.setdefault(current or "未分類", []).append(source_label)
+            source_key = os.path.abspath(infile) if infile else ""
+            if source_key and source_key not in converted_docx and os.path.exists(infile):
+                pdf_rel, pdf_error = _ensure_pdf_preview(infile, job_dir, "source_pdf")
+                if pdf_rel:
+                    converted_docx[source_key] = pdf_rel
+                elif pdf_error:
+                    preview_messages.append(f"{base} 預覽失敗: {pdf_error}")
+            if source_key in converted_docx:
+                source_urls[source_label] = url_for(
+                    "tasks_bp.task_view_file",
+                    task_id=task_id,
+                    job_id=job_id,
+                    filename=converted_docx[source_key],
                 )
         elif stype == "extract_pdf_pages_as_images":
             infile = params.get("input_file", "")
             base = os.path.basename(infile)
-            chapter_sources.setdefault(current or "未分類", []).append(base)
+            source_label = _trace_source_label(entry)
+            chapter_sources.setdefault(current or "未分類", []).append(source_label)
+            pdf_rel, pdf_error = _ensure_pdf_preview(infile, job_dir, "source_pdf")
+            if pdf_rel:
+                source_urls.setdefault(
+                    source_label,
+                    url_for(
+                        "tasks_bp.task_view_file",
+                        task_id=task_id,
+                        job_id=job_id,
+                        filename=pdf_rel,
+                    ),
+                )
+            elif pdf_error:
+                preview_messages.append(f"{base} 預覽失敗: {pdf_error}")
+        elif stype in {"extract_specific_figure_from_word", "extract_specific_table_from_word"}:
+            infile = params.get("input_file", "")
+            base = os.path.basename(infile)
+            source_label = _trace_source_label(entry)
+            info = _build_compare_source_label(entry)
+            chapter_sources.setdefault(current or "未分類", []).append(info)
+            source_key = os.path.abspath(infile) if infile else ""
+            if source_key and source_key not in converted_docx and os.path.exists(infile):
+                pdf_rel, pdf_error = _ensure_pdf_preview(infile, job_dir, "source_pdf")
+                if pdf_rel:
+                    converted_docx[source_key] = pdf_rel
+                elif pdf_error:
+                    preview_messages.append(f"{base} 預覽失敗: {pdf_error}")
+            if source_key in converted_docx:
+                source_url = url_for(
+                    "tasks_bp.task_view_file",
+                    task_id=task_id,
+                    job_id=job_id,
+                    filename=converted_docx[source_key],
+                )
+                source_urls[info] = source_url
+                source_urls.setdefault(source_label, source_url)
 
     chapters = list(chapter_sources.keys())
-    html_url = url_for("tasks_bp.task_view_file", task_id=task_id, job_id=job_id, filename=html_name)
-    versions = build_version_context(task_id, job_id, job_dir)
+    paragraph_trace = _build_paragraph_trace(job_dir, docx_path, log_path, entries, titles_to_hide)
+    object_trace_candidates = _build_object_trace_candidates(entries, titles_to_hide)
+    result_pdf_abs = os.path.join(job_dir, result_pdf_rel) if result_pdf_rel else ""
+    paragraph_trace, page_source_map = _build_page_source_map(
+        job_dir,
+        result_pdf_abs,
+        paragraph_trace,
+        object_trace_candidates,
+    )
     return render_template(
         "tasks/compare.html",
         task=_load_task_context(task_id),
-        html_url=html_url,
+        preview_url=url_for(
+            "tasks_bp.task_view_file",
+            task_id=task_id,
+            job_id=job_id,
+            filename=result_pdf_rel,
+        ) if result_pdf_rel else "",
         chapters=chapters,
         chapter_sources=chapter_sources,
         source_urls=source_urls,
         titles_to_hide=titles_to_hide,
+        paragraph_trace=paragraph_trace,
+        page_source_map=page_source_map,
+        preview_messages=list(dict.fromkeys(preview_messages)),
         back_link=url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id),
-        save_url=url_for("tasks_bp.task_compare_save", task_id=task_id, job_id=job_id),
-        save_as_url=url_for("tasks_bp.task_compare_save_as", task_id=task_id, job_id=job_id),
         download_url=url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx"),
-        versions=versions,
     )
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/save", endpoint="task_compare_save")

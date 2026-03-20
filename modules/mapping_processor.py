@@ -312,7 +312,7 @@ def process_mapping_excel(
         "out_path": ["檔案路徑", "輸出路徑"],
         "out_name": ["檔案名稱", "輸出檔案名稱"],
         "template": ["模板文件"],
-        "insert": ["插入段落名稱", "插入段落"],
+        "insert": ["插入段落名稱", "插入段落", "插入段落名稱/目的資料夾名稱"],
     }
     optional_header_aliases = {
         "item_type": ["類型", "Type", "擷取類型"],
@@ -621,27 +621,42 @@ def process_mapping_excel(
             return "Extract chapter"
         return "Mapping"
 
+    def _strip_matching_quotes(text: str) -> str:
+        raw = (text or "").strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {'"', "'"}:
+            return raw[1:-1].strip()
+        return raw
+
+    def _split_mapping_subheading(text: str) -> tuple[str, str]:
+        raw = str(text or "").strip()
+        if not raw:
+            return "", ""
+
+        quote_char = ""
+        for idx, ch in enumerate(raw):
+            if ch in {'"', "'"}:
+                if not quote_char:
+                    quote_char = ch
+                elif quote_char == ch:
+                    quote_char = ""
+                continue
+            if ch in {"/", "\\"} and not quote_char:
+                return raw[:idx].strip(), raw[idx + 1 :].strip()
+        return raw, ""
+
     def _parse_chapter_parts(text: str) -> tuple[str, str, str]:
         chapter = ""
         title = ""
         subheading = ""
         if not text:
             return chapter, title, subheading
-        if "/" in text or "\\" in text:
-            first, after = re.split(r"[\\/]+", text, maxsplit=1)
-            first = first.strip()
-            after = after.strip()
-            first_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", first)
-            if first_match:
-                chapter = first_match.group(1)
-                title = (first_match.group(2) or "").strip()
-            if after:
-                subheading = after
-        else:
-            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", text.strip())
-            if inline_match:
-                chapter = inline_match.group(1)
-                title = (inline_match.group(2) or "").strip()
+        first, after = _split_mapping_subheading(text)
+        first_match = re.match(r'^"?(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?"?$', first.strip())
+        if first_match:
+            chapter = first_match.group(1)
+            title = _strip_matching_quotes(first_match.group(2) or "")
+        if after:
+            subheading = _strip_matching_quotes(after)
         return chapter, title, subheading
 
     def _parse_mapping_chapter_instruction(text: str) -> tuple[str, str, str, str, str]:
@@ -649,12 +664,8 @@ def process_mapping_excel(
         if not raw:
             return "", "", "", "", ""
 
-        main_part = raw
-        subheading = ""
-        split_match = re.search(r"[\\/]+", raw)
-        if split_match:
-            main_part = raw[:split_match.start()].strip()
-            subheading = raw[split_match.end():].strip()
+        main_part, subheading = _split_mapping_subheading(raw)
+        subheading = _strip_matching_quotes(subheading)
 
         range_title_match = re.match(
             r"^(\d+(?:\.\d+)*\.?)(?:\s+(.+?))?\s*[-~～至到]\s*(\d+(?:\.\d+)*\.?)(?:\s+(.+))?$",
@@ -662,16 +673,16 @@ def process_mapping_excel(
         )
         if range_title_match:
             start_section = (range_title_match.group(1) or "").rstrip(".")
-            start_title = (range_title_match.group(2) or "").strip()
+            start_title = _strip_matching_quotes((range_title_match.group(2) or "").strip())
             end_section = (range_title_match.group(3) or "").rstrip(".")
-            end_title = (range_title_match.group(4) or "").strip()
+            end_title = _strip_matching_quotes((range_title_match.group(4) or "").strip())
             if not start_title and end_title:
                 start_title = end_title
                 end_title = ""
             return start_section, end_section, start_title, end_title, subheading
 
         start_section, end_section, parsed_title = parse_chapter_section_expression(main_part)
-        return start_section, end_section, parsed_title, "", subheading
+        return start_section, end_section, _strip_matching_quotes(parsed_title), "", subheading
 
     def _build_detail(
         action: str,

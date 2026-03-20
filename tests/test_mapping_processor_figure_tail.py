@@ -128,6 +128,19 @@ def test_mapping_chapter_range_with_subheading_sets_subtitle(tmp_path: Path) -> 
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_chapter_title_in_quotes_preserves_slash(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        '2.1.6 "Instructions for use/Device Operating Manual(s)"',
+    )
+    assert _first_step_type(log_data) == "extract_word_chapter"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "2.1.6"
+    assert params.get("target_chapter_title") == "Instructions for use/Device Operating Manual(s)"
+    assert params.get("target_subtitle") in (None, "")
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_chapter_range_with_start_and_end_titles_sets_both_titles(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(
         tmp_path,

@@ -23,6 +23,16 @@ def _heading(text: str, style_id: str = "Heading1") -> etree._Element:
     return p
 
 
+def _styled_paragraph(text: str, style_id: str, ilvl: int | None = None) -> etree._Element:
+    p = _heading(text, style_id=style_id)
+    if ilvl is not None:
+        p_pr = p.find(qn("w:pPr"))
+        num_pr = etree.SubElement(p_pr, qn("w:numPr"))
+        ilvl_node = etree.SubElement(num_pr, qn("w:ilvl"))
+        ilvl_node.set(qn("w:val"), str(ilvl))
+    return p
+
+
 def _table_with_cell_texts(*texts: str) -> etree._Element:
     tbl = etree.Element(qn("w:tbl"))
     tr = etree.SubElement(tbl, qn("w:tr"))
@@ -97,3 +107,27 @@ def test_section_range_uses_style_heading_rank_when_outline_levels_collapse() ->
     )
 
     assert (start_idx, end_idx) == (0, 5)
+
+
+def test_section_range_ignores_body_paragraph_reusing_heading_style_rank() -> None:
+    body_children = [
+        _heading("Implant card information", style_id="S2"),
+        _styled_paragraph(
+            "The manufacturer of an implantable device shall provide the implant card together with the device.",
+            style_id="S2",
+            ilvl=0,
+        ),
+        _paragraph("Implant card drawing"),
+        _heading("Electronic IFU", style_id="S2"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Implant card information",
+        start_number="2.1.9",
+        style_outline={"S2": 0},
+        style_based={},
+        style_heading_rank={"S2": 2},
+    )
+
+    assert (start_idx, end_idx) == (0, 3)

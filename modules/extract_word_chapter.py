@@ -1018,8 +1018,36 @@ def get_effective_heading_depth(
     style_based: dict[str, str],
     style_heading_rank: dict[str, int] | None = None,
 ) -> int | None:
-    outline_depth = get_effective_outline_level(p, style_outline, style_based)
+    pPr = p.find("w:pPr", namespaces=NS)
+    explicit_outline_depth = None
+    if pPr is not None:
+        ol = pPr.find("w:outlineLvl", namespaces=NS)
+        if ol is not None:
+            v = ol.get(qn("w:val"))
+            if v and v.isdigit():
+                explicit_outline_depth = int(v)
+
+    style_outline_depth = None if explicit_outline_depth is not None else resolve_style_outline(
+        get_pStyle(p),
+        style_outline,
+        style_based,
+    )
     style_depth = resolve_style_heading_rank(get_pStyle(p), style_heading_rank, style_based)
+    ilvl = get_ilvl(p)
+    text = normalize_text(get_all_text(p))
+    outline_depth = explicit_outline_depth if explicit_outline_depth is not None else style_outline_depth
+
+    # Some documents reuse heading-like styles on body paragraphs.
+    # If the paragraph is part of a list/numbered body flow, do not trust style-derived heading signals.
+    if explicit_outline_depth is None and ilvl is not None:
+        outline_depth = None
+        style_depth = None
+
+    # Long sentence-like paragraphs should not become structural headings solely due to style.
+    if explicit_outline_depth is None and len(text.split()) > 16 and text.endswith((".", "。", ";", "；")):
+        outline_depth = None
+        style_depth = None
+
     depths = [depth for depth in (outline_depth, style_depth) if depth is not None]
     if not depths:
         return None

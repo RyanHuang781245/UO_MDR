@@ -1223,6 +1223,93 @@ def _matches_plain_text_boundary(
     candidate_parts = _extract_leading_number_parts(paragraph_text)
     return _is_plain_text_number_boundary(reference_number_parts, candidate_parts)
 
+
+def _extract_boundary_number_parts(
+    p: etree._Element,
+    *,
+    paragraph_text: str,
+    body_children: list[etree._Element],
+    numbering_xml: bytes | None,
+) -> list[int]:
+    candidate_parts = _extract_leading_number_parts(paragraph_text)
+    if candidate_parts:
+        return candidate_parts
+    if not numbering_xml:
+        return []
+    rendered_prefix = normalize_text(_render_numbering_prefix(p, body_children, numbering_xml)).rstrip(".．")
+    if not rendered_prefix:
+        return []
+    return _parse_number_parts(rendered_prefix.replace("．", "."))
+
+
+def _looks_like_number_boundary_candidate(
+    p: etree._Element,
+    *,
+    paragraph_text: str,
+    reference_style: str | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+) -> bool:
+    if is_inside_table(p):
+        return False
+    text = normalize_text(paragraph_text)
+    if not text:
+        return False
+    if _CAPTION_LIKE_SUBTITLE_RE.match(text):
+        return False
+    if len(text.split()) > 16 and text.endswith((".", "。", ";", "；")):
+        return False
+    if get_effective_heading_depth(p, style_outline, style_based, style_heading_rank) is not None:
+        return True
+    if reference_style is not None and get_pStyle(p) == reference_style:
+        return True
+    if get_ilvl(p) is not None:
+        return True
+    return bool(_extract_leading_number_parts(text)) and len(text.split()) <= 12
+
+
+def _find_number_boundary_fallback_index(
+    body_children: list[etree._Element],
+    *,
+    start_idx: int,
+    reference_number_parts: list[int],
+    reference_style: str | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+    numbering_xml: bytes | None = None,
+    ignore_toc: bool = True,
+) -> int | None:
+    if not reference_number_parts:
+        return None
+
+    for j in range(start_idx + 1, len(body_children)):
+        block = body_children[j]
+        for p in iter_paragraphs(block):
+            if ignore_toc and is_toc_paragraph(p):
+                continue
+            txt = normalize_text(get_all_text(p))
+            if not _looks_like_number_boundary_candidate(
+                p,
+                paragraph_text=txt,
+                reference_style=reference_style,
+                style_outline=style_outline,
+                style_based=style_based,
+                style_heading_rank=style_heading_rank,
+            ):
+                continue
+            candidate_parts = _extract_boundary_number_parts(
+                p,
+                paragraph_text=txt,
+                body_children=body_children,
+                numbering_xml=numbering_xml,
+            )
+            if _is_plain_text_number_boundary(reference_number_parts, candidate_parts):
+                return j
+
+    return None
+
 # ---------- 章節範圍定位（outlineLvl 優先，ilvl 備援），支援 ignore_toc ----------
 def find_section_range_children(
     body_children: list[etree._Element],
@@ -1235,6 +1322,7 @@ def find_section_range_children(
     explicit_end_number: str | None = None,
     include_end_chapter: bool = True,
     ignore_toc: bool = True,
+    numbering_xml: bytes | None = None,
 ) -> tuple[int, int]:
     start_idx = None
     start_heading_depth = None
@@ -1413,6 +1501,20 @@ def find_section_range_children(
             f"找不到指定終點章節：number={explicit_end_number or ''} title={explicit_end_title or ''}"
         )
 
+    fallback_end_idx = _find_number_boundary_fallback_index(
+        body_children,
+        start_idx=start_idx,
+        reference_number_parts=start_number_parts,
+        reference_style=start_style,
+        style_outline=style_outline,
+        style_based=style_based,
+        style_heading_rank=style_heading_rank,
+        numbering_xml=numbering_xml,
+        ignore_toc=ignore_toc,
+    )
+    if fallback_end_idx is not None:
+        return start_idx, fallback_end_idx
+
     return start_idx, end_idx
 
 def is_all_bold_paragraph(p: etree._Element) -> bool:
@@ -1588,6 +1690,7 @@ def extract_section_docx_xml(
         explicit_end_title=explicit_end_title,
         explicit_end_number=explicit_end_number,
         ignore_toc=ignore_toc,
+        numbering_xml=file_map.get("word/numbering.xml"),
     )
     kept_section = content_children[start_idx:end_idx]
 

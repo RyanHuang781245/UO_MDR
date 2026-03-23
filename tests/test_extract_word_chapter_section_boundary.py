@@ -1,7 +1,9 @@
 from lxml import etree
 
 from modules.extract_word_chapter import (
+    _ensure_numbering_instance,
     _is_plain_text_number_boundary,
+    _set_paragraph_numpr,
     find_section_range_children,
     qn,
 )
@@ -177,3 +179,29 @@ def test_explicit_end_range_stops_before_following_numbered_heading() -> None:
     )
 
     assert (start_idx, end_idx) == (1, 5)
+
+
+def test_section_range_falls_back_to_rendered_number_boundary_when_start_heading_is_plain_text() -> None:
+    body_children = [
+        _heading("Seed numbered heading", style_id="S111"),
+        _styled_paragraph("6.13.2 Sterilizing agent", style_id="S111", ilvl=0),
+        _paragraph("body A"),
+        _heading("Gamma radiation sterilization validation", style_id="S111"),
+        _paragraph("body B"),
+    ]
+    file_map: dict[str, bytes] = {}
+    num_id = _ensure_numbering_instance(file_map, [6, 13, 2])
+    _set_paragraph_numpr(body_children[0], num_id=num_id, ilvl=2)
+    _set_paragraph_numpr(body_children[3], num_id=num_id, ilvl=2)
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Sterilizing agent",
+        start_number="6.13.2",
+        style_outline={"S111": 0},
+        style_based={},
+        style_heading_rank={"S111": 2},
+        numbering_xml=file_map["word/numbering.xml"],
+    )
+
+    assert (start_idx, end_idx) == (1, 3)

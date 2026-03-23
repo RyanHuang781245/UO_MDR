@@ -327,6 +327,7 @@ def extract_specific_figure_from_word_xml(
             style_based=style_based,
             style_heading_rank=style_heading_rank,
             ignore_toc=True,
+            numbering_xml=file_map.get("word/numbering.xml"),
         )
         section_children = content_children[start_idx:end_idx]
     else:

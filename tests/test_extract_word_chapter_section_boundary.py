@@ -131,3 +131,49 @@ def test_section_range_ignores_body_paragraph_reusing_heading_style_rank() -> No
     )
 
     assert (start_idx, end_idx) == (0, 3)
+
+
+def test_section_range_stops_at_next_numbered_heading_with_same_style_and_ilvl() -> None:
+    body_children = [
+        _paragraph("Cleaning and Sterilization"),
+        _styled_paragraph("Cleaning validation", style_id="S111", ilvl=2),
+        _paragraph("body A"),
+        _styled_paragraph("Sterilizing agent", style_id="S111", ilvl=2),
+        _paragraph("body B"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Cleaning validation",
+        start_number="6.13.1",
+        style_outline={"S111": 0},
+        style_based={},
+        style_heading_rank={"S111": 2},
+    )
+
+    assert (start_idx, end_idx) == (1, 3)
+
+
+def test_explicit_end_range_stops_before_following_numbered_heading() -> None:
+    body_children = [
+        _paragraph("Cleaning and Sterilization"),
+        _styled_paragraph("Cleaning validation", style_id="S111", ilvl=2),
+        _paragraph("body A"),
+        _styled_paragraph("Sterilizing agent", style_id="S111", ilvl=2),
+        _paragraph("body B"),
+        _styled_paragraph("Gamma radiation sterilization validation", style_id="S111", ilvl=2),
+        _paragraph("body C"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Cleaning validation",
+        start_number="6.13.1",
+        style_outline={"S111": 0},
+        style_based={},
+        style_heading_rank={"S111": 2},
+        explicit_end_title="Sterilizing agent",
+        explicit_end_number="6.13.2",
+    )
+
+    assert (start_idx, end_idx) == (1, 5)

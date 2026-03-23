@@ -2,6 +2,7 @@ from pathlib import Path
 
 from spire.doc import Document, FileFormat
 
+from app.blueprints.tasks import routes as task_routes
 from modules.workflow import run_workflow
 
 
@@ -95,3 +96,66 @@ def test_compare_view_disambiguates_same_basename_sources(tmp_path: Path, app) -
     finally:
         app.config["TASK_FOLDER"] = original_task_folder
         app.config["TESTING"] = original_testing
+
+
+def test_select_page_sources_for_display_drops_low_confidence_secondary_source() -> None:
+    selected = task_routes._select_page_sources_for_display(
+        [("file_a.docx", 5), ("file_b.docx", 1)]
+    )
+    assert selected == [("file_a.docx", 5)]
+
+
+def test_select_page_sources_for_display_keeps_meaningful_secondary_source() -> None:
+    selected = task_routes._select_page_sources_for_display(
+        [("file_a.docx", 4), ("file_b.docx", 2)]
+    )
+    assert selected == [("file_a.docx", 4), ("file_b.docx", 2)]
+
+
+def test_page_has_explicit_paragraph_sources_only_when_count_positive() -> None:
+    assert task_routes._page_has_explicit_paragraph_sources({"file_a.docx": 1}) is True
+    assert task_routes._page_has_explicit_paragraph_sources({"file_a.docx": 0}) is False
+    assert task_routes._page_has_explicit_paragraph_sources({}) is False
+
+
+def test_select_object_candidate_pages_prefers_primary_probe_match() -> None:
+    page_texts = [
+        "Generic terms repeated here",
+        "Figure 7 Knee Implant Packaging Overview with generic terms repeated here",
+        "Generic terms repeated here again",
+    ]
+    source_counts_by_page = [{}, {}, {}]
+
+    selected = task_routes._select_object_candidate_pages(
+        page_texts,
+        source_counts_by_page,
+        primary_probe_texts=["Figure 7 Knee Implant Packaging Overview"],
+        fallback_probe_texts=["generic terms repeated here"],
+        allow_multi_page=False,
+    )
+
+    assert selected == [1]
+
+
+def test_select_object_candidate_pages_limits_multi_page_table_to_best_contiguous_cluster() -> None:
+    page_texts = [
+        "generic header",
+        "table 3 bill of materials femoral component titanium alloy uhmwpe astm f75 repeated data",
+        "femoral component titanium alloy uhmwpe astm f75 repeated data continued next page",
+        "generic header",
+        "femoral component titanium alloy uhmwpe astm f75 repeated data stray mention elsewhere",
+    ]
+    source_counts_by_page = [{}, {}, {}, {}, {}]
+
+    selected = task_routes._select_object_candidate_pages(
+        page_texts,
+        source_counts_by_page,
+        primary_probe_texts=[],
+        fallback_probe_texts=[
+            "table 3 bill of materials",
+            "femoral component titanium alloy uhmwpe astm f75 repeated data",
+        ],
+        allow_multi_page=True,
+    )
+
+    assert selected == [1, 2]

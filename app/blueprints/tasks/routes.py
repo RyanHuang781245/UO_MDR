@@ -49,6 +49,11 @@ from app.services.task_service import (
 from app.services.nas_service import get_configured_nas_roots, resolve_nas_path, validate_nas_path
 from app.utils import normalize_docx_output_filename
 from modules.auth_models import ROLE_ADMIN, user_has_role
+from modules.docx_provenance import (
+    build_provenance_cache_payload,
+    extract_provenance_block_trace,
+    load_cached_provenance_payload,
+)
 from modules.file_copier import copy_files
 
 tasks_bp = Blueprint("tasks_bp", __name__, template_folder="templates")
@@ -84,7 +89,7 @@ _LIBREOFFICE_CANDIDATES = (
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
 )
-_PAGE_SOURCE_MAP_CACHE_VERSION = 2
+_PAGE_SOURCE_MAP_CACHE_VERSION = 6
 
 
 def _get_actor_info():
@@ -315,42 +320,49 @@ def _build_object_trace_candidates(
         params = entry.get("params") or {}
         source_file = _trace_source_label(entry)
         output_docx = entry.get("output_docx")
-        probe_texts: list[str] = []
+        primary_probe_texts: list[str] = []
+        fallback_probe_texts: list[str] = []
 
         if output_docx and os.path.isfile(str(output_docx)):
             try:
                 paragraphs = _extract_docx_trace_paragraphs(str(output_docx), hide_set=hide_set)
-                probe_texts.extend([str(item["normalized_text"]) for item in paragraphs if item.get("normalized_text")])
+                primary_probe_texts.extend(
+                    [str(item["normalized_text"]) for item in paragraphs if item.get("normalized_text")]
+                )
                 if stype == "extract_specific_table_from_word":
-                    probe_texts.extend(_extract_docx_table_texts(str(output_docx), hide_set=hide_set))
+                    fallback_probe_texts.extend(_extract_docx_table_texts(str(output_docx), hide_set=hide_set))
             except Exception:
                 current_app.logger.warning("Failed to extract object trace paragraphs from %s", output_docx, exc_info=True)
 
-        synthetic_parts = [
+        for part in (
             params.get("target_caption_label"),
             params.get("target_figure_title"),
             params.get("target_table_title"),
             params.get("target_chapter_title"),
             params.get("target_subtitle"),
-        ]
-        synthetic_text = _normalize_trace_text(" ".join(str(part).strip() for part in synthetic_parts if part))
-        if synthetic_text:
-            probe_texts.append(synthetic_text)
+        ):
+            synthetic_text = _normalize_trace_text(str(part).strip())
+            if synthetic_text:
+                primary_probe_texts.append(synthetic_text)
 
-        deduped_probes: list[str] = []
-        seen: set[str] = set()
-        for probe in probe_texts:
-            cleaned = _normalize_trace_text(probe)
-            if not cleaned or cleaned in seen:
-                continue
-            seen.add(cleaned)
-            deduped_probes.append(cleaned)
+        def _dedupe_probes(raw_probes: list[str]) -> list[str]:
+            deduped: list[str] = []
+            seen: set[str] = set()
+            for probe in raw_probes:
+                cleaned = _normalize_trace_text(probe)
+                if not cleaned or cleaned in seen:
+                    continue
+                seen.add(cleaned)
+                deduped.append(cleaned)
+            return deduped
 
         candidates.append(
             {
                 "source_file": source_file,
                 "source_step": stype,
-                "probe_texts": deduped_probes,
+                "primary_probe_texts": _dedupe_probes(primary_probe_texts),
+                "fallback_probe_texts": _dedupe_probes(fallback_probe_texts),
+                "allow_multi_page": stype == "extract_specific_table_from_word",
             }
         )
 
@@ -369,6 +381,146 @@ def _build_compare_source_label(entry: dict) -> str:
         label = params.get("target_caption_label") or params.get("target_table_title") or "表格"
         return f"{base} 表格 {label}".strip()
     return base
+
+
+def _collect_provenance_probe_texts(entry: dict) -> list[str]:
+    params = entry.get("params") or {}
+    texts: list[str] = []
+    for raw_value in (
+        params.get("target_caption_label"),
+        params.get("target_figure_title"),
+        params.get("target_table_title"),
+        params.get("target_chapter_title"),
+        params.get("target_title_section"),
+        params.get("target_subtitle"),
+        params.get("subheading_text"),
+    ):
+        normalized = _normalize_trace_text(str(raw_value or ""))
+        if normalized:
+            texts.append(normalized)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for text in texts:
+        if text in seen:
+            continue
+        seen.add(text)
+        deduped.append(text)
+    return deduped
+
+
+def _build_provenance_source_lookup(entries: list[dict]) -> dict[str, dict[str, object]]:
+    lookup: dict[str, dict[str, object]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        provenance = entry.get("provenance")
+        if not isinstance(provenance, dict):
+            continue
+        source_id = str(provenance.get("source_id") or "").strip()
+        if not source_id:
+            continue
+        lookup[source_id] = {
+            "source_id": source_id,
+            "source_file": _trace_source_label(entry),
+            "source_step": str(entry.get("type") or ""),
+            "content_type": str(provenance.get("content_type") or ""),
+            "bookmark_start": str(provenance.get("bookmark_start") or ""),
+            "bookmark_end": str(provenance.get("bookmark_end") or ""),
+            "bookmark_id": provenance.get("bookmark_id"),
+            "fragment_path": str(provenance.get("fragment_path") or entry.get("output_docx") or ""),
+            "fragment_order": provenance.get("fragment_order"),
+            "template_index": provenance.get("template_index", entry.get("template_index")),
+            "template_mode": provenance.get("template_mode", entry.get("template_mode")),
+            "primary_probe_texts": _collect_provenance_probe_texts(entry),
+        }
+    return lookup
+
+
+def _build_trace_from_provenance_blocks(
+    block_trace: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    paragraph_trace: list[dict[str, object]] = []
+    object_candidates: list[dict[str, object]] = []
+
+    for block in block_trace:
+        block_type = str(block.get("block_type") or "")
+        source_file = str(block.get("source_file") or "未知來源")
+        source_step = str(block.get("source_step") or "")
+        content_type = str(block.get("content_type") or "")
+        probe_texts = [str(item) for item in (block.get("probe_texts") or []) if str(item).strip()]
+        if block_type == "paragraph":
+            text = str(block.get("text") or "").strip()
+            if not text:
+                continue
+            paragraph_trace.append(
+                {
+                    "merged_paragraph_index": len(paragraph_trace),
+                    "source_file": source_file,
+                    "source_paragraph_index": block.get("block_index"),
+                    "source_step": source_step,
+                    "match_status": "provenance",
+                    "text": text,
+                }
+            )
+            continue
+
+        if not probe_texts:
+            continue
+        object_candidates.append(
+            {
+                "source_file": source_file,
+                "source_step": source_step,
+                "primary_probe_texts": probe_texts[:6],
+                "fallback_probe_texts": probe_texts[6:],
+                "allow_multi_page": content_type == "table",
+            }
+        )
+
+    return paragraph_trace, object_candidates
+
+
+def _build_provenance_trace(
+    job_dir: str,
+    result_docx: str,
+    log_path: str,
+    entries: list[dict],
+    titles_to_hide: list[str],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]] | None:
+    trace_dir = os.path.join(job_dir, "preview_trace")
+    os.makedirs(trace_dir, exist_ok=True)
+    cache_path = os.path.join(trace_dir, "provenance_map.json")
+    source_lookup = _build_provenance_source_lookup(entries)
+    if not source_lookup:
+        return None
+
+    cached_payload = None
+    try:
+        if (
+            os.path.isfile(cache_path)
+            and os.path.getmtime(cache_path) >= os.path.getmtime(result_docx)
+            and os.path.getmtime(cache_path) >= os.path.getmtime(log_path)
+        ):
+            cached_payload = load_cached_provenance_payload(cache_path)
+    except Exception:
+        current_app.logger.warning("Failed to load cached provenance trace for %s", job_dir, exc_info=True)
+
+    if cached_payload:
+        block_trace = cached_payload.get("block_trace") or []
+        if isinstance(block_trace, list):
+            return _build_trace_from_provenance_blocks(block_trace)
+
+    hide_set = {_normalize_trace_text(title) for title in titles_to_hide if _normalize_trace_text(title)}
+    block_trace = extract_provenance_block_trace(result_docx, source_lookup, hide_set=hide_set)
+    if not block_trace:
+        return None
+
+    try:
+        payload = build_provenance_cache_payload(source_lookup=source_lookup, block_trace=block_trace)
+        Path(cache_path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        current_app.logger.warning("Failed to save provenance trace cache for %s", job_dir, exc_info=True)
+
+    return _build_trace_from_provenance_blocks(block_trace)
 
 
 def _build_paragraph_trace(
@@ -486,6 +638,109 @@ def _build_trace_text_probes(normalized_text: str) -> list[str]:
     return deduped
 
 
+def _select_page_sources_for_display(
+    ordered_sources: list[tuple[str, int]],
+    *,
+    inherited_from_previous: bool = False,
+) -> list[tuple[str, int]]:
+    if not ordered_sources:
+        return []
+    if inherited_from_previous:
+        return ordered_sources[:1]
+
+    dominant_source, dominant_count = ordered_sources[0]
+    selected: list[tuple[str, int]] = [(dominant_source, dominant_count)]
+
+    for source_file, count in ordered_sources[1:]:
+        if count <= 0:
+            continue
+        if count == dominant_count:
+            selected.append((source_file, count))
+            continue
+        if dominant_count <= 2:
+            selected.append((source_file, count))
+            continue
+        minimum_count = max(2, (dominant_count + 1) // 2)
+        if count >= minimum_count:
+            selected.append((source_file, count))
+
+    return selected
+
+
+def _page_has_explicit_paragraph_sources(source_counts: dict[str, int]) -> bool:
+    return any(count > 0 for count in source_counts.values())
+
+
+def _score_probe_matches(page_text: str, probe_texts: list[str]) -> int:
+    normalized_page_text = _normalize_trace_text(page_text)
+    score = 0
+    seen: set[str] = set()
+    for raw_probe in probe_texts:
+        for probe in _build_trace_text_probes(_normalize_trace_text(str(raw_probe))):
+            if probe in seen:
+                continue
+            if probe in normalized_page_text:
+                seen.add(probe)
+                score += min(len(probe), 120)
+    return score
+
+
+def _select_object_candidate_pages(
+    page_texts: list[str],
+    source_counts_by_page: list[dict[str, int]],
+    *,
+    primary_probe_texts: list[str],
+    fallback_probe_texts: list[str],
+    allow_multi_page: bool,
+) -> list[int]:
+    available_pages = [
+        page_idx
+        for page_idx in range(len(page_texts))
+        if not _page_has_explicit_paragraph_sources(source_counts_by_page[page_idx])
+    ]
+    if not available_pages:
+        return []
+
+    def _score_pages(probes: list[str]) -> dict[int, int]:
+        return {
+            page_idx: _score_probe_matches(page_texts[page_idx], probes)
+            for page_idx in available_pages
+        }
+
+    def _pick_pages(scores: dict[int, int], *, permit_multi_page: bool) -> list[int]:
+        positive_scores = {page_idx: score for page_idx, score in scores.items() if score > 0}
+        if not positive_scores:
+            return []
+        best_page = max(positive_scores, key=lambda page_idx: (positive_scores[page_idx], -page_idx))
+        max_score = positive_scores[best_page]
+        if not permit_multi_page:
+            return [best_page]
+
+        min_score = max(1, (max_score + 2) // 3)
+        selected = {page_idx for page_idx, score in positive_scores.items() if score >= min_score}
+        cluster = [best_page]
+
+        next_page = best_page - 1
+        while next_page in selected:
+            cluster.insert(0, next_page)
+            next_page -= 1
+
+        next_page = best_page + 1
+        while next_page in selected:
+            cluster.append(next_page)
+            next_page += 1
+
+        return cluster
+
+    primary_scores = _score_pages(primary_probe_texts)
+    selected_pages = _pick_pages(primary_scores, permit_multi_page=allow_multi_page)
+    if selected_pages:
+        return selected_pages
+
+    fallback_scores = _score_pages(fallback_probe_texts)
+    return _pick_pages(fallback_scores, permit_multi_page=allow_multi_page)
+
+
 def _build_page_source_map(
     job_dir: str,
     result_pdf_path: str,
@@ -558,17 +813,16 @@ def _build_page_source_map(
 
     object_candidates = object_trace_candidates or []
     for candidate in object_candidates:
-        probes = []
-        for raw_probe in candidate.get("probe_texts") or []:
-            probes.extend(_build_trace_text_probes(_normalize_trace_text(str(raw_probe))))
-        if not probes or not page_texts:
+        if not page_texts:
             continue
 
-        matched_pages = [
-            page_idx
-            for page_idx, page_text in enumerate(page_texts)
-            if any(probe in page_text for probe in probes)
-        ]
+        matched_pages = _select_object_candidate_pages(
+            page_texts,
+            source_counts_by_page,
+            primary_probe_texts=[str(item) for item in (candidate.get("primary_probe_texts") or [])],
+            fallback_probe_texts=[str(item) for item in (candidate.get("fallback_probe_texts") or [])],
+            allow_multi_page=bool(candidate.get("allow_multi_page")),
+        )
         if not matched_pages:
             continue
 
@@ -586,15 +840,19 @@ def _build_page_source_map(
             if previous_source:
                 ordered_sources = [(previous_source, 0)]
                 bucket["inherited_from_previous"] = True
+        display_sources = _select_page_sources_for_display(
+            ordered_sources,
+            inherited_from_previous=bool(bucket.get("inherited_from_previous")),
+        )
         bucket["sources"] = [
             {
                 "source_file": source_file,
                 "count": count,
                 "inherited": bool(bucket.get("inherited_from_previous")) and count == 0,
             }
-            for source_file, count in ordered_sources
+            for source_file, count in display_sources
         ]
-        bucket["dominant_source"] = ordered_sources[0][0] if ordered_sources else ""
+        bucket["dominant_source"] = display_sources[0][0] if display_sources else ""
 
     try:
         with open(page_map_path, "w", encoding="utf-8") as f:
@@ -2236,8 +2494,12 @@ def task_compare(task_id, job_id):
                 source_urls.setdefault(source_label, source_url)
 
     chapters = list(chapter_sources.keys())
-    paragraph_trace = _build_paragraph_trace(job_dir, docx_path, log_path, entries, titles_to_hide)
-    object_trace_candidates = _build_object_trace_candidates(entries, titles_to_hide)
+    provenance_trace = _build_provenance_trace(job_dir, docx_path, log_path, entries, titles_to_hide)
+    if provenance_trace:
+        paragraph_trace, object_trace_candidates = provenance_trace
+    else:
+        paragraph_trace = _build_paragraph_trace(job_dir, docx_path, log_path, entries, titles_to_hide)
+        object_trace_candidates = _build_object_trace_candidates(entries, titles_to_hide)
     result_pdf_abs = os.path.join(job_dir, result_pdf_rel) if result_pdf_rel else ""
     paragraph_trace, page_source_map = _build_page_source_map(
         job_dir,

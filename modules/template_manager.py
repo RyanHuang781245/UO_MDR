@@ -78,13 +78,18 @@ def _write_zip(parts: Dict[str, bytes], out_path: str) -> None:
             zout.writestr(name, data)
 
 
-def _new_placeholder_paragraph(var_name: str) -> etree._Element:
+def _new_placeholder_paragraph(var_name: str, *, as_subdoc: bool = False) -> etree._Element:
     """Build a placeholder-only paragraph for docxtpl subdoc insertion."""
     p = etree.Element(qn("w:p"))
     r = etree.SubElement(p, qn("w:r"))
     t = etree.SubElement(r, qn("w:t"))
     t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-    t.text = f"{{{{ {var_name} }}}}"
+    if as_subdoc:
+        # `{{p ...}}` tells docxtpl to inject a subdocument as paragraph XML
+        # instead of escaping it as plain text inside <w:t>.
+        t.text = f"{{{{p {var_name} }}}}"
+    else:
+        t.text = f"{{{{ {var_name} }}}}"
     return p
 
 
@@ -100,6 +105,8 @@ def add_docxtpl_var_at_paragraph_index(
     idx: int,
     var_name: str,
     mode: str,
+    *,
+    as_subdoc: bool = False,
 ) -> bytes:
     """
     Insert or replace a paragraph at index with a docxtpl placeholder.
@@ -130,11 +137,11 @@ def add_docxtpl_var_at_paragraph_index(
 
     if mode == "replace":
         _clear_paragraph_keep_ppr(target)
-        ph = _new_placeholder_paragraph(var_name)
+        ph = _new_placeholder_paragraph(var_name, as_subdoc=as_subdoc)
         for ch in list(ph):
             target.append(ch)
     else:
-        ph = _new_placeholder_paragraph(var_name)
+        ph = _new_placeholder_paragraph(var_name, as_subdoc=as_subdoc)
         insert_pos = parent.index(target) + 1
         parent.insert(insert_pos, ph)
 
@@ -155,6 +162,43 @@ def make_var_name(display: str, text: str) -> str:
         h = hashlib.md5(base.encode("utf-8")).hexdigest()[:8]
         base = base[:60] + "_" + h
     return base
+
+
+def order_template_mappings(raw_mappings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    annotated: List[Tuple[int, int, str, Dict[str, Any]]] = []
+    for seq, mp in enumerate(raw_mappings):
+        idx = int(mp["index"])
+        source_order = int(mp.get("source_order", seq))
+        mode = (mp.get("mode") or "insert_after").strip() or "insert_after"
+        annotated.append((idx, source_order, mode, mp))
+
+    ordered: List[Dict[str, Any]] = []
+    for idx in sorted({item[0] for item in annotated}, reverse=True):
+        same_index = [item for item in annotated if item[0] == idx]
+        replace_items = sorted(
+            [item for item in same_index if item[2] == "replace"],
+            key=lambda item: item[1],
+        )
+        insert_after_items = sorted(
+            [item for item in same_index if item[2] != "replace"],
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        ordered.extend(item[3] for item in replace_items)
+        ordered.extend(item[3] for item in insert_after_items)
+    return ordered
+
+
+def display_order_template_mappings(raw_mappings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    annotated: List[Tuple[int, int, int, Dict[str, Any]]] = []
+    for seq, mp in enumerate(raw_mappings):
+        idx = int(mp["index"])
+        source_order = int(mp.get("source_order", seq))
+        mode = (mp.get("mode") or "insert_after").strip() or "insert_after"
+        mode_rank = 0 if mode == "replace" else 1
+        annotated.append((idx, mode_rank, source_order, mp))
+    annotated.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[3] for item in annotated]
 
 
 def render_template_with_mappings(
@@ -186,31 +230,7 @@ def render_template_with_mappings(
     var_records: List[Tuple[str, Dict[str, Any]]] = []
     replaced_once = set()
 
-    def _ordered_mappings(raw_mappings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        annotated: List[Tuple[int, int, str, Dict[str, Any]]] = []
-        for seq, mp in enumerate(raw_mappings):
-            idx = int(mp["index"])
-            source_order = int(mp.get("source_order", seq))
-            mode = (mp.get("mode") or "insert_after").strip() or "insert_after"
-            annotated.append((idx, source_order, mode, mp))
-
-        ordered: List[Dict[str, Any]] = []
-        for idx in sorted({item[0] for item in annotated}, reverse=True):
-            same_index = [item for item in annotated if item[0] == idx]
-            replace_items = sorted(
-                [item for item in same_index if item[2] == "replace"],
-                key=lambda item: item[1],
-            )
-            insert_after_items = sorted(
-                [item for item in same_index if item[2] != "replace"],
-                key=lambda item: item[1],
-                reverse=True,
-            )
-            ordered.extend(item[3] for item in replace_items)
-            ordered.extend(item[3] for item in insert_after_items)
-        return ordered
-
-    mappings_sorted = _ordered_mappings(mappings)
+    mappings_sorted = order_template_mappings(mappings)
     for mp in mappings_sorted:
         idx = int(mp["index"])
         display, text = meta.get(idx, ("", ""))
@@ -229,7 +249,13 @@ def render_template_with_mappings(
                 mode = "insert_after"
             else:
                 replaced_once.add(idx)
-        doc_xml = add_docxtpl_var_at_paragraph_index(doc_xml, idx, var_name, mode)
+        doc_xml = add_docxtpl_var_at_paragraph_index(
+            doc_xml,
+            idx,
+            var_name,
+            mode,
+            as_subdoc=bool(mp.get("content_docx_path")),
+        )
         var_records.append((var_name, mp))
 
     parts["word/document.xml"] = doc_xml

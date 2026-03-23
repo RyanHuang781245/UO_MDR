@@ -1172,6 +1172,57 @@ def match_heading_by_number_and_title(
 
     return False
 
+
+def _matches_structural_boundary(
+    p: etree._Element,
+    *,
+    reference_heading_depth: int | None,
+    reference_style: str | None,
+    reference_ilvl: int | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+) -> bool:
+    heading_depth = get_effective_heading_depth(
+        p,
+        style_outline,
+        style_based,
+        style_heading_rank,
+    )
+    if (
+        reference_heading_depth is not None
+        and heading_depth is not None
+        and heading_depth <= reference_heading_depth
+    ):
+        return True
+
+    style = get_pStyle(p)
+    ilvl = get_ilvl(p)
+    if (
+        reference_style is not None
+        and style == reference_style
+        and reference_ilvl is not None
+        and ilvl is not None
+        and ilvl <= reference_ilvl
+    ):
+        return True
+
+    return False
+
+
+def _matches_plain_text_boundary(
+    p: etree._Element,
+    *,
+    reference_number_parts: list[int],
+    reference_style: str | None,
+    reference_ilvl: int | None,
+    paragraph_text: str,
+) -> bool:
+    if reference_style is not None or reference_ilvl is not None or is_inside_table(p):
+        return False
+    candidate_parts = _extract_leading_number_parts(paragraph_text)
+    return _is_plain_text_number_boundary(reference_number_parts, candidate_parts)
+
 # ---------- 章節範圍定位（outlineLvl 優先，ilvl 備援），支援 ignore_toc ----------
 def find_section_range_children(
     body_children: list[etree._Element],
@@ -1311,29 +1362,25 @@ def find_section_range_children(
                             for next_p in iter_paragraphs(next_block):
                                 if ignore_toc and is_toc_paragraph(next_p):
                                     continue
-                                next_heading_depth = get_effective_heading_depth(
+                                next_txt = normalize_text(get_all_text(next_p))
+                                if _matches_structural_boundary(
                                     next_p,
-                                    style_outline,
-                                    style_based,
-                                    style_heading_rank,
-                                )
-                                if (
-                                    end_heading_depth is not None
-                                    and next_heading_depth is not None
-                                    and next_heading_depth <= end_heading_depth
+                                    reference_heading_depth=end_heading_depth,
+                                    reference_style=end_style,
+                                    reference_ilvl=end_ilvl,
+                                    style_outline=style_outline,
+                                    style_based=style_based,
+                                    style_heading_rank=style_heading_rank,
                                 ):
                                     return start_idx, k
-                                if end_heading_depth is None:
-                                    next_style = get_pStyle(next_p)
-                                    next_ilvl = get_ilvl(next_p)
-                                    if (
-                                        end_style is not None
-                                        and next_style == end_style
-                                        and end_ilvl is not None
-                                        and next_ilvl is not None
-                                        and next_ilvl <= end_ilvl
-                                    ):
-                                        return start_idx, k
+                                if _matches_plain_text_boundary(
+                                    next_p,
+                                    reference_number_parts=explicit_end_parts,
+                                    reference_style=end_style,
+                                    reference_ilvl=end_ilvl,
+                                    paragraph_text=next_txt,
+                                ):
+                                    return start_idx, k
                         return start_idx, len(body_children)
                     return start_idx, j
 
@@ -1341,30 +1388,25 @@ def find_section_range_children(
             if has_explicit_end:
                 continue
 
-            heading_depth = get_effective_heading_depth(
+            if _matches_structural_boundary(
                 p,
-                style_outline,
-                style_based,
-                style_heading_rank,
-            )
-            if start_heading_depth is not None and heading_depth is not None and heading_depth <= start_heading_depth:
+                reference_heading_depth=start_heading_depth,
+                reference_style=start_style,
+                reference_ilvl=start_ilvl,
+                style_outline=style_outline,
+                style_based=style_based,
+                style_heading_rank=style_heading_rank,
+            ):
                 return start_idx, j
 
-            if start_heading_depth is None:
-                style = get_pStyle(p)
-                ilvl = get_ilvl(p)
-                if (
-                    start_style is not None
-                    and style == start_style
-                    and start_ilvl is not None
-                    and ilvl is not None
-                    and ilvl <= start_ilvl
-                ):
-                    return start_idx, j
-                if start_ilvl is None and not is_inside_table(p):
-                    candidate_parts = _extract_leading_number_parts(txt)
-                    if _is_plain_text_number_boundary(start_number_parts, candidate_parts):
-                        return start_idx, j
+            if _matches_plain_text_boundary(
+                p,
+                reference_number_parts=start_number_parts,
+                reference_style=start_style,
+                reference_ilvl=start_ilvl,
+                paragraph_text=txt,
+            ):
+                return start_idx, j
 
     if has_explicit_end:
         raise RuntimeError(

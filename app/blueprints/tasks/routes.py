@@ -89,7 +89,7 @@ _LIBREOFFICE_CANDIDATES = (
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
 )
-_PAGE_SOURCE_MAP_CACHE_VERSION = 6
+_PAGE_SOURCE_MAP_CACHE_VERSION = 8
 
 
 def _get_actor_info():
@@ -452,13 +452,16 @@ def _build_trace_from_provenance_blocks(
             text = str(block.get("text") or "").strip()
             if not text:
                 continue
+            source_id = str(block.get("source_id") or "").strip()
             paragraph_trace.append(
                 {
                     "merged_paragraph_index": len(paragraph_trace),
+                    "source_id": source_id,
                     "source_file": source_file,
                     "source_paragraph_index": block.get("block_index"),
                     "source_step": source_step,
-                    "match_status": "provenance",
+                    "match_status": "provenance" if source_id else "context",
+                    "count_as_source": bool(source_id),
                     "text": text,
                 }
             )
@@ -642,17 +645,26 @@ def _select_page_sources_for_display(
     ordered_sources: list[tuple[str, int]],
     *,
     inherited_from_previous: bool = False,
+    preserve_sources: set[str] | None = None,
 ) -> list[tuple[str, int]]:
     if not ordered_sources:
         return []
     if inherited_from_previous:
         return ordered_sources[:1]
 
+    preserved_sources = {
+        str(source).strip()
+        for source in (preserve_sources or set())
+        if str(source).strip()
+    }
     dominant_source, dominant_count = ordered_sources[0]
     selected: list[tuple[str, int]] = [(dominant_source, dominant_count)]
 
     for source_file, count in ordered_sources[1:]:
         if count <= 0:
+            continue
+        if source_file in preserved_sources:
+            selected.append((source_file, count))
             continue
         if count == dominant_count:
             selected.append((source_file, count))
@@ -784,6 +796,8 @@ def _build_page_source_map(
         for idx in range(len(page_texts))
     ]
     source_counts_by_page: list[dict[str, int]] = [dict() for _ in page_texts]
+    has_context_only_content_by_page = [False for _ in page_texts]
+    preserved_sources_by_page: list[set[str]] = [set() for _ in page_texts]
     annotated_trace: list[dict[str, object]] = []
     current_page_idx = 0
 
@@ -807,9 +821,18 @@ def _build_page_source_map(
         annotated_trace.append(trace_item)
 
         if assigned_page_idx >= 0:
+            count_as_source = bool(
+                trace_item.get("count_as_source", str(trace_item.get("source_file") or "").strip() not in {"", "未知來源"})
+            )
             source_file = str(trace_item.get("source_file") or "未知來源")
-            source_counts = source_counts_by_page[assigned_page_idx]
-            source_counts[source_file] = source_counts.get(source_file, 0) + 1
+            source_step = str(trace_item.get("source_step") or "")
+            if count_as_source and source_file not in {"", "未知來源"}:
+                source_counts = source_counts_by_page[assigned_page_idx]
+                source_counts[source_file] = source_counts.get(source_file, 0) + 1
+                if source_step in {"extract_specific_table_from_word", "extract_specific_figure_from_word"}:
+                    preserved_sources_by_page[assigned_page_idx].add(source_file)
+            else:
+                has_context_only_content_by_page[assigned_page_idx] = True
 
     object_candidates = object_trace_candidates or []
     for candidate in object_candidates:
@@ -834,7 +857,7 @@ def _build_page_source_map(
     for idx, bucket in enumerate(page_buckets):
         source_counts = source_counts_by_page[idx]
         ordered_sources = sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
-        if not ordered_sources and idx > 0:
+        if not ordered_sources and idx > 0 and not has_context_only_content_by_page[idx]:
             previous_bucket = page_buckets[idx - 1]
             previous_source = str(previous_bucket.get("dominant_source") or "").strip()
             if previous_source:
@@ -843,6 +866,7 @@ def _build_page_source_map(
         display_sources = _select_page_sources_for_display(
             ordered_sources,
             inherited_from_previous=bool(bucket.get("inherited_from_previous")),
+            preserve_sources=preserved_sources_by_page[idx],
         )
         bucket["sources"] = [
             {

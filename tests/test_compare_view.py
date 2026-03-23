@@ -1,4 +1,6 @@
 from pathlib import Path
+import sys
+import types
 
 from spire.doc import Document, FileFormat
 
@@ -112,6 +114,14 @@ def test_select_page_sources_for_display_keeps_meaningful_secondary_source() -> 
     assert selected == [("file_a.docx", 4), ("file_b.docx", 2)]
 
 
+def test_select_page_sources_for_display_preserves_explicit_object_source() -> None:
+    selected = task_routes._select_page_sources_for_display(
+        [("file_a.docx", 3), ("file_b.docx", 1)],
+        preserve_sources={"file_b.docx"},
+    )
+    assert selected == [("file_a.docx", 3), ("file_b.docx", 1)]
+
+
 def test_page_has_explicit_paragraph_sources_only_when_count_positive() -> None:
     assert task_routes._page_has_explicit_paragraph_sources({"file_a.docx": 1}) is True
     assert task_routes._page_has_explicit_paragraph_sources({"file_a.docx": 0}) is False
@@ -159,3 +169,187 @@ def test_select_object_candidate_pages_limits_multi_page_table_to_best_contiguou
     )
 
     assert selected == [1, 2]
+
+
+def test_build_trace_from_provenance_blocks_marks_template_context_without_counting_source() -> None:
+    paragraph_trace, object_candidates = task_routes._build_trace_from_provenance_blocks(
+        [
+            {
+                "block_type": "paragraph",
+                "source_id": "",
+                "source_file": "未知來源",
+                "source_step": "",
+                "content_type": "",
+                "text": "Template heading",
+                "probe_texts": ["template heading"],
+                "block_index": 0,
+            },
+            {
+                "block_type": "paragraph",
+                "source_id": "src_000001",
+                "source_file": "A.docx",
+                "source_step": "extract_word_chapter",
+                "content_type": "paragraph",
+                "text": "Actual source text",
+                "probe_texts": ["actual source text"],
+                "block_index": 1,
+            },
+        ]
+    )
+
+    assert not object_candidates
+    assert paragraph_trace[0]["match_status"] == "context"
+    assert paragraph_trace[0]["count_as_source"] is False
+    assert paragraph_trace[1]["match_status"] == "provenance"
+    assert paragraph_trace[1]["count_as_source"] is True
+
+
+def test_build_page_source_map_does_not_inherit_source_across_template_only_page(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "result.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    class _FakePage:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def get_text(self, _mode: str) -> str:
+            return self._text
+
+    class _FakePdf:
+        def __init__(self, pages: list[str]) -> None:
+            self._pages = [_FakePage(text) for text in pages]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(self._pages)
+
+    fake_fitz = types.SimpleNamespace(
+        open=lambda _path: _FakePdf(
+            [
+                "alpha source paragraph",
+                "template section divider",
+                "bravo source paragraph",
+            ]
+        )
+    )
+    monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
+
+    paragraph_trace = [
+        {
+            "merged_paragraph_index": 0,
+            "source_file": "A.docx",
+            "count_as_source": True,
+            "text": "alpha source paragraph",
+        },
+        {
+            "merged_paragraph_index": 1,
+            "source_file": "未知來源",
+            "count_as_source": False,
+            "text": "template section divider",
+        },
+        {
+            "merged_paragraph_index": 2,
+            "source_file": "B.docx",
+            "count_as_source": True,
+            "text": "bravo source paragraph",
+        },
+    ]
+
+    _, page_source_map = task_routes._build_page_source_map(
+        str(tmp_path),
+        str(pdf_path),
+        paragraph_trace,
+        [],
+    )
+
+    assert page_source_map[0]["dominant_source"] == "A.docx"
+    assert page_source_map[1]["sources"] == []
+    assert page_source_map[2]["dominant_source"] == "B.docx"
+
+
+def test_build_page_source_map_preserves_table_caption_source_on_mixed_page(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "result.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    class _FakePage:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def get_text(self, _mode: str) -> str:
+            return self._text
+
+    class _FakePdf:
+        def __init__(self, pages: list[str]) -> None:
+            self._pages = [_FakePage(text) for text in pages]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(self._pages)
+
+    fake_fitz = types.SimpleNamespace(
+        open=lambda _path: _FakePdf(
+            [
+                "knee content body knee content body table 3 bill of materials of direct contact with the patients",
+            ]
+        )
+    )
+    monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
+
+    paragraph_trace = [
+        {
+            "merged_paragraph_index": 0,
+            "source_file": "Knee.docx",
+            "source_step": "extract_word_chapter",
+            "count_as_source": True,
+            "text": "knee content body",
+        },
+        {
+            "merged_paragraph_index": 1,
+            "source_file": "Knee.docx",
+            "source_step": "extract_word_chapter",
+            "count_as_source": True,
+            "text": "knee content body",
+        },
+        {
+            "merged_paragraph_index": 2,
+            "source_file": "Knee.docx",
+            "source_step": "extract_word_chapter",
+            "count_as_source": True,
+            "text": "knee content body",
+        },
+        {
+            "merged_paragraph_index": 3,
+            "source_file": "Hip.docx",
+            "source_step": "extract_specific_table_from_word",
+            "count_as_source": True,
+            "text": "table 3 bill of materials of direct contact with the patients",
+        },
+    ]
+
+    _, page_source_map = task_routes._build_page_source_map(
+        str(tmp_path),
+        str(pdf_path),
+        paragraph_trace,
+        [],
+    )
+
+    assert page_source_map[0]["sources"] == [
+        {"source_file": "Knee.docx", "count": 3, "inherited": False},
+        {"source_file": "Hip.docx", "count": 1, "inherited": False},
+    ]

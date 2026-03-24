@@ -171,6 +171,20 @@ def _flow_version_display_name(name: str, source: str) -> str:
     return raw_name
 
 
+def _has_duplicate_manual_version_name(flow_dir: str, flow_name: str, version_name: str) -> bool:
+    target = (version_name or "").strip().casefold()
+    if not target:
+        return False
+    versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    metadata = load_version_metadata(versions_dir)
+    for item in metadata.get("versions", []):
+        if (item.get("source") or "").strip() != "manual_snapshot":
+            continue
+        if ((item.get("name") or "").strip().casefold()) == target:
+            return True
+    return False
+
+
 def _snapshot_flow_version(
     flow_dir: str,
     flow_name: str,
@@ -1852,8 +1866,8 @@ def run_flow(task_id):
             return "缺少流程名稱", 400
         if not version_name:
             return "缺少版本名稱", 400
-        if len(version_name) > 80:
-            return "版本名稱最多 80 字", 400
+        if len(version_name) > 50:
+            return "版本名稱最多 50 字", 400
     output_filename, output_filename_error = normalize_docx_output_filename(
         request.form.get("output_filename", ""),
         default="",
@@ -1910,6 +1924,8 @@ def run_flow(task_id):
         path = os.path.join(flow_dir, f"{target_flow_name}.json")
         if action == "save_as" and os.path.exists(path):
             return "流程名稱已存在", 400
+        if action == "save_version" and _has_duplicate_manual_version_name(flow_dir, target_flow_name, version_name):
+            return "版本名稱已存在", 400
         existing_payload = None
         created = datetime.now().strftime("%Y-%m-%d %H:%M")
         if os.path.exists(path):
@@ -2271,6 +2287,8 @@ def create_flow_version(task_id, flow_name):
         return {"ok": False, "error": "缺少版本名稱"}, 400
     if len(version_name) > 80:
         return {"ok": False, "error": "版本名稱長度不可超過 80 字"}, 400
+    if _has_duplicate_manual_version_name(flow_dir, flow_name, version_name):
+        return {"ok": False, "error": "版本名稱已存在"}, 400
 
     try:
         with open(flow_path, "r", encoding="utf-8") as f:

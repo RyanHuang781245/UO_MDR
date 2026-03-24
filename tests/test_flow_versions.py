@@ -390,6 +390,62 @@ def test_create_flow_version_endpoint_creates_manual_snapshot(app, client) -> No
     assert metadata["versions"][0]["name"] == "送審前"
 
 
+def test_create_flow_version_endpoint_rejects_duplicate_manual_name(app, client) -> None:
+    task_id = "flow-version-create-duplicate"
+    tdir = Path(app.config["TASK_FOLDER"]) / task_id
+    if tdir.exists():
+        shutil.rmtree(tdir)
+    flow_dir = tdir / "flows"
+    (tdir / "files").mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "created": "2026-03-24 11:00",
+        "steps": [{"type": "insert_text_after", "params": {"text": "current"}}],
+        "template_file": "",
+        "document_format": "default",
+        "line_spacing": "1.5",
+        "apply_formatting": True,
+        "output_filename": "",
+    }
+    _write_flow(flow_dir / "版本流程.json", payload)
+
+    versions_dir = flow_dir / "_versions" / "版本流程"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    base_name = "20260324110000_manual_snapshot"
+    (versions_dir / f"{base_name}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    (versions_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "versions": [
+                    {
+                        "id": "manual-1",
+                        "name": "送審前",
+                        "slug": "manual_snapshot",
+                        "base_name": base_name,
+                        "created_at": "2026-03-24T11:00:00",
+                        "created_by": "",
+                        "flow_name": "版本流程",
+                        "source": "manual_snapshot",
+                        "content_hash": "manual-hash",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("flows_bp.create_flow_version", task_id=task_id, flow_name="版本流程")
+
+    response = client.post(url, data={"version_name": "送審前"})
+    assert response.status_code == 400
+    data = response.get_json()
+    assert data["ok"] is False
+    assert data["error"] == "版本名稱已存在"
+
+
 def test_delete_flow_version_endpoint_removes_manual_snapshot(app, client) -> None:
     task_id = "flow-version-delete-endpoint"
     tdir = Path(app.config["TASK_FOLDER"]) / task_id
@@ -697,3 +753,75 @@ def test_flow_save_version_creates_named_manual_snapshot(app, client) -> None:
     saved_snapshot = json.loads((flow_dir / "_versions" / "版本流程" / f"{base_name}.json").read_text(encoding="utf-8"))
     assert isinstance(saved_snapshot, dict)
     assert (flow_dir / "版本流程.json").is_file()
+
+
+def test_flow_save_version_rejects_duplicate_manual_name(app, client) -> None:
+    task_id = "flow-version-manual-duplicate"
+    tdir = Path(app.config["TASK_FOLDER"]) / task_id
+    if tdir.exists():
+        shutil.rmtree(tdir)
+    flow_dir = tdir / "flows"
+    (tdir / "files").mkdir(parents=True, exist_ok=True)
+
+    existing_payload = {
+        "created": "2026-03-24 11:00",
+        "steps": [{"type": "insert_text_after", "params": {"text": "existing"}}],
+        "template_file": "",
+        "document_format": "default",
+        "line_spacing": "1.5",
+        "apply_formatting": True,
+        "output_filename": "",
+    }
+    _write_flow(flow_dir / "版本流程.json", existing_payload)
+
+    versions_dir = flow_dir / "_versions" / "版本流程"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    base_name = "20260324110000_manual_snapshot"
+    (versions_dir / f"{base_name}.json").write_text(json.dumps(existing_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    (versions_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "versions": [
+                    {
+                        "id": "manual-1",
+                        "name": "送審前",
+                        "slug": "manual_snapshot",
+                        "base_name": base_name,
+                        "created_at": "2026-03-24T11:00:00",
+                        "created_by": "",
+                        "flow_name": "版本流程",
+                        "source": "manual_snapshot",
+                        "content_hash": "manual-hash",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("flows_bp.run_flow", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={
+            "action": "save_version",
+            "flow_name": "版本流程",
+            "version_name": "送審前",
+            "ordered_ids": "s1",
+            "step_s1_type": "insert_text_after",
+            "step_s1_text": "manual content",
+            "step_s1_template_index": "",
+            "step_s1_template_mode": "insert_after",
+            "template_file": "",
+            "output_filename": "",
+            "document_format": "default",
+            "line_spacing": "1.5",
+            "apply_formatting": "true",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "版本名稱已存在" in response.get_data(as_text=True)

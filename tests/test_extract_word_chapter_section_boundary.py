@@ -259,12 +259,32 @@ def test_section_range_falls_back_to_rendered_number_boundary_when_start_heading
     assert (start_idx, end_idx) == (1, 3)
 
 
+def test_section_range_rule_based_fallback_finds_late_unstructured_boundary() -> None:
+    body_children = [
+        _styled_paragraph("Cleaning validation", style_id="S111", ilvl=2),
+        *[_paragraph(f"Long body paragraph {idx} with enough descriptive words to remain content.") for idx in range(1, 55)],
+        _paragraph("Sterilizing agent"),
+        _paragraph("The agent specification and concentration range are defined separately."),
+        _paragraph("Gamma radiation sterilization validation"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Cleaning validation",
+        start_number="6.13.1",
+        style_outline={"S111": 0},
+        style_based={},
+        style_heading_rank={"S111": 2},
+    )
+
+    assert (start_idx, end_idx) == (0, 55)
+
+
 def test_section_range_uses_llm_boundary_candidate_when_rules_run_out() -> None:
     body_children = [
         _styled_paragraph("Cleaning validation", style_id="S111", ilvl=2),
         _paragraph("body A"),
         _paragraph("Sterilizing agent"),
-        _paragraph("body B"),
     ]
 
     def resolver(**kwargs) -> int | None:
@@ -293,7 +313,6 @@ def test_section_range_rejects_llm_candidate_outside_candidate_set() -> None:
         _styled_paragraph("Cleaning validation", style_id="S111", ilvl=2),
         _paragraph("body A"),
         _paragraph("Sterilizing agent"),
-        _paragraph("body B"),
     ]
 
     start_idx, end_idx = find_section_range_children(

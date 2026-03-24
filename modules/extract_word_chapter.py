@@ -1732,6 +1732,22 @@ def find_section_range_children(
     if fallback_end_idx is not None:
         return start_idx, fallback_end_idx
 
+    rule_based_end_idx = _find_rule_based_boundary_fallback_index(
+        body_children,
+        start_idx=start_idx,
+        reference_heading_depth=start_heading_depth,
+        reference_number_parts=start_number_parts,
+        reference_style=start_style,
+        reference_ilvl=start_ilvl,
+        style_outline=style_outline,
+        style_based=style_based,
+        style_heading_rank=style_heading_rank,
+        numbering_xml=numbering_xml,
+        ignore_toc=ignore_toc,
+    )
+    if rule_based_end_idx is not None:
+        return start_idx, rule_based_end_idx
+
     llm_fallback_end_idx = _find_llm_boundary_fallback_index(
         body_children,
         start_idx=start_idx,
@@ -1792,8 +1808,212 @@ def _looks_like_unstructured_heading_candidate(text: str) -> bool:
         return False
     if re.search(r"[\u3400-\u9fff]", normalized):
         return True
+    if len(words) < 2:
+        return False
     first = words[0]
     return first[:1].isupper() or first.isupper()
+
+
+def _is_sentence_like_body_paragraph(text: str) -> bool:
+    normalized = normalize_text(text)
+    if not normalized:
+        return False
+    words = normalized.split()
+    if len(words) >= 10:
+        return True
+    if len(words) >= 5 and normalized.endswith((".", "。", ";", "；")):
+        return True
+    if len(words) >= 6 and ("," in normalized or "，" in normalized):
+        return True
+    return False
+
+
+def _has_following_body_paragraph(
+    body_children: list[etree._Element],
+    *,
+    candidate_block_index: int,
+    lookahead_blocks: int = 6,
+) -> bool:
+    scanned_blocks = 0
+    for k in range(candidate_block_index + 1, len(body_children)):
+        block = body_children[k]
+        scanned_blocks += 1
+        for p in iter_paragraphs_no_table(block):
+            text = normalize_text(get_all_text(p))
+            if not text:
+                continue
+            if classify_subheading_candidate_xml(p)[0]:
+                return False
+            if _looks_like_unstructured_heading_candidate(text):
+                return False
+            return _is_sentence_like_body_paragraph(text) or not is_all_bold_paragraph(p)
+        if scanned_blocks >= lookahead_blocks:
+            break
+    return False
+
+
+def _score_rule_based_boundary_candidate(
+    p: etree._Element,
+    *,
+    paragraph_text: str,
+    block_index: int,
+    body_children: list[etree._Element],
+    reference_heading_depth: int | None,
+    reference_number_parts: list[int],
+    reference_style: str | None,
+    reference_ilvl: int | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+    numbering_xml: bytes | None = None,
+) -> int | None:
+    text = normalize_text(paragraph_text)
+    if not text or is_inside_table(p) or _CAPTION_LIKE_SUBTITLE_RE.match(text):
+        return None
+    if _is_sentence_like_body_paragraph(text):
+        return None
+
+    heading_depth = get_effective_heading_depth(
+        p,
+        style_outline,
+        style_based,
+        style_heading_rank,
+    )
+    style = get_pStyle(p)
+    ilvl = get_ilvl(p)
+    candidate_parts = _extract_boundary_number_parts(
+        p,
+        paragraph_text=text,
+        body_children=body_children,
+        numbering_xml=numbering_xml,
+    )
+    subheading_kind, _ = classify_subheading_candidate_xml(p)
+    looks_unstructured = _looks_like_unstructured_heading_candidate(text)
+    has_following_body = _has_following_body_paragraph(
+        body_children,
+        candidate_block_index=block_index,
+    )
+
+    has_signal = bool(
+        heading_depth is not None
+        or style is not None
+        or ilvl is not None
+        or candidate_parts
+        or subheading_kind
+        or looks_unstructured
+    )
+    if not has_signal:
+        return None
+    if (
+        heading_depth is None
+        and style is None
+        and ilvl is None
+        and not candidate_parts
+        and subheading_kind is None
+        and reference_style is None
+        and reference_ilvl is None
+    ):
+        return None
+
+    score = 0
+
+    if (
+        reference_heading_depth is not None
+        and heading_depth is not None
+        and heading_depth <= reference_heading_depth
+        and _looks_like_heading_boundary_text(text)
+    ):
+        score += 6
+    elif heading_depth is not None:
+        score += 3
+
+    if reference_style is not None and style == reference_style:
+        score += 4
+    if reference_ilvl is not None and ilvl is not None:
+        if ilvl == reference_ilvl:
+            score += 4
+        elif ilvl < reference_ilvl:
+            score += 2
+
+    if candidate_parts:
+        if _is_plain_text_number_boundary(
+            reference_number_parts,
+            candidate_parts,
+            allow_cross_prefix_same_depth=True,
+        ):
+            score += 6
+        else:
+            score += 1
+
+    if subheading_kind == "inline":
+        score += 5
+    elif subheading_kind == "styled_bold":
+        score += 4
+    elif is_all_bold_paragraph(p):
+        score += 2
+
+    if looks_unstructured:
+        score += 2
+    if len(text.split()) <= 8:
+        score += 1
+
+    if has_following_body:
+        score += 3
+    elif subheading_kind is None and not candidate_parts and heading_depth is None:
+        score -= 3
+
+    return score if score >= 6 else None
+
+
+def _find_rule_based_boundary_fallback_index(
+    body_children: list[etree._Element],
+    *,
+    start_idx: int,
+    reference_heading_depth: int | None,
+    reference_number_parts: list[int],
+    reference_style: str | None,
+    reference_ilvl: int | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+    numbering_xml: bytes | None = None,
+    ignore_toc: bool = True,
+) -> int | None:
+    best_index: int | None = None
+    best_score: int | None = None
+
+    for j in range(start_idx + 1, len(body_children)):
+        block = body_children[j]
+        for p in iter_paragraphs(block):
+            if ignore_toc and is_toc_paragraph(p):
+                continue
+            text = normalize_text(get_all_text(p))
+            score = _score_rule_based_boundary_candidate(
+                p,
+                paragraph_text=text,
+                block_index=j,
+                body_children=body_children,
+                reference_heading_depth=reference_heading_depth,
+                reference_number_parts=reference_number_parts,
+                reference_style=reference_style,
+                reference_ilvl=reference_ilvl,
+                style_outline=style_outline,
+                style_based=style_based,
+                style_heading_rank=style_heading_rank,
+                numbering_xml=numbering_xml,
+            )
+            if score is None:
+                continue
+            if best_score is None or score > best_score:
+                best_index = j
+                best_score = score
+            break
+
+    if best_index is not None:
+        _llm_boundary_log(f"rule-based fallback selected block_index={best_index} score={best_score}")
+    else:
+        _llm_boundary_log("rule-based fallback found no valid candidate")
+    return best_index
 
 
 def _build_llm_boundary_candidates(

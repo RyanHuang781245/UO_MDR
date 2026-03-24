@@ -481,7 +481,13 @@
           </div>
         </div>
         <div class="table-responsive border rounded-3 overflow-hidden bg-white shadow-sm">
-          <table class="table mb-0 align-middle">
+          <table class="table mb-0 align-middle flow-versions-table">
+            <colgroup>
+              <col>
+              <col class="flow-versions-col-created">
+              <col class="flow-versions-col-created-by">
+              <col class="flow-versions-col-actions">
+            </colgroup>
             <thead style="background-color: #f8fafc;">
               <tr>
                 <th class="ps-4 small fw-bold text-uppercase text-muted py-3">版本名稱</th>
@@ -608,6 +614,31 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.flow-versions-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.flow-versions-col-created {
+  width: 150px;
+}
+.flow-versions-col-created-by {
+  width: 110px;
+}
+.flow-versions-col-actions {
+  width: 180px;
+}
+.flow-versions-table .flow-version-name-truncate {
+  max-width: none;
+}
+.flow-version-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.flow-version-actions .btn {
+  white-space: nowrap;
 }
 .flow-name-truncate {
   display: block;
@@ -2658,9 +2689,10 @@ function renderFlowVersionsRows(flowName, versions){
       <td class="font-monospace small text-muted">${escapeHtml(v.created_at_display || '')}</td>
       <td class="small text-muted">${escapeHtml(v.created_by || '') || '-'}</td>
       <td class="pe-4 text-center">
-        <div class="d-inline-flex gap-2">
+        <div class="flow-version-actions">
           <a class="btn btn-sm btn-outline-secondary" href="${v.view_url}">檢視</a>
           <button class="btn btn-sm btn-primary" type="button" data-restore-url="${v.restore_url}" data-version-name="${escapeHtml(v.name || '')}">回復</button>
+          <button class="btn btn-sm btn-outline-danger" type="button" data-delete-url="${v.delete_url}" data-version-name="${escapeHtml(v.name || '')}">刪除</button>
         </div>
       </td>
     </tr>
@@ -2686,6 +2718,29 @@ function renderFlowVersionsRows(flowName, versions){
         window.location.href = nextUrl.toString();
       } catch (err) {
         if (flowVersionsStatus) flowVersionsStatus.textContent = err.message || '回復失敗';
+      }
+    });
+  });
+  flowVersionsTableBody.querySelectorAll('button[data-delete-url]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const deleteUrl = btn.getAttribute('data-delete-url') || '';
+      const versionName = btn.getAttribute('data-version-name') || '';
+      if (!deleteUrl) return;
+      if (!confirm(`確定要刪除流程「${flowName}」的版本「${versionName}」？此動作無法復原。`)) {
+        return;
+      }
+      if (flowVersionsStatus) flowVersionsStatus.textContent = '刪除中...';
+      try {
+        const resp = await fetch(deleteUrl, { method: 'POST' });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          throw new Error(data.error || '刪除失敗');
+        }
+        updateVisibleFlowVersionCount(flowName, data.version_count);
+        if (flowVersionsStatus) flowVersionsStatus.textContent = `共 ${Array.isArray(data.versions) ? data.versions.length : 0} 個版本`;
+        renderFlowVersionsRows(flowName, Array.isArray(data.versions) ? data.versions : []);
+      } catch (err) {
+        if (flowVersionsStatus) flowVersionsStatus.textContent = err.message || '刪除失敗';
       }
     });
   });

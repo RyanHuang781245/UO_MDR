@@ -249,6 +249,32 @@ def _load_flow_version_entry(flow_dir: str, flow_name: str, version_id: str) -> 
     return version_path, version
 
 
+def _delete_flow_version_entry(flow_dir: str, flow_name: str, version_id: str, *, allow_sources: set[str] | None = None) -> dict | None:
+    versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    metadata = load_version_metadata(versions_dir)
+    versions = metadata.get("versions", [])
+    version = next((v for v in versions if v.get("id") == version_id), None)
+    if not version:
+        return None
+    source = (version.get("source") or "").strip()
+    if allow_sources is not None and source not in allow_sources:
+        return {"error": "Version source is not deletable"}
+
+    base_name = version.get("base_name")
+    if base_name:
+        path = os.path.join(versions_dir, f"{base_name}.json")
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            current_app.logger.exception("Failed to remove flow version file")
+            return {"error": "Failed to remove version file"}
+
+    metadata["versions"] = [v for v in versions if v.get("id") != version_id]
+    save_version_metadata(versions_dir, metadata)
+    return {"version": version}
+
+
 def _build_flow_version_context(task_id: str, flow_name: str, flow_dir: str) -> list[dict]:
     versions_dir = _flow_versions_dir(flow_dir, flow_name)
     metadata = load_version_metadata(versions_dir)
@@ -278,6 +304,7 @@ def _build_flow_version_context(task_id: str, flow_name: str, flow_dir: str) -> 
                 "created_by": item.get("created_by") or "",
                 "source": _flow_version_source_label(item.get("source") or ""),
                 "view_url": url_for("flows_bp.flow_builder", task_id=task_id, flow=flow_name, version_id=version_id),
+                "delete_url": url_for("flows_bp.delete_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
                 "download_url": url_for("flows_bp.download_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
                 "restore_url": url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
             }
@@ -2285,6 +2312,32 @@ def download_flow_version(task_id, flow_name, version_id):
     version_path, version = loaded
     slug = version.get("slug") or version_id
     return send_file(version_path, as_attachment=True, download_name=f"{flow_name}_{slug}_{version_id}.json")
+
+
+@flows_bp.post("/api/tasks/<task_id>/flows/<flow_name>/versions/<version_id>/delete", endpoint="delete_flow_version")
+def delete_flow_version(task_id, flow_name, version_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(tdir, "flows")
+    flow_path = os.path.join(flow_dir, f"{flow_name}.json")
+    if not os.path.exists(flow_path):
+        return {"ok": False, "error": "Flow not found"}, 404
+
+    deleted = _delete_flow_version_entry(flow_dir, flow_name, version_id, allow_sources={"manual_snapshot"})
+    if not deleted:
+        return {"ok": False, "error": "Version not found"}, 404
+    if deleted.get("error"):
+        return {"ok": False, "error": "手動版本以外的版本不可刪除"}, 400
+
+    _touch_task_last_edit(task_id)
+    return {
+        "ok": True,
+        "deleted_version": {
+            "id": version_id,
+            "name": deleted["version"].get("name") or version_id,
+        },
+        "version_count": _flow_version_count(flow_dir, flow_name),
+        "versions": _build_flow_version_context(task_id, flow_name, flow_dir),
+    }
 
 
 @flows_bp.post("/tasks/<task_id>/flows/<flow_name>/versions/<version_id>/restore", endpoint="restore_flow_version")

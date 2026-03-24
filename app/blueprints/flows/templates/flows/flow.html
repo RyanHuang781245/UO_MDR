@@ -121,7 +121,7 @@
                                 <tr>
                                     <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">流程名稱</th>
                                     <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
-                                    <th class="fw-bold text-uppercase text-muted py-3" style="width: 450px; font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
+                                    <th class="fw-bold text-uppercase text-muted py-3" style="width: 480px; font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="flowTableBody">
@@ -145,8 +145,11 @@
                                                 <i class="bi bi-text-paragraph"></i><span class="d-none d-lg-inline small fw-semibold">套用格式並執行</span>
                                             </button>
                                             <a class="btn-action-icon" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}" title="編輯流程">
-                                                <i class="bi bi-pencil-square"></i><span class="d-none d-lg-inline small fw-semibold">編輯流程</span>
+                                                <i class="bi bi-pencil-square"></i><span class="d-none d-lg-inline small fw-semibold">編輯</span>
                                             </a>
+                                            <button class="btn-action-icon flow-version-btn" type="button" data-flow="{{ f.name }}" title="流程版本">
+                                                <i class="bi bi-clock-history"></i><span class="d-none d-lg-inline small fw-semibold">版本(<span class="flow-version-count">{{ f.version_count or 0 }}</span>)</span>
+                                            </button>
                                             <button class="btn-action-icon" type="button" onclick="renameFlow('{{ f.name }}')" title="重新命名">
                                                 <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
                                             </button>
@@ -396,6 +399,42 @@
   </div>
 </div>
 
+<div class="modal fade" id="flowVersionsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">流程版本</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="small text-muted">目前流程：<code class="text-primary fw-bold" id="flowVersionsCurrentName">-</code></div>
+          <div class="small text-muted" id="flowVersionsStatus"></div>
+        </div>
+        <div class="table-responsive border rounded-3 overflow-hidden bg-white shadow-sm">
+          <table class="table mb-0 align-middle">
+            <thead style="background-color: #f8fafc;">
+              <tr>
+                <th class="ps-4 small fw-bold text-uppercase text-muted py-3">版本名稱</th>
+                <th class="small fw-bold text-uppercase text-muted py-3">建立時間</th>
+                <th class="small fw-bold text-uppercase text-muted py-3">來源</th>
+                <th class="small fw-bold text-uppercase text-muted py-3">建立者</th>
+                <th class="pe-4 small fw-bold text-uppercase text-muted py-3 text-end">操作</th>
+              </tr>
+            </thead>
+            <tbody id="flowVersionsTableBody">
+              <tr><td colspan="5" class="text-center py-5 text-muted">尚未載入版本資料</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-white border" data-bs-dismiss="modal">關閉</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <style>
 .flow-table {
   width: 100%;
@@ -420,6 +459,20 @@
 }
 .flow-table .flow-actions-cell .btn {
   white-space: nowrap;
+}
+.flow-version-btn {
+  justify-content: center;
+}
+.flow-version-count {
+  display: inline-flex;
+  min-width: 2ch;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+@media (min-width: 992px) {
+  .flow-version-btn {
+    min-width: 82px;
+  }
 }
 .run-status-container {
   position: fixed;
@@ -2255,6 +2308,12 @@ const saveAsFlowBtn = document.getElementById('saveAsFlowBtn');
 const saveAsFlowInput = document.getElementById('saveAsFlowInput');
 const saveAsFlowCount = document.getElementById('saveAsFlowCount');
 const saveAsFlowSubmitBtn = document.getElementById('saveAsFlowSubmitBtn');
+const flowVersionsModalEl = document.getElementById('flowVersionsModal');
+const flowVersionsCurrentName = document.getElementById('flowVersionsCurrentName');
+const flowVersionsStatus = document.getElementById('flowVersionsStatus');
+const flowVersionsTableBody = document.getElementById('flowVersionsTableBody');
+let flowVersionsModal = null;
+let activeFlowVersionName = '';
 let renameModalInstance = null;
 let saveAsModalInstance = null;
 
@@ -2307,6 +2366,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (flowVersionsModalEl && typeof bootstrap !== 'undefined') {
+    flowVersionsModal = new bootstrap.Modal(flowVersionsModalEl);
+  }
+  document.querySelectorAll('.flow-version-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const flowName = btn.dataset.flow || '';
+      if (flowName) openFlowVersions(flowName);
+    });
+  });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
   if (saveAsFlowModalEl && typeof bootstrap !== 'undefined') {
     saveAsModalInstance = new bootstrap.Modal(saveAsFlowModalEl);
 
@@ -2349,6 +2420,76 @@ function renameFlow(current){
       return;
     }
     submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name, fpage: String(CURRENT_FLOW_PAGE) });
+  }
+}
+
+function renderFlowVersionsRows(flowName, versions){
+  if (!flowVersionsTableBody) return;
+  if (!versions.length){
+    flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">尚無可用版本</td></tr>';
+    return;
+  }
+  flowVersionsTableBody.innerHTML = versions.map(v => `
+    <tr>
+      <td class="ps-4">
+        <div class="fw-semibold text-primary">${escapeHtml(v.name || '')}</div>
+      </td>
+      <td class="font-monospace small text-muted">${escapeHtml(v.created_at_display || '')}</td>
+      <td class="small text-muted">${escapeHtml(v.source || '')}</td>
+      <td class="small text-muted">${escapeHtml(v.created_by || '') || '-'}</td>
+      <td class="pe-4 text-end">
+        <div class="d-inline-flex gap-2">
+          <a class="btn btn-sm btn-white border" href="${v.download_url}" target="_blank" rel="noopener">下載</a>
+          <button class="btn btn-sm btn-primary" type="button" data-restore-url="${v.restore_url}" data-version-name="${escapeHtml(v.name || '')}">回復</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  flowVersionsTableBody.querySelectorAll('button[data-restore-url]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const restoreUrl = btn.getAttribute('data-restore-url') || '';
+      const versionName = btn.getAttribute('data-version-name') || '';
+      if (!restoreUrl) return;
+      if (!confirm(`確定要回復流程「${flowName}」到版本「${versionName}」？目前內容會先自動備份。`)) {
+        return;
+      }
+      if (flowVersionsStatus) flowVersionsStatus.textContent = '回復中...';
+      try {
+        const resp = await fetch(restoreUrl, { method: 'POST' });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          throw new Error(data.error || '回復失敗');
+        }
+        window.location.href = `{{ url_for('flows_bp.flow_builder', task_id=task.id) }}?flow=${encodeURIComponent(flowName)}`;
+      } catch (err) {
+        if (flowVersionsStatus) flowVersionsStatus.textContent = err.message || '回復失敗';
+      }
+    });
+  });
+}
+
+async function openFlowVersions(flowName){
+  activeFlowVersionName = flowName;
+  if (flowVersionsCurrentName) flowVersionsCurrentName.textContent = flowName;
+  if (flowVersionsStatus) flowVersionsStatus.textContent = '載入中...';
+  if (flowVersionsTableBody) {
+    flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">版本資料載入中...</td></tr>';
+  }
+  if (flowVersionsModal) flowVersionsModal.show();
+  try {
+    const url = `{{ url_for('flows_bp.list_flow_versions', task_id=task.id, flow_name='__FLOW__') }}`.replace('__FLOW__', encodeURIComponent(flowName));
+    const resp = await fetch(url, { cache: 'no-store' });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || '載入版本失敗');
+    }
+    if (flowVersionsStatus) flowVersionsStatus.textContent = `共 ${Array.isArray(data.versions) ? data.versions.length : 0} 個版本`;
+    renderFlowVersionsRows(flowName, Array.isArray(data.versions) ? data.versions : []);
+  } catch (err) {
+    if (flowVersionsStatus) flowVersionsStatus.textContent = err.message || '載入版本失敗';
+    if (flowVersionsTableBody) {
+      flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-danger">載入版本失敗</td></tr>';
+    }
   }
 }
 

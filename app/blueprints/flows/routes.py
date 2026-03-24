@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -25,10 +26,13 @@ from app.services.flow_service import (
     collect_titles_to_hide,
     coerce_line_spacing,
     hide_paragraphs_with_text,
+    load_version_metadata,
     normalize_document_format,
     parse_template_paragraphs,
     remove_hidden_runs,
     run_workflow,
+    sanitize_version_slug,
+    save_version_metadata,
 )
 from app.services.notification_service import send_batch_notification
 from app.services.audit_service import record_audit
@@ -65,6 +69,8 @@ _WINDOWS_RESERVED_FLOW_NAMES = {
     "LPT9",
 }
 
+FLOW_VERSION_LIMIT = 50
+
 
 def _validate_flow_name(name: str) -> str | None:
     text = (name or "").strip()
@@ -96,6 +102,152 @@ def _get_actor_info():
             label = display_name or work_id
         return work_id, label
     return "", ""
+
+
+def _flow_versions_dir(flow_dir: str, flow_name: str) -> str:
+    return os.path.join(flow_dir, "_versions", flow_name)
+
+
+def _normalize_flow_payload(data):
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, list):
+        return {"steps": data}
+    return {"steps": []}
+
+
+def _flow_content_hash(payload: dict) -> str:
+    normalized = _normalize_flow_payload(payload)
+    text = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _prune_flow_versions(versions_dir: str, versions: list[dict]) -> list[dict]:
+    kept = versions[:FLOW_VERSION_LIMIT]
+    removed = versions[FLOW_VERSION_LIMIT:]
+    for item in removed:
+        base_name = item.get("base_name")
+        if not base_name:
+            continue
+        path = os.path.join(versions_dir, f"{base_name}.json")
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            current_app.logger.exception("Failed to remove old flow version")
+    return kept
+
+
+def _snapshot_flow_version(
+    flow_dir: str,
+    flow_name: str,
+    payload: dict,
+    *,
+    source: str,
+    actor_label: str = "",
+    version_name: str | None = None,
+    force: bool = False,
+) -> dict | None:
+    normalized = _normalize_flow_payload(payload)
+    versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    metadata = load_version_metadata(versions_dir)
+    versions = metadata.get("versions", [])
+    content_hash = _flow_content_hash(normalized)
+    latest = versions[0] if versions else None
+    if not force and latest and latest.get("content_hash") == content_hash:
+        return None
+
+    created_ts = datetime.now()
+    timestamp = created_ts.strftime("%Y%m%d%H%M%S")
+    unique_suffix = uuid.uuid4().hex[:6]
+    version_id = f"{timestamp}_{unique_suffix}"
+    display_name = (version_name or "").strip()
+    if not display_name:
+        if source == "before_restore":
+            display_name = f"回復前備份 {created_ts.strftime('%Y-%m-%d %H:%M:%S')}"
+        else:
+            display_name = f"自動保存 {created_ts.strftime('%Y-%m-%d %H:%M:%S')}"
+    slug = sanitize_version_slug(display_name)
+    base_name = f"{version_id}_{slug}" if slug else version_id
+
+    os.makedirs(versions_dir, exist_ok=True)
+    version_path = os.path.join(versions_dir, f"{base_name}.json")
+    with open(version_path, "w", encoding="utf-8") as f:
+        json.dump(normalized, f, ensure_ascii=False, indent=2)
+
+    versions = [v for v in versions if v.get("id") != version_id]
+    versions.append(
+        {
+            "id": version_id,
+            "name": display_name,
+            "slug": slug,
+            "base_name": base_name,
+            "created_at": created_ts.isoformat(timespec="seconds"),
+            "created_by": actor_label,
+            "flow_name": flow_name,
+            "source": source,
+            "content_hash": content_hash,
+        }
+    )
+    versions.sort(key=lambda v: v.get("created_at", ""), reverse=True)
+    metadata["versions"] = _prune_flow_versions(versions_dir, versions)
+    save_version_metadata(versions_dir, metadata)
+    return metadata["versions"][0]
+
+
+def _load_flow_version_entry(flow_dir: str, flow_name: str, version_id: str) -> tuple[str, dict] | None:
+    versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    metadata = load_version_metadata(versions_dir)
+    versions = metadata.get("versions", [])
+    version = next((v for v in versions if v.get("id") == version_id), None)
+    if not version:
+        return None
+    base_name = version.get("base_name")
+    if not base_name:
+        return None
+    version_path = os.path.join(versions_dir, f"{base_name}.json")
+    if not os.path.exists(version_path):
+        return None
+    return version_path, version
+
+
+def _build_flow_version_context(task_id: str, flow_name: str, flow_dir: str) -> list[dict]:
+    versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    metadata = load_version_metadata(versions_dir)
+    context = []
+    for item in sorted(metadata.get("versions", []), key=lambda v: v.get("created_at", ""), reverse=True):
+        version_id = item.get("id")
+        base_name = item.get("base_name")
+        if not version_id or not base_name:
+            continue
+        version_path = os.path.join(versions_dir, f"{base_name}.json")
+        if not os.path.exists(version_path):
+            continue
+        created_at = item.get("created_at", "")
+        created_display = created_at
+        if created_at:
+            try:
+                created_display = datetime.fromisoformat(created_at).strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                created_display = created_at
+        context.append(
+            {
+                "id": version_id,
+                "name": item.get("name") or version_id,
+                "created_at_display": created_display,
+                "created_by": item.get("created_by") or "",
+                "source": item.get("source") or "",
+                "download_url": url_for("flows_bp.download_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
+                "restore_url": url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
+            }
+        )
+    return context
+
+
+def _flow_version_count(flow_dir: str, flow_name: str) -> int:
+    versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    metadata = load_version_metadata(versions_dir)
+    return len(metadata.get("versions", []))
 
 
 def _touch_task_last_edit(task_id: str, work_id: str | None = None, label: str | None = None) -> None:
@@ -501,6 +653,7 @@ def _load_saved_flows(flow_dir: str) -> list[dict]:
     for fn in os.listdir(flow_dir):
         if fn.endswith(".json") and fn != "order.json":
             path = os.path.join(flow_dir, fn)
+            flow_name = os.path.splitext(fn)[0]
             created = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
             has_copy = False
             steps_data = []
@@ -518,11 +671,13 @@ def _load_saved_flows(flow_dir: str) -> list[dict]:
                 )
             except Exception:
                 pass
+            version_count = _flow_version_count(flow_dir, flow_name)
             flows.append(
                 {
-                    "name": os.path.splitext(fn)[0],
+                    "name": flow_name,
                     "created": created,
                     "has_copy": has_copy,
+                    "version_count": version_count,
                 }
             )
     flows.sort(key=lambda f: f["name"])
@@ -1616,13 +1771,14 @@ def run_flow(task_id):
         path = os.path.join(flow_dir, f"{target_flow_name}.json")
         if action == "save_as" and os.path.exists(path):
             return "流程名稱已存在", 400
+        existing_payload = None
         created = datetime.now().strftime("%Y-%m-%d %H:%M")
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and "created" in data:
-                    created = data["created"]
+                    existing_payload = json.load(f)
+                if isinstance(existing_payload, dict) and "created" in existing_payload:
+                    created = existing_payload["created"]
             except Exception:
                 pass
         data = {
@@ -1634,6 +1790,19 @@ def run_flow(task_id):
             "apply_formatting": apply_formatting,
             "output_filename": output_filename,
         }
+        _work_id, actor_label = _get_actor_info()
+        if (
+            action != "save_as"
+            and existing_payload is not None
+            and _flow_content_hash(existing_payload) != _flow_content_hash(data)
+        ):
+            _snapshot_flow_version(
+                flow_dir,
+                target_flow_name,
+                _normalize_flow_payload(existing_payload),
+                source="auto_save",
+                actor_label=actor_label,
+            )
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         _touch_task_last_edit(task_id)
@@ -1871,6 +2040,21 @@ def update_flow_format(task_id, flow_name):
         created = datetime.fromtimestamp(os.path.getmtime(flow_path)).strftime("%Y-%m-%d %H:%M")
         payload["created"] = created
 
+    actor_work_id, actor_label = _get_actor_info()
+    try:
+        with open(flow_path, "r", encoding="utf-8") as f:
+            existing_payload = json.load(f)
+    except Exception:
+        existing_payload = None
+    if existing_payload is not None and _flow_content_hash(existing_payload) != _flow_content_hash(payload):
+        _snapshot_flow_version(
+            flow_dir,
+            flow_name,
+            _normalize_flow_payload(existing_payload),
+            source="auto_save",
+            actor_label=actor_label,
+        )
+
     with open(flow_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
@@ -1886,6 +2070,9 @@ def delete_flow(task_id, flow_name):
     path = os.path.join(flow_dir, f"{flow_name}.json")
     if os.path.exists(path):
         os.remove(path)
+        versions_dir = _flow_versions_dir(flow_dir, flow_name)
+        if os.path.isdir(versions_dir):
+            shutil.rmtree(versions_dir, ignore_errors=True)
         _touch_task_last_edit(task_id)
     fpage = request.form.get("fpage")
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))
@@ -1906,6 +2093,13 @@ def rename_flow(task_id, flow_name):
     if os.path.exists(new_path):
         return "流程名稱已存在", 400
     os.rename(old_path, new_path)
+    old_versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    new_versions_dir = _flow_versions_dir(flow_dir, new_name)
+    if os.path.isdir(old_versions_dir):
+        os.makedirs(os.path.dirname(new_versions_dir), exist_ok=True)
+        if os.path.isdir(new_versions_dir):
+            shutil.rmtree(new_versions_dir, ignore_errors=True)
+        os.rename(old_versions_dir, new_versions_dir)
     _touch_task_last_edit(task_id)
     fpage = request.form.get("fpage")
     return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))
@@ -1918,6 +2112,68 @@ def export_flow(task_id, flow_name):
     if not os.path.exists(path):
         abort(404)
     return send_file(path, as_attachment=True, download_name=f"{flow_name}.json")
+
+
+@flows_bp.get("/api/tasks/<task_id>/flows/<flow_name>/versions", endpoint="list_flow_versions")
+def list_flow_versions(task_id, flow_name):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(tdir, "flows")
+    flow_path = os.path.join(flow_dir, f"{flow_name}.json")
+    if not os.path.exists(flow_path):
+        return {"ok": False, "error": "Flow not found"}, 404
+    return {"ok": True, "versions": _build_flow_version_context(task_id, flow_name, flow_dir)}
+
+
+@flows_bp.get("/tasks/<task_id>/flows/<flow_name>/versions/<version_id>/download", endpoint="download_flow_version")
+def download_flow_version(task_id, flow_name, version_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(tdir, "flows")
+    loaded = _load_flow_version_entry(flow_dir, flow_name, version_id)
+    if not loaded:
+        abort(404)
+    version_path, version = loaded
+    slug = version.get("slug") or version_id
+    return send_file(version_path, as_attachment=True, download_name=f"{flow_name}_{slug}_{version_id}.json")
+
+
+@flows_bp.post("/tasks/<task_id>/flows/<flow_name>/versions/<version_id>/restore", endpoint="restore_flow_version")
+def restore_flow_version(task_id, flow_name, version_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(tdir, "flows")
+    flow_path = os.path.join(flow_dir, f"{flow_name}.json")
+    if not os.path.exists(flow_path):
+        return {"ok": False, "error": "Flow not found"}, 404
+    loaded = _load_flow_version_entry(flow_dir, flow_name, version_id)
+    if not loaded:
+        return {"ok": False, "error": "Version not found"}, 404
+    version_path, version = loaded
+    try:
+        with open(flow_path, "r", encoding="utf-8") as f:
+            current_payload = json.load(f)
+        with open(version_path, "r", encoding="utf-8") as f:
+            restore_payload = json.load(f)
+    except Exception:
+        return {"ok": False, "error": "Version file is invalid"}, 400
+
+    _work_id, actor_label = _get_actor_info()
+    _snapshot_flow_version(
+        flow_dir,
+        flow_name,
+        _normalize_flow_payload(current_payload),
+        source="before_restore",
+        actor_label=actor_label,
+        force=True,
+    )
+    with open(flow_path, "w", encoding="utf-8") as f:
+        json.dump(_normalize_flow_payload(restore_payload), f, ensure_ascii=False, indent=2)
+    _touch_task_last_edit(task_id)
+    return {
+        "ok": True,
+        "restored_version": {
+            "id": version.get("id"),
+            "name": version.get("name") or version_id,
+        },
+    }
 
 
 @flows_bp.post("/tasks/<task_id>/flows/import", endpoint="import_flow")

@@ -1,7 +1,9 @@
+import os
 import re
 import shutil
 import zipfile
 from copy import deepcopy
+from typing import Any, Callable
 from lxml import etree
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -1493,6 +1495,17 @@ def _find_structural_heading_by_ordinal(
     return None
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _llm_boundary_log(message: str) -> None:
+    print(f"[chapter-boundary-llm] {message}")
+
+
 # ---------- 章節範圍定位（outlineLvl 優先，ilvl 備援），支援 ignore_toc ----------
 def find_section_range_children(
     body_children: list[etree._Element],
@@ -1506,6 +1519,9 @@ def find_section_range_children(
     include_end_chapter: bool = True,
     ignore_toc: bool = True,
     numbering_xml: bytes | None = None,
+    llm_boundary_fallback: bool | None = None,
+    llm_boundary_model_id: str | None = None,
+    llm_boundary_resolver: Callable[..., int | None] | None = None,
 ) -> tuple[int, int]:
     start_idx = None
     start_heading_depth = None
@@ -1716,6 +1732,24 @@ def find_section_range_children(
     if fallback_end_idx is not None:
         return start_idx, fallback_end_idx
 
+    llm_fallback_end_idx = _find_llm_boundary_fallback_index(
+        body_children,
+        start_idx=start_idx,
+        start_heading_text=start_heading_text,
+        start_number=start_number,
+        reference_style=start_style,
+        style_outline=style_outline,
+        style_based=style_based,
+        style_heading_rank=style_heading_rank,
+        numbering_xml=numbering_xml,
+        ignore_toc=ignore_toc,
+        llm_boundary_fallback=llm_boundary_fallback,
+        llm_boundary_model_id=llm_boundary_model_id,
+        llm_boundary_resolver=llm_boundary_resolver,
+    )
+    if llm_fallback_end_idx is not None:
+        return start_idx, llm_fallback_end_idx
+
     return start_idx, end_idx
 
 def is_all_bold_paragraph(p: etree._Element) -> bool:
@@ -1740,6 +1774,184 @@ def is_all_bold_paragraph(p: etree._Element) -> bool:
             return False
 
     return has_text
+
+
+def _xml_excerpt(node: etree._Element, *, max_chars: int = 1000) -> str:
+    xml = etree.tostring(node, encoding="unicode", with_tail=False)
+    return xml[:max_chars]
+
+
+def _looks_like_unstructured_heading_candidate(text: str) -> bool:
+    normalized = normalize_text(text)
+    if not _looks_like_heading_boundary_text(normalized, max_words=12):
+        return False
+    if normalized.endswith((".", "。", ";", "；", ":")):
+        return False
+    words = normalized.split()
+    if not words:
+        return False
+    if re.search(r"[\u3400-\u9fff]", normalized):
+        return True
+    first = words[0]
+    return first[:1].isupper() or first.isupper()
+
+
+def _build_llm_boundary_candidates(
+    body_children: list[etree._Element],
+    *,
+    start_idx: int,
+    reference_style: str | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+    numbering_xml: bytes | None = None,
+    ignore_toc: bool = True,
+    max_scan_blocks: int = 48,
+    max_candidates: int = 18,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    scan_end = min(len(body_children), start_idx + 1 + max(1, max_scan_blocks))
+
+    for block_index in range(start_idx + 1, scan_end):
+        block = body_children[block_index]
+        for p in iter_paragraphs(block):
+            if ignore_toc and is_toc_paragraph(p):
+                continue
+            if is_inside_table(p):
+                continue
+
+            text = normalize_text(get_all_text(p))
+            if not text:
+                continue
+
+            heading_depth = get_effective_heading_depth(
+                p,
+                style_outline,
+                style_based,
+                style_heading_rank,
+            )
+            style_id = get_pStyle(p)
+            ilvl = get_ilvl(p)
+            numbering_prefix = ""
+            if numbering_xml and (ilvl is not None or heading_depth is not None):
+                numbering_prefix = normalize_text(_render_numbering_prefix(p, body_children, numbering_xml)).rstrip(".．")
+
+            looks_heading = _looks_like_heading_boundary_text(text)
+            looks_number_boundary = _looks_like_number_boundary_candidate(
+                p,
+                paragraph_text=text,
+                reference_style=reference_style,
+                style_outline=style_outline,
+                style_based=style_based,
+                style_heading_rank=style_heading_rank,
+            )
+            is_bold = is_all_bold_paragraph(p)
+            has_structure_signal = (
+                looks_number_boundary
+                or heading_depth is not None
+                or is_bold
+                or ilvl is not None
+                or bool(numbering_prefix)
+                or bool(_extract_leading_number_parts(text))
+                or (reference_style is not None and style_id == reference_style)
+            )
+            if not (has_structure_signal or (looks_heading and _looks_like_unstructured_heading_candidate(text))):
+                continue
+
+            candidates.append(
+                {
+                    "block_index": block_index,
+                    "block_tag": etree.QName(block).localname,
+                    "text": text,
+                    "style_id": style_id,
+                    "ilvl": ilvl,
+                    "heading_depth": heading_depth,
+                    "numbering_prefix": numbering_prefix or None,
+                    "is_bold": is_bold,
+                    "looks_heading_like": looks_heading,
+                    "looks_number_boundary": looks_number_boundary,
+                    "xml_excerpt": _xml_excerpt(p),
+                }
+            )
+            break
+
+        if len(candidates) >= max_candidates:
+            break
+
+    return candidates
+
+
+def _find_llm_boundary_fallback_index(
+    body_children: list[etree._Element],
+    *,
+    start_idx: int,
+    start_heading_text: str,
+    start_number: str,
+    reference_style: str | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+    numbering_xml: bytes | None = None,
+    ignore_toc: bool = True,
+    llm_boundary_fallback: bool | None = None,
+    llm_boundary_model_id: str | None = None,
+    llm_boundary_resolver: Callable[..., int | None] | None = None,
+) -> int | None:
+    enabled = _env_flag("WORD_CHAPTER_LLM_BOUNDARY_FALLBACK", default=False)
+    if llm_boundary_fallback is not None:
+        enabled = llm_boundary_fallback
+    if not enabled and llm_boundary_resolver is None:
+        _llm_boundary_log("fallback disabled; skip LLM boundary detection")
+        return None
+
+    _llm_boundary_log(
+        f"enter fallback start_idx={start_idx} start_number={start_number!r} start_heading={start_heading_text!r}"
+    )
+
+    candidates = _build_llm_boundary_candidates(
+        body_children,
+        start_idx=start_idx,
+        reference_style=reference_style,
+        style_outline=style_outline,
+        style_based=style_based,
+        style_heading_rank=style_heading_rank,
+        numbering_xml=numbering_xml,
+        ignore_toc=ignore_toc,
+    )
+    if not candidates:
+        _llm_boundary_log("no eligible heading candidates found for LLM")
+        return None
+    _llm_boundary_log(
+        "prepared candidates: "
+        + ", ".join(f"{item['block_index']}:{item['text'][:40]}" for item in candidates[:8])
+    )
+
+    candidate_indexes = {item["block_index"] for item in candidates}
+    if llm_boundary_resolver is not None:
+        _llm_boundary_log("using injected resolver instead of external API")
+        chosen_index = llm_boundary_resolver(
+            start_heading_text=start_heading_text,
+            start_number=start_number,
+            candidates=candidates,
+        )
+    else:
+        try:
+            from modules.chapter_boundary_llm import choose_next_heading_boundary_candidate
+        except Exception:
+            _llm_boundary_log("failed to import chapter_boundary_llm helper")
+            return None
+        chosen_index = choose_next_heading_boundary_candidate(
+            start_heading_text=start_heading_text,
+            start_number=start_number,
+            candidates=candidates,
+            model_id=llm_boundary_model_id,
+        )
+
+    if isinstance(chosen_index, int) and chosen_index in candidate_indexes:
+        _llm_boundary_log(f"accepted fallback boundary block_index={chosen_index}")
+        return chosen_index
+    _llm_boundary_log(f"no valid fallback boundary selected: {chosen_index!r}")
+    return None
 
 def has_body_text_after_candidate(
     section_children: list[etree._Element],
@@ -1850,6 +2062,9 @@ def extract_section_docx_xml(
     subheading_text: str | None = None,
     subheading_strict_match: bool = True,
     subheading_debug: bool = False,
+    llm_boundary_fallback: bool | None = None,
+    llm_boundary_model_id: str | None = None,
+    llm_boundary_resolver: Callable[..., int | None] | None = None,
 ):
     # 複製整包 docx（保留 styles/numbering/media/rels 等）
     shutil.copyfile(input_docx, output_docx)
@@ -1892,6 +2107,9 @@ def extract_section_docx_xml(
         explicit_end_number=explicit_end_number,
         ignore_toc=ignore_toc,
         numbering_xml=file_map.get("word/numbering.xml"),
+        llm_boundary_fallback=llm_boundary_fallback,
+        llm_boundary_model_id=llm_boundary_model_id,
+        llm_boundary_resolver=llm_boundary_resolver,
     )
     kept_section = content_children[start_idx:end_idx]
 

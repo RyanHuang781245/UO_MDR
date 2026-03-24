@@ -303,6 +303,8 @@ def extract_word_chapter(
     ignore_header_footer: bool = True,
     ignore_toc: bool = True,
     output_docx_path: str | None = None,
+    llm_boundary_fallback: bool | None = None,
+    llm_boundary_model_id: str | None = None,
 ):
     if not os.path.isfile(input_file):
         raise FileNotFoundError(f"input file not found: {input_file}")
@@ -353,6 +355,8 @@ def extract_word_chapter(
         subheading_text=subheading_to_use,
         subheading_strict_match=subheading_strict_match,
         subheading_debug=False,
+        llm_boundary_fallback=llm_boundary_fallback,
+        llm_boundary_model_id=llm_boundary_model_id,
     )
 
     captured_title = _read_first_paragraph_text(out_path) or start_heading

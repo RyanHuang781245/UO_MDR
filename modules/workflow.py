@@ -551,6 +551,12 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     hide_chapter_title=boolish(params.get("hide_chapter_title", "false")),
                     ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
                     ignore_toc=boolish(params.get("ignore_toc", "true")),
+                    llm_boundary_fallback=(
+                        boolish(params.get("llm_boundary_fallback", "false"))
+                        if "llm_boundary_fallback" in params
+                        else None
+                    ),
+                    llm_boundary_model_id=params.get("llm_boundary_model_id") or None,
                     output_docx_path=frag_path,
                     output_doc=None,
                     section=None

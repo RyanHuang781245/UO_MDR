@@ -181,6 +181,58 @@ def test_explicit_end_range_stops_before_following_numbered_heading() -> None:
     assert (start_idx, end_idx) == (1, 5)
 
 
+def test_explicit_end_ignores_body_text_ending_with_title_until_structured_heading() -> None:
+    body_children = [
+        _paragraph("Cleaning and Sterilization"),
+        _styled_paragraph("Cleaning validation", style_id="S111", ilvl=2),
+        _paragraph("This section describes the sterilizing agent"),
+        _paragraph("body A"),
+        _styled_paragraph("Sterilizing agent", style_id="S111", ilvl=2),
+        _paragraph("body B"),
+        _styled_paragraph("Gamma radiation sterilization validation", style_id="S111", ilvl=2),
+        _paragraph("body C"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Cleaning validation",
+        start_number="6.13.1",
+        style_outline={"S111": 0},
+        style_based={},
+        style_heading_rank={"S111": 2},
+        explicit_end_title="Sterilizing agent",
+        explicit_end_number="6.13.2",
+    )
+
+    assert (start_idx, end_idx) == (1, 6)
+
+
+def test_section_range_ignores_sentence_like_same_style_and_ilvl_body_paragraph() -> None:
+    body_children = [
+        _paragraph("Cleaning and Sterilization"),
+        _styled_paragraph("Cleaning validation", style_id="S111", ilvl=2),
+        _styled_paragraph(
+            "The validated process shall be performed before terminal sterilization.",
+            style_id="S111",
+            ilvl=2,
+        ),
+        _paragraph("body A"),
+        _styled_paragraph("Sterilizing agent", style_id="S111", ilvl=2),
+        _paragraph("body B"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Cleaning validation",
+        start_number="6.13.1",
+        style_outline={"S111": 0},
+        style_based={},
+        style_heading_rank={"S111": 2},
+    )
+
+    assert (start_idx, end_idx) == (1, 4)
+
+
 def test_section_range_falls_back_to_rendered_number_boundary_when_start_heading_is_plain_text() -> None:
     body_children = [
         _heading("Seed numbered heading", style_id="S111"),

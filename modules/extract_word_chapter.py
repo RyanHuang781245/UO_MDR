@@ -563,10 +563,10 @@ def _ensure_numbering_instance(
 def _materialize_heading_numbering(
     section_children: list[etree._Element],
     start_number: str,
-    start_heading_text: str | None,
     style_outline: dict[str, int],
     style_based: dict[str, str],
     num_id: int,
+    start_heading_text: str | None = None,
 ) -> None:
     start_parts = _parse_number_parts(start_number)
     if not start_parts:
@@ -611,6 +611,13 @@ def _materialize_heading_numbering(
     # to the paragraph whose text matches the requested heading text.
     target_text = normalize_text(start_heading_text or "")
     if not target_text:
+        for block in section_children:
+            for p in iter_paragraphs(block):
+                text = normalize_text(get_all_text(p))
+                if not text:
+                    continue
+                _set_paragraph_numpr(p, num_id=num_id, ilvl=(len(start_parts) - 1))
+                return
         return
     num_pattern = _build_heading_number_prefix_regex(start_number)
     for block in section_children:
@@ -1173,12 +1180,95 @@ def match_heading_by_number_and_title(
     return False
 
 
+def _get_explicit_outline_depth(p: etree._Element) -> int | None:
+    pPr = p.find("w:pPr", namespaces=NS)
+    if pPr is None:
+        return None
+    ol = pPr.find("w:outlineLvl", namespaces=NS)
+    if ol is None:
+        return None
+    v = ol.get(qn("w:val"))
+    return int(v) if v and v.isdigit() else None
+
+
+def _looks_like_heading_boundary_text(paragraph_text: str, *, max_words: int = 18) -> bool:
+    text = normalize_text(paragraph_text)
+    if not text:
+        return False
+    if _CAPTION_LIKE_SUBTITLE_RE.match(text):
+        return False
+    words = text.split()
+    if len(words) > max_words:
+        return False
+    if len(words) > 6 and text.endswith((".", "。", ";", "；")):
+        return False
+    return True
+
+
+def _has_heading_boundary_structure_signal(
+    p: etree._Element,
+    *,
+    paragraph_text: str,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+) -> bool:
+    if is_inside_table(p):
+        return False
+    if _get_explicit_outline_depth(p) is not None:
+        return True
+    if not _looks_like_heading_boundary_text(paragraph_text):
+        return False
+    if get_effective_heading_depth(p, style_outline, style_based, style_heading_rank) is not None:
+        return True
+    return get_ilvl(p) is not None
+
+
+def _matches_explicit_heading_boundary(
+    p: etree._Element,
+    *,
+    paragraph_text: str,
+    heading_number: str | None,
+    heading_title: str | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+) -> bool:
+    if not match_heading_by_number_and_title(
+        paragraph_text=paragraph_text,
+        heading_number=heading_number,
+        heading_title=heading_title,
+    ):
+        return False
+
+    num = normalize_text(heading_number or "").rstrip(".")
+    if num:
+        number_pattern = _build_heading_number_prefix_regex(num)
+        if (number_pattern and re.match(number_pattern, paragraph_text)) or (
+            not number_pattern and re.match(rf"^{re.escape(num)}(?!\d)", paragraph_text)
+        ):
+            return True
+
+    title = normalize_text(heading_title or "")
+    if not title:
+        return False
+
+    return _has_heading_boundary_structure_signal(
+        p,
+        paragraph_text=paragraph_text,
+        style_outline=style_outline,
+        style_based=style_based,
+        style_heading_rank=style_heading_rank,
+    )
+
+
 def _matches_structural_boundary(
     p: etree._Element,
     *,
     reference_heading_depth: int | None,
     reference_style: str | None,
     reference_ilvl: int | None,
+    paragraph_text: str,
     style_outline: dict[str, int],
     style_based: dict[str, str],
     style_heading_rank: dict[str, int] | None = None,
@@ -1193,6 +1283,10 @@ def _matches_structural_boundary(
         reference_heading_depth is not None
         and heading_depth is not None
         and heading_depth <= reference_heading_depth
+        and (
+            _get_explicit_outline_depth(p) is not None
+            or _looks_like_heading_boundary_text(paragraph_text)
+        )
     ):
         return True
 
@@ -1204,6 +1298,7 @@ def _matches_structural_boundary(
         and reference_ilvl is not None
         and ilvl is not None
         and ilvl <= reference_ilvl
+        and _looks_like_heading_boundary_text(paragraph_text)
     ):
         return True
 
@@ -1310,6 +1405,45 @@ def _find_number_boundary_fallback_index(
 
     return None
 
+
+def _find_structural_heading_by_ordinal(
+    body_children: list[etree._Element],
+    *,
+    target_number_parts: list[int],
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_heading_rank: dict[str, int] | None = None,
+    ignore_toc: bool = True,
+) -> tuple[int, int | None, str | None, int | None] | None:
+    if not target_number_parts:
+        return None
+
+    counters: list[int] = []
+    for i, block in enumerate(body_children):
+        for p in iter_paragraphs(block):
+            if ignore_toc and is_toc_paragraph(p):
+                continue
+            heading_depth = get_effective_heading_depth(
+                p,
+                style_outline,
+                style_based,
+                style_heading_rank,
+            )
+            if heading_depth is None:
+                continue
+
+            while len(counters) <= heading_depth:
+                counters.append(0)
+            counters = counters[: heading_depth + 1]
+            counters[heading_depth] += 1
+
+            candidate_parts = counters[:]
+            if candidate_parts == target_number_parts:
+                return i, heading_depth, get_pStyle(p), get_ilvl(p)
+
+    return None
+
+
 # ---------- 章節範圍定位（outlineLvl 優先，ilvl 備援），支援 ignore_toc ----------
 def find_section_range_children(
     body_children: list[etree._Element],
@@ -1394,14 +1528,26 @@ def find_section_range_children(
             break
 
     if start_idx is None:
-        if fallback_start_idx is not None:
+        if start_heading_is_number and start_number_parts:
+            ordinal_start = _find_structural_heading_by_ordinal(
+                body_children,
+                target_number_parts=start_number_parts,
+                style_outline=style_outline,
+                style_based=style_based,
+                style_heading_rank=style_heading_rank,
+                ignore_toc=ignore_toc,
+            )
+            if ordinal_start is not None:
+                start_idx, start_heading_depth, start_style, start_ilvl = ordinal_start
+                found_kind = "exact"
+        if start_idx is None and fallback_start_idx is not None:
             start_idx = fallback_start_idx
             start_heading_depth = fallback_start_heading_depth
             start_style = fallback_start_style
             start_ilvl = fallback_start_ilvl
             start_number_parts = fallback_start_number_parts or start_number_parts
             found_kind = "exact"
-        else:
+        if start_idx is None:
             raise RuntimeError(f"找不到章節起點：{start_number} / {start_heading_text}")
 
     if requested_start_depth is not None:
@@ -1425,10 +1571,14 @@ def find_section_range_children(
             txt = normalize_text(get_all_text(p))
 
             if has_explicit_end:
-                if match_heading_by_number_and_title(
+                if _matches_explicit_heading_boundary(
+                    p,
                     paragraph_text=txt,
                     heading_number=explicit_end_number,
                     heading_title=explicit_end_title,
+                    style_outline=style_outline,
+                    style_based=style_based,
+                    style_heading_rank=style_heading_rank,
                 ):
                     if include_end_chapter:
                         end_heading_depth = get_effective_heading_depth(
@@ -1456,6 +1606,7 @@ def find_section_range_children(
                                     reference_heading_depth=end_heading_depth,
                                     reference_style=end_style,
                                     reference_ilvl=end_ilvl,
+                                    paragraph_text=next_txt,
                                     style_outline=style_outline,
                                     style_based=style_based,
                                     style_heading_rank=style_heading_rank,
@@ -1481,6 +1632,7 @@ def find_section_range_children(
                 reference_heading_depth=start_heading_depth,
                 reference_style=start_style,
                 reference_ilvl=start_ilvl,
+                paragraph_text=txt,
                 style_outline=style_outline,
                 style_based=style_based,
                 style_heading_rank=style_heading_rank,

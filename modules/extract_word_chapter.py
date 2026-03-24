@@ -120,13 +120,50 @@ def _extract_leading_number_parts(paragraph_text: str) -> list[int]:
         return []
     return _parse_number_parts(match.group(1).replace("．", "."))
 
-def _is_plain_text_number_boundary(start_parts: list[int], candidate_parts: list[int]) -> bool:
+def _extract_numbered_heading_remainder(paragraph_text: str) -> str:
+    txt = normalize_text(paragraph_text)
+    match = re.match(r"^(\d+(?:[\.．]\d+)*)", txt)
+    if not match:
+        return ""
+    return txt[match.end():].strip()
+
+def _looks_like_plain_text_heading(paragraph_text: str) -> bool:
+    text = normalize_text(paragraph_text)
+    if not _extract_leading_number_parts(text):
+        return False
+    if not _looks_like_heading_boundary_text(text):
+        return False
+
+    remainder = _extract_numbered_heading_remainder(text)
+    if not remainder:
+        return True
+
+    words = remainder.split()
+    if len(words) >= 2:
+        return True
+
+    token = words[0]
+    if token[:1].isupper() or token.isupper():
+        return True
+    if re.search(r"[\u3400-\u9fff]", token):
+        return True
+
+    return False
+
+def _is_plain_text_number_boundary(
+    start_parts: list[int],
+    candidate_parts: list[int],
+    *,
+    allow_cross_prefix_same_depth: bool = False,
+) -> bool:
     if not start_parts or not candidate_parts:
         return False
     if len(candidate_parts) > len(start_parts):
         return False
     if candidate_parts == start_parts:
         return False
+    if allow_cross_prefix_same_depth and len(candidate_parts) == len(start_parts):
+        return True
 
     prefix_len = len(candidate_parts) - 1
     if prefix_len and candidate_parts[:prefix_len] != start_parts[:prefix_len]:
@@ -1315,8 +1352,14 @@ def _matches_plain_text_boundary(
 ) -> bool:
     if reference_style is not None or reference_ilvl is not None or is_inside_table(p):
         return False
+    if not _looks_like_plain_text_heading(paragraph_text):
+        return False
     candidate_parts = _extract_leading_number_parts(paragraph_text)
-    return _is_plain_text_number_boundary(reference_number_parts, candidate_parts)
+    return _is_plain_text_number_boundary(
+        reference_number_parts,
+        candidate_parts,
+        allow_cross_prefix_same_depth=True,
+    )
 
 
 def _extract_boundary_number_parts(
@@ -1354,6 +1397,8 @@ def _looks_like_number_boundary_candidate(
     if _CAPTION_LIKE_SUBTITLE_RE.match(text):
         return False
     if len(text.split()) > 16 and text.endswith((".", "。", ";", "；")):
+        return False
+    if _extract_leading_number_parts(text) and not _looks_like_plain_text_heading(text):
         return False
     if get_effective_heading_depth(p, style_outline, style_based, style_heading_rank) is not None:
         return True
@@ -1400,7 +1445,11 @@ def _find_number_boundary_fallback_index(
                 body_children=body_children,
                 numbering_xml=numbering_xml,
             )
-            if _is_plain_text_number_boundary(reference_number_parts, candidate_parts):
+            if _is_plain_text_number_boundary(
+                reference_number_parts,
+                candidate_parts,
+                allow_cross_prefix_same_depth=True,
+            ):
                 return j
 
     return None

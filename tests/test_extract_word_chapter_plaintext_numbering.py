@@ -69,6 +69,65 @@ def test_plain_text_numbering_supports_fullwidth_dot() -> None:
     assert (start_idx, end_idx) == (0, 2)
 
 
+def test_plain_text_numbering_stops_at_same_depth_heading_across_new_top_level() -> None:
+    body_children = [
+        _paragraph("1.1 Scope"),
+        _paragraph("body A"),
+        _paragraph("2.1 Device description"),
+        _paragraph("body B"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Scope",
+        start_number="1.1",
+        style_outline={},
+        style_based={},
+    )
+
+    assert (start_idx, end_idx) == (0, 2)
+
+
+def test_plain_text_numbering_stops_at_same_depth_subheading_across_new_top_level() -> None:
+    body_children = [
+        _paragraph("1.1.1 Scope"),
+        _paragraph("body A"),
+        _paragraph("2.1.1 Device description"),
+        _paragraph("body B"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Scope",
+        start_number="1.1.1",
+        style_outline={},
+        style_based={},
+    )
+
+    assert (start_idx, end_idx) == (0, 2)
+
+
+def test_plain_text_numbering_ignores_numeric_body_value_before_actual_cross_prefix_heading() -> None:
+    body_children = [
+        _paragraph("1.1 Scope"),
+        _paragraph("body A"),
+        _paragraph("2.1 mg/mL"),
+        _paragraph("body B"),
+        _paragraph("2.1 Device description"),
+        _paragraph("body C"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Scope",
+        start_number="1.1",
+        style_outline={},
+        style_based={},
+    )
+
+    assert (start_idx, end_idx) == (0, 4)
+
+
 def test_auto_numbered_heading_can_find_numeric_chapter_without_title() -> None:
     body_children = [
         _heading("Introduction"),

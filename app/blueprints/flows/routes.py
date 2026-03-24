@@ -138,6 +138,39 @@ def _prune_flow_versions(versions_dir: str, versions: list[dict]) -> list[dict]:
     return kept
 
 
+def _delete_flow_version_files(versions_dir: str, versions: list[dict]) -> None:
+    for item in versions:
+        base_name = item.get("base_name")
+        if not base_name:
+            continue
+        path = os.path.join(versions_dir, f"{base_name}.json")
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            current_app.logger.exception("Failed to remove flow version file")
+
+
+def _flow_version_source_label(source: str) -> str:
+    mapping = {
+        "auto_save": "自動保存",
+        "before_restore": "回復前備份",
+        "manual_snapshot": "手動版本",
+    }
+    return mapping.get((source or "").strip(), (source or "").strip() or "未知")
+
+
+def _flow_version_display_name(name: str, source: str) -> str:
+    raw_name = (name or "").strip()
+    source_label = _flow_version_source_label(source)
+    if not raw_name:
+        return source_label
+    auto_prefixes = ("自動保存 ", "回復前備份 ")
+    if raw_name.startswith(auto_prefixes):
+        return source_label
+    return raw_name
+
+
 def _snapshot_flow_version(
     flow_dir: str,
     flow_name: str,
@@ -147,6 +180,7 @@ def _snapshot_flow_version(
     actor_label: str = "",
     version_name: str | None = None,
     force: bool = False,
+    extra_metadata: dict | None = None,
 ) -> dict | None:
     normalized = _normalize_flow_payload(payload)
     versions_dir = _flow_versions_dir(flow_dir, flow_name)
@@ -163,10 +197,7 @@ def _snapshot_flow_version(
     version_id = f"{timestamp}_{unique_suffix}"
     display_name = (version_name or "").strip()
     if not display_name:
-        if source == "before_restore":
-            display_name = f"回復前備份 {created_ts.strftime('%Y-%m-%d %H:%M:%S')}"
-        else:
-            display_name = f"自動保存 {created_ts.strftime('%Y-%m-%d %H:%M:%S')}"
+        display_name = _flow_version_source_label(source)
     slug = sanitize_version_slug(display_name)
     base_name = f"{version_id}_{slug}" if slug else version_id
 
@@ -176,6 +207,12 @@ def _snapshot_flow_version(
         json.dump(normalized, f, ensure_ascii=False, indent=2)
 
     versions = [v for v in versions if v.get("id") != version_id]
+    if source == "before_restore":
+        restore_backups = [v for v in versions if (v.get("source") or "").strip() == "before_restore"]
+        if restore_backups:
+            _delete_flow_version_files(versions_dir, restore_backups)
+            backup_ids = {v.get("id") for v in restore_backups}
+            versions = [v for v in versions if v.get("id") not in backup_ids]
     versions.append(
         {
             "id": version_id,
@@ -187,6 +224,7 @@ def _snapshot_flow_version(
             "flow_name": flow_name,
             "source": source,
             "content_hash": content_hash,
+            **(extra_metadata or {}),
         }
     )
     versions.sort(key=lambda v: v.get("created_at", ""), reverse=True)
@@ -216,6 +254,8 @@ def _build_flow_version_context(task_id: str, flow_name: str, flow_dir: str) -> 
     metadata = load_version_metadata(versions_dir)
     context = []
     for item in sorted(metadata.get("versions", []), key=lambda v: v.get("created_at", ""), reverse=True):
+        if (item.get("source") or "").strip() != "manual_snapshot":
+            continue
         version_id = item.get("id")
         base_name = item.get("base_name")
         if not version_id or not base_name:
@@ -233,10 +273,11 @@ def _build_flow_version_context(task_id: str, flow_name: str, flow_dir: str) -> 
         context.append(
             {
                 "id": version_id,
-                "name": item.get("name") or version_id,
+                "name": _flow_version_display_name(item.get("name") or "", item.get("source") or ""),
                 "created_at_display": created_display,
                 "created_by": item.get("created_by") or "",
-                "source": item.get("source") or "",
+                "source": _flow_version_source_label(item.get("source") or ""),
+                "view_url": url_for("flows_bp.flow_builder", task_id=task_id, flow=flow_name, version_id=version_id),
                 "download_url": url_for("flows_bp.download_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
                 "restore_url": url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
             }
@@ -247,7 +288,39 @@ def _build_flow_version_context(task_id: str, flow_name: str, flow_dir: str) -> 
 def _flow_version_count(flow_dir: str, flow_name: str) -> int:
     versions_dir = _flow_versions_dir(flow_dir, flow_name)
     metadata = load_version_metadata(versions_dir)
-    return len(metadata.get("versions", []))
+    return sum(1 for item in metadata.get("versions", []) if (item.get("source") or "").strip() == "manual_snapshot")
+
+
+def _latest_restore_backup_context(task_id: str, flow_name: str, flow_dir: str) -> dict | None:
+    versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    metadata = load_version_metadata(versions_dir)
+    backups = [
+        item
+        for item in sorted(metadata.get("versions", []), key=lambda v: v.get("created_at", ""), reverse=True)
+        if (item.get("source") or "").strip() == "before_restore"
+    ]
+    for item in backups:
+        base_name = item.get("base_name")
+        version_id = item.get("id")
+        if not base_name or not version_id:
+            continue
+        version_path = os.path.join(versions_dir, f"{base_name}.json")
+        if not os.path.exists(version_path):
+            continue
+        created_at = item.get("created_at", "")
+        created_display = created_at
+        if created_at:
+            try:
+                created_display = datetime.fromisoformat(created_at).strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                created_display = created_at
+        return {
+            "id": version_id,
+            "name": _flow_version_display_name(item.get("name") or "", item.get("source") or ""),
+            "created_at_display": created_display,
+            "restore_url": url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
+        }
+    return None
 
 
 def _touch_task_last_edit(task_id: str, work_id: str | None = None, label: str | None = None) -> None:
@@ -1010,9 +1083,37 @@ def flow_builder(task_id):
     apply_formatting = DEFAULT_APPLY_FORMATTING
     output_filename = ""
     loaded_name = request.args.get("flow")
+    version_id = (request.args.get("version_id") or "").strip()
+    is_version_preview = False
+    preview_version = None
+    latest_restore_backup = None
     job_id = request.args.get("job")
     if loaded_name:
         p = os.path.join(flow_dir, f"{loaded_name}.json")
+        if version_id:
+            loaded_version = _load_flow_version_entry(flow_dir, loaded_name, version_id)
+            if not loaded_version:
+                abort(404)
+            p, version_meta = loaded_version
+            is_version_preview = True
+            created_at = version_meta.get("created_at", "")
+            created_display = created_at
+            if created_at:
+                try:
+                    created_display = datetime.fromisoformat(created_at).strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    created_display = created_at
+            preview_version = {
+                "id": version_meta.get("id") or version_id,
+                "name": _flow_version_display_name(version_meta.get("name") or "", version_meta.get("source") or ""),
+                "source": _flow_version_source_label(version_meta.get("source") or ""),
+                "created_at_display": created_display,
+                "back_to_flow_url": url_for("flows_bp.flow_builder", task_id=task_id, flow=loaded_name),
+                "restore_url": url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name=loaded_name, version_id=version_meta.get("id") or version_id),
+            }
+        else:
+            if (request.args.get("show_restore_notice") or "").strip() == "1":
+                latest_restore_backup = _latest_restore_backup_context(task_id, loaded_name, flow_dir)
         if os.path.exists(p):
             with open(p, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -1066,6 +1167,9 @@ def flow_builder(task_id):
         line_spacing=line_spacing,
         apply_formatting=apply_formatting,
         output_filename=output_filename,
+        is_version_preview=is_version_preview,
+        preview_version=preview_version,
+        latest_restore_backup=latest_restore_backup,
         document_format_presets=DOCUMENT_FORMAT_PRESETS,
         line_spacing_choices=LINE_SPACING_CHOICES,
         flow_pagination=flow_pagination,
@@ -1704,6 +1808,7 @@ def run_flow(task_id):
     action = request.form.get("action", "run")
     flow_name = request.form.get("flow_name", "").strip()
     save_as_name = request.form.get("save_as_name", "").strip()
+    version_name = request.form.get("version_name", "").strip()
     target_flow_name = save_as_name if action == "save_as" else flow_name
     if flow_name:
         name_error = _validate_flow_name(flow_name)
@@ -1715,6 +1820,13 @@ def run_flow(task_id):
         name_error = _validate_flow_name(target_flow_name)
         if name_error:
             return name_error, 400
+    if action == "save_version":
+        if not flow_name:
+            return "缺少流程名稱", 400
+        if not version_name:
+            return "缺少版本名稱", 400
+        if len(version_name) > 80:
+            return "版本名稱最多 80 字", 400
     output_filename, output_filename_error = normalize_docx_output_filename(
         request.form.get("output_filename", ""),
         default="",
@@ -1766,7 +1878,7 @@ def run_flow(task_id):
     os.makedirs(flow_dir, exist_ok=True)
     if action == "save" and not flow_name:
         return "缺少流程名稱", 400
-    should_save_flow = action in {"save", "save_as"} or (action == "run" and bool(flow_name))
+    should_save_flow = action in {"save", "save_as", "save_version"} or (action == "run" and bool(flow_name))
     if should_save_flow:
         path = os.path.join(flow_dir, f"{target_flow_name}.json")
         if action == "save_as" and os.path.exists(path):
@@ -1791,25 +1903,25 @@ def run_flow(task_id):
             "output_filename": output_filename,
         }
         _work_id, actor_label = _get_actor_info()
-        if (
-            action != "save_as"
-            and existing_payload is not None
-            and _flow_content_hash(existing_payload) != _flow_content_hash(data)
-        ):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        if action == "save_version":
             _snapshot_flow_version(
                 flow_dir,
                 target_flow_name,
-                _normalize_flow_payload(existing_payload),
-                source="auto_save",
+                data,
+                source="manual_snapshot",
                 actor_label=actor_label,
+                version_name=version_name,
+                force=True,
             )
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
         _touch_task_last_edit(task_id)
         if action == "save":
             fpage = request.form.get("fpage")
             return redirect(url_for("flows_bp.flow_builder", task_id=task_id, fpage=fpage))
         if action == "save_as":
+            return redirect(url_for("flows_bp.flow_builder", task_id=task_id, flow=target_flow_name))
+        if action == "save_version":
             return redirect(url_for("flows_bp.flow_builder", task_id=task_id, flow=target_flow_name))
 
     runtime_steps = []
@@ -2046,15 +2158,6 @@ def update_flow_format(task_id, flow_name):
             existing_payload = json.load(f)
     except Exception:
         existing_payload = None
-    if existing_payload is not None and _flow_content_hash(existing_payload) != _flow_content_hash(payload):
-        _snapshot_flow_version(
-            flow_dir,
-            flow_name,
-            _normalize_flow_payload(existing_payload),
-            source="auto_save",
-            actor_label=actor_label,
-        )
-
     with open(flow_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
@@ -2124,6 +2227,54 @@ def list_flow_versions(task_id, flow_name):
     return {"ok": True, "versions": _build_flow_version_context(task_id, flow_name, flow_dir)}
 
 
+@flows_bp.post("/api/tasks/<task_id>/flows/<flow_name>/versions", endpoint="create_flow_version")
+def create_flow_version(task_id, flow_name):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(tdir, "flows")
+    flow_path = os.path.join(flow_dir, f"{flow_name}.json")
+    if not os.path.exists(flow_path):
+        return {"ok": False, "error": "Flow not found"}, 404
+
+    if request.is_json:
+        payload_data = request.get_json(silent=True) or {}
+        version_name = (payload_data.get("version_name") or "").strip()
+    else:
+        version_name = (request.form.get("version_name") or "").strip()
+    if not version_name:
+        return {"ok": False, "error": "缺少版本名稱"}, 400
+    if len(version_name) > 80:
+        return {"ok": False, "error": "版本名稱長度不可超過 80 字"}, 400
+
+    try:
+        with open(flow_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception:
+        return {"ok": False, "error": "Flow file is invalid"}, 400
+
+    _work_id, actor_label = _get_actor_info()
+    saved = _snapshot_flow_version(
+        flow_dir,
+        flow_name,
+        _normalize_flow_payload(payload),
+        source="manual_snapshot",
+        actor_label=actor_label,
+        version_name=version_name,
+        force=True,
+    )
+    if not saved:
+        return {"ok": False, "error": "建立版本失敗"}, 400
+    _touch_task_last_edit(task_id)
+    return {
+        "ok": True,
+        "version": {
+            "id": saved.get("id"),
+            "name": saved.get("name") or version_name,
+        },
+        "version_count": _flow_version_count(flow_dir, flow_name),
+        "versions": _build_flow_version_context(task_id, flow_name, flow_dir),
+    }
+
+
 @flows_bp.get("/tasks/<task_id>/flows/<flow_name>/versions/<version_id>/download", endpoint="download_flow_version")
 def download_flow_version(task_id, flow_name, version_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -2156,17 +2307,26 @@ def restore_flow_version(task_id, flow_name, version_id):
         return {"ok": False, "error": "Version file is invalid"}, 400
 
     _work_id, actor_label = _get_actor_info()
-    _snapshot_flow_version(
+    backup_entry = _snapshot_flow_version(
         flow_dir,
         flow_name,
         _normalize_flow_payload(current_payload),
         source="before_restore",
         actor_label=actor_label,
+        version_name=f"回復前備份（目標：{version.get('name') or version_id}）",
         force=True,
+        extra_metadata={
+            "restored_to_version_id": version.get("id") or version_id,
+            "restored_to_version_name": version.get("name") or version_id,
+        },
     )
     with open(flow_path, "w", encoding="utf-8") as f:
         json.dump(_normalize_flow_payload(restore_payload), f, ensure_ascii=False, indent=2)
     _touch_task_last_edit(task_id)
+    if (version.get("source") or "").strip() == "before_restore":
+        flash("已成功撤銷上次回復。", "success")
+    else:
+        flash(f"已成功回復版本「{version.get('name') or version_id}」。", "success")
     return {
         "ok": True,
         "restored_version": {

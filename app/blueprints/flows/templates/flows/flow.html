@@ -31,18 +31,54 @@
                     <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
                     <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
                     <input type="hidden" name="save_as_name" id="saveAsNameInput" value="">
+                    <input type="hidden" name="version_name" id="versionNameInput" value="">
 
+
+                    {% if is_version_preview and preview_version %}
+                    <div class="mx-4 mt-4 mb-0 rounded-3 border px-3 py-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3" style="background: var(--bs-blue-50); border-color: var(--bs-blue-100);">
+                        <div>
+                            <div class="fw-bold text-primary mb-1">唯讀模式</div>
+                            <div class="small text-muted">
+                                正在檢視流程 <code class="text-primary fw-bold">{{ loaded_name }}</code> 的版本 <code class="text-primary fw-bold">{{ preview_version.name }}</code>
+                                <div>建立時間 : <span class="font-monospace">{{ preview_version.created_at_display }}</span></div>
+                            </div>
+                            <!-- <div class="small text-muted mt-1">此模式僅供檢視，不能新增、刪除、修改或保存流程。</div> -->
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-primary fw-bold" type="button" id="restorePreviewVersionBtn" data-restore-url="{{ preview_version.restore_url }}" data-version-name="{{ preview_version.name }}">
+                              回復此版本
+                            </button>
+                            <a class="btn btn-outline-secondary fw-bold" href="{{ preview_version.back_to_flow_url }}">返回流程編輯</a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if not is_version_preview and latest_restore_backup %}
+                    <div class="mx-4 mt-4 mb-0 rounded-3 border px-3 py-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3" style="background: var(--bs-blue-50); border-color: var(--bs-blue-100);">
+                        <div>
+                            <div class="fw-bold text-primary mb-1">撤銷版本回復</div>
+                            <div class="small text-muted">
+                                系統會先備份最近一個版本後再進行回復；若不需要回復，請直接點擊「保存流程」
+                                <div>建立時間 : <span class="font-monospace">{{ latest_restore_backup.created_at_display }}</span></div>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-outline-primary fw-bold" type="button" id="undoLastRestoreBtn" data-restore-url="{{ latest_restore_backup.restore_url }}" data-version-name="{{ latest_restore_backup.name }}">
+                                撤銷
+                            </button>
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <div class="px-4 py-4 border-bottom">
                         <div class="row g-3">
                             <div class="col-12 col-lg-7 col-xl-6">
                                 <label class="form-label small fw-bold text-uppercase text-muted">流程名稱</label>
-                                <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" pattern="[^/\\\\]+" title="流程名稱不可包含 / 或 \\" required>
+                                <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" pattern="[^/\\\\]+" title="流程名稱不可包含 / 或 \\" required {% if is_version_preview %}disabled{% endif %}>
                                 <div class="form-text text-end small" id="flowNameCount">0/50</div>
                             </div>
                             <div class="col-12 col-lg-7 col-xl-6">
                                 <label class="form-label small fw-bold text-uppercase text-muted">輸出檔名</label>
-                                <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="留白使用預設下載檔名" value="{{ output_filename or '' }}" maxlength="120" title='可輸入檔名，系統會自動補上 .docx'>
+                                <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="留白使用預設下載檔名" value="{{ output_filename or '' }}" maxlength="120" title='可輸入檔名，系統會自動補上 .docx' {% if is_version_preview %}disabled{% endif %}>
                                 <div class="form-text text-end small">自訂輸出檔名，副檔名會自動補為 <code>.docx</code></div>
                             </div>
                         </div>
@@ -52,7 +88,7 @@
                     <div class="flow-toolbar px-4 py-3 bg-light bg-opacity-50 border-bottom d-flex flex-column flex-lg-row justify-content-between gap-3">
                         <div class="d-flex flex-wrap gap-2">
                             <div class="dropdown">
-                                <button class="btn btn-white border bg-white shadow-sm dropdown-toggle d-inline-flex align-items-center gap-1" id="addStepDropdownBtn" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport">
+                                <button class="btn btn-white border bg-white shadow-sm dropdown-toggle d-inline-flex align-items-center gap-1" id="addStepDropdownBtn" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" {% if is_version_preview %}disabled{% endif %}>
                                     <i class="bi bi-plus-lg text-primary"></i>
                                     新增步驟
                                 </button>
@@ -62,7 +98,7 @@
                                     {% endfor %}
                                 </ul>
                             </div>
-                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#templateModal">
+                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="openTemplateModalBtn" data-bs-toggle="modal" data-bs-target="#templateModal" {% if is_version_preview %}disabled{% endif %}>
                                 <i class="bi bi-search text-primary"></i>
                                 模板解析
                             </button>
@@ -80,15 +116,15 @@
                             </div>
                         </div>
                         <div class="d-flex flex-wrap gap-2">
-                            <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" type="submit" name="action" value="save">
+                            <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" id="saveFlowBtn" type="submit" name="action" value="save" {% if is_version_preview %}disabled{% endif %}>
                                 <i class="bi bi-save"></i>
                                 保存流程
                             </button>
-                            <button class="btn btn-white border d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn">
+                            <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn" {% if is_version_preview %}disabled{% endif %}>
                                 <i class="bi bi-files"></i>
                                 另存流程
                             </button>
-                            <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold px-3" type="submit" name="action" value="run">
+                            <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold px-3" id="runFlowBtn" type="submit" name="action" value="run" {% if is_version_preview %}disabled{% endif %}>
                                 <i class="bi bi-play-fill"></i>
                                 執行流程
                             </button>
@@ -128,7 +164,7 @@
                                 {% for f in flows %}
                                 <tr data-flow="{{ f.name }}">
                                     <td class="text-start ps-4">
-                                        <span class="fw-bold text-primary" style="font-size: 0.875rem;">{{ f.name }}</span>
+                                        <span class="fw-bold text-primary flow-name-truncate" style="font-size: 0.875rem;" title="{{ f.name }}">{{ f.name }}</span>
                                     </td>
                                     <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ f.created }}</td>
                                     <td>
@@ -399,6 +435,28 @@
   </div>
 </div>
 
+<div class="modal fade" id="saveVersionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">另存版本</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-1">
+          <label for="saveVersionInput" class="form-label small fw-bold text-uppercase text-muted">版本名稱 (最多 50 字)</label>
+          <input type="text" class="form-control form-control-custom" id="saveVersionInput" maxlength="50" required>
+          <div class="form-text text-end small" id="saveVersionCount">0/50</div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary fw-bold" id="saveVersionSubmitBtn">確定</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="flowVersionsModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
@@ -409,7 +467,13 @@
       <div class="modal-body p-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div class="small text-muted">目前流程：<code class="text-primary fw-bold" id="flowVersionsCurrentName">-</code></div>
-          <div class="small text-muted" id="flowVersionsStatus"></div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="small text-muted" id="flowVersionsStatus"></div>
+            <button type="button" class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1 fw-bold" id="openCreateVersionModalBtn">
+              <i class="bi bi-bookmark-plus"></i>
+              建立版本
+            </button>
+          </div>
         </div>
         <div class="table-responsive border rounded-3 overflow-hidden bg-white shadow-sm">
           <table class="table mb-0 align-middle">
@@ -417,13 +481,12 @@
               <tr>
                 <th class="ps-4 small fw-bold text-uppercase text-muted py-3">版本名稱</th>
                 <th class="small fw-bold text-uppercase text-muted py-3">建立時間</th>
-                <th class="small fw-bold text-uppercase text-muted py-3">來源</th>
                 <th class="small fw-bold text-uppercase text-muted py-3">建立者</th>
-                <th class="pe-4 small fw-bold text-uppercase text-muted py-3 text-end">操作</th>
+                <th class="pe-4 small fw-bold text-uppercase text-muted py-3 text-center">操作</th>
               </tr>
             </thead>
             <tbody id="flowVersionsTableBody">
-              <tr><td colspan="5" class="text-center py-5 text-muted">尚未載入版本資料</td></tr>
+              <tr><td colspan="4" class="text-center py-5 text-muted">尚未載入版本資料</td></tr>
             </tbody>
           </table>
         </div>
@@ -532,6 +595,20 @@
   display: inline-flex;
   align-items: center;
   line-height: 1.2;
+}
+.flow-version-name-truncate {
+  display: block;
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.flow-name-truncate {
+  display: block;
+  max-width: 350px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .step-toggle[aria-expanded="true"] .transition-icon {
   transform: rotate(90deg);
@@ -723,6 +800,8 @@ const ORDERED_STEP_KEYS = [
 ];
 const AVAILABLE_FILES = {{ files|tojson }};
 const PRESET_FLOW = {{ preset|tojson }};
+const IS_VERSION_PREVIEW = {{ is_version_preview|tojson }};
+const PREVIEW_VERSION = {{ preview_version|tojson }};
 const TEMPLATE_PARSE_URL = "{{ url_for('tasks_bp.parse_template_doc', task_id=task.id) }}";
 const TEMPLATE_FILE = {{ template_file|tojson }};
 const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
@@ -1156,6 +1235,9 @@ function renderTemplatePreview(){
 }
 
 async function loadTemplateFromServer(formData){
+  if (IS_VERSION_PREVIEW) {
+    throw new Error("版本檢視為唯讀模式");
+  }
   if (templateStatus) templateStatus.textContent = "";
   const resp = await fetch(TEMPLATE_PARSE_URL, { method: "POST", body: formData });
   let data = {};
@@ -1176,18 +1258,33 @@ async function loadTemplateFromServer(formData){
 let isInitialising = true;
 let isDirty = false;
 function markDirty(){
+  if (IS_VERSION_PREVIEW) return;
   if (!isInitialising) isDirty = true;
 }
 window.addEventListener('beforeunload', function(e){
+  if (IS_VERSION_PREVIEW) return;
   if (!isDirty) return;
   e.preventDefault();
   e.returnValue = '';
 });
 const flowForm = document.getElementById('flow_form');
 const flowNameInput = document.getElementById('flowNameInput');
+const outputFilenameInput = document.getElementById('outputFilenameInput');
 const saveAsNameInput = document.getElementById('saveAsNameInput');
 const saveAsSubmitTrigger = document.getElementById('saveAsSubmitTrigger');
+const versionNameInput = document.getElementById('versionNameInput');
+const restorePreviewVersionBtn = document.getElementById('restorePreviewVersionBtn');
+const undoLastRestoreBtn = document.getElementById('undoLastRestoreBtn');
+const addStepDropdownBtn = document.getElementById('addStepDropdownBtn');
+const openTemplateModalBtn = document.getElementById('openTemplateModalBtn');
+const saveFlowBtn = document.getElementById('saveFlowBtn');
+const runFlowBtn = document.getElementById('runFlowBtn');
 flowForm.addEventListener('submit', (e) => {
+  if (IS_VERSION_PREVIEW) {
+    e.preventDefault();
+    alert('版本檢視為唯讀模式，不能修改或保存流程');
+    return;
+  }
   flowForm.querySelectorAll(".chapter-ref").forEach(syncChapterRefInput);
   const action = e.submitter?.value;
   if ((action === 'save' || action === 'run') && !flowForm.elements['flow_name'].value.trim()) {
@@ -1484,6 +1581,7 @@ async function loadStepFileEntries(rel = ""){
 }
 
 function openStepFileBrowser(input, accept){
+  if (IS_VERSION_PREVIEW) return;
   if (!input || !stepFileModalEl || typeof bootstrap === "undefined") return;
   const parsed = parseFileAccept(accept);
   stepFileState.activeInput = input;
@@ -1564,6 +1662,7 @@ if (stepFileApplyBtn){
 }
 
 document.addEventListener("click", (event) => {
+  if (IS_VERSION_PREVIEW) return;
   const btn = event.target.closest(".step-file-browse-btn");
   if (!btn) return;
   const target = btn.getAttribute("data-target");
@@ -1595,6 +1694,7 @@ const normalizePreset = (raw = {}) => {
 };
 
 function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
+  if (IS_VERSION_PREVIEW && !isInitialising) return;
   const preset = normalizePreset(rawPreset || {});
   const spec = SUPPORTED_STEPS[typeKey];
   const sid = genId();
@@ -1869,6 +1969,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     };
     card.addEventListener("input", updateSummary);
     card.addEventListener("change", updateSummary);
+    if (IS_VERSION_PREVIEW) applyReadonlyToStepCard(card);
 
     return;
   }
@@ -2261,13 +2362,40 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   };
   card.addEventListener("input", updateSummary);
   card.addEventListener("change", updateSummary);
+  if (IS_VERSION_PREVIEW) applyReadonlyToStepCard(card);
+}
+function applyReadonlyToStepCard(card){
+  if (!card) return;
+  const actionGroup = card.querySelector('.card-header > .btn-group');
+  if (actionGroup) actionGroup.classList.add('d-none');
+  card.querySelectorAll('input, select, textarea, button').forEach((el) => {
+    if (el.type === 'hidden') return;
+    el.disabled = true;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+      el.readOnly = true;
+    }
+  });
+}
+function applyReadonlyPreviewMode(){
+  if (!IS_VERSION_PREVIEW || !flowForm) return;
+  flowForm.classList.add('version-preview-mode');
+  if (flowNameInput) flowNameInput.disabled = true;
+  if (outputFilenameInput) outputFilenameInput.disabled = true;
+  if (addStepDropdownBtn) addStepDropdownBtn.disabled = true;
+  if (openTemplateModalBtn) openTemplateModalBtn.disabled = true;
+  if (saveFlowBtn) saveFlowBtn.disabled = true;
+  if (saveAsFlowBtn) saveAsFlowBtn.disabled = true;
+  if (runFlowBtn) runFlowBtn.disabled = true;
+  flowForm.querySelectorAll('#steps .card').forEach(applyReadonlyToStepCard);
 }
 function removeStep(sid){
+  if (IS_VERSION_PREVIEW) return;
   const el = document.querySelector(`.card[data-sid="${sid}"]`);
   if (el) el.remove();
   updateOrder();
 }
 function moveStep(sid, direction){
+  if (IS_VERSION_PREVIEW) return;
   const el = document.querySelector(`.card[data-sid="${sid}"]`);
   if (!el) return;
   const sibling = direction === 'up' ? el.previousElementSibling : el.nextElementSibling;
@@ -2308,14 +2436,22 @@ const saveAsFlowBtn = document.getElementById('saveAsFlowBtn');
 const saveAsFlowInput = document.getElementById('saveAsFlowInput');
 const saveAsFlowCount = document.getElementById('saveAsFlowCount');
 const saveAsFlowSubmitBtn = document.getElementById('saveAsFlowSubmitBtn');
+const saveVersionModalEl = document.getElementById('saveVersionModal');
+const saveVersionInput = document.getElementById('saveVersionInput');
+const saveVersionCount = document.getElementById('saveVersionCount');
+const saveVersionSubmitBtn = document.getElementById('saveVersionSubmitBtn');
 const flowVersionsModalEl = document.getElementById('flowVersionsModal');
 const flowVersionsCurrentName = document.getElementById('flowVersionsCurrentName');
 const flowVersionsStatus = document.getElementById('flowVersionsStatus');
 const flowVersionsTableBody = document.getElementById('flowVersionsTableBody');
+const openCreateVersionModalBtn = document.getElementById('openCreateVersionModalBtn');
 let flowVersionsModal = null;
 let activeFlowVersionName = '';
 let renameModalInstance = null;
 let saveAsModalInstance = null;
+let saveVersionModalInstance = null;
+let returnToFlowVersionsAfterSaveVersion = false;
+let pendingFlowNameForVersionModal = '';
 
 function buildSaveAsNameSuggestion() {
   const base = (flowNameInput?.value || "").trim() || "新流程";
@@ -2324,7 +2460,11 @@ function buildSaveAsNameSuggestion() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const addStepDropdownBtn = document.getElementById('addStepDropdownBtn');
+  const currentUrl = new URL(window.location.href);
+  if (currentUrl.searchParams.get('show_restore_notice') === '1') {
+    currentUrl.searchParams.delete('show_restore_notice');
+    window.history.replaceState({}, document.title, currentUrl.toString());
+  }
   if (addStepDropdownBtn && typeof bootstrap !== 'undefined' && bootstrap.Dropdown) {
     bootstrap.Dropdown.getOrCreateInstance(addStepDropdownBtn, {
       boundary: document.body,
@@ -2368,6 +2508,12 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', () => {
   if (flowVersionsModalEl && typeof bootstrap !== 'undefined') {
     flowVersionsModal = new bootstrap.Modal(flowVersionsModalEl);
+    flowVersionsModalEl.addEventListener('hidden.bs.modal', () => {
+      if (!pendingFlowNameForVersionModal || !saveVersionModalInstance) return;
+      saveVersionModalInstance.show();
+      setTimeout(() => saveVersionInput?.focus(), 150);
+      pendingFlowNameForVersionModal = '';
+    });
   }
   document.querySelectorAll('.flow-version-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2406,6 +2552,61 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+document.addEventListener('DOMContentLoaded', () => {
+  if (saveVersionModalEl && typeof bootstrap !== 'undefined') {
+    saveVersionModalInstance = new bootstrap.Modal(saveVersionModalEl);
+    saveVersionModalEl.addEventListener('hidden.bs.modal', () => {
+      if (!returnToFlowVersionsAfterSaveVersion) return;
+      returnToFlowVersionsAfterSaveVersion = false;
+      const flowName = activeFlowVersionName || flowNameInput?.value?.trim() || '';
+      if (flowName) openFlowVersions(flowName);
+    });
+
+    saveVersionInput.addEventListener('input', () => {
+      const len = saveVersionInput.value.length;
+      const max = saveVersionInput.getAttribute('maxlength');
+      saveVersionCount.textContent = `${len}/${max}`;
+    });
+
+    saveVersionSubmitBtn.addEventListener('click', () => {
+      const flowName = activeFlowVersionName || flowNameInput?.value?.trim() || '';
+      const versionName = saveVersionInput.value.trim();
+      if (!flowName) {
+        alert('請先選擇流程');
+        return;
+      }
+      if (!versionName) {
+        alert('請輸入版本名稱');
+        return;
+      }
+      if (versionName.length > 50) {
+        alert('版本名稱長度不可超過 50 字');
+        return;
+      }
+      createFlowVersion(flowName, versionName);
+    });
+  }
+  if (openCreateVersionModalBtn) {
+    openCreateVersionModalBtn.addEventListener('click', () => {
+      const flowName = activeFlowVersionName || flowNameInput?.value?.trim() || '';
+      if (!flowName) {
+        alert('請先選擇流程');
+        return;
+      }
+      returnToFlowVersionsAfterSaveVersion = true;
+      pendingFlowNameForVersionModal = flowName;
+      saveVersionInput.value = '';
+      saveVersionInput.dispatchEvent(new Event('input'));
+      if (flowVersionsModal) {
+        flowVersionsModal.hide();
+      } else if (saveVersionModalInstance) {
+        saveVersionModalInstance.show();
+        setTimeout(() => saveVersionInput.focus(), 150);
+      }
+    });
+  }
+});
+
 function renameFlow(current){
   if (renameModalInstance) {
     renameFlowCurrentName.value = current;
@@ -2426,20 +2627,19 @@ function renameFlow(current){
 function renderFlowVersionsRows(flowName, versions){
   if (!flowVersionsTableBody) return;
   if (!versions.length){
-    flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">尚無可用版本</td></tr>';
+    flowVersionsTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-muted">尚無可用版本</td></tr>';
     return;
   }
   flowVersionsTableBody.innerHTML = versions.map(v => `
     <tr>
       <td class="ps-4">
-        <div class="fw-semibold text-primary">${escapeHtml(v.name || '')}</div>
+        <div class="fw-semibold text-primary flow-version-name-truncate" title="${escapeHtml(v.name || '')}">${escapeHtml(v.name || '')}</div>
       </td>
       <td class="font-monospace small text-muted">${escapeHtml(v.created_at_display || '')}</td>
-      <td class="small text-muted">${escapeHtml(v.source || '')}</td>
       <td class="small text-muted">${escapeHtml(v.created_by || '') || '-'}</td>
-      <td class="pe-4 text-end">
+      <td class="pe-4 text-center">
         <div class="d-inline-flex gap-2">
-          <a class="btn btn-sm btn-white border" href="${v.download_url}" target="_blank" rel="noopener">下載</a>
+          <a class="btn btn-sm btn-outline-secondary" href="${v.view_url}">檢視</a>
           <button class="btn btn-sm btn-primary" type="button" data-restore-url="${v.restore_url}" data-version-name="${escapeHtml(v.name || '')}">回復</button>
         </div>
       </td>
@@ -2460,7 +2660,10 @@ function renderFlowVersionsRows(flowName, versions){
         if (!resp.ok || !data.ok) {
           throw new Error(data.error || '回復失敗');
         }
-        window.location.href = `{{ url_for('flows_bp.flow_builder', task_id=task.id) }}?flow=${encodeURIComponent(flowName)}`;
+        const nextUrl = new URL(`{{ url_for('flows_bp.flow_builder', task_id=task.id) }}`, window.location.origin);
+        nextUrl.searchParams.set('flow', flowName);
+        nextUrl.searchParams.set('show_restore_notice', '1');
+        window.location.href = nextUrl.toString();
       } catch (err) {
         if (flowVersionsStatus) flowVersionsStatus.textContent = err.message || '回復失敗';
       }
@@ -2473,7 +2676,7 @@ async function openFlowVersions(flowName){
   if (flowVersionsCurrentName) flowVersionsCurrentName.textContent = flowName;
   if (flowVersionsStatus) flowVersionsStatus.textContent = '載入中...';
   if (flowVersionsTableBody) {
-    flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">版本資料載入中...</td></tr>';
+    flowVersionsTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-muted">版本資料載入中...</td></tr>';
   }
   if (flowVersionsModal) flowVersionsModal.show();
   try {
@@ -2488,10 +2691,84 @@ async function openFlowVersions(flowName){
   } catch (err) {
     if (flowVersionsStatus) flowVersionsStatus.textContent = err.message || '載入版本失敗';
     if (flowVersionsTableBody) {
-      flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-danger">載入版本失敗</td></tr>';
+      flowVersionsTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-danger">載入版本失敗</td></tr>';
     }
   }
 }
+
+function updateVisibleFlowVersionCount(flowName, versionCount){
+  const row = document.querySelector(`#flowTableBody tr[data-flow="${CSS.escape(flowName)}"]`);
+  if (!row) return;
+  const countEl = row.querySelector('.flow-version-count');
+  if (countEl) countEl.textContent = String(versionCount ?? 0);
+}
+
+async function createFlowVersion(flowName, versionName){
+  try {
+    const url = `{{ url_for('flows_bp.create_flow_version', task_id=task.id, flow_name='__FLOW__') }}`.replace('__FLOW__', encodeURIComponent(flowName));
+    const body = new URLSearchParams({ version_name: versionName });
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: body.toString(),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || '建立版本失敗');
+    }
+    if (versionNameInput) versionNameInput.value = versionName;
+    updateVisibleFlowVersionCount(flowName, data.version_count);
+    if (!returnToFlowVersionsAfterSaveVersion && flowVersionsStatus) {
+      flowVersionsStatus.textContent = `共 ${Array.isArray(data.versions) ? data.versions.length : 0} 個版本`;
+    }
+    if (!returnToFlowVersionsAfterSaveVersion) {
+      renderFlowVersionsRows(flowName, Array.isArray(data.versions) ? data.versions : []);
+    }
+    if (saveVersionModalInstance) saveVersionModalInstance.hide();
+  } catch (err) {
+    alert(err.message || '建立版本失敗');
+  }
+}
+
+function bindRestoreFlowButton(button, confirmMessageBuilder, options = {}){
+  if (!button) return;
+  button.addEventListener('click', async () => {
+    const restoreUrl = button.getAttribute('data-restore-url') || '';
+    const versionName = button.getAttribute('data-version-name') || '';
+    const flowName = '{{ loaded_name or "" }}';
+    if (!restoreUrl) return;
+    if (!confirm(confirmMessageBuilder(flowName, versionName))) {
+      return;
+    }
+    try {
+      button.disabled = true;
+      const resp = await fetch(restoreUrl, { method: 'POST' });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) {
+        throw new Error(data.error || '回復失敗');
+      }
+      const nextUrl = new URL(`{{ url_for('flows_bp.flow_builder', task_id=task.id) }}`, window.location.origin);
+      nextUrl.searchParams.set('flow', flowName);
+      if (options.showRestoreNotice) {
+        nextUrl.searchParams.set('show_restore_notice', '1');
+      }
+      window.location.href = nextUrl.toString();
+    } catch (err) {
+      alert(err.message || '回復失敗');
+      button.disabled = false;
+    }
+  });
+}
+bindRestoreFlowButton(
+  restorePreviewVersionBtn,
+  (flowName, versionName) => `確定要回復流程「${flowName}」到版本「${versionName}」？目前內容會先自動備份。`,
+  { showRestoreNotice: true },
+);
+bindRestoreFlowButton(
+  undoLastRestoreBtn,
+  (flowName) => `確定要撤銷流程「${flowName}」的上次回復？目前內容會先自動備份。`,
+  { showRestoreNotice: false },
+);
 
 if (saveAsFlowBtn) {
   saveAsFlowBtn.addEventListener('click', () => {
@@ -2520,6 +2797,7 @@ if (PRESET_FLOW){
     addStep(st.type, st.params);
   }
 }
+applyReadonlyPreviewMode();
 
 const toggleRuleVisibilitySwitch = document.getElementById('toggleRuleVisibilitySwitch');
 showExtractionRules = _loadRuleVisibilityPreference();
@@ -2554,7 +2832,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('#steps > .card.is-active').forEach(c => c.classList.remove('is-active'));
       }
       
-      toggleAllStepsBtn.innerHTML = allCollapsed ? '<i class="bi bi-arrows-expand"></i> 全部展開' : '<i class="bi bi-arrows-collapse"></i> 全部收合';
+      toggleAllStepsBtn.innerHTML = allCollapsed ? '<i class="bi bi-arrows-expand"></i> 展開步驟' : '<i class="bi bi-arrows-collapse"></i> 收合步驟';
       
       // Release lock after a short delay to allow events to settle
       setTimeout(() => { isBulkOperating = false; }, 100);
@@ -2608,4 +2886,3 @@ isInitialising = false;
 </script>
 
 {% endblock %}
-

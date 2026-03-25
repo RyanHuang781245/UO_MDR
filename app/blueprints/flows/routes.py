@@ -69,7 +69,7 @@ _WINDOWS_RESERVED_FLOW_NAMES = {
     "LPT9",
 }
 
-FLOW_VERSION_LIMIT = 50
+FLOW_VERSION_LIMIT = 20
 
 
 def _validate_flow_name(name: str) -> str | None:
@@ -171,7 +171,13 @@ def _flow_version_display_name(name: str, source: str) -> str:
     return raw_name
 
 
-def _has_duplicate_manual_version_name(flow_dir: str, flow_name: str, version_name: str) -> bool:
+def _has_duplicate_manual_version_name(
+    flow_dir: str,
+    flow_name: str,
+    version_name: str,
+    *,
+    exclude_version_id: str | None = None,
+) -> bool:
     target = (version_name or "").strip().casefold()
     if not target:
         return False
@@ -179,6 +185,8 @@ def _has_duplicate_manual_version_name(flow_dir: str, flow_name: str, version_na
     metadata = load_version_metadata(versions_dir)
     for item in metadata.get("versions", []):
         if (item.get("source") or "").strip() != "manual_snapshot":
+            continue
+        if exclude_version_id and item.get("id") == exclude_version_id:
             continue
         if ((item.get("name") or "").strip().casefold()) == target:
             return True
@@ -289,6 +297,27 @@ def _delete_flow_version_entry(flow_dir: str, flow_name: str, version_id: str, *
     return {"version": version}
 
 
+def _rename_flow_version_entry(flow_dir: str, flow_name: str, version_id: str, version_name: str, *, allow_sources: set[str] | None = None) -> dict | None:
+    versions_dir = _flow_versions_dir(flow_dir, flow_name)
+    metadata = load_version_metadata(versions_dir)
+    versions = metadata.get("versions", [])
+    version = next((v for v in versions if v.get("id") == version_id), None)
+    if not version:
+        return None
+    source = (version.get("source") or "").strip()
+    if allow_sources is not None and source not in allow_sources:
+        return {"error": "Version source is not renameable"}
+
+    new_name = (version_name or "").strip()
+    if _has_duplicate_manual_version_name(flow_dir, flow_name, new_name, exclude_version_id=version_id):
+        return {"error": "Version name already exists"}
+
+    version["name"] = new_name
+    version["slug"] = sanitize_version_slug(new_name)
+    save_version_metadata(versions_dir, metadata)
+    return {"version": version}
+
+
 def _build_flow_version_context(task_id: str, flow_name: str, flow_dir: str) -> list[dict]:
     versions_dir = _flow_versions_dir(flow_dir, flow_name)
     metadata = load_version_metadata(versions_dir)
@@ -318,6 +347,7 @@ def _build_flow_version_context(task_id: str, flow_name: str, flow_dir: str) -> 
                 "created_by": item.get("created_by") or "",
                 "source": _flow_version_source_label(item.get("source") or ""),
                 "view_url": url_for("flows_bp.flow_builder", task_id=task_id, flow=flow_name, version_id=version_id),
+                "rename_url": url_for("flows_bp.rename_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
                 "delete_url": url_for("flows_bp.delete_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
                 "download_url": url_for("flows_bp.download_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
                 "restore_url": url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name=flow_name, version_id=version_id),
@@ -1211,6 +1241,7 @@ def flow_builder(task_id):
         is_version_preview=is_version_preview,
         preview_version=preview_version,
         latest_restore_backup=latest_restore_backup,
+        flow_version_limit=FLOW_VERSION_LIMIT,
         document_format_presets=DOCUMENT_FORMAT_PRESETS,
         line_spacing_choices=LINE_SPACING_CHOICES,
         flow_pagination=flow_pagination,
@@ -2352,6 +2383,44 @@ def delete_flow_version(task_id, flow_name, version_id):
         "deleted_version": {
             "id": version_id,
             "name": deleted["version"].get("name") or version_id,
+        },
+        "version_count": _flow_version_count(flow_dir, flow_name),
+        "versions": _build_flow_version_context(task_id, flow_name, flow_dir),
+    }
+
+
+@flows_bp.post("/api/tasks/<task_id>/flows/<flow_name>/versions/<version_id>/rename", endpoint="rename_flow_version")
+def rename_flow_version(task_id, flow_name, version_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(tdir, "flows")
+    flow_path = os.path.join(flow_dir, f"{flow_name}.json")
+    if not os.path.exists(flow_path):
+        return {"ok": False, "error": "Flow not found"}, 404
+
+    if request.is_json:
+        payload_data = request.get_json(silent=True) or {}
+        version_name = (payload_data.get("version_name") or "").strip()
+    else:
+        version_name = (request.form.get("version_name") or "").strip()
+    if not version_name:
+        return {"ok": False, "error": "缺少版本名稱"}, 400
+    if len(version_name) > 50:
+        return {"ok": False, "error": "版本名稱長度不可超過 50 字"}, 400
+
+    renamed = _rename_flow_version_entry(flow_dir, flow_name, version_id, version_name, allow_sources={"manual_snapshot"})
+    if not renamed:
+        return {"ok": False, "error": "Version not found"}, 404
+    if renamed.get("error") == "Version name already exists":
+        return {"ok": False, "error": "版本名稱已存在"}, 400
+    if renamed.get("error"):
+        return {"ok": False, "error": "手動版本以外的版本不可重新命名"}, 400
+
+    _touch_task_last_edit(task_id)
+    return {
+        "ok": True,
+        "renamed_version": {
+            "id": version_id,
+            "name": renamed["version"].get("name") or version_name,
         },
         "version_count": _flow_version_count(flow_dir, flow_name),
         "versions": _build_flow_version_context(task_id, flow_name, flow_dir),

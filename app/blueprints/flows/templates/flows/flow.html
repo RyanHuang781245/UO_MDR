@@ -57,7 +57,7 @@
                         <div>
                             <div class="fw-bold text-primary mb-1">撤銷版本回復</div>
                             <div class="small text-muted">
-                                系統會先備份最近一個版本後再進行回復；若不需要回復，請直接點擊「保存流程」
+                                系統會先備份最近一個版本後再進行回復；若不需要撤銷版本回復，請直接點擊「保存流程」
                                 <div>建立時間 : <span class="font-monospace">{{ latest_restore_backup.created_at_display }}</span></div>
                             </div>
                         </div>
@@ -462,16 +462,41 @@
   </div>
 </div>
 
-<div class="modal fade" id="flowVersionsModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+<div class="modal fade" id="renameVersionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">流程版本</h5>
+        <h5 class="modal-title">重新命名版本</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-1">
+          <label for="renameVersionInput" class="form-label small fw-bold text-uppercase text-muted">版本名稱 (最多 50 字)</label>
+          <input type="text" class="form-control form-control-custom" id="renameVersionInput" maxlength="50" required>
+          <div class="form-text text-end small" id="renameVersionCount">0/50</div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary fw-bold" id="renameVersionSubmitBtn">確定</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="flowVersionsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">流程版本 - <span class="text-primary fw-bold" id="flowVersionsCurrentName"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <div class="small text-muted">目前流程：<code class="text-primary fw-bold" id="flowVersionsCurrentName">-</code></div>
+          <!-- <div class="small text-muted">目前流程：<code class="text-primary fw-bold" id="flowVersionsCurrentName">-</code></div> -->
+          <div class="small text-muted">
+            <code>注意!</code>每個流程最多保留 {{ flow_version_limit }} 個版本，超過後會自動刪除最舊版本
+          </div>
           <div class="d-flex align-items-center gap-2">
             <div class="small text-muted" id="flowVersionsStatus"></div>
             <button type="button" class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1 fw-bold" id="openCreateVersionModalBtn">
@@ -480,6 +505,9 @@
             </button>
           </div>
         </div>
+        <!-- <div class="small text-muted mb-3">
+          每個流程最多保留 {{ flow_version_limit }} 個版本，超過後會自動刪除最舊版本。
+        </div> -->
         <div class="table-responsive border rounded-3 overflow-hidden bg-white shadow-sm">
           <table class="table mb-0 align-middle flow-versions-table">
             <colgroup>
@@ -626,19 +654,22 @@
   width: 110px;
 }
 .flow-versions-col-actions {
-  width: 180px;
+  width: 280px;
 }
 .flow-versions-table .flow-version-name-truncate {
   max-width: none;
 }
 .flow-version-actions {
   display: inline-flex;
-  gap: 0.5rem;
+  gap: 0.375rem;
   flex-wrap: nowrap;
   white-space: nowrap;
+  justify-content: flex-end;
 }
 .flow-version-actions .btn {
   white-space: nowrap;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
 }
 .flow-name-truncate {
   display: block;
@@ -2491,6 +2522,10 @@ const saveVersionModalEl = document.getElementById('saveVersionModal');
 const saveVersionInput = document.getElementById('saveVersionInput');
 const saveVersionCount = document.getElementById('saveVersionCount');
 const saveVersionSubmitBtn = document.getElementById('saveVersionSubmitBtn');
+const renameVersionModalEl = document.getElementById('renameVersionModal');
+const renameVersionInput = document.getElementById('renameVersionInput');
+const renameVersionCount = document.getElementById('renameVersionCount');
+const renameVersionSubmitBtn = document.getElementById('renameVersionSubmitBtn');
 const flowVersionsModalEl = document.getElementById('flowVersionsModal');
 const flowVersionsCurrentName = document.getElementById('flowVersionsCurrentName');
 const flowVersionsStatus = document.getElementById('flowVersionsStatus');
@@ -2501,8 +2536,12 @@ let activeFlowVersionName = '';
 let renameModalInstance = null;
 let saveAsModalInstance = null;
 let saveVersionModalInstance = null;
+let renameVersionModalInstance = null;
 let returnToFlowVersionsAfterSaveVersion = false;
 let pendingFlowNameForVersionModal = '';
+let returnToFlowVersionsAfterRenameVersion = false;
+let pendingFlowNameForRenameVersionModal = '';
+let activeRenameVersionMeta = null;
 
 function buildSaveAsNameSuggestion() {
   const base = (flowNameInput?.value || "").trim() || "新流程";
@@ -2560,10 +2599,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (flowVersionsModalEl && typeof bootstrap !== 'undefined') {
     flowVersionsModal = new bootstrap.Modal(flowVersionsModalEl);
     flowVersionsModalEl.addEventListener('hidden.bs.modal', () => {
-      if (!pendingFlowNameForVersionModal || !saveVersionModalInstance) return;
-      saveVersionModalInstance.show();
-      setTimeout(() => saveVersionInput?.focus(), 150);
-      pendingFlowNameForVersionModal = '';
+      if (pendingFlowNameForVersionModal && saveVersionModalInstance) {
+        saveVersionModalInstance.show();
+        setTimeout(() => saveVersionInput?.focus(), 150);
+        pendingFlowNameForVersionModal = '';
+        return;
+      }
+      if (pendingFlowNameForRenameVersionModal && renameVersionModalInstance) {
+        renameVersionModalInstance.show();
+        setTimeout(() => {
+          renameVersionInput?.focus();
+          renameVersionInput?.select();
+        }, 150);
+      }
     });
   }
   document.querySelectorAll('.flow-version-btn').forEach(btn => {
@@ -2658,6 +2706,45 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+document.addEventListener('DOMContentLoaded', () => {
+  if (renameVersionModalEl && typeof bootstrap !== 'undefined') {
+    renameVersionModalInstance = new bootstrap.Modal(renameVersionModalEl);
+    renameVersionModalEl.addEventListener('hidden.bs.modal', () => {
+      if (!returnToFlowVersionsAfterRenameVersion) return;
+      returnToFlowVersionsAfterRenameVersion = false;
+      const flowName = pendingFlowNameForRenameVersionModal || activeFlowVersionName || flowNameInput?.value?.trim() || '';
+      pendingFlowNameForRenameVersionModal = '';
+      if (flowName) openFlowVersions(flowName);
+    });
+
+    renameVersionInput.addEventListener('input', () => {
+      const len = renameVersionInput.value.length;
+      const max = renameVersionInput.getAttribute('maxlength');
+      renameVersionCount.textContent = `${len}/${max}`;
+    });
+
+    renameVersionSubmitBtn.addEventListener('click', () => {
+      const flowName = activeFlowVersionName || '';
+      const versionId = activeRenameVersionMeta?.id || '';
+      const renameUrl = activeRenameVersionMeta?.renameUrl || '';
+      const versionName = renameVersionInput.value.trim();
+      if (!flowName || !versionId || !renameUrl) {
+        alert('找不到版本資訊');
+        return;
+      }
+      if (!versionName) {
+        alert('請輸入版本名稱');
+        return;
+      }
+      if (versionName.length > 50) {
+        alert('版本名稱長度不可超過 50 字');
+        return;
+      }
+      renameFlowVersion(flowName, versionId, renameUrl, versionName);
+    });
+  }
+});
+
 function renameFlow(current){
   if (renameModalInstance) {
     renameFlowCurrentName.value = current;
@@ -2692,6 +2779,7 @@ function renderFlowVersionsRows(flowName, versions){
         <div class="flow-version-actions">
           <a class="btn btn-sm btn-outline-secondary" href="${v.view_url}">檢視</a>
           <button class="btn btn-sm btn-primary" type="button" data-restore-url="${v.restore_url}" data-version-name="${escapeHtml(v.name || '')}">回復</button>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-rename-url="${v.rename_url}" data-version-id="${v.id}" data-version-name="${escapeHtml(v.name || '')}">重新命名</button>
           <button class="btn btn-sm btn-outline-danger" type="button" data-delete-url="${v.delete_url}" data-version-name="${escapeHtml(v.name || '')}">刪除</button>
         </div>
       </td>
@@ -2718,6 +2806,28 @@ function renderFlowVersionsRows(flowName, versions){
         window.location.href = nextUrl.toString();
       } catch (err) {
         if (flowVersionsStatus) flowVersionsStatus.textContent = err.message || '回復失敗';
+      }
+    });
+  });
+  flowVersionsTableBody.querySelectorAll('button[data-rename-url]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const renameUrl = btn.getAttribute('data-rename-url') || '';
+      const versionId = btn.getAttribute('data-version-id') || '';
+      const versionName = btn.getAttribute('data-version-name') || '';
+      if (!renameUrl || !versionId) return;
+      activeRenameVersionMeta = { id: versionId, renameUrl };
+      returnToFlowVersionsAfterRenameVersion = true;
+      pendingFlowNameForRenameVersionModal = flowName;
+      renameVersionInput.value = versionName;
+      renameVersionInput.dispatchEvent(new Event('input'));
+      if (flowVersionsModal) {
+        flowVersionsModal.hide();
+      } else if (renameVersionModalInstance) {
+        renameVersionModalInstance.show();
+        setTimeout(() => {
+          renameVersionInput.focus();
+          renameVersionInput.select();
+        }, 150);
       }
     });
   });
@@ -2802,6 +2912,26 @@ async function createFlowVersion(flowName, versionName){
     if (saveVersionModalInstance) saveVersionModalInstance.hide();
   } catch (err) {
     alert(err.message || '建立版本失敗');
+  }
+}
+
+async function renameFlowVersion(flowName, versionId, renameUrl, versionName){
+  try {
+    const body = new URLSearchParams({ version_name: versionName });
+    const resp = await fetch(renameUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: body.toString(),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || '重新命名失敗');
+    }
+    updateVisibleFlowVersionCount(flowName, data.version_count);
+    activeRenameVersionMeta = null;
+    if (renameVersionModalInstance) renameVersionModalInstance.hide();
+  } catch (err) {
+    alert(err.message || '重新命名失敗');
   }
 }
 

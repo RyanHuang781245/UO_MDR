@@ -220,10 +220,9 @@ def _format_source_file_label(path_raw: str) -> str:
     name = file_path.name or str(path_raw)
     parent_parts = [part for part in file_path.parts[-3:-1] if part not in {"", os.path.sep}]
     context = "/".join(parent_parts)
-    digest = uuid.uuid5(uuid.NAMESPACE_URL, path).hex[:6]
     if context:
-        return f"{name} ({context} · {digest})"
-    return f"{name} ({digest})"
+        return f"{name} ({context})"
+    return name
 
 
 def _trace_source_label(entry: dict) -> str:

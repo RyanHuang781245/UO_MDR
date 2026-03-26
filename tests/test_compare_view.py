@@ -122,6 +122,15 @@ def test_select_page_sources_for_display_preserves_explicit_object_source() -> N
     assert selected == [("file_a.docx", 3), ("file_b.docx", 1)]
 
 
+def test_order_page_sources_by_first_seen_prefers_appearance_order() -> None:
+    ordered = task_routes._order_page_sources_by_first_seen(
+        [("file_a.docx", 4), ("file_b.docx", 2)],
+        {"file_b.docx": 0, "file_a.docx": 1},
+    )
+
+    assert ordered == [("file_b.docx", 2), ("file_a.docx", 4)]
+
+
 def test_page_has_explicit_paragraph_sources_only_when_count_positive() -> None:
     assert task_routes._page_has_explicit_paragraph_sources({"file_a.docx": 1}) is True
     assert task_routes._page_has_explicit_paragraph_sources({"file_a.docx": 0}) is False
@@ -352,4 +361,78 @@ def test_build_page_source_map_preserves_table_caption_source_on_mixed_page(
     assert page_source_map[0]["sources"] == [
         {"source_file": "Knee.docx", "count": 3, "inherited": False},
         {"source_file": "Hip.docx", "count": 1, "inherited": False},
+    ]
+
+
+def test_build_page_source_map_orders_sources_by_first_appearance_on_page(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "result.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    class _FakePage:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def get_text(self, _mode: str) -> str:
+            return self._text
+
+    class _FakePdf:
+        def __init__(self, pages: list[str]) -> None:
+            self._pages = [_FakePage(text) for text in pages]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(self._pages)
+
+    fake_fitz = types.SimpleNamespace(
+        open=lambda _path: _FakePdf(
+            [
+                "hip intro knee body knee appendix",
+            ]
+        )
+    )
+    monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
+
+    paragraph_trace = [
+        {
+            "merged_paragraph_index": 0,
+            "source_file": "Hip.docx",
+            "source_step": "extract_word_chapter",
+            "count_as_source": True,
+            "text": "hip intro",
+        },
+        {
+            "merged_paragraph_index": 1,
+            "source_file": "Knee.docx",
+            "source_step": "extract_word_chapter",
+            "count_as_source": True,
+            "text": "knee body",
+        },
+        {
+            "merged_paragraph_index": 2,
+            "source_file": "Knee.docx",
+            "source_step": "extract_word_chapter",
+            "count_as_source": True,
+            "text": "knee appendix",
+        },
+    ]
+
+    _, page_source_map = task_routes._build_page_source_map(
+        str(tmp_path),
+        str(pdf_path),
+        paragraph_trace,
+        [],
+    )
+
+    assert page_source_map[0]["dominant_source"] == "Knee.docx"
+    assert page_source_map[0]["sources"] == [
+        {"source_file": "Hip.docx", "count": 1, "inherited": False},
+        {"source_file": "Knee.docx", "count": 2, "inherited": False},
     ]

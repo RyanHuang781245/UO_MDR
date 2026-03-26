@@ -89,7 +89,7 @@ _LIBREOFFICE_CANDIDATES = (
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
 )
-_PAGE_SOURCE_MAP_CACHE_VERSION = 8
+_PAGE_SOURCE_MAP_CACHE_VERSION = 9
 
 
 def _get_actor_info():
@@ -678,6 +678,24 @@ def _select_page_sources_for_display(
     return selected
 
 
+def _order_page_sources_by_first_seen(
+    sources: list[tuple[str, int]],
+    first_seen_order: dict[str, int] | None = None,
+) -> list[tuple[str, int]]:
+    if not sources:
+        return []
+
+    first_seen = first_seen_order or {}
+    default_order = len(first_seen) + 1
+    return sorted(
+        sources,
+        key=lambda item: (
+            first_seen.get(item[0], default_order),
+            item[0],
+        ),
+    )
+
+
 def _page_has_explicit_paragraph_sources(source_counts: dict[str, int]) -> bool:
     return any(count > 0 for count in source_counts.values())
 
@@ -795,10 +813,12 @@ def _build_page_source_map(
         for idx in range(len(page_texts))
     ]
     source_counts_by_page: list[dict[str, int]] = [dict() for _ in page_texts]
+    source_first_seen_by_page: list[dict[str, int]] = [dict() for _ in page_texts]
     has_context_only_content_by_page = [False for _ in page_texts]
     preserved_sources_by_page: list[set[str]] = [set() for _ in page_texts]
     annotated_trace: list[dict[str, object]] = []
     current_page_idx = 0
+    source_seen_sequence = 0
 
     for item in paragraph_trace:
         trace_item = dict(item)
@@ -828,6 +848,10 @@ def _build_page_source_map(
             if count_as_source and source_file not in {"", "未知來源"}:
                 source_counts = source_counts_by_page[assigned_page_idx]
                 source_counts[source_file] = source_counts.get(source_file, 0) + 1
+                source_first_seen = source_first_seen_by_page[assigned_page_idx]
+                if source_file not in source_first_seen:
+                    source_first_seen[source_file] = source_seen_sequence
+                    source_seen_sequence += 1
                 if source_step in {"extract_specific_table_from_word", "extract_specific_figure_from_word"}:
                     preserved_sources_by_page[assigned_page_idx].add(source_file)
             else:
@@ -852,20 +876,30 @@ def _build_page_source_map(
         for page_idx in matched_pages:
             source_counts = source_counts_by_page[page_idx]
             source_counts[source_file] = source_counts.get(source_file, 0) + 1
+            source_first_seen = source_first_seen_by_page[page_idx]
+            if source_file not in source_first_seen:
+                source_first_seen[source_file] = source_seen_sequence
+                source_seen_sequence += 1
 
     for idx, bucket in enumerate(page_buckets):
         source_counts = source_counts_by_page[idx]
         ordered_sources = sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
+        dominant_source = ordered_sources[0][0] if ordered_sources else ""
         if not ordered_sources and idx > 0 and not has_context_only_content_by_page[idx]:
             previous_bucket = page_buckets[idx - 1]
             previous_source = str(previous_bucket.get("dominant_source") or "").strip()
             if previous_source:
                 ordered_sources = [(previous_source, 0)]
                 bucket["inherited_from_previous"] = True
+                dominant_source = previous_source
         display_sources = _select_page_sources_for_display(
             ordered_sources,
             inherited_from_previous=bool(bucket.get("inherited_from_previous")),
             preserve_sources=preserved_sources_by_page[idx],
+        )
+        display_sources = _order_page_sources_by_first_seen(
+            display_sources,
+            source_first_seen_by_page[idx],
         )
         bucket["sources"] = [
             {
@@ -875,7 +909,7 @@ def _build_page_source_map(
             }
             for source_file, count in display_sources
         ]
-        bucket["dominant_source"] = display_sources[0][0] if display_sources else ""
+        bucket["dominant_source"] = dominant_source
 
     try:
         with open(page_map_path, "w", encoding="utf-8") as f:

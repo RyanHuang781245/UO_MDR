@@ -100,26 +100,26 @@ def test_compare_view_disambiguates_same_basename_sources(tmp_path: Path, app) -
         app.config["TESTING"] = original_testing
 
 
-def test_select_page_sources_for_display_drops_low_confidence_secondary_source() -> None:
+def test_select_page_sources_for_display_keeps_all_positive_page_sources() -> None:
     selected = task_routes._select_page_sources_for_display(
         [("file_a.docx", 5), ("file_b.docx", 1)]
     )
-    assert selected == [("file_a.docx", 5)]
+    assert selected == [("file_a.docx", 5), ("file_b.docx", 1)]
 
 
-def test_select_page_sources_for_display_keeps_meaningful_secondary_source() -> None:
+def test_select_page_sources_for_display_drops_zero_count_sources() -> None:
     selected = task_routes._select_page_sources_for_display(
-        [("file_a.docx", 4), ("file_b.docx", 2)]
+        [("file_a.docx", 4), ("file_b.docx", 0)]
     )
-    assert selected == [("file_a.docx", 4), ("file_b.docx", 2)]
+    assert selected == [("file_a.docx", 4)]
 
 
-def test_select_page_sources_for_display_preserves_explicit_object_source() -> None:
+def test_select_page_sources_for_display_ignores_preserve_sources_when_count_is_zero() -> None:
     selected = task_routes._select_page_sources_for_display(
-        [("file_a.docx", 3), ("file_b.docx", 1)],
+        [("file_a.docx", 3), ("file_b.docx", 0)],
         preserve_sources={"file_b.docx"},
     )
-    assert selected == [("file_a.docx", 3), ("file_b.docx", 1)]
+    assert selected == [("file_a.docx", 3)]
 
 
 def test_order_page_sources_by_first_seen_prefers_appearance_order() -> None:
@@ -211,6 +211,362 @@ def test_build_trace_from_provenance_blocks_marks_template_context_without_count
     assert paragraph_trace[0]["count_as_source"] is False
     assert paragraph_trace[1]["match_status"] == "provenance"
     assert paragraph_trace[1]["count_as_source"] is True
+    assert paragraph_trace[1]["result_block_index"] == 1
+
+
+def test_extract_preview_page_sources_reads_preview_labels_in_page_order() -> None:
+    page_sources = task_routes._extract_preview_page_sources(
+        [
+            "來源: Beta.docx beta body 來源: Alpha.docx alpha body 來源: Beta.docx repeated beta body",
+            "no preview label here",
+        ],
+        {
+            "src_000001": {"source_file": "Alpha.docx"},
+            "src_000002": {"source_file": "Beta.docx"},
+        },
+    )
+
+    assert page_sources == [["Beta.docx", "Alpha.docx", "Beta.docx"], []]
+
+
+def test_merge_page_source_map_with_preview_labels_only_fills_empty_pages() -> None:
+    merged = task_routes._merge_page_source_map_with_preview_labels(
+        [
+            {
+                "page_number": 1,
+                "dominant_source": "Alpha.docx",
+                "sources": [
+                    {"source_file": "Alpha.docx", "count": 3, "inherited": False},
+                    {"source_file": "Gamma.docx", "count": 1, "inherited": False},
+                ],
+            }
+        ,
+            {
+                "page_number": 2,
+                "dominant_source": "Gamma.docx",
+                "sources": [
+                    {"source_file": "Gamma.docx", "count": 2, "inherited": False},
+                ],
+            },
+        ],
+        [["Beta.docx", "Alpha.docx"], []],
+    )
+
+    assert merged[0]["dominant_source"] == "Alpha.docx"
+    assert merged[0]["preview_label_sequence"] == ["Beta.docx", "Alpha.docx"]
+    assert merged[0]["sources"] == [
+        {"source_file": "Alpha.docx", "count": 3, "inherited": False},
+        {"source_file": "Gamma.docx", "count": 1, "inherited": False},
+    ]
+    assert merged[1]["dominant_source"] == "Gamma.docx"
+    assert merged[1]["preview_label_sequence"] == []
+    assert merged[1]["sources"] == [
+        {"source_file": "Gamma.docx", "count": 2, "inherited": False},
+    ]
+
+
+def test_build_provenance_trace_distinguishes_duplicate_text_by_source_id(tmp_path: Path) -> None:
+    source_a = tmp_path / "alpha.docx"
+    source_b = tmp_path / "beta.docx"
+    result_path = tmp_path / "result.docx"
+    log_path = tmp_path / "log.json"
+
+    for target in (source_a, source_b):
+        doc = Document()
+        sec = doc.AddSection()
+        sec.AddParagraph().AppendText("Shared source paragraph")
+        doc.SaveToFile(str(target), FileFormat.Docx)
+        doc.Close()
+
+    fragment_a = tmp_path / "fragment_a.docx"
+    fragment_b = tmp_path / "fragment_b.docx"
+    for source_path, fragment_path in ((source_a, fragment_a), (source_b, fragment_b)):
+        doc = Document()
+        sec = doc.AddSection()
+        sec.AddParagraph().AppendText("Shared source paragraph")
+        doc.SaveToFile(str(fragment_path), FileFormat.Docx)
+        doc.Close()
+
+    from modules.docx_provenance import apply_final_provenance, build_provenance_descriptor
+    from modules.docx_merger import merge_word_docs
+
+    desc_a = build_provenance_descriptor(1)
+    desc_b = build_provenance_descriptor(2)
+    merge_word_docs([str(fragment_a), str(fragment_b)], str(result_path))
+    apply_final_provenance(
+        str(result_path),
+        [
+            {
+                **desc_a,
+                "fragment_path": str(fragment_a),
+                "content_type": "paragraph",
+                "source_id": "src_000001",
+                "primary_probe_texts": ["Shared source paragraph"],
+            },
+            {
+                **desc_b,
+                "fragment_path": str(fragment_b),
+                "content_type": "paragraph",
+                "source_id": "src_000002",
+                "primary_probe_texts": ["Shared source paragraph"],
+            },
+        ],
+    )
+    log_path.write_text("[]", encoding="utf-8")
+
+    paragraph_trace, object_candidates = task_routes._build_provenance_trace(
+        str(tmp_path),
+        str(result_path),
+        str(log_path),
+        [
+            {
+                "type": "extract_word_all_content",
+                "params": {"input_file": str(source_a)},
+                "output_docx": str(fragment_a),
+                "provenance": {
+                    **desc_a,
+                    "source_id": "src_000001",
+                    "content_type": "paragraph",
+                    "fragment_path": str(fragment_a),
+                },
+            },
+            {
+                "type": "extract_word_all_content",
+                "params": {"input_file": str(source_b)},
+                "output_docx": str(fragment_b),
+                "provenance": {
+                    **desc_b,
+                    "source_id": "src_000002",
+                    "content_type": "paragraph",
+                    "fragment_path": str(fragment_b),
+                },
+            },
+        ],
+        [],
+    )
+
+    assert not object_candidates
+    shared_items = [
+        item
+        for item in paragraph_trace
+        if item["text"] == "Shared source paragraph"
+    ]
+    assert len(shared_items) == 2
+    assert [item["source_file"] for item in shared_items] == [
+        task_routes._format_source_file_label(str(source_a)),
+        task_routes._format_source_file_label(str(source_b)),
+    ]
+    assert [item["source_id"] for item in shared_items] == ["src_000001", "src_000002"]
+
+
+def test_build_page_source_map_prefers_provenance_blocks_when_available(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "result.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    class _FakePage:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def get_text(self, _mode: str) -> str:
+            return self._text
+
+    class _FakePdf:
+        def __init__(self, pages: list[str]) -> None:
+            self._pages = [_FakePage(text) for text in pages]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(self._pages)
+
+    fake_fitz = types.SimpleNamespace(
+        open=lambda _path: _FakePdf(
+            [
+                "shared source paragraph",
+                "shared source paragraph",
+            ]
+        )
+    )
+    monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
+
+    paragraph_trace = [
+        {
+            "merged_paragraph_index": 0,
+            "source_id": "src_000001",
+            "source_file": "Alpha.docx",
+            "source_step": "extract_word_all_content",
+            "content_type": "paragraph",
+            "count_as_source": True,
+            "result_block_index": 0,
+            "text": "shared source paragraph",
+            "probe_texts": ["shared source paragraph"],
+        },
+        {
+            "merged_paragraph_index": 1,
+            "source_id": "src_000002",
+            "source_file": "Beta.docx",
+            "source_step": "extract_word_all_content",
+            "content_type": "paragraph",
+            "count_as_source": True,
+            "result_block_index": 1,
+            "text": "shared source paragraph",
+            "probe_texts": ["shared source paragraph"],
+        },
+    ]
+
+    annotated_trace, page_source_map = task_routes._build_page_source_map(
+        str(tmp_path),
+        str(pdf_path),
+        paragraph_trace,
+        [],
+    )
+
+    assert [item["result_page"] for item in annotated_trace] == [1, 1]
+    assert page_source_map[0]["sources"] == [
+        {"source_file": "Alpha.docx", "count": 1, "inherited": False},
+        {"source_file": "Beta.docx", "count": 1, "inherited": False},
+    ]
+
+
+def test_build_page_source_map_does_not_override_explicit_page_sources_with_preview_labels(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "result.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    class _FakePage:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def get_text(self, _mode: str) -> str:
+            return self._text
+
+    class _FakePdf:
+        def __init__(self, pages: list[str]) -> None:
+            self._pages = [_FakePage(text) for text in pages]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(self._pages)
+
+    fake_fitz = types.SimpleNamespace(
+        open=lambda _path: _FakePdf(
+            [
+                "來源: Beta.docx beta body preview text",
+            ]
+        )
+    )
+    monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
+
+    paragraph_trace = [
+        {
+            "merged_paragraph_index": 0,
+            "source_id": "src_000001",
+            "source_file": "Alpha.docx",
+            "source_step": "extract_word_all_content",
+            "content_type": "paragraph",
+            "count_as_source": True,
+            "result_block_index": 0,
+            "text": "beta body preview text",
+            "probe_texts": ["beta body preview text"],
+        },
+    ]
+
+    _, page_source_map = task_routes._build_page_source_map(
+        str(tmp_path),
+        str(pdf_path),
+        paragraph_trace,
+        [],
+        {
+            "src_000001": {"source_file": "Alpha.docx"},
+            "src_000002": {"source_file": "Beta.docx"},
+        },
+    )
+
+    assert page_source_map[0]["dominant_source"] == "Alpha.docx"
+    assert page_source_map[0]["sources"][0] == {
+        "source_file": "Alpha.docx",
+        "count": 1,
+        "inherited": False,
+    }
+
+
+def test_build_page_source_map_uses_preview_labels_only_on_empty_pages(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pdf_path = tmp_path / "result.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    class _FakePage:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def get_text(self, _mode: str) -> str:
+            return self._text
+
+    class _FakePdf:
+        def __init__(self, pages: list[str]) -> None:
+            self._pages = [_FakePage(text) for text in pages]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(self._pages)
+
+    fake_fitz = types.SimpleNamespace(
+        open=lambda _path: _FakePdf(
+            [
+                "來源: Alpha.docx alpha body",
+                "continued alpha body without a new label",
+                "來源: Beta.docx beta body",
+            ]
+        )
+    )
+    monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
+
+    annotated_trace, page_source_map = task_routes._build_page_source_map(
+        str(tmp_path),
+        str(pdf_path),
+        [],
+        [],
+        {
+            "src_000001": {"source_file": "Alpha.docx"},
+            "src_000002": {"source_file": "Beta.docx"},
+        },
+    )
+
+    assert annotated_trace == []
+    assert page_source_map[0]["dominant_source"] == "Alpha.docx"
+    assert page_source_map[0]["sources"] == [
+        {
+            "source_file": "Alpha.docx",
+            "count": 1,
+            "inherited": False,
+            "from_preview_label": True,
+            "preview_segment_role": "label",
+        }
+    ]
+    assert page_source_map[1]["dominant_source"] == ""
+    assert page_source_map[1]["sources"] == []
+    assert page_source_map[2]["dominant_source"] == "Beta.docx"
 
 
 def test_build_page_source_map_does_not_inherit_source_across_template_only_page(

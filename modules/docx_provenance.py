@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,16 @@ _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _NS = {"w": _W_NS}
 _PROVENANCE_PREFIX = "prov_src_"
 _PROVENANCE_CACHE_VERSION = 1
+PROVENANCE_PREVIEW_LABEL_PREFIX = "來源: "
+_PREVIEW_LABEL_TEXT_COLOR = "C00000"
+_PREVIEW_HIGHLIGHT_PALETTE = [
+    {"highlight": "yellow", "fill": "FEF3C7", "text": "92400E"},
+    {"highlight": "cyan", "fill": "DBEAFE", "text": "1D4ED8"},
+    {"highlight": "green", "fill": "DCFCE7", "text": "166534"},
+    {"highlight": "magenta", "fill": "FCE7F3", "text": "9D174D"},
+    {"highlight": "darkYellow", "fill": "FDE68A", "text": "78350F"},
+    {"highlight": "gray25", "fill": "E2E8F0", "text": "334155"},
+]
 
 
 def _qn(tag: str) -> str:
@@ -95,6 +106,210 @@ def _insert_bookmark_end(paragraph: etree._Element, bookmark_id: int) -> None:
     bookmark = etree.Element(_qn("w:bookmarkEnd"))
     bookmark.set(_qn("w:id"), str(bookmark_id))
     paragraph.append(bookmark)
+
+
+def _ensure_paragraph_properties(paragraph: etree._Element) -> etree._Element:
+    ppr = paragraph.find(_qn("w:pPr"))
+    if ppr is None:
+        ppr = etree.Element(_qn("w:pPr"))
+        paragraph.insert(0, ppr)
+    return ppr
+
+
+def _ensure_run_properties(run: etree._Element) -> etree._Element:
+    rpr = run.find(_qn("w:rPr"))
+    if rpr is None:
+        rpr = etree.Element(_qn("w:rPr"))
+        run.insert(0, rpr)
+    return rpr
+
+
+def _set_run_highlight(run: etree._Element, color: str) -> None:
+    if not color:
+        return
+    rpr = _ensure_run_properties(run)
+    highlight = rpr.find(_qn("w:highlight"))
+    if highlight is None:
+        highlight = etree.Element(_qn("w:highlight"))
+        rpr.append(highlight)
+    highlight.set(_qn("w:val"), color)
+
+
+def _set_run_color(run: etree._Element, color: str) -> None:
+    if not color:
+        return
+    rpr = _ensure_run_properties(run)
+    color_node = rpr.find(_qn("w:color"))
+    if color_node is None:
+        color_node = etree.Element(_qn("w:color"))
+        rpr.append(color_node)
+    color_node.set(_qn("w:val"), color)
+
+
+def _set_run_bold(run: etree._Element) -> None:
+    rpr = _ensure_run_properties(run)
+    bold = rpr.find(_qn("w:b"))
+    if bold is None:
+        bold = etree.Element(_qn("w:b"))
+        rpr.append(bold)
+
+
+def _set_run_font_size(run: etree._Element, size_half_points: int) -> None:
+    rpr = _ensure_run_properties(run)
+    for tag in (_qn("w:sz"), _qn("w:szCs")):
+        node = rpr.find(tag)
+        if node is None:
+            node = etree.Element(tag)
+            rpr.append(node)
+        node.set(_qn("w:val"), str(size_half_points))
+
+
+def _set_paragraph_shading(paragraph: etree._Element, fill: str) -> None:
+    if not fill:
+        return
+    ppr = _ensure_paragraph_properties(paragraph)
+    shd = ppr.find(_qn("w:shd"))
+    if shd is None:
+        shd = etree.Element(_qn("w:shd"))
+        ppr.append(shd)
+    shd.set(_qn("w:val"), "clear")
+    shd.set(_qn("w:color"), "auto")
+    shd.set(_qn("w:fill"), fill)
+
+
+def _make_text_run(text: str, *, bold: bool = False, color: str = "", size_half_points: int = 20) -> etree._Element:
+    run = etree.Element(_qn("w:r"))
+    text_node = etree.Element(_qn("w:t"))
+    if text[:1].isspace() or text[-1:].isspace():
+        text_node.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    text_node.text = text
+    run.append(text_node)
+    if bold:
+        _set_run_bold(run)
+    if color:
+        _set_run_color(run, color)
+    if size_half_points:
+        _set_run_font_size(run, size_half_points)
+    return run
+
+
+def _make_preview_label_paragraph(source_label: str) -> etree._Element:
+    paragraph = etree.Element(_qn("w:p"))
+    paragraph.append(
+        _make_text_run(
+            f"{PROVENANCE_PREVIEW_LABEL_PREFIX}{source_label}",
+            bold=True,
+            color=_PREVIEW_LABEL_TEXT_COLOR,
+            size_half_points=18,
+        )
+    )
+    return paragraph
+
+
+def _apply_highlight_to_block(block: etree._Element, highlight_color: str) -> None:
+    if not highlight_color:
+        return
+    for run in block.xpath(".//w:r", namespaces=_NS):
+        if not run.xpath("./w:t", namespaces=_NS):
+            continue
+        _set_run_highlight(run, highlight_color)
+
+
+def _palette_for_source(source_id: str) -> dict[str, str]:
+    if not source_id:
+        return _PREVIEW_HIGHLIGHT_PALETTE[0]
+    match = re.search(r"(\d+)$", source_id)
+    if match:
+        index = int(match.group(1))
+    else:
+        index = sum(ord(ch) for ch in source_id)
+    return _PREVIEW_HIGHLIGHT_PALETTE[(max(1, index) - 1) % len(_PREVIEW_HIGHLIGHT_PALETTE)]
+
+
+def create_provenance_preview_docx(
+    result_docx: str,
+    output_docx: str,
+    source_lookup: dict[str, dict[str, Any]],
+) -> bool:
+    if not result_docx or not os.path.isfile(result_docx):
+        return False
+    if not output_docx:
+        return False
+
+    if not source_lookup:
+        shutil.copyfile(result_docx, output_docx)
+        return True
+
+    output_dir = os.path.dirname(output_docx)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    shutil.copyfile(result_docx, output_docx)
+
+    parts = _load_docx_parts(output_docx)
+    document_xml = parts.get("word/document.xml")
+    if not document_xml:
+        return False
+
+    root = etree.fromstring(document_xml)
+    body = root.find("w:body", namespaces=_NS)
+    if body is None:
+        return False
+
+    bookmark_name_to_source_id = {
+        str(meta.get("bookmark_start") or ""): source_id
+        for source_id, meta in source_lookup.items()
+        if meta.get("bookmark_start")
+    }
+    bookmark_id_to_source_id: dict[str, str] = {}
+    active_sources: list[str] = []
+    previous_visible_source_id = ""
+    for block in list(_iter_body_blocks(body)):
+        start_names = [
+            str(node.get(_qn("w:name")) or "")
+            for node in block.xpath(".//w:bookmarkStart", namespaces=_NS)
+        ]
+        for bookmark_name in start_names:
+            source_id = bookmark_name_to_source_id.get(bookmark_name)
+            if source_id:
+                active_sources.append(source_id)
+        for node in block.xpath(".//w:bookmarkStart", namespaces=_NS):
+            bookmark_name = str(node.get(_qn("w:name")) or "")
+            source_id = bookmark_name_to_source_id.get(bookmark_name)
+            bookmark_id = str(node.get(_qn("w:id")) or "")
+            if source_id and bookmark_id:
+                bookmark_id_to_source_id[bookmark_id] = source_id
+
+        source_id = active_sources[-1] if active_sources else ""
+        if source_id:
+            meta = source_lookup.get(source_id, {})
+            source_label = str(meta.get("source_file") or "未知來源")
+            if source_id != previous_visible_source_id:
+                block.addprevious(_make_preview_label_paragraph(source_label))
+            previous_visible_source_id = source_id
+        else:
+            previous_visible_source_id = ""
+
+        end_ids = [
+            str(node.get(_qn("w:id")) or "")
+            for node in block.xpath(".//w:bookmarkEnd", namespaces=_NS)
+        ]
+        for bookmark_id in end_ids:
+            source_id = bookmark_id_to_source_id.get(bookmark_id)
+            if not source_id:
+                continue
+            for idx in range(len(active_sources) - 1, -1, -1):
+                if active_sources[idx] == source_id:
+                    active_sources.pop(idx)
+                    break
+
+    parts["word/document.xml"] = etree.tostring(
+        root,
+        xml_declaration=True,
+        encoding="UTF-8",
+        standalone="yes",
+    )
+    _write_docx_parts(output_docx, parts)
+    return True
 
 
 def annotate_docx_with_provenance(

@@ -50,7 +50,9 @@ from app.services.nas_service import get_configured_nas_roots, resolve_nas_path,
 from app.utils import normalize_docx_output_filename
 from modules.auth_models import ROLE_ADMIN, user_has_role
 from modules.docx_provenance import (
+    PROVENANCE_PREVIEW_LABEL_PREFIX,
     build_provenance_cache_payload,
+    create_provenance_preview_docx,
     extract_provenance_block_trace,
     load_cached_provenance_payload,
 )
@@ -89,7 +91,9 @@ _LIBREOFFICE_CANDIDATES = (
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
 )
-_PAGE_SOURCE_MAP_CACHE_VERSION = 9
+_PROVENANCE_PREVIEW_DOCX_CACHE_VERSION = 5
+_PAGE_SOURCE_MAP_CACHE_VERSION = 14
+_HTML_PREVIEW_CACHE_VERSION = 2
 
 
 def _get_actor_info():
@@ -208,6 +212,196 @@ def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[st
     except Exception:
         current_app.logger.exception("Unexpected error while converting %s to PDF preview", source_path)
         return None, "建立 PDF 預覽時發生錯誤"
+
+
+def _ensure_html_preview(source_path: str, job_dir: str, subdir: str, base_name: str) -> tuple[str | None, str | None]:
+    if not source_path or not os.path.isfile(source_path):
+        return None, "找不到要預覽的文件"
+
+    output_dir = os.path.join(job_dir, subdir)
+    os.makedirs(output_dir, exist_ok=True)
+    html_name = f"{base_name}.html"
+    html_rel = os.path.join(subdir, html_name).replace("\\", "/")
+    html_path = os.path.join(job_dir, html_rel)
+    meta_path = os.path.join(output_dir, "_meta.json")
+
+    try:
+        if os.path.exists(html_path) and os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as meta_file:
+                meta = json.load(meta_file)
+            if (
+                meta.get("version") == _HTML_PREVIEW_CACHE_VERSION
+                and os.path.getmtime(html_path) >= os.path.getmtime(source_path)
+            ):
+                return html_rel, None
+    except OSError:
+        pass
+    except (ValueError, TypeError, json.JSONDecodeError):
+        pass
+
+    libreoffice_bin = _find_libreoffice_binary()
+    if not libreoffice_bin:
+        return None, "找不到 LibreOffice，無法建立 HTML 預覽"
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="lo_html_") as temp_dir:
+            result = subprocess.run(
+                [
+                    libreoffice_bin,
+                    "--headless",
+                    "--convert-to",
+                    "html",
+                    "--outdir",
+                    temp_dir,
+                    source_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if result.returncode != 0:
+                current_app.logger.warning(
+                    "LibreOffice HTML conversion failed for %s (code=%s, stdout=%s, stderr=%s)",
+                    source_path,
+                    result.returncode,
+                    result.stdout,
+                    result.stderr,
+                )
+                return None, "LibreOffice 轉 HTML 失敗"
+
+            converted_html = os.path.join(temp_dir, f"{Path(source_path).stem}.html")
+            if not os.path.isfile(converted_html):
+                current_app.logger.warning(
+                    "LibreOffice HTML conversion did not produce %s for %s",
+                    converted_html,
+                    source_path,
+                )
+                return None, "找不到 LibreOffice 產生的 HTML 預覽"
+
+            for entry in os.listdir(output_dir):
+                entry_path = os.path.join(output_dir, entry)
+                if os.path.isdir(entry_path):
+                    shutil.rmtree(entry_path, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(entry_path)
+                    except FileNotFoundError:
+                        pass
+
+            for entry in os.listdir(temp_dir):
+                src_entry = os.path.join(temp_dir, entry)
+                dst_entry = os.path.join(output_dir, entry)
+                if os.path.isdir(src_entry):
+                    shutil.copytree(src_entry, dst_entry, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src_entry, dst_entry)
+
+            generated_html = os.path.join(output_dir, f"{Path(source_path).stem}.html")
+            if generated_html != html_path and os.path.exists(generated_html):
+                shutil.move(generated_html, html_path)
+
+            _normalize_html_preview_alignment(html_path)
+
+            with open(meta_path, "w", encoding="utf-8") as meta_file:
+                json.dump({"version": _HTML_PREVIEW_CACHE_VERSION}, meta_file, ensure_ascii=False, indent=2)
+        return html_rel, None
+    except subprocess.TimeoutExpired:
+        current_app.logger.warning("LibreOffice HTML conversion timed out for %s", source_path)
+        return None, "LibreOffice 轉 HTML 逾時"
+    except Exception:
+        current_app.logger.exception("Unexpected error while converting %s to HTML preview", source_path)
+        return None, "建立 HTML 預覽時發生錯誤"
+
+
+def _normalize_html_preview_alignment(html_path: str) -> None:
+    if not html_path or not os.path.isfile(html_path):
+        return
+
+    try:
+        with open(html_path, "r", encoding="utf-8") as html_file:
+            html = html_file.read()
+    except OSError:
+        return
+
+    align_pattern = re.compile(
+        r"<(?P<tag>[a-zA-Z0-9]+)(?P<before>[^>]*?)\salign=\"(?P<align>[^\"]+)\"(?P<after>[^>]*?)>",
+        re.IGNORECASE,
+    )
+
+    def _replace_align(match: re.Match[str]) -> str:
+        tag = match.group("tag")
+        before = match.group("before") or ""
+        align = (match.group("align") or "").strip().lower()
+        after = match.group("after") or ""
+        if not align:
+            return match.group(0)
+
+        attrs = f"{before}{after}"
+        style_match = re.search(r'style=\"([^\"]*)\"', attrs, re.IGNORECASE)
+        if style_match:
+            style_value = style_match.group(1)
+            if "text-align" in style_value.lower():
+                return match.group(0)
+            updated_style = f'{style_value.rstrip("; ")}; text-align: {align}'
+            updated_attrs = attrs.replace(style_match.group(0), f'style="{updated_style}"', 1)
+            return f"<{tag}{updated_attrs}>"
+
+        return f'<{tag}{before} align="{align}" style="text-align: {align}"{after}>'
+
+    normalized_html = align_pattern.sub(_replace_align, html)
+    if normalized_html == html:
+        return
+
+    with open(html_path, "w", encoding="utf-8") as html_file:
+        html_file.write(normalized_html)
+
+
+def _ensure_provenance_preview_docx(
+    result_docx: str,
+    log_path: str,
+    job_dir: str,
+    source_lookup: dict[str, dict[str, object]],
+) -> tuple[str | None, str | None]:
+    if not result_docx or not os.path.isfile(result_docx):
+        return None, "找不到結果文件"
+    if not source_lookup:
+        return None, None
+
+    preview_rel = os.path.join("preview_trace", "provenance_preview.docx").replace("\\", "/")
+    preview_path = os.path.join(job_dir, preview_rel)
+    preview_meta_path = os.path.join(job_dir, "preview_trace", "provenance_preview.meta.json")
+
+    try:
+        preview_meta = {}
+        if os.path.isfile(preview_meta_path):
+            with open(preview_meta_path, "r", encoding="utf-8") as f:
+                preview_meta = json.load(f) or {}
+        if (
+            os.path.isfile(preview_path)
+            and os.path.getmtime(preview_path) >= os.path.getmtime(result_docx)
+            and (not os.path.isfile(log_path) or os.path.getmtime(preview_path) >= os.path.getmtime(log_path))
+            and int(preview_meta.get("version") or 0) == _PROVENANCE_PREVIEW_DOCX_CACHE_VERSION
+        ):
+            return preview_rel, None
+    except OSError:
+        pass
+    except Exception:
+        current_app.logger.warning("Failed to load provenance preview cache metadata for %s", job_dir, exc_info=True)
+
+    try:
+        if create_provenance_preview_docx(result_docx, preview_path, source_lookup):
+            try:
+                Path(preview_meta_path).write_text(
+                    json.dumps({"version": _PROVENANCE_PREVIEW_DOCX_CACHE_VERSION}, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except Exception:
+                current_app.logger.warning("Failed to save provenance preview cache metadata for %s", job_dir, exc_info=True)
+            return preview_rel, None
+        return None, "建立來源標記預覽失敗"
+    except Exception:
+        current_app.logger.exception("Unexpected error while building provenance preview for %s", result_docx)
+        return None, "建立來源標記預覽時發生錯誤"
 
 
 def _normalize_trace_text(text: str) -> str:
@@ -458,10 +652,13 @@ def _build_trace_from_provenance_blocks(
                     "source_id": source_id,
                     "source_file": source_file,
                     "source_paragraph_index": block.get("block_index"),
+                    "result_block_index": block.get("block_index"),
                     "source_step": source_step,
+                    "content_type": content_type or "paragraph",
                     "match_status": "provenance" if source_id else "context",
                     "count_as_source": bool(source_id),
                     "text": text,
+                    "probe_texts": probe_texts[:],
                 }
             )
             continue
@@ -472,6 +669,10 @@ def _build_trace_from_provenance_blocks(
             {
                 "source_file": source_file,
                 "source_step": source_step,
+                "source_id": str(block.get("source_id") or "").strip(),
+                "content_type": content_type,
+                "count_as_source": bool(block.get("source_id")),
+                "result_block_index": block.get("block_index"),
                 "primary_probe_texts": probe_texts[:6],
                 "fallback_probe_texts": probe_texts[6:],
                 "allow_multi_page": content_type == "table",
@@ -646,36 +847,13 @@ def _select_page_sources_for_display(
     inherited_from_previous: bool = False,
     preserve_sources: set[str] | None = None,
 ) -> list[tuple[str, int]]:
-    if not ordered_sources:
-        return []
-    if inherited_from_previous:
-        return ordered_sources[:1]
-
-    preserved_sources = {
-        str(source).strip()
-        for source in (preserve_sources or set())
-        if str(source).strip()
-    }
-    dominant_source, dominant_count = ordered_sources[0]
-    selected: list[tuple[str, int]] = [(dominant_source, dominant_count)]
-
-    for source_file, count in ordered_sources[1:]:
-        if count <= 0:
-            continue
-        if source_file in preserved_sources:
-            selected.append((source_file, count))
-            continue
-        if count == dominant_count:
-            selected.append((source_file, count))
-            continue
-        if dominant_count <= 2:
-            selected.append((source_file, count))
-            continue
-        minimum_count = max(2, (dominant_count + 1) // 2)
-        if count >= minimum_count:
-            selected.append((source_file, count))
-
-    return selected
+    del inherited_from_previous
+    del preserve_sources
+    return [
+        (source_file, count)
+        for source_file, count in ordered_sources
+        if str(source_file).strip() and int(count) > 0
+    ]
 
 
 def _order_page_sources_by_first_seen(
@@ -712,6 +890,308 @@ def _score_probe_matches(page_text: str, probe_texts: list[str]) -> int:
                 seen.add(probe)
                 score += min(len(probe), 120)
     return score
+
+
+def _extract_preview_page_sources(
+    page_texts: list[str],
+    source_lookup: dict[str, dict[str, object]] | None = None,
+) -> list[list[str]]:
+    unique_sources: list[str] = []
+    seen_sources: set[str] = set()
+    for meta in (source_lookup or {}).values():
+        source_file = str(meta.get("source_file") or "").strip()
+        if not source_file or source_file in seen_sources:
+            continue
+        seen_sources.add(source_file)
+        unique_sources.append(source_file)
+
+    label_patterns = [
+        (source_file, _normalize_trace_text(f"{PROVENANCE_PREVIEW_LABEL_PREFIX}{source_file}"))
+        for source_file in unique_sources
+    ]
+
+    page_sources: list[list[str]] = []
+    for page_text in page_texts:
+        normalized_page_text = _normalize_trace_text(page_text)
+        ordered_hits: list[tuple[int, str]] = []
+        for source_file, pattern in label_patterns:
+            if not pattern:
+                continue
+            start = 0
+            while True:
+                position = normalized_page_text.find(pattern, start)
+                if position < 0:
+                    break
+                ordered_hits.append((position, source_file))
+                start = position + max(1, len(pattern))
+        ordered_hits.sort(key=lambda item: (item[0], item[1]))
+        page_sources.append([source_file for _, source_file in ordered_hits])
+
+    return page_sources
+
+
+def _merge_page_source_map_with_preview_labels(
+    page_source_map: list[dict[str, object]],
+    preview_page_sources: list[list[str]],
+) -> list[dict[str, object]]:
+    if not page_source_map:
+        return []
+
+    merged_map: list[dict[str, object]] = []
+    for idx, bucket in enumerate(page_source_map):
+        updated_bucket = dict(bucket)
+        raw_label_sources = preview_page_sources[idx] if idx < len(preview_page_sources) else []
+        label_sources: list[str] = []
+        for source_file in raw_label_sources:
+            source_key = str(source_file).strip()
+            if not source_key:
+                continue
+            label_sources.append(source_key)
+
+        updated_bucket["preview_label_sequence"] = label_sources[:]
+
+        existing_sources = [
+            str(item.get("source_file") or "").strip()
+            for item in (updated_bucket.get("sources") or [])
+            if str(item.get("source_file") or "").strip()
+        ]
+
+        if label_sources and not existing_sources:
+            updated_bucket["sources"] = [
+                {
+                    "source_file": source_key,
+                    "count": 1,
+                    "inherited": False,
+                    "from_preview_label": True,
+                    "preview_segment_role": "label",
+                }
+                for source_key in label_sources
+            ]
+            updated_bucket["dominant_source"] = label_sources[0]
+            updated_bucket["uses_preview_labels"] = True
+            updated_bucket["preview_has_source_switch"] = len(label_sources) > 1
+        merged_map.append(updated_bucket)
+
+    return merged_map
+
+
+def _has_provenance_result_blocks(
+    paragraph_trace: list[dict[str, object]],
+    object_trace_candidates: list[dict[str, object]] | None = None,
+) -> bool:
+    if any(item.get("result_block_index") is not None for item in paragraph_trace):
+        return True
+    return any(
+        candidate.get("result_block_index") is not None
+        for candidate in (object_trace_candidates or [])
+    )
+
+
+def _build_provenance_page_mapping_blocks(
+    paragraph_trace: list[dict[str, object]],
+    object_trace_candidates: list[dict[str, object]] | None = None,
+) -> list[dict[str, object]]:
+    blocks: list[dict[str, object]] = []
+
+    for item in paragraph_trace:
+        block_index = item.get("result_block_index")
+        if block_index is None:
+            continue
+        text = _normalize_trace_text(str(item.get("text") or ""))
+        probe_texts = [
+            _normalize_trace_text(str(probe))
+            for probe in (item.get("probe_texts") or [])
+            if _normalize_trace_text(str(probe))
+        ]
+        if text and text not in probe_texts:
+            probe_texts.insert(0, text)
+        blocks.append(
+            {
+                "block_index": int(block_index),
+                "block_type": str(item.get("content_type") or "paragraph"),
+                "source_id": str(item.get("source_id") or "").strip(),
+                "source_file": str(item.get("source_file") or "未知來源"),
+                "source_step": str(item.get("source_step") or ""),
+                "count_as_source": bool(item.get("count_as_source")),
+                "text": str(item.get("text") or ""),
+                "primary_probe_texts": probe_texts,
+                "fallback_probe_texts": [],
+                "allow_multi_page": False,
+            }
+        )
+
+    for candidate in object_trace_candidates or []:
+        block_index = candidate.get("result_block_index")
+        if block_index is None:
+            continue
+        primary_probe_texts = [
+            _normalize_trace_text(str(probe))
+            for probe in (candidate.get("primary_probe_texts") or [])
+            if _normalize_trace_text(str(probe))
+        ]
+        fallback_probe_texts = [
+            _normalize_trace_text(str(probe))
+            for probe in (candidate.get("fallback_probe_texts") or [])
+            if _normalize_trace_text(str(probe))
+        ]
+        blocks.append(
+            {
+                "block_index": int(block_index),
+                "block_type": str(candidate.get("content_type") or "object"),
+                "source_id": str(candidate.get("source_id") or "").strip(),
+                "source_file": str(candidate.get("source_file") or "未知來源"),
+                "source_step": str(candidate.get("source_step") or ""),
+                "count_as_source": bool(candidate.get("count_as_source")),
+                "text": "",
+                "primary_probe_texts": primary_probe_texts,
+                "fallback_probe_texts": fallback_probe_texts,
+                "allow_multi_page": bool(candidate.get("allow_multi_page")),
+            }
+        )
+
+    return sorted(blocks, key=lambda item: int(item.get("block_index") or -1))
+
+
+def _select_result_block_pages(
+    page_texts: list[str],
+    *,
+    start_page_idx: int,
+    primary_probe_texts: list[str],
+    fallback_probe_texts: list[str],
+    allow_multi_page: bool,
+) -> list[int]:
+    if not page_texts:
+        return []
+
+    bounded_start = max(0, min(start_page_idx, len(page_texts) - 1))
+
+    def _score_pages(probes: list[str]) -> dict[int, int]:
+        return {
+            page_idx: _score_probe_matches(page_texts[page_idx], probes)
+            for page_idx in range(bounded_start, len(page_texts))
+        }
+
+    def _pick_pages(scores: dict[int, int], *, permit_multi_page: bool) -> list[int]:
+        positive_scores = {page_idx: score for page_idx, score in scores.items() if score > 0}
+        if not positive_scores:
+            return []
+        best_page = max(positive_scores, key=lambda page_idx: (positive_scores[page_idx], -page_idx))
+        max_score = positive_scores[best_page]
+        if not permit_multi_page:
+            return [best_page]
+
+        min_score = max(1, (max_score + 2) // 3)
+        selected = {page_idx for page_idx, score in positive_scores.items() if score >= min_score}
+        cluster = [best_page]
+
+        next_page = best_page - 1
+        while next_page in selected:
+            cluster.insert(0, next_page)
+            next_page -= 1
+
+        next_page = best_page + 1
+        while next_page in selected:
+            cluster.append(next_page)
+            next_page += 1
+
+        return cluster
+
+    selected_pages = _pick_pages(_score_pages(primary_probe_texts), permit_multi_page=allow_multi_page)
+    if selected_pages:
+        return selected_pages
+
+    selected_pages = _pick_pages(_score_pages(fallback_probe_texts), permit_multi_page=allow_multi_page)
+    if selected_pages:
+        return selected_pages
+
+    return [bounded_start]
+
+
+def _build_page_source_map_from_provenance_blocks(
+    page_texts: list[str],
+    paragraph_trace: list[dict[str, object]],
+    object_trace_candidates: list[dict[str, object]] | None = None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    page_buckets: list[dict[str, object]] = [
+        {
+            "page_number": idx + 1,
+            "dominant_source": "",
+            "sources": [],
+        }
+        for idx in range(len(page_texts))
+    ]
+    source_counts_by_page: list[dict[str, int]] = [dict() for _ in page_texts]
+    source_first_seen_by_page: list[dict[str, int]] = [dict() for _ in page_texts]
+    has_context_only_content_by_page = [False for _ in page_texts]
+    preserved_sources_by_page: list[set[str]] = [set() for _ in page_texts]
+    block_page_map: dict[int, list[int]] = {}
+    current_page_idx = 0
+    source_seen_sequence = 0
+
+    for block in _build_provenance_page_mapping_blocks(paragraph_trace, object_trace_candidates):
+        selected_pages = _select_result_block_pages(
+            page_texts,
+            start_page_idx=current_page_idx,
+            primary_probe_texts=[str(item) for item in (block.get("primary_probe_texts") or []) if str(item).strip()],
+            fallback_probe_texts=[str(item) for item in (block.get("fallback_probe_texts") or []) if str(item).strip()],
+            allow_multi_page=bool(block.get("allow_multi_page")),
+        )
+        if not selected_pages:
+            continue
+
+        block_page_map[int(block["block_index"])] = selected_pages
+        current_page_idx = selected_pages[-1]
+
+        source_file = str(block.get("source_file") or "未知來源")
+        source_step = str(block.get("source_step") or "")
+        count_as_source = bool(
+            block.get("count_as_source", str(block.get("source_id") or "").strip())
+        )
+
+        for page_idx in selected_pages:
+            if count_as_source and source_file not in {"", "未知來源"}:
+                source_counts = source_counts_by_page[page_idx]
+                source_counts[source_file] = source_counts.get(source_file, 0) + 1
+                source_first_seen = source_first_seen_by_page[page_idx]
+                if source_file not in source_first_seen:
+                    source_first_seen[source_file] = source_seen_sequence
+                    source_seen_sequence += 1
+                if source_step in {"extract_specific_table_from_word", "extract_specific_figure_from_word"}:
+                    preserved_sources_by_page[page_idx].add(source_file)
+            else:
+                has_context_only_content_by_page[page_idx] = True
+
+    annotated_trace: list[dict[str, object]] = []
+    for item in paragraph_trace:
+        trace_item = dict(item)
+        block_index = trace_item.get("result_block_index")
+        assigned_pages = block_page_map.get(int(block_index)) if block_index is not None else None
+        trace_item["result_page"] = assigned_pages[0] + 1 if assigned_pages else None
+        annotated_trace.append(trace_item)
+
+    for idx, bucket in enumerate(page_buckets):
+        source_counts = source_counts_by_page[idx]
+        ordered_sources = sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
+        display_sources = _select_page_sources_for_display(
+            ordered_sources,
+            preserve_sources=preserved_sources_by_page[idx],
+        )
+        display_sources = _order_page_sources_by_first_seen(
+            display_sources,
+            source_first_seen_by_page[idx],
+        )
+        dominant_source = ordered_sources[0][0] if ordered_sources else ""
+        bucket["sources"] = [
+            {
+                "source_file": source_file,
+                "count": count,
+                "inherited": False,
+            }
+            for source_file, count in display_sources
+        ]
+        bucket["dominant_source"] = dominant_source
+
+    return annotated_trace, page_buckets
 
 
 def _select_object_candidate_pages(
@@ -775,6 +1255,7 @@ def _build_page_source_map(
     result_pdf_path: str,
     paragraph_trace: list[dict[str, object]],
     object_trace_candidates: list[dict[str, object]] | None = None,
+    source_lookup: dict[str, dict[str, object]] | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     if not result_pdf_path or not os.path.isfile(result_pdf_path):
         return paragraph_trace, []
@@ -803,6 +1284,30 @@ def _build_page_source_map(
             _normalize_trace_text(page.get_text("text"))
             for page in pdf
         ]
+    preview_page_sources = _extract_preview_page_sources(page_texts, source_lookup)
+
+    if _has_provenance_result_blocks(paragraph_trace, object_trace_candidates):
+        annotated_trace, page_buckets = _build_page_source_map_from_provenance_blocks(
+            page_texts,
+            paragraph_trace,
+            object_trace_candidates,
+        )
+        page_buckets = _merge_page_source_map_with_preview_labels(page_buckets, preview_page_sources)
+        try:
+            with open(page_map_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "version": _PAGE_SOURCE_MAP_CACHE_VERSION,
+                        "paragraph_trace": annotated_trace,
+                        "page_source_map": page_buckets,
+                    },
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+        except Exception:
+            current_app.logger.warning("Failed to save page source map cache for %s", job_dir, exc_info=True)
+        return annotated_trace, page_buckets
 
     page_buckets: list[dict[str, object]] = [
         {
@@ -884,32 +1389,26 @@ def _build_page_source_map(
     for idx, bucket in enumerate(page_buckets):
         source_counts = source_counts_by_page[idx]
         ordered_sources = sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
-        dominant_source = ordered_sources[0][0] if ordered_sources else ""
-        if not ordered_sources and idx > 0 and not has_context_only_content_by_page[idx]:
-            previous_bucket = page_buckets[idx - 1]
-            previous_source = str(previous_bucket.get("dominant_source") or "").strip()
-            if previous_source:
-                ordered_sources = [(previous_source, 0)]
-                bucket["inherited_from_previous"] = True
-                dominant_source = previous_source
         display_sources = _select_page_sources_for_display(
             ordered_sources,
-            inherited_from_previous=bool(bucket.get("inherited_from_previous")),
             preserve_sources=preserved_sources_by_page[idx],
         )
         display_sources = _order_page_sources_by_first_seen(
             display_sources,
             source_first_seen_by_page[idx],
         )
+        dominant_source = ordered_sources[0][0] if ordered_sources else ""
         bucket["sources"] = [
             {
                 "source_file": source_file,
                 "count": count,
-                "inherited": bool(bucket.get("inherited_from_previous")) and count == 0,
+                "inherited": False,
             }
             for source_file, count in display_sources
         ]
         bucket["dominant_source"] = dominant_source
+
+    page_buckets = _merge_page_source_map_with_preview_labels(page_buckets, preview_page_sources)
 
     try:
         with open(page_map_path, "w", encoding="utf-8") as f:
@@ -2426,10 +2925,30 @@ def task_compare(task_id, job_id):
         entries = json.load(f)
     titles_to_hide = collect_titles_to_hide(entries)
     preview_messages = []
+    source_lookup = _build_provenance_source_lookup(entries)
+    preview_docx_path = docx_path
+    preview_docx_rel, preview_docx_error = _ensure_provenance_preview_docx(
+        docx_path,
+        log_path,
+        job_dir,
+        source_lookup,
+    )
+    if preview_docx_error:
+        preview_messages.append(f"來源標記預覽建立失敗: {preview_docx_error}")
+    elif preview_docx_rel:
+        preview_docx_path = os.path.join(job_dir, preview_docx_rel)
 
-    result_pdf_rel, result_pdf_error = _ensure_pdf_preview(docx_path, job_dir, "preview_pdf")
+    result_pdf_rel, result_pdf_error = _ensure_pdf_preview(preview_docx_path, job_dir, "preview_pdf")
     if result_pdf_error:
         preview_messages.append(f"結果文件預覽失敗: {result_pdf_error}")
+    result_html_rel, result_html_error = _ensure_html_preview(
+        preview_docx_path,
+        job_dir,
+        "preview_html",
+        "provenance_preview",
+    )
+    if result_html_error:
+        preview_messages.append(f"HTML 預覽建立失敗: {result_html_error}")
 
     chapter_sources = {}
     source_urls = {}
@@ -2563,6 +3082,7 @@ def task_compare(task_id, job_id):
         result_pdf_abs,
         paragraph_trace,
         object_trace_candidates,
+        source_lookup,
     )
     return render_template(
         "tasks/compare.html",
@@ -2573,6 +3093,12 @@ def task_compare(task_id, job_id):
             job_id=job_id,
             filename=result_pdf_rel,
         ) if result_pdf_rel else "",
+        html_preview_url=url_for(
+            "tasks_bp.task_view_file",
+            task_id=task_id,
+            job_id=job_id,
+            filename=result_html_rel,
+        ) if result_html_rel else "",
         chapters=chapters,
         chapter_sources=chapter_sources,
         source_urls=source_urls,

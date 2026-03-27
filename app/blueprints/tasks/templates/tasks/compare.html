@@ -3,25 +3,33 @@
 <style>
   .compare-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1.7fr) minmax(340px, 0.95fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
+    align-items: start;
+  }
+  .compare-layout.compare-layout-with-sidebar {
+    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 340px);
   }
   .pdf-viewer-shell {
-    height: 75vh;
+    height: clamp(560px, 75vh, 920px);
     min-height: 640px;
     border: 1px solid var(--bs-gray-200);
     border-radius: 0.9rem;
     background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-    overflow-y: auto;
-    padding: 0.75rem 0 0;
+    overflow: hidden;
+    padding: 0;
   }
-  .pdf-viewer-status {
-    padding: 0 1rem 0.75rem;
+  .pdf-viewer-frame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    background: white;
   }
   .page-info-bar {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: 0.75rem;
     margin-bottom: 0.75rem;
     padding: 0.85rem 1rem;
@@ -34,6 +42,23 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+  }
+  .preview-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .preview-mode-toggle .btn {
+    min-width: 6.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+  }
+  .preview-mode-toggle .btn.active {
+    background: var(--bs-blue-600);
+    border-color: var(--bs-blue-600);
+    color: white;
   }
   .viewer-divider {
     width: 1px;
@@ -76,119 +101,169 @@
     color: var(--bs-blue-600);
     border-color: var(--bs-blue-100);
   }
-  .pdf-viewer {
+  .html-viewer-shell {
+    height: clamp(560px, 75vh, 920px);
+    min-height: 640px;
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.9rem;
+    background: white;
+    overflow: auto;
+    padding: 1.25rem 0;
+  }
+  .html-viewer-content {
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    border: 0;
+    display: block;
+    background: white;
+  }
+  .html-viewer-status {
+    display: block;
+    padding: 0.75rem 1rem;
+    color: var(--bs-gray-500);
+    font-size: 0.9rem;
+  }
+  .preview-surface-hidden {
+    display: none;
+  }
+  .viewer-controls-hidden {
+    display: none !important;
+  }
+  .sidebar-panel {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+  }
+  .sidebar-column {
     display: grid;
     gap: 0.75rem;
-    justify-items: center;
-    padding: 0 0 0.75rem;
+    align-content: start;
+    position: sticky;
+    top: 1rem;
+    align-self: start;
   }
-  .pdf-page {
-    width: min(100%, 980px);
-    background: white;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    padding: 0;
+  .sidebar-panel-header {
+    padding: 1rem 1rem 0.75rem;
+    border-bottom: 1px solid var(--bs-gray-200);
   }
-  .pdf-page canvas {
-    width: 100%;
-    height: auto;
-    display: block;
-    border-radius: 0;
+  .sidebar-panel-title {
+    color: #0f172a;
+    font-size: 1rem;
+    font-weight: 700;
   }
-  .pdf-page-label {
-    margin: 0;
-    padding: 0.4rem 0.9rem;
+  .sidebar-panel-hint {
+    margin-top: 0.2rem;
     color: var(--bs-gray-500);
-    font-size: 0.8rem;
+    font-size: 0.85rem;
+  }
+  .source-file-list {
+    padding: 0.75rem;
+    display: grid;
+    gap: 0.75rem;
+  }
+  .source-file-item {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    padding: 0.8rem 0.9rem;
+  }
+  .source-file-name {
+    color: #0f172a;
+    font-size: 0.92rem;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    background: rgba(255,255,255,0.92);
-    border-bottom: 1px solid #e2e8f0;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  .source-file-actions {
+    margin-top: 0.7rem;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .source-file-empty {
+    width: 100%;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--bs-gray-500);
+    font-size: 0.9rem;
+    padding: 1rem;
   }
   .preview-empty {
     min-height: 420px;
     background: linear-gradient(145deg, #f8fafc, #eff6ff);
     color: var(--bs-gray-500);
   }
-  .sidebar-stack {
-    display: grid;
-    gap: 1rem;
-    max-height: calc(78vh + 96px);
-    overflow-y: auto;
-    padding-right: 0.25rem;
-  }
-  .sidebar-panel {
-    border: 1px solid var(--bs-gray-200);
-    border-radius: 0.75rem;
-    background: white;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  }
-  .page-source-list .list-group-item {
-    border-left: 0;
-    border-right: 0;
-    border-radius: 0;
-  }
-  .page-source-btn {
-    width: 100%;
-    text-align: left;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: 0;
-  }
-  .page-source-btn.active,
-  .page-source-btn:hover {
-    color: var(--bs-blue-600);
-  }
-  .page-source-item-active {
-    background: var(--bs-blue-50);
-  }
-  .source-tag-a {
-    background-color: #eff6ff;
-    color: #1d4ed8;
-    border: 1px solid #bfdbfe;
-  }
-  .source-tag-b {
-    background-color: #ecfdf5;
-    color: #047857;
-    border: 1px solid #a7f3d0;
-  }
-  .source-tag-c {
-    background-color: #fffbeb;
-    color: #b45309;
-    border: 1px solid #fde68a;
-  }
-  .source-tag-d {
-    background-color: #fdf2f8;
-    color: #be185d;
-    border: 1px solid #fbcfe8;
-  }
-  .source-tag-e {
-    background-color: #f5f3ff;
-    color: #6d28d9;
-    border: 1px solid #ddd6fe;
-  }
-  .source-tag-f {
-    background-color: #fff7ed;
-    color: #c2410c;
-    border: 1px solid #fed7aa;
+  .preview-toolbar {
+    display: none;
   }
   @media (max-width: 991.98px) {
     .compare-layout {
       grid-template-columns: 1fr;
     }
-    .sidebar-stack {
-      max-height: none;
-      overflow: visible;
-      padding-right: 0;
-    }
     .pdf-viewer-shell,
+    .html-viewer-shell,
     .preview-empty {
       min-height: 70vh;
       height: 70vh;
+    }
+  }
+  @media (max-width: 1365.98px) {
+    .compare-layout.compare-layout-with-sidebar {
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    }
+  }
+  @media (max-width: 1199.98px) {
+    .compare-layout.compare-layout-with-sidebar {
+      grid-template-columns: 1fr;
+    }
+    .page-info-bar {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      gap: 0.75rem;
+      padding-right: 1rem;
+    }
+    .page-info-bar > .btn {
+      position: static !important;
+      margin-right: 0 !important;
+      margin-left: auto;
+    }
+    .viewer-toolbar-group {
+      flex-wrap: wrap;
+    }
+    .preview-mode-toggle {
+      margin-right: 0;
+    }
+    .sidebar-column {
+      order: 2;
+    }
+    .pdf-viewer-shell,
+    .html-viewer-shell {
+      min-height: 60vh;
+      height: 60vh;
+    }
+  }
+  @media (max-width: 767.98px) {
+    .page-info-bar {
+      align-items: stretch;
+    }
+    .viewer-toolbar-group {
+      width: 100%;
+    }
+    .preview-mode-toggle {
+      width: 100%;
+    }
+    .preview-mode-toggle .btn {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .page-info-bar > .btn {
+      width: 100%;
+      margin-left: 0;
     }
   }
 </style>
@@ -205,97 +280,80 @@
   {% endfor %}
 {% endif %}
 
+{% if preview_url or html_preview_url %}
 <div class="compare-layout">
   <section>
-    {% if preview_url %}
     <div class="page-info-bar">
       <div class="viewer-toolbar-group">
-        <button class="viewer-icon-btn" id="showResultBtn" type="button" title="回到第一頁">
-          <i class="bi bi-arrow-up-circle"></i>
-        </button>
-        <span class="page-count-badge" id="pageSourceHeadline">1 / 1</span>
-        <button class="viewer-icon-btn" id="prevPageBtn" type="button" title="上一頁">
-          <i class="bi bi-chevron-up"></i>
-        </button>
-        <button class="viewer-icon-btn" id="nextPageBtn" type="button" title="下一頁">
-          <i class="bi bi-chevron-down"></i>
-        </button>
+        <div class="preview-mode-toggle" role="group" aria-label="預覽模式">
+          <button class="btn btn-outline-primary btn-sm active" id="pdfModeBtn" type="button" {% if not preview_url %}disabled{% endif %}>
+            <i class="bi bi-file"></i>文件預覽
+          </button>
+          <button class="btn btn-outline-primary btn-sm" id="htmlModeBtn" type="button" {% if not html_preview_url %}disabled{% endif %}>
+            <i class="bi bi-layout-split me-1"></i>來源比對
+          </button>
+        </div>
+      </div>
+      <div class="viewer-actions">
+        <a class="btn btn-primary btn-sm shadow-sm" href="{{ download_url }}">
+          <i class="bi bi-file-earmark-word me-1"></i>下載 Word
+        </a>
       </div>
     </div>
     <div id="pdfViewerShell" class="pdf-viewer-shell">
-      <div id="pdfViewerStatus" class="pdf-viewer-status small text-muted">PDF 載入中</div>
-      <div id="pdfViewer" class="pdf-viewer"></div>
+      <iframe id="pdfViewerFrame" class="pdf-viewer-frame" title="PDF 預覽"></iframe>
     </div>
-    {% else %}
-    <div class="preview-empty rounded-3 border d-flex flex-column justify-content-center align-items-center text-center p-4">
-      <i class="bi bi-file-earmark-x fs-1 mb-3"></i>
-      <div class="fw-semibold mb-2">目前無法建立 PDF 預覽</div>
-      <div class="small">請確認 LibreOffice 可用，或先下載 Word 檔查看。</div>
+    <div id="htmlViewerShell" class="html-viewer-shell preview-surface-hidden">
+      <div id="htmlViewerStatus" class="html-viewer-status">HTML 載入中</div>
+      <iframe id="htmlViewerContent" class="html-viewer-content" title="HTML 預覽"></iframe>
     </div>
-    {% endif %}
   </section>
-
-  <aside>
-    <div class="sidebar-stack">
-      <section class="sidebar-panel">
-        <div class="p-3 border-bottom">
-          <div class="fw-semibold">目前頁面來源</div>
-          <div class="small text-muted">會隨左側目前可見頁面自動更新</div>
-        </div>
-        <ul class="list-group list-group-flush page-source-list" id="currentPageSourceList"></ul>
-        <div class="p-3 border-top d-flex flex-wrap gap-2">
-          <a class="btn btn-primary" href="{{ download_url }}">
-            <i class="bi bi-download me-1"></i>下載 Word
-          </a>
-        </div>
-      </section>
-    </div>
-  </aside>
+  <div class="sidebar-column preview-surface-hidden" id="sourceSidebar" hidden>
+    <aside class="sidebar-panel">
+      <div class="sidebar-panel-header">
+        <div class="sidebar-panel-title">來源文件</div>
+        <div class="sidebar-panel-hint">顯示目前 HTML 預覽位置對應的來源文件</div>
+      </div>
+      <div class="source-file-list" id="currentPageSourceList"></div>
+    </aside>
+  </div>
 </div>
+{% else %}
+<div class="preview-empty rounded-3 border d-flex flex-column justify-content-center align-items-center text-center p-4">
+  <i class="bi bi-file-earmark-x fs-1 mb-3"></i>
+  <div class="fw-semibold mb-2">目前無法建立 PDF 預覽</div>
+  <div class="small">請確認 LibreOffice 可用，或先下載 Word 檔查看。</div>
+</div>
+{% endif %}
 
 <script type="module">
-import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist/build/pdf.min.mjs';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist/build/pdf.worker.min.mjs';
-
 const SOURCE_URLS = {{ source_urls|tojson }};
-const TITLES_TO_HIDE = {{ titles_to_hide|tojson }};
-const PAGE_SOURCE_MAP = {{ page_source_map|tojson }};
 const RESULT_PDF_URL = {{ preview_url|tojson }};
+const HTML_PREVIEW_URL = {{ html_preview_url|tojson }};
 
 const pdfViewerShell = document.getElementById('pdfViewerShell');
-const pdfViewer = document.getElementById('pdfViewer');
-const pdfViewerStatus = document.getElementById('pdfViewerStatus');
-const pageSourceHeadline = document.getElementById('pageSourceHeadline');
+const pdfViewerFrame = document.getElementById('pdfViewerFrame');
+const htmlViewerShell = document.getElementById('htmlViewerShell');
+const htmlViewerStatus = document.getElementById('htmlViewerStatus');
+const htmlViewerContent = document.getElementById('htmlViewerContent');
+const pdfModeBtn = document.getElementById('pdfModeBtn');
+const htmlModeBtn = document.getElementById('htmlModeBtn');
 const currentPageSourceList = document.getElementById('currentPageSourceList');
-const showResultBtn = document.getElementById('showResultBtn');
-const prevPageBtn = document.getElementById('prevPageBtn');
-const nextPageBtn = document.getElementById('nextPageBtn');
+const sourceSidebar = document.getElementById('sourceSidebar');
+const compareLayout = document.querySelector('.compare-layout');
 
-const SOURCE_COLOR_CLASSES = [
-  {tag: 'source-tag-a'},
-  {tag: 'source-tag-b'},
-  {tag: 'source-tag-c'},
-  {tag: 'source-tag-d'},
-  {tag: 'source-tag-e'},
-  {tag: 'source-tag-f'},
+let currentPreviewMode = RESULT_PDF_URL ? 'pdf' : 'html';
+let htmlSourceDetectScheduled = false;
+let htmlPreviewLoaded = false;
+let htmlPreviewLoadingPromise = null;
+const HTML_SOURCE_PALETTE = [
+  {bg: 'rgba(219, 234, 254, 0.28)'},
+  {bg: 'rgba(209, 250, 229, 0.28)'},
+  {bg: 'rgba(254, 240, 138, 0.24)'},
+  {bg: 'rgba(252, 231, 243, 0.28)'},
+  {bg: 'rgba(233, 213, 255, 0.26)'},
+  {bg: 'rgba(254, 215, 170, 0.24)'},
 ];
-const sourceColorMap = new Map();
-const pageSourceByNumber = new Map(PAGE_SOURCE_MAP.map((item) => [Number(item.page_number), item]));
-
-let currentPageNumber = 1;
-let pageDetectScheduled = false;
-let pdfDoc = null;
-const PDF_RENDER_SCALE = 1.35;
-
-function getSourceColorClass(source) {
-  const key = source || '未知來源';
-  if (!sourceColorMap.has(key)) {
-    const next = SOURCE_COLOR_CLASSES[sourceColorMap.size % SOURCE_COLOR_CLASSES.length];
-    sourceColorMap.set(key, next);
-  }
-  return sourceColorMap.get(key);
-}
 
 function openSourcePdf(source) {
   const url = SOURCE_URLS[source];
@@ -303,160 +361,291 @@ function openSourcePdf(source) {
   window.open(url, '_blank', 'width=1200,height=900,scrollbars=yes,resizable=yes');
 }
 
-function renderCurrentPageSources() {
-  currentPageSourceList.innerHTML = '';
-  const pageInfo = pageSourceByNumber.get(currentPageNumber);
-  const totalPages = pdfDoc ? pdfDoc.numPages : Math.max(pageSourceByNumber.size, currentPageNumber);
-  const pageLabel = `${currentPageNumber} / ${totalPages}`;
-  pageSourceHeadline.textContent = pageLabel;
+function extractSourceLabel(rawText) {
+  const normalized = String(rawText || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  const match = normalized.match(/^來源\s*:\s*(.+)$/);
+  return match ? match[1].trim() : '';
+}
 
-  const sources = pageInfo && Array.isArray(pageInfo.sources) ? pageInfo.sources : [];
+function ensureHtmlPreviewHighlightStyles(frameDocument) {
+  if (!frameDocument || frameDocument.getElementById('compareHtmlSourceStyles')) {
+    return;
+  }
+
+  const style = frameDocument.createElement('style');
+  style.id = 'compareHtmlSourceStyles';
+  style.textContent = `
+    [data-preview-source-block="1"] {
+      background: var(--preview-source-bg, rgba(226, 232, 240, 0.28));
+      border-radius: 0.3rem;
+    }
+  `;
+  frameDocument.head.appendChild(style);
+}
+
+function getSourcePalette(source) {
+  const text = String(source || '');
+  let hash = 0;
+  for (let idx = 0; idx < text.length; idx += 1) {
+    hash = (hash * 31 + text.charCodeAt(idx)) >>> 0;
+  }
+  return HTML_SOURCE_PALETTE[hash % HTML_SOURCE_PALETTE.length];
+}
+
+function clearPreviewSourceStyles(frameDocument) {
+  if (!frameDocument) return;
+  frameDocument.querySelectorAll('[data-preview-source-block]').forEach((node) => {
+    delete node.dataset.previewSourceBlock;
+    delete node.dataset.previewSourceName;
+    node.style.removeProperty('--preview-source-bg');
+  });
+}
+
+function setPreviewSourceStyles(node, source) {
+  if (!node || !source) return;
+  const palette = getSourcePalette(source);
+  node.dataset.previewSourceBlock = '1';
+  node.dataset.previewSourceName = source;
+  node.style.setProperty('--preview-source-bg', palette.bg);
+}
+
+function annotateHtmlPreviewSources(frameDocument) {
+  if (!frameDocument?.body) return;
+  ensureHtmlPreviewHighlightStyles(frameDocument);
+  clearPreviewSourceStyles(frameDocument);
+
+  let currentSource = '';
+  const blocks = Array.from(frameDocument.body.children)
+    .filter((node) => ['P', 'DIV', 'TABLE', 'UL', 'OL'].includes(node.tagName));
+
+  blocks.forEach((node) => {
+    const source = extractSourceLabel(node.textContent);
+    if (source) {
+      currentSource = source;
+      setPreviewSourceStyles(node, source);
+      return;
+    }
+
+    if (!currentSource) {
+      return;
+    }
+    setPreviewSourceStyles(node, currentSource);
+  });
+}
+
+function renderSourceCards(sources, emptyText) {
+  if (!currentPageSourceList) return;
+  currentPageSourceList.innerHTML = '';
+
   if (!sources.length) {
-    const empty = document.createElement('li');
-    empty.className = 'list-group-item text-muted';
-    empty.textContent = '這一頁沒有可辨識的來源映射';
+    const empty = document.createElement('div');
+    empty.className = 'source-file-empty';
+    empty.textContent = emptyText;
     currentPageSourceList.appendChild(empty);
     return;
   }
 
-  const activeSource = pageInfo && pageInfo.dominant_source ? pageInfo.dominant_source : '';
+  sources.forEach((source) => {
+    const item = document.createElement('div');
+    item.className = 'source-file-item';
 
-  sources.forEach((entry, index) => {
-    const source = entry.source_file || '未知來源';
-    const colorClass = getSourceColorClass(source);
-    const isActive = activeSource === source || (!activeSource && index === 0);
-    const item = document.createElement('li');
-    item.className = `list-group-item${isActive ? ' page-source-item-active' : ''}`;
+    const name = document.createElement('div');
+    name.className = 'source-file-name';
+    name.textContent = source;
+
+    const actions = document.createElement('div');
+    actions.className = 'source-file-actions';
+
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `page-source-btn${isActive ? ' active' : ''}`;
-    const row = document.createElement('div');
-    row.className = 'd-flex justify-content-between align-items-start gap-3';
-    const textWrap = document.createElement('div');
-    const tag = document.createElement('span');
-    tag.className = `status-badge ${colorClass.tag}`;
-    tag.textContent = source;
-    const hint = document.createElement('div');
-    hint.className = 'small text-muted mt-1';
-    hint.textContent = entry.inherited ? '延續上一頁來源' : `本頁對應段落數：${entry.count}`;
-    const action = document.createElement('i');
-    action.className = 'bi bi-box-arrow-up-right text-muted';
-    textWrap.appendChild(tag);
-    textWrap.appendChild(hint);
-    row.appendChild(textWrap);
-    row.appendChild(action);
-    button.appendChild(row);
+    button.className = 'btn btn-outline-primary btn-sm';
+    button.innerHTML = '<i class="bi bi-box-arrow-up-right me-1"></i>開啟文件';
     button.addEventListener('click', () => {
       openSourcePdf(source);
     });
-    item.appendChild(button);
+
+    actions.appendChild(button);
+    item.appendChild(name);
+    item.appendChild(actions);
     currentPageSourceList.appendChild(item);
   });
 }
 
-function updateCurrentPage(pageNumber) {
-  if (!pageNumber || pageNumber === currentPageNumber) return;
-  currentPageNumber = pageNumber;
-  renderCurrentPageSources();
-}
+async function ensureHtmlPreviewLoaded() {
+  if (!HTML_PREVIEW_URL || !htmlViewerContent || htmlPreviewLoaded) {
+    return;
+  }
+  if (htmlPreviewLoadingPromise) {
+    await htmlPreviewLoadingPromise;
+    return;
+  }
 
-function scrollToPage(pageNumber) {
-  if (!pdfViewerShell || !pdfViewer) return;
-  const target = pdfViewer.querySelector(`.pdf-page[data-page-number="${pageNumber}"]`);
-  if (!target) return;
-  const top = target.offsetTop - 100;
-  pdfViewerShell.scrollTo({top, behavior: 'smooth'});
-  updateCurrentPage(pageNumber);
-}
-
-function detectCurrentPageFromScroll() {
-  if (!pdfViewerShell) return;
-  pageDetectScheduled = false;
-  const pages = Array.from(pdfViewer.querySelectorAll('.pdf-page'));
-  if (!pages.length) return;
-
-  const shellRect = pdfViewerShell.getBoundingClientRect();
-  const focusLine = shellRect.top + shellRect.height * 0.35;
-  let bestPage = 1;
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  pages.forEach((pageEl) => {
-    const rect = pageEl.getBoundingClientRect();
-    const pageMid = rect.top + rect.height * 0.5;
-    const distance = Math.abs(pageMid - focusLine);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestPage = Number(pageEl.dataset.pageNumber);
+  htmlPreviewLoadingPromise = (async () => {
+    if (htmlViewerStatus) {
+      htmlViewerStatus.textContent = 'HTML 載入中';
     }
-  });
+    await new Promise((resolve, reject) => {
+      const handleLoad = () => {
+        htmlViewerContent.removeEventListener('load', handleLoad);
+        htmlViewerContent.removeEventListener('error', handleError);
+        const frameWindow = htmlViewerContent.contentWindow;
+        const frameDocument = htmlViewerContent.contentDocument;
+        if (frameDocument) {
+          annotateHtmlPreviewSources(frameDocument);
+        }
+        if (frameWindow) {
+          frameWindow.addEventListener('scroll', scheduleHtmlSourceDetection, {passive: true});
+        }
+        htmlPreviewLoaded = true;
+        if (htmlViewerStatus) {
+          htmlViewerStatus.remove();
+        }
+        resolve();
+      };
+      const handleError = () => {
+        htmlViewerContent.removeEventListener('load', handleLoad);
+        htmlViewerContent.removeEventListener('error', handleError);
+        reject(new Error('HTML preview iframe failed to load'));
+      };
+      htmlViewerContent.addEventListener('load', handleLoad, {once: true});
+      htmlViewerContent.addEventListener('error', handleError, {once: true});
+      htmlViewerContent.src = HTML_PREVIEW_URL;
+    });
+  })();
 
-  updateCurrentPage(bestPage);
-}
-
-function schedulePageDetection() {
-  if (pageDetectScheduled) return;
-  pageDetectScheduled = true;
-  requestAnimationFrame(detectCurrentPageFromScroll);
-}
-
-async function renderResultPdf() {
-  if (!RESULT_PDF_URL || !pdfViewer || !pdfViewerShell) return;
   try {
-    pdfViewerStatus.textContent = 'PDF 載入中';
-    if (!pdfDoc) {
-      pdfDoc = await pdfjsLib.getDocument(RESULT_PDF_URL).promise;
-    }
-    pdfViewer.innerHTML = '';
-    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum += 1) {
-      const page = await pdfDoc.getPage(pageNum);
-      const viewport = page.getViewport({scale: PDF_RENDER_SCALE});
-      const pageWrap = document.createElement('section');
-      pageWrap.className = 'pdf-page';
-      pageWrap.dataset.pageNumber = String(pageNum);
-      const label = document.createElement('div');
-      label.className = 'pdf-page-label';
-      label.textContent = `Page ${pageNum}`;
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      pageWrap.appendChild(label);
-      pageWrap.appendChild(canvas);
-      pdfViewer.appendChild(pageWrap);
-      await page.render({canvasContext: context, viewport}).promise;
-    }
-    pdfViewerStatus.textContent = `共 ${pdfDoc.numPages} 頁`;
-    currentPageNumber = 1;
-    renderCurrentPageSources();
-    pdfViewerShell.removeEventListener('scroll', schedulePageDetection);
-    pdfViewerShell.addEventListener('scroll', schedulePageDetection, {passive: true});
-    schedulePageDetection();
+    await htmlPreviewLoadingPromise;
   } catch (error) {
     console.error(error);
-    pdfViewerStatus.textContent = 'PDF 載入失敗';
+    if (htmlViewerStatus) {
+      htmlViewerStatus.textContent = 'HTML 載入失敗';
+    }
+  } finally {
+    htmlPreviewLoadingPromise = null;
   }
 }
 
-if (showResultBtn) {
-  showResultBtn.addEventListener('click', () => {
-    scrollToPage(1);
+function getHtmlCurrentSources() {
+  const frameWindow = htmlViewerContent?.contentWindow;
+  const frameDocument = htmlViewerContent?.contentDocument;
+  if (!frameWindow || !frameDocument) return [];
+
+  const labelNodes = Array.from(frameDocument.querySelectorAll('p'))
+    .filter((node) => Boolean(extractSourceLabel(node.textContent)));
+  if (!labelNodes.length) {
+    return [];
+  }
+
+  const labels = labelNodes.map((node) => {
+    const source = extractSourceLabel(node.textContent);
+    const nodeRect = node.getBoundingClientRect();
+    return {
+      source,
+      top: nodeRect.top + frameWindow.scrollY,
+    };
+  }).filter((item) => item.source && SOURCE_URLS[item.source]);
+
+  if (!labels.length) {
+    return [];
+  }
+
+  const viewportTop = frameWindow.scrollY || 0;
+  const viewportHeight = frameWindow.innerHeight || htmlViewerShell?.clientHeight || 0;
+  const focusY = viewportTop + viewportHeight * 0.35;
+  const viewportBottom = viewportTop + viewportHeight;
+
+  let currentIndex = -1;
+  for (let idx = 0; idx < labels.length; idx += 1) {
+    if (labels[idx].top <= focusY) {
+      currentIndex = idx;
+    } else {
+      break;
+    }
+  }
+
+  if (currentIndex < 0) {
+    currentIndex = 0;
+  }
+
+  const result = [labels[currentIndex].source];
+  for (let idx = currentIndex + 1; idx < labels.length; idx += 1) {
+    if (labels[idx].top > viewportBottom) {
+      break;
+    }
+    result.push(labels[idx].source);
+  }
+  return result;
+}
+
+function scheduleHtmlSourceDetection() {
+  if (htmlSourceDetectScheduled) return;
+  htmlSourceDetectScheduled = true;
+  requestAnimationFrame(() => {
+    htmlSourceDetectScheduled = false;
+    if (currentPreviewMode !== 'html') return;
+    renderSourceCards(getHtmlCurrentSources(), '這個位置沒有可辨識的來源文件');
   });
 }
 
-if (prevPageBtn) {
-  prevPageBtn.addEventListener('click', () => {
-    scrollToPage(Math.max(1, currentPageNumber - 1));
+async function renderCurrentPageSources() {
+  if (currentPreviewMode === 'html') {
+    await ensureHtmlPreviewLoaded();
+    renderSourceCards(getHtmlCurrentSources(), '這個位置沒有可辨識的來源文件');
+    return;
+  }
+  renderSourceCards([], '');
+}
+
+function setPreviewMode(mode) {
+  currentPreviewMode = mode === 'html' ? 'html' : 'pdf';
+  if (pdfModeBtn) {
+    pdfModeBtn.classList.toggle('active', currentPreviewMode === 'pdf');
+  }
+  if (htmlModeBtn) {
+    htmlModeBtn.classList.toggle('active', currentPreviewMode === 'html');
+  }
+  if (pdfViewerShell) {
+    pdfViewerShell.classList.toggle('preview-surface-hidden', currentPreviewMode !== 'pdf');
+  }
+  if (htmlViewerShell) {
+    htmlViewerShell.classList.toggle('preview-surface-hidden', currentPreviewMode !== 'html');
+  }
+  if (sourceSidebar) {
+    sourceSidebar.classList.toggle('preview-surface-hidden', currentPreviewMode !== 'html');
+    sourceSidebar.hidden = currentPreviewMode !== 'html';
+  }
+  if (compareLayout) {
+    compareLayout.classList.toggle('compare-layout-with-sidebar', currentPreviewMode === 'html');
+  }
+  renderCurrentPageSources();
+}
+
+function renderPdfViewer() {
+  if (!pdfViewerFrame) return;
+  if (!RESULT_PDF_URL) {
+    pdfViewerFrame.removeAttribute('src');
+    return;
+  }
+  pdfViewerFrame.src = `${RESULT_PDF_URL}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`;
+}
+
+if (pdfModeBtn) {
+  pdfModeBtn.addEventListener('click', () => {
+    if (!RESULT_PDF_URL) return;
+    setPreviewMode('pdf');
   });
 }
 
-if (nextPageBtn) {
-  nextPageBtn.addEventListener('click', () => {
-    const totalPages = pdfDoc ? pdfDoc.numPages : currentPageNumber;
-    scrollToPage(Math.min(totalPages, currentPageNumber + 1));
+if (htmlModeBtn) {
+  htmlModeBtn.addEventListener('click', async () => {
+    if (!HTML_PREVIEW_URL) return;
+    await ensureHtmlPreviewLoaded();
+    setPreviewMode('html');
   });
 }
 
-renderCurrentPageSources();
-renderResultPdf();
+renderPdfViewer();
+setPreviewMode(currentPreviewMode);
 </script>
 {% endblock %}

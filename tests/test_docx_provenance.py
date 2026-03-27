@@ -10,6 +10,7 @@ from modules.docx_merger import merge_word_docs
 from modules.docx_provenance import (
     apply_final_provenance,
     build_provenance_descriptor,
+    create_provenance_preview_docx,
     extract_provenance_block_trace,
 )
 from modules.template_manager import render_template_with_mappings
@@ -221,6 +222,80 @@ def test_extract_provenance_block_trace_uses_metadata_for_empty_figure_paragraph
         and "Figure 8 Packaging" in item["probe_texts"]
         for item in trace
     )
+
+
+def test_create_provenance_preview_docx_inserts_labels_without_highlighting_body_text(tmp_path: Path) -> None:
+    first_fragment = tmp_path / "fragment_a.docx"
+    second_fragment = tmp_path / "fragment_b.docx"
+    result_path = tmp_path / "result.docx"
+    preview_path = tmp_path / "preview.docx"
+
+    _create_docx(first_fragment, ["Alpha source paragraph"])
+    _create_docx(second_fragment, ["Beta source paragraph"])
+
+    first_desc = build_provenance_descriptor(1)
+    second_desc = build_provenance_descriptor(2)
+    merge_word_docs([str(first_fragment), str(second_fragment)], str(result_path))
+    apply_final_provenance(
+        str(result_path),
+        [
+            {
+                **first_desc,
+                "fragment_path": str(first_fragment),
+                "content_type": "paragraph",
+                "source_id": "src_000001",
+            },
+            {
+                **second_desc,
+                "fragment_path": str(second_fragment),
+                "content_type": "paragraph",
+                "source_id": "src_000002",
+            },
+        ],
+    )
+
+    created = create_provenance_preview_docx(
+        str(result_path),
+        str(preview_path),
+        {
+            "src_000001": {
+                **first_desc,
+                "source_file": "Alpha.docx",
+                "source_step": "extract_word_chapter",
+                "content_type": "paragraph",
+            },
+            "src_000002": {
+                **second_desc,
+                "source_file": "Beta.docx",
+                "source_step": "extract_word_chapter",
+                "content_type": "paragraph",
+            },
+        },
+    )
+
+    assert created is True
+
+    preview_doc = DocxDocument(str(preview_path))
+    paragraph_texts = [paragraph.text.strip() for paragraph in preview_doc.paragraphs if paragraph.text.strip()]
+
+    assert "來源: Alpha.docx" in paragraph_texts
+    assert "來源: Beta.docx" in paragraph_texts
+    assert "Alpha source paragraph" in paragraph_texts
+    assert "Beta source paragraph" in paragraph_texts
+    assert paragraph_texts.index("來源: Alpha.docx") < paragraph_texts.index("Alpha source paragraph")
+    assert paragraph_texts.index("來源: Beta.docx") < paragraph_texts.index("Beta source paragraph")
+
+    with ZipFile(preview_path, "r") as zf:
+        root = etree.fromstring(zf.read("word/document.xml"))
+    highlight_paragraphs = root.xpath("//w:p[w:r/w:rPr/w:highlight]", namespaces=_NS)
+    highlight_texts = ["".join(paragraph.xpath(".//w:t/text()", namespaces=_NS)) for paragraph in highlight_paragraphs]
+    assert not any("Alpha source paragraph" in text for text in highlight_texts)
+    assert not any("Beta source paragraph" in text for text in highlight_texts)
+    label_colors = root.xpath(
+        "//w:p[contains(string(.), '來源: ')]//w:color/@w:val",
+        namespaces=_NS,
+    )
+    assert "C00000" in label_colors
 
 
 def test_apply_final_provenance_covers_all_merged_fragments(tmp_path: Path) -> None:

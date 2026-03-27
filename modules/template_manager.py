@@ -184,8 +184,13 @@ def order_template_mappings(raw_mappings: List[Dict[str, Any]]) -> List[Dict[str
             key=lambda item: item[1],
             reverse=True,
         )
-        ordered.extend(item[3] for item in replace_items)
+        # Only the first replace stays a true replace. Later replaces are
+        # downgraded to insert_after during rendering, so they must be sent in
+        # reverse order to preserve the user's original step order.
+        if replace_items:
+            ordered.append(replace_items[0][3])
         ordered.extend(item[3] for item in insert_after_items)
+        ordered.extend(item[3] for item in reversed(replace_items[1:]))
     return ordered
 
 

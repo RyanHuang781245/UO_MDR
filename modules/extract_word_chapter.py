@@ -975,46 +975,90 @@ def build_style_heading_rank_map(styles_xml: bytes) -> dict[str, int]:
 
     return style_rank
 
+def _style_has_direct_numpr(style: etree._Element | None) -> bool:
+    if style is None:
+        return False
+    return style.find("w:pPr/w:numPr", namespaces=NS) is not None
+
+
 def _ensure_style_without_numpr(
     styles_xml: bytes,
     style_id: str,
 ) -> tuple[bytes, str]:
-    """Clone the paragraph style and remove numPr from the clone."""
+    """Clone the paragraph style chain and remove inherited numPr."""
     if not styles_xml or not style_id:
         return styles_xml, style_id
     root = etree.fromstring(styles_xml)
-    style = root.find(f".//w:style[@w:styleId='{style_id}']", namespaces=NS)
+    paragraph_styles = {
+        (st.get(qn("w:styleId")) or ""): st
+        for st in root.xpath(".//w:style[@w:type='paragraph']", namespaces=NS)
+        if st.get(qn("w:styleId"))
+    }
+    style = paragraph_styles.get(style_id)
     if style is None:
         return styles_xml, style_id
-    pPr = style.find("w:pPr", namespaces=NS)
-    if pPr is None:
-        return styles_xml, style_id
-    numPr = pPr.find("w:numPr", namespaces=NS)
-    if numPr is None:
+
+    chain_ids: list[str] = []
+    current_id = style_id
+    visited: set[str] = set()
+    while current_id and current_id not in visited:
+        current_style = paragraph_styles.get(current_id)
+        if current_style is None:
+            break
+        visited.add(current_id)
+        chain_ids.append(current_id)
+        based_on = current_style.find("w:basedOn", namespaces=NS)
+        current_id = (based_on.get(qn("w:val")) or "").strip() if based_on is not None else ""
+
+    highest_numpr_idx = -1
+    for idx, current_style_id in enumerate(chain_ids):
+        if _style_has_direct_numpr(paragraph_styles.get(current_style_id)):
+            highest_numpr_idx = idx
+
+    if highest_numpr_idx < 0:
         return styles_xml, style_id
 
-    base_id = f"{style_id}_NoNum"
-    new_id = base_id
     existing_ids = {
         (st.get(qn("w:styleId")) or "") for st in root.findall(".//w:style", namespaces=NS)
     }
-    idx = 1
-    while new_id in existing_ids:
-        idx += 1
-        new_id = f"{base_id}{idx}"
+    clone_ids: dict[str, str] = {}
+    for original_id in chain_ids[: highest_numpr_idx + 1]:
+        base_id = f"{original_id}_NoNum"
+        new_id = base_id
+        suffix = 1
+        while new_id in existing_ids:
+            suffix += 1
+            new_id = f"{base_id}{suffix}"
+        existing_ids.add(new_id)
+        clone_ids[original_id] = new_id
 
-    clone = deepcopy(style)
-    clone.set(qn("w:styleId"), new_id)
-    name = clone.find("w:name", namespaces=NS)
-    if name is not None:
-        name.set(qn("w:val"), f"{name.get(qn('w:val'))} (NoNum)")
-    clone_pPr = clone.find("w:pPr", namespaces=NS)
-    if clone_pPr is not None:
-        clone_numPr = clone_pPr.find("w:numPr", namespaces=NS)
-        if clone_numPr is not None:
-            clone_pPr.remove(clone_numPr)
-    root.append(clone)
-    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone="yes"), new_id
+    for original_id in reversed(chain_ids[: highest_numpr_idx + 1]):
+        clone = deepcopy(paragraph_styles[original_id])
+        clone.set(qn("w:styleId"), clone_ids[original_id])
+        name = clone.find("w:name", namespaces=NS)
+        if name is not None:
+            original_name = name.get(qn("w:val")) or original_id
+            name.set(qn("w:val"), f"{original_name} (NoNum)")
+
+        clone_pPr = clone.find("w:pPr", namespaces=NS)
+        if clone_pPr is not None:
+            clone_numPr = clone_pPr.find("w:numPr", namespaces=NS)
+            if clone_numPr is not None:
+                clone_pPr.remove(clone_numPr)
+
+        based_on = clone.find("w:basedOn", namespaces=NS)
+        original_base = ""
+        if based_on is not None:
+            original_base = (based_on.get(qn("w:val")) or "").strip()
+        if original_base in clone_ids:
+            based_on.set(qn("w:val"), clone_ids[original_base])
+
+        root.append(clone)
+
+    return (
+        etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone="yes"),
+        clone_ids[style_id],
+    )
 
 def resolve_style_outline(style_id: str | None, style_outline: dict[str, int], style_based: dict[str, str]) -> int | None:
     if not style_id:

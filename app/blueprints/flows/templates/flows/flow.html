@@ -1605,6 +1605,16 @@ function toggleStepFileCreateFolder(show, mode = "create", targetPath = "", init
   }
 }
 
+function syncCopyTargetNameState(card){
+  if (!card) return;
+  const keywordInput = card.querySelector('input[name^="step_"][name$="_keywords"]');
+  const targetNameInput = card.querySelector('input[name^="step_"][name$="_target_name"]');
+  if (!keywordInput || !targetNameInput) return;
+  const hasKeywords = !!String(keywordInput.value || "").trim();
+  targetNameInput.disabled = hasKeywords;
+  targetNameInput.title = hasKeywords ? "關鍵字有值時，複製後名稱不適用" : "";
+}
+
 function isAllowedStepFileEntry(path){
   if (stepFileState.mode === "dir") return false;
   const ext = stepFileState.ext;
@@ -2314,6 +2324,16 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           return `<div class="col-md-5"><label class="form-label">${label}</label>
                    <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
         }
+        if (k === "target_name") {
+          const keywordsVal = String(preset["keywords"] ?? "").trim();
+          const disabled = keywordsVal ? "disabled" : "";
+          const helpText = keywordsVal
+            ? "已填關鍵字時不可設定複製後名稱"
+            : "未填關鍵字時可指定複製後名稱";
+          return `<div class="col-md-6"><label class="form-label">${label}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
+                 <div class="form-text">${helpText}</div></div>`;
+        }
         return `<div class="col-md-6"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
@@ -2598,6 +2618,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   refreshTemplateSelects();
   updateOrder();
   _applyRuleVisibility(card);
+  syncCopyTargetNameState(card);
 
   const updateSummary = () => {
     const parts = [];
@@ -2617,6 +2638,11 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   };
   card.addEventListener("input", updateSummary);
   card.addEventListener("change", updateSummary);
+  const keywordInput = card.querySelector(`[name="step_${sid}_keywords"]`);
+  if (keywordInput){
+    keywordInput.addEventListener("input", () => syncCopyTargetNameState(card));
+    keywordInput.addEventListener("change", () => syncCopyTargetNameState(card));
+  }
   if (IS_VERSION_PREVIEW) applyReadonlyToStepCard(card);
 }
 function applyReadonlyToStepCard(card){

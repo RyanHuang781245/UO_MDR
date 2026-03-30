@@ -509,6 +509,21 @@ def _resolve_task_file_path(files_dir: str, rel_path: str, expect_dir: bool | No
     return candidate
 
 
+def _validate_new_folder_name(name: str) -> str:
+    text = (name or "").strip()
+    if not text:
+        raise ValueError("缺少資料夾名稱")
+    if text in {".", ".."}:
+        raise ValueError("資料夾名稱不合法")
+    if any(ord(ch) < 32 for ch in text):
+        raise ValueError("資料夾名稱含有不可見控制字元")
+    if any(ch in r'\/:*?"<>|' for ch in text):
+        raise ValueError('資料夾名稱不可包含 \\ / : * ? " < > |')
+    if text[-1] in {" ", "."}:
+        raise ValueError("資料夾名稱結尾不可為空白或句點")
+    return text
+
+
 def _normalize_step_file_value(raw_value: str, accept: str) -> str:
     cleaned = (raw_value or "").strip()
     if not cleaned:
@@ -1869,6 +1884,37 @@ def api_flow_list_task_files(task_id):
         "dirs": dirs,
         "files": files,
     }
+
+
+@flows_bp.post("/api/tasks/<task_id>/flow-files/folders", endpoint="api_flow_create_task_folder")
+def api_flow_create_task_folder(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        return {"ok": False, "error": "Task files not found"}, 404
+
+    payload = request.get_json(silent=True) if request.is_json else None
+    parent_raw = ((payload or {}).get("parent") or request.form.get("parent") or "").strip()
+    name_raw = ((payload or {}).get("name") or request.form.get("name") or "").strip()
+
+    try:
+        parent_rel = _normalize_task_file_rel_path(parent_raw)
+        _resolve_task_file_path(files_dir, parent_rel, expect_dir=True)
+        folder_name = _validate_new_folder_name(name_raw)
+        target_rel = _normalize_task_file_rel_path(
+            f"{parent_rel}/{folder_name}" if parent_rel else folder_name
+        )
+        target_abs = _resolve_task_file_path(files_dir, target_rel, expect_dir=None)
+    except (ValueError, FileNotFoundError) as exc:
+        return {"ok": False, "error": str(exc)}, 400
+    except PermissionError:
+        return {"ok": False, "error": "Permission denied"}, 403
+
+    if os.path.exists(target_abs):
+        return {"ok": False, "error": "資料夾已存在"}, 409
+
+    os.makedirs(target_abs, exist_ok=False)
+    return {"ok": True, "path": target_rel, "name": folder_name}
 
 
 @flows_bp.post("/tasks/<task_id>/flows/run", endpoint="run_flow")

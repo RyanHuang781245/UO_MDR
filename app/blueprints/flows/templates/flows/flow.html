@@ -348,9 +348,25 @@
 
           <div class="list-group list-group-flush border rounded-3 mb-3 overflow-y-auto custom-scrollbar" id="stepFileEntryList" style="min-height: 200px; max-height: 300px;"></div>
 
-          <div class="d-flex justify-content-end gap-2">
-            <button class="btn btn-white border px-4" type="button" data-bs-dismiss="modal">取消</button>
-            <button class="btn btn-primary fw-bold px-4" type="button" id="stepFileApplyBtn">確定</button>
+          <div class="d-none mb-3" id="stepFileCreateFolderPanel">
+            <div class="border rounded-3 p-3 bg-light">
+              <label class="form-label small fw-bold text-uppercase text-muted">新增資料夾</label>
+              <div class="d-flex flex-column flex-sm-row align-items-sm-start gap-2">
+                <input class="form-control" type="text" id="stepFileCreateFolderInput" placeholder="請輸入新資料夾名稱" maxlength="120">
+                <div class="d-flex gap-2 flex-shrink-0">
+                  <button class="btn btn-outline-secondary text-nowrap px-3" type="button" id="stepFileCreateFolderCancelBtn">取消</button>
+                  <button class="btn btn-primary text-nowrap px-3" type="button" id="stepFileCreateFolderSubmitBtn">建立</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center gap-2">
+            <button class="btn btn-white border" type="button" id="stepFileCreateFolderBtn">新增資料夾</button>
+            <div class="d-flex gap-2">
+              <button class="btn btn-white border px-4" type="button" data-bs-dismiss="modal">取消</button>
+              <button class="btn btn-primary fw-bold px-4" type="button" id="stepFileApplyBtn">確定</button>
+            </div>
           </div>
         </div>
       </div>
@@ -889,6 +905,7 @@ const TEMPLATE_FILE = {{ template_file|tojson }};
 const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
 const ACTIVE_RUNS_URL = "{{ url_for('flows_bp.flow_run_active', task_id=task.id) }}";
 const TASK_FILE_BROWSER_URL = "{{ url_for('flows_bp.api_flow_list_task_files', task_id=task.id) }}";
+const TASK_FILE_CREATE_FOLDER_URL = "{{ url_for('flows_bp.api_flow_create_task_folder', task_id=task.id) }}";
 const BOOL_DEFAULTS = {
   include_caption: "true",
   use_chapter_title: "false",
@@ -1524,6 +1541,11 @@ const stepFileCurrentPathEl = document.getElementById("stepFileCurrentPath");
 const stepFileStatusEl = document.getElementById("stepFileStatus");
 const stepFileEntryList = document.getElementById("stepFileEntryList");
 const stepFileGoUpBtn = document.getElementById("stepFileGoUpBtn");
+const stepFileCreateFolderBtn = document.getElementById("stepFileCreateFolderBtn");
+const stepFileCreateFolderPanel = document.getElementById("stepFileCreateFolderPanel");
+const stepFileCreateFolderInput = document.getElementById("stepFileCreateFolderInput");
+const stepFileCreateFolderSubmitBtn = document.getElementById("stepFileCreateFolderSubmitBtn");
+const stepFileCreateFolderCancelBtn = document.getElementById("stepFileCreateFolderCancelBtn");
 const stepFileApplyBtn = document.getElementById("stepFileApplyBtn");
 const stepFileSelectCurrentBtn = document.getElementById("stepFileSelectCurrentBtn");
 
@@ -1550,6 +1572,21 @@ function updateStepFileCurrentPath(){
 function updateStepFileModeUI(){
   if (!stepFileSelectCurrentBtn) return;
   stepFileSelectCurrentBtn.classList.toggle("d-none", stepFileState.mode !== "dir");
+  stepFileCreateFolderBtn?.classList.toggle("d-none", stepFileState.mode !== "dir");
+  if (stepFileState.mode !== "dir"){
+    toggleStepFileCreateFolder(false);
+  }
+}
+
+function toggleStepFileCreateFolder(show){
+  if (!stepFileCreateFolderPanel) return;
+  stepFileCreateFolderPanel.classList.toggle("d-none", !show);
+  if (show){
+    if (stepFileCreateFolderInput){
+      stepFileCreateFolderInput.value = "";
+      setTimeout(() => stepFileCreateFolderInput.focus(), 0);
+    }
+  }
 }
 
 function isAllowedStepFileEntry(path){
@@ -1666,6 +1703,38 @@ async function loadStepFileEntries(rel = ""){
   }
 }
 
+async function createStepFolder(){
+  if (IS_VERSION_PREVIEW || stepFileState.mode !== "dir" || !TASK_FILE_CREATE_FOLDER_URL) return;
+  const name = String(stepFileCreateFolderInput?.value || "").trim();
+  if (!name){
+    setStepFileStatus("請輸入資料夾名稱");
+    stepFileCreateFolderInput?.focus();
+    return;
+  }
+
+  setStepFileStatus("建立中...");
+  try {
+    const resp = await fetch(TASK_FILE_CREATE_FOLDER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({
+        parent: stepFileState.currentRel || "",
+        name,
+      }).toString(),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok){
+      throw new Error(data.error || "建立失敗");
+    }
+    stepFileState.selectedRel = normalizeBrowserRelPath(data.path || "");
+    await loadStepFileEntries(stepFileState.currentRel);
+    toggleStepFileCreateFolder(false);
+    setStepFileStatus("已建立資料夾");
+  } catch (err){
+    setStepFileStatus(err?.message || "建立失敗");
+  }
+}
+
 function openStepFileBrowser(input, accept){
   if (IS_VERSION_PREVIEW) return;
   if (!input || !stepFileModalEl || typeof bootstrap === "undefined") return;
@@ -1687,6 +1756,7 @@ function openStepFileBrowser(input, accept){
     stepFileState.currentRel = existing.includes("/") ? getParentRelPath(existing) : "";
   }
   updateStepFileCurrentPath();
+  toggleStepFileCreateFolder(false);
   loadStepFileEntries(stepFileState.currentRel);
   bootstrap.Modal.getOrCreateInstance(stepFileModalEl).show();
 }
@@ -1733,6 +1803,36 @@ if (stepFileGoUpBtn){
       return;
     }
     loadStepFileEntries(getParentRelPath(stepFileState.currentRel));
+  });
+}
+
+if (stepFileCreateFolderBtn){
+  stepFileCreateFolderBtn.addEventListener("click", () => {
+    toggleStepFileCreateFolder(true);
+  });
+}
+if (stepFileCreateFolderCancelBtn){
+  stepFileCreateFolderCancelBtn.addEventListener("click", () => {
+    toggleStepFileCreateFolder(false);
+    setStepFileStatus("");
+  });
+}
+if (stepFileCreateFolderSubmitBtn){
+  stepFileCreateFolderSubmitBtn.addEventListener("click", () => {
+    createStepFolder();
+  });
+}
+if (stepFileCreateFolderInput){
+  stepFileCreateFolderInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter"){
+      event.preventDefault();
+      createStepFolder();
+    }
+    if (event.key === "Escape"){
+      event.preventDefault();
+      toggleStepFileCreateFolder(false);
+      setStepFileStatus("");
+    }
   });
 }
 

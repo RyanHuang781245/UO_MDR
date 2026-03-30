@@ -1611,6 +1611,11 @@ function syncCopyTargetNameState(card){
   const targetNameInput = card.querySelector('input[name^="step_"][name$="_target_name"]');
   if (!keywordInput || !targetNameInput) return;
   const hasKeywords = !!String(keywordInput.value || "").trim();
+  if (hasKeywords && targetNameInput.value){
+    targetNameInput.value = "";
+    targetNameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    targetNameInput.dispatchEvent(new Event("change", { bubbles: true }));
+  }
   targetNameInput.disabled = hasKeywords;
   targetNameInput.title = hasKeywords ? "關鍵字有值時，複製後名稱不適用" : "";
 }

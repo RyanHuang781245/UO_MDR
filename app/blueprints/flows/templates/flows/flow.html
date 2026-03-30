@@ -1605,30 +1605,49 @@ function toggleStepFileCreateFolder(show, mode = "create", targetPath = "", init
   }
 }
 
+function getCopyFilesSourceKind(value){
+  const normalized = normalizeBrowserRelPath(String(value || "").trim());
+  if (!normalized) return "unknown";
+  if (normalized === ".") return "dir";
+  const dirOptions = Array.isArray(AVAILABLE_FILES?.dir) ? AVAILABLE_FILES.dir : [];
+  return dirOptions.includes(normalized) ? "dir" : "file";
+}
+
 function syncCopyTargetNameState(card){
   if (!card) return;
   const sourceInput = card.querySelector('select[name^="step_"][name$="_source_dir"], input[name^="step_"][name$="_source_dir"]');
   const keywordInput = card.querySelector('input[name^="step_"][name$="_keywords"]');
   const targetNameInput = card.querySelector('input[name^="step_"][name$="_target_name"]');
   if (!keywordInput || !targetNameInput) return;
-  const dirOptions = Array.isArray(AVAILABLE_FILES?.dir) ? AVAILABLE_FILES.dir : [];
-  const sourceValue = String(sourceInput?.value || "").trim();
-  const sourceIsFile = !!sourceValue && sourceValue !== "." && !dirOptions.includes(normalizeBrowserRelPath(sourceValue));
+  const keywordField = card.querySelector('[data-copy-files-field="keywords"]');
+  const targetNameField = card.querySelector('[data-copy-files-field="target_name"]');
+  const sourceKind = getCopyFilesSourceKind(sourceInput?.value);
+  const sourceIsFile = sourceKind === "file";
+  const sourceIsDir = sourceKind === "dir";
   if (sourceIsFile && keywordInput.value){
     keywordInput.value = "";
     keywordInput.dispatchEvent(new Event("input", { bubbles: true }));
     keywordInput.dispatchEvent(new Event("change", { bubbles: true }));
   }
-  keywordInput.disabled = sourceIsFile;
-  keywordInput.title = sourceIsFile ? "已選擇單一檔案時，不適用關鍵字檢索" : "";
-  const hasKeywords = !!String(keywordInput.value || "").trim();
-  if (hasKeywords && targetNameInput.value){
+  if (sourceIsDir && targetNameInput.value){
     targetNameInput.value = "";
     targetNameInput.dispatchEvent(new Event("input", { bubbles: true }));
     targetNameInput.dispatchEvent(new Event("change", { bubbles: true }));
   }
-  targetNameInput.disabled = hasKeywords;
-  targetNameInput.title = hasKeywords ? "關鍵字有值時，複製後名稱不適用" : "";
+  keywordField?.classList.toggle("d-none", !sourceIsDir);
+  targetNameField?.classList.toggle("d-none", !sourceIsFile);
+  keywordInput.disabled = !sourceIsDir;
+  keywordInput.title = sourceIsFile ? "已選擇單一檔案時，不適用關鍵字檢索" : "";
+  const hasKeywords = !!String(keywordInput.value || "").trim();
+  if (sourceIsDir && hasKeywords && targetNameInput.value){
+    targetNameInput.value = "";
+    targetNameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    targetNameInput.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  targetNameInput.disabled = !sourceIsFile || hasKeywords;
+  targetNameInput.title = sourceIsDir
+    ? "已選擇資料夾時，請改用關鍵字檢索"
+    : (hasKeywords ? "關鍵字有值時，複製後名稱不適用" : "");
 }
 
 function isAllowedStepFileEntry(path){
@@ -2296,6 +2315,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       : (meta.placeholder || label);
     const rawVal = preset[k];
     const val = rawVal === undefined || rawVal === null ? "" : String(rawVal);
+    const copyFilesSourceKind = typeKey === "copy_files" ? getCopyFilesSourceKind(preset["source_dir"]) : "unknown";
 
     if (k === "input_file" && subtitleToggleSteps.includes(typeKey)) {
       const acceptFile = spec.accepts[k] || "file:docx";
@@ -2359,13 +2379,22 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           return `<div class="col-md-5"><label class="form-label">${label}</label>
                    <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
         }
+        if (k === "keywords" && typeKey === "copy_files") {
+          const hidden = copyFilesSourceKind === "dir" ? "" : " d-none";
+          return `<div class="col-md-6${hidden}" data-copy-files-field="keywords"><label class="form-label">${label}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${copyFilesSourceKind === "dir" ? "" : "disabled"}>
+                 <div class="form-text">選擇來源資料夾時可使用關鍵字檢索複製。</div></div>`;
+        }
         if (k === "target_name") {
           const keywordsVal = String(preset["keywords"] ?? "").trim();
-          const disabled = keywordsVal ? "disabled" : "";
-          const helpText = keywordsVal
-            ? "已填關鍵字時不可設定複製後名稱"
-            : "未填關鍵字時可指定複製後名稱";
-          return `<div class="col-md-6"><label class="form-label">${label}</label>
+          const showTargetName = typeKey !== "copy_files" || copyFilesSourceKind === "file";
+          const disabled = !showTargetName || keywordsVal ? "disabled" : "";
+          const helpText = typeKey === "copy_files"
+            ? "選擇單一檔案時可指定複製後名稱。"
+            : (keywordsVal ? "已填關鍵字時不可設定複製後名稱" : "未填關鍵字時可指定複製後名稱");
+          const hidden = typeKey === "copy_files" && !showTargetName ? " d-none" : "";
+          const dataAttr = typeKey === "copy_files" ? ' data-copy-files-field="target_name"' : "";
+          return `<div class="col-md-6${hidden}"${dataAttr}><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
                  <div class="form-text">${helpText}</div></div>`;
         }

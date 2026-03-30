@@ -1917,6 +1917,66 @@ def api_flow_create_task_folder(task_id):
     return {"ok": True, "path": target_rel, "name": folder_name}
 
 
+@flows_bp.post("/api/tasks/<task_id>/flow-files/folders/rename", endpoint="api_flow_rename_task_folder")
+def api_flow_rename_task_folder(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        return {"ok": False, "error": "Task files not found"}, 404
+
+    payload = request.get_json(silent=True) if request.is_json else None
+    path_raw = ((payload or {}).get("path") or request.form.get("path") or "").strip()
+    name_raw = ((payload or {}).get("name") or request.form.get("name") or "").strip()
+
+    try:
+        target_rel = _normalize_task_file_rel_path(path_raw)
+        if not target_rel:
+            raise ValueError("根目錄不可重新命名")
+        target_abs = _resolve_task_file_path(files_dir, target_rel, expect_dir=True)
+        folder_name = _validate_new_folder_name(name_raw)
+        parent_rel = os.path.dirname(target_rel).replace("\\", "/")
+        renamed_rel = _normalize_task_file_rel_path(
+            f"{parent_rel}/{folder_name}" if parent_rel else folder_name
+        )
+        renamed_abs = _resolve_task_file_path(files_dir, renamed_rel, expect_dir=None)
+    except (ValueError, FileNotFoundError) as exc:
+        return {"ok": False, "error": str(exc)}, 400
+    except PermissionError:
+        return {"ok": False, "error": "Permission denied"}, 403
+
+    if os.path.abspath(target_abs) == os.path.abspath(renamed_abs):
+        return {"ok": True, "path": target_rel, "name": os.path.basename(target_rel)}
+    if os.path.exists(renamed_abs):
+        return {"ok": False, "error": "資料夾已存在"}, 409
+
+    os.rename(target_abs, renamed_abs)
+    return {"ok": True, "path": renamed_rel, "name": folder_name}
+
+
+@flows_bp.post("/api/tasks/<task_id>/flow-files/folders/delete", endpoint="api_flow_delete_task_folder")
+def api_flow_delete_task_folder(task_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    if not os.path.isdir(files_dir):
+        return {"ok": False, "error": "Task files not found"}, 404
+
+    payload = request.get_json(silent=True) if request.is_json else None
+    path_raw = ((payload or {}).get("path") or request.form.get("path") or "").strip()
+
+    try:
+        target_rel = _normalize_task_file_rel_path(path_raw)
+        if not target_rel:
+            raise ValueError("根目錄不可刪除")
+        target_abs = _resolve_task_file_path(files_dir, target_rel, expect_dir=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return {"ok": False, "error": str(exc)}, 400
+    except PermissionError:
+        return {"ok": False, "error": "Permission denied"}, 403
+
+    shutil.rmtree(target_abs)
+    return {"ok": True, "deleted": target_rel}
+
+
 @flows_bp.post("/tasks/<task_id>/flows/run", endpoint="run_flow")
 def run_flow(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)

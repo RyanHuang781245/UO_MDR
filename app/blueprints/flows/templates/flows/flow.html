@@ -350,7 +350,7 @@
 
           <div class="d-none mb-3" id="stepFileCreateFolderPanel">
             <div class="border rounded-3 p-3 bg-light">
-              <label class="form-label small fw-bold text-uppercase text-muted">新增資料夾</label>
+              <label class="form-label small fw-bold text-uppercase text-muted" id="stepFileFolderPanelLabel">新增資料夾</label>
               <div class="d-flex flex-column flex-sm-row align-items-sm-start gap-2">
                 <input class="form-control" type="text" id="stepFileCreateFolderInput" placeholder="請輸入新資料夾名稱" maxlength="120">
                 <div class="d-flex gap-2 flex-shrink-0">
@@ -906,6 +906,8 @@ const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
 const ACTIVE_RUNS_URL = "{{ url_for('flows_bp.flow_run_active', task_id=task.id) }}";
 const TASK_FILE_BROWSER_URL = "{{ url_for('flows_bp.api_flow_list_task_files', task_id=task.id) }}";
 const TASK_FILE_CREATE_FOLDER_URL = "{{ url_for('flows_bp.api_flow_create_task_folder', task_id=task.id) }}";
+const TASK_FILE_RENAME_FOLDER_URL = "{{ url_for('flows_bp.api_flow_rename_task_folder', task_id=task.id) }}";
+const TASK_FILE_DELETE_FOLDER_URL = "{{ url_for('flows_bp.api_flow_delete_task_folder', task_id=task.id) }}";
 const BOOL_DEFAULTS = {
   include_caption: "true",
   use_chapter_title: "false",
@@ -1543,6 +1545,7 @@ const stepFileEntryList = document.getElementById("stepFileEntryList");
 const stepFileGoUpBtn = document.getElementById("stepFileGoUpBtn");
 const stepFileCreateFolderBtn = document.getElementById("stepFileCreateFolderBtn");
 const stepFileCreateFolderPanel = document.getElementById("stepFileCreateFolderPanel");
+const stepFileFolderPanelLabel = document.getElementById("stepFileFolderPanelLabel");
 const stepFileCreateFolderInput = document.getElementById("stepFileCreateFolderInput");
 const stepFileCreateFolderSubmitBtn = document.getElementById("stepFileCreateFolderSubmitBtn");
 const stepFileCreateFolderCancelBtn = document.getElementById("stepFileCreateFolderCancelBtn");
@@ -1558,6 +1561,8 @@ const stepFileState = {
   selectedRel: null,
   dirs: [],
   files: [],
+  folderAction: "create",
+  folderActionPath: "",
 };
 
 function setStepFileStatus(text){
@@ -1578,14 +1583,25 @@ function updateStepFileModeUI(){
   }
 }
 
-function toggleStepFileCreateFolder(show){
+function toggleStepFileCreateFolder(show, mode = "create", targetPath = "", initialName = ""){
   if (!stepFileCreateFolderPanel) return;
   stepFileCreateFolderPanel.classList.toggle("d-none", !show);
   if (show){
+    stepFileState.folderAction = mode;
+    stepFileState.folderActionPath = targetPath || "";
+    if (stepFileFolderPanelLabel){
+      stepFileFolderPanelLabel.textContent = mode === "rename" ? "重新命名資料夾" : "新增資料夾";
+    }
+    if (stepFileCreateFolderSubmitBtn){
+      stepFileCreateFolderSubmitBtn.textContent = mode === "rename" ? "儲存" : "建立";
+    }
     if (stepFileCreateFolderInput){
-      stepFileCreateFolderInput.value = "";
+      stepFileCreateFolderInput.value = initialName || "";
       setTimeout(() => stepFileCreateFolderInput.focus(), 0);
     }
+  } else {
+    stepFileState.folderAction = "create";
+    stepFileState.folderActionPath = "";
   }
 }
 
@@ -1626,6 +1642,9 @@ function renderStepFileEntries(){
     row.appendChild(openBtn);
 
     if (stepFileState.mode === "dir"){
+      const actionGroup = document.createElement("div");
+      actionGroup.className = "d-flex align-items-center gap-2 flex-shrink-0";
+
       const chooseBtn = document.createElement("button");
       chooseBtn.type = "button";
       chooseBtn.className = "btn btn-sm btn-outline-primary";
@@ -1634,7 +1653,29 @@ function renderStepFileEntries(){
         stepFileState.selectedRel = dir.path;
         renderStepFileEntries();
       });
-      row.appendChild(chooseBtn);
+      actionGroup.appendChild(chooseBtn);
+
+      const renameBtn = document.createElement("button");
+      renameBtn.type = "button";
+      renameBtn.className = "btn btn-sm btn-outline-secondary";
+      renameBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+      renameBtn.title = "重新命名";
+      renameBtn.addEventListener("click", () => {
+        toggleStepFileCreateFolder(true, "rename", dir.path, dir.name);
+      });
+      actionGroup.appendChild(renameBtn);
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "btn btn-sm btn-outline-danger";
+      deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+      deleteBtn.title = "刪除";
+      deleteBtn.addEventListener("click", async () => {
+        await deleteStepFolder(dir);
+      });
+      actionGroup.appendChild(deleteBtn);
+
+      row.appendChild(actionGroup);
     }
 
     fragment.appendChild(row);
@@ -1704,7 +1745,7 @@ async function loadStepFileEntries(rel = ""){
 }
 
 async function createStepFolder(){
-  if (IS_VERSION_PREVIEW || stepFileState.mode !== "dir" || !TASK_FILE_CREATE_FOLDER_URL) return;
+  if (IS_VERSION_PREVIEW || stepFileState.mode !== "dir") return;
   const name = String(stepFileCreateFolderInput?.value || "").trim();
   if (!name){
     setStepFileStatus("請輸入資料夾名稱");
@@ -1714,24 +1755,52 @@ async function createStepFolder(){
 
   setStepFileStatus("建立中...");
   try {
-    const resp = await fetch(TASK_FILE_CREATE_FOLDER_URL, {
+    const isRename = stepFileState.folderAction === "rename";
+    const url = isRename ? TASK_FILE_RENAME_FOLDER_URL : TASK_FILE_CREATE_FOLDER_URL;
+    const payload = isRename
+      ? { path: stepFileState.folderActionPath || "", name }
+      : { parent: stepFileState.currentRel || "", name };
+    const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: new URLSearchParams({
-        parent: stepFileState.currentRel || "",
-        name,
-      }).toString(),
+      body: new URLSearchParams(payload).toString(),
     });
     const data = await resp.json();
     if (!resp.ok || !data.ok){
-      throw new Error(data.error || "建立失敗");
+      throw new Error(data.error || (isRename ? "儲存失敗" : "建立失敗"));
     }
     stepFileState.selectedRel = normalizeBrowserRelPath(data.path || "");
     await loadStepFileEntries(stepFileState.currentRel);
     toggleStepFileCreateFolder(false);
-    setStepFileStatus("已建立資料夾");
+    setStepFileStatus(isRename ? "已更新資料夾名稱" : "已建立資料夾");
   } catch (err){
-    setStepFileStatus(err?.message || "建立失敗");
+    setStepFileStatus(err?.message || (stepFileState.folderAction === "rename" ? "儲存失敗" : "建立失敗"));
+  }
+}
+
+async function deleteStepFolder(dir){
+  if (IS_VERSION_PREVIEW || !TASK_FILE_DELETE_FOLDER_URL || !dir?.path) return;
+  if (!window.confirm(`確定要刪除資料夾「${dir.name}」嗎？`)) return;
+
+  setStepFileStatus("刪除中...");
+  try {
+    const resp = await fetch(TASK_FILE_DELETE_FOLDER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({ path: dir.path }).toString(),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok){
+      throw new Error(data.error || "刪除失敗");
+    }
+    if (stepFileState.selectedRel === dir.path){
+      stepFileState.selectedRel = stepFileState.currentRel || "";
+    }
+    toggleStepFileCreateFolder(false);
+    await loadStepFileEntries(stepFileState.currentRel);
+    setStepFileStatus("已刪除資料夾");
+  } catch (err){
+    setStepFileStatus(err?.message || "刪除失敗");
   }
 }
 

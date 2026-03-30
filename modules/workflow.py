@@ -3,6 +3,7 @@ import os
 import hashlib
 import zipfile
 import re
+import shutil
 from datetime import datetime
 from typing import List, Dict, Any
 from docx import Document as DocxDocument
@@ -282,20 +283,22 @@ SUPPORTED_STEPS = {
     },
     "copy_files": {
         "label": "複製檔案",
-        "inputs": ["source_dir", "dest_dir", "keywords"],
-        "accepts": {
-            "source_dir": "file:dir",
-            "dest_dir": "file:dir",
-            "keywords": "text"
-        }
-    },
-    "copy_directory": {
-        "label": "複製資料夾",
-        "inputs": ["source_dir", "dest_dir", "keywords"],
+        "inputs": ["source_dir", "dest_dir", "keywords", "target_name"],
         "accepts": {
             "source_dir": "file:dir",
             "dest_dir": "file:dir",
             "keywords": "text",
+            "target_name": "text",
+        }
+    },
+    "copy_directory": {
+        "label": "複製資料夾",
+        "inputs": ["source_dir", "dest_dir", "keywords", "target_name"],
+        "accepts": {
+            "source_dir": "file:dir",
+            "dest_dir": "file:dir",
+            "keywords": "text",
+            "target_name": "text",
         }
     },
     # "renumber_figures_tables": {
@@ -311,6 +314,37 @@ SUPPORTED_STEPS = {
 
 def boolish(v:str)->bool:
     return str(v).lower() in ["1","true","yes","y","on"]
+
+
+def _dedupe_target_path(path: str) -> str:
+    if not os.path.exists(path):
+        return path
+    root, ext = os.path.splitext(path)
+    idx = 2
+    while True:
+        candidate = f"{root}_{idx}{ext}"
+        if not os.path.exists(candidate):
+            return candidate
+        idx += 1
+
+
+def _rename_single_copied_path(path: str, target_name: str) -> str:
+    requested_name = (target_name or "").strip()
+    if not requested_name:
+        return path
+
+    parent = os.path.dirname(path)
+    current_name = os.path.basename(path)
+    stem, ext = os.path.splitext(current_name)
+    final_name = requested_name
+    if ext and not os.path.splitext(final_name)[1]:
+        final_name = f"{final_name}{ext}"
+    target_path = os.path.join(parent, final_name)
+    if os.path.abspath(target_path) == os.path.abspath(path):
+        return path
+    target_path = _dedupe_target_path(target_path)
+    shutil.move(path, target_path)
+    return target_path
 
 
 
@@ -704,22 +738,50 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
 
             elif stype == "copy_files":
                 keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
+                target_name = (params.get("target_name", "") or "").strip()
                 copied = copy_files(
                     params.get("source_dir", ""),
                     params.get("dest_dir", ""),
                     keywords,
                 )
+                if target_name:
+                    if len(copied) == 1:
+                        copied = [_rename_single_copied_path(copied[0], target_name)]
+                    elif copied:
+                        log[-1]["note"] = "複製後名稱僅在實際複製 1 個檔案時生效；本次已忽略。"
                 log[-1]["copied_files"] = copied
+                if len(copied) == 1:
+                    log[-1]["copied_file"] = copied[0]
 
             elif stype == "copy_directory":
                 keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
-                copied_dirs = copy_directories(
-                    params.get("source_dir", ""),
-                    params.get("dest_dir", ""),
-                    keywords,
-                    copied_dir_registry,
-                    lambda src_path: {"log_index": len(log) - 1, "source": os.path.abspath(src_path)},
-                )
+                target_name = (params.get("target_name", "") or "").strip()
+                if keywords:
+                    copied_dirs = copy_directories(
+                        params.get("source_dir", ""),
+                        params.get("dest_dir", ""),
+                        keywords,
+                        copied_dir_registry,
+                        lambda src_path: {"log_index": len(log) - 1, "source": os.path.abspath(src_path)},
+                    )
+                    if target_name:
+                        if len(copied_dirs) == 1:
+                            renamed = _rename_single_copied_path(copied_dirs[0], target_name)
+                            existing_info = copied_dir_registry.pop(os.path.abspath(copied_dirs[0]), None)
+                            copied_dirs = [renamed]
+                            if existing_info is not None:
+                                copied_dir_registry[os.path.abspath(renamed)] = existing_info
+                        elif copied_dirs:
+                            log[-1]["note"] = "複製後名稱僅在實際複製 1 個資料夾時生效；本次已忽略。"
+                else:
+                    copied_dir = copy_directory(
+                        params.get("source_dir", ""),
+                        params.get("dest_dir", ""),
+                        target_name=target_name or None,
+                        copied_registry=copied_dir_registry,
+                        registry_entry={"log_index": len(log) - 1, "source": os.path.abspath(params.get("source_dir", ""))},
+                    )
+                    copied_dirs = [copied_dir]
                 log[-1]["copied_dirs"] = copied_dirs
                 if len(copied_dirs) == 1:
                     log[-1]["copied_dir"] = copied_dirs[0]

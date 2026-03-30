@@ -146,7 +146,7 @@ def task_name_exists(name, exclude_id=None):
             return True
     return False
 def gather_available_files(files_dir):
-    mapping = {"docx": [], "pdf": [], "zip": [], "dir": []}
+    mapping = {"docx": [], "pdf": [], "zip": [], "dir": [], "path": []}
     for rel in list_files(files_dir):
         ext = os.path.splitext(rel)[1].lower()
         if ext == ".docx":
@@ -158,6 +158,7 @@ def gather_available_files(files_dir):
     dirs = list_dirs(files_dir)
     dirs.insert(0, ".")
     mapping["dir"] = dirs
+    mapping["path"] = sorted(set(mapping["docx"] + mapping["pdf"] + mapping["zip"] + dirs), key=str.lower)
     return mapping
 
 

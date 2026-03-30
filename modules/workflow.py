@@ -18,7 +18,7 @@ from .Extract_AllFile_to_FinalWord import (
     extract_specific_figure_from_word,
     extract_specific_table_from_word,
 )
-from .file_copier import copy_directories, copy_directory, copy_files
+from .file_copier import copy_directories, copy_directory, copy_file, copy_files
 from .docx_merger import merge_word_docs
 from .template_manager import (
     display_order_template_mappings,
@@ -285,7 +285,7 @@ SUPPORTED_STEPS = {
         "label": "複製檔案",
         "inputs": ["source_dir", "dest_dir", "keywords", "target_name"],
         "accepts": {
-            "source_dir": "file:dir",
+            "source_dir": "file:path",
             "dest_dir": "file:dir",
             "keywords": "text",
             "target_name": "text",
@@ -739,16 +739,28 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
             elif stype == "copy_files":
                 keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
                 target_name = (params.get("target_name", "") or "").strip()
-                copied = copy_files(
-                    params.get("source_dir", ""),
-                    params.get("dest_dir", ""),
-                    keywords,
-                )
-                if target_name:
-                    if len(copied) == 1:
-                        copied = [_rename_single_copied_path(copied[0], target_name)]
-                    elif copied:
-                        log[-1]["note"] = "複製後名稱僅在實際複製 1 個檔案時生效；本次已忽略。"
+                source_path = params.get("source_dir", "")
+                if os.path.isfile(source_path):
+                    copied = [
+                        copy_file(
+                            source_path,
+                            params.get("dest_dir", ""),
+                            target_name=target_name or None,
+                        )
+                    ]
+                    if keywords:
+                        log[-1]["note"] = "已選擇單一來源檔案，已忽略關鍵字。"
+                else:
+                    copied = copy_files(
+                        source_path,
+                        params.get("dest_dir", ""),
+                        keywords,
+                    )
+                    if target_name:
+                        if len(copied) == 1:
+                            copied = [_rename_single_copied_path(copied[0], target_name)]
+                        elif copied:
+                            log[-1]["note"] = "複製後名稱僅在實際複製 1 個檔案時生效；本次已忽略。"
                 log[-1]["copied_files"] = copied
                 if len(copied) == 1:
                     log[-1]["copied_file"] = copied[0]

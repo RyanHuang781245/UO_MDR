@@ -539,7 +539,12 @@ def _resolve_runtime_step_params(files_dir: str, schema: dict, raw_params: dict)
     for key, value in raw_params.items():
         accept = schema.get("accepts", {}).get(key, "text")
         if isinstance(accept, str) and accept.startswith("file") and value:
-            params[key] = _resolve_task_file_path(files_dir, str(value), expect_dir=accept.endswith(":dir"))
+            expect_dir = (
+                True if accept.endswith(":dir")
+                else False if accept.endswith(":docx") or accept.endswith(":pdf") or accept.endswith(":zip")
+                else None
+            )
+            params[key] = _resolve_task_file_path(files_dir, str(value), expect_dir=expect_dir)
         else:
             params[key] = value
     return params

@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import tempfile
 import uuid
-import zipfile
 from datetime import datetime
 import re
 from pathlib import Path
@@ -32,9 +31,7 @@ from app.services.flow_service import (
 from app.services.audit_service import record_audit
 
 from app.services.task_service import (
-    allowed_file,
     build_file_tree,
-    deduplicate_name,
     delete_task_record,
     enforce_max_copy_size,
     ensure_windows_long_path,
@@ -46,7 +43,7 @@ from app.services.task_service import (
     task_name_exists,
 )
 
-from app.services.nas_service import get_configured_nas_roots, resolve_nas_path, validate_nas_path
+from app.services.nas_service import get_configured_nas_roots, resolve_nas_path
 from app.utils import normalize_docx_output_filename
 from modules.auth_models import ROLE_ADMIN, user_has_role
 from modules.docx_provenance import (
@@ -2429,99 +2426,6 @@ def delete_task(task_id):
         shutil.rmtree(tdir)
     delete_task_record(task_id)
     return redirect(url_for("tasks_bp.tasks"))
-
-@tasks_bp.post("/tasks/<task_id>/files", endpoint="upload_task_file")
-def upload_task_file(task_id):
-    """Upload additional files to an existing task."""
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    files_dir = os.path.join(tdir, "files")
-    if not os.path.isdir(files_dir):
-        abort(404)
-
-    uploads = request.files.getlist("upload_files")
-    has_uploads = any(f and f.filename for f in uploads)
-    uploaded_names = []
-    if has_uploads:
-        for upload in uploads:
-            if not upload or not upload.filename:
-                continue
-            safe_name = secure_filename(upload.filename)
-            if not safe_name:
-                return "檔名不合法", 400
-            if not allowed_file(safe_name):
-                return "僅支援 DOCX、PDF、ZIP 或 Excel 檔案", 400
-            dest_name = deduplicate_name(files_dir, safe_name)
-            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
-            try:
-                if dest_name.lower().endswith(".zip"):
-                    upload.save(dest_path)
-                    with zipfile.ZipFile(dest_path, "r") as zf:
-                        zf.extractall(files_dir)
-                        for info in zf.infolist():
-                            if info.is_dir():
-                                continue
-                    os.remove(dest_path)
-                else:
-                    upload.save(dest_path)
-                uploaded_names.append(dest_name)
-            except Exception:
-                current_app.logger.exception("本機檔案上傳失敗")
-                return "上傳失敗，請稍後再試", 400
-        if uploaded_names:
-            work_id, label = _get_actor_info()
-            record_audit(
-                action="task_upload_files",
-                actor={"work_id": work_id, "label": label},
-                detail={"task_id": task_id, "count": len(uploaded_names), "files": uploaded_names},
-                task_id=task_id,
-            )
-        return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
-
-    nas_input = request.form.get("nas_file_path", "").strip()
-    if not nas_input:
-        return "請選擇要上傳的檔案", 400
-    try:
-        source_path = validate_nas_path(
-            nas_input,
-            allowed_roots=current_app.config.get("ALLOWED_SOURCE_ROOTS", []),
-        )
-        enforce_max_copy_size(source_path)
-    except ValueError as e:
-        return str(e), 400
-    except FileNotFoundError as e:
-        return str(e), 404
-
-    try:
-        source_path = ensure_windows_long_path(source_path)
-        if os.path.isdir(source_path):
-            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
-            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
-            shutil.copytree(source_path, dest_path)
-        else:
-            if not allowed_file(source_path):
-                return "僅支援 DOCX、PDF、ZIP 或 Excel 檔案，或複製整個資料夾", 400
-            dest_name = deduplicate_name(files_dir, os.path.basename(source_path))
-            dest_path = ensure_windows_long_path(os.path.join(files_dir, dest_name))
-            if dest_name.lower().endswith(".zip"):
-                shutil.copy2(source_path, dest_path)
-                with zipfile.ZipFile(dest_path, "r") as zf:
-                    zf.extractall(files_dir)
-                os.remove(dest_path)
-            else:
-                shutil.copy2(source_path, dest_path)
-    except PermissionError:
-        return "沒有足夠的權限讀取或複製指定路徑", 400
-    except FileNotFoundError:
-        return "找不到指定的檔案或資料夾", 404
-    except shutil.Error:
-        current_app.logger.exception("複製檔案時發生錯誤")
-        return "複製檔案時發生錯誤，請稍後再試", 400
-    except Exception:
-        current_app.logger.exception("處理 NAS 檔案時發生未預期錯誤")
-        return "處理檔案時發生錯誤，請稍後再試", 400
-
-    return redirect(url_for("tasks_bp.task_detail", task_id=task_id))
-
 
 @tasks_bp.get("/tasks/<task_id>/nas-diff", endpoint="task_nas_diff")
 def task_nas_diff(task_id):

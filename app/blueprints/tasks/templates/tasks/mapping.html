@@ -72,28 +72,6 @@
                         </button>
                     </div>
                 </div>
-                {% if allow_save_scheme %}
-                <div class="mt-3 p-3 rounded-3 border border-success border-opacity-25 bg-success bg-opacity-10">
-                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                        <div>
-                            <div class="fw-bold text-success">檢查通過</div>
-                            <div class="small text-muted">選擇儲存後可在已保存 Mapping 頁面中操作。排程會執行已保存 Mapping 頁面中所有保存的項目</div>
-                        </div>
-                        <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 可儲存</span>
-                    </div>
-                    <div class="row g-2 mt-1">
-                        <div class="col-lg-8">
-                            <input class="form-control form-control-custom rounded-2" type="text" name="scheme_name" placeholder="輸入方案名稱，例如：CH1 章節擷取">
-                        </div>
-                        <div class="col-lg-4 d-grid">
-                            <button class="btn btn-success fw-bold" name="action" value="save_scheme" type="submit">
-                                <i class="bi bi-bookmark-check me-1"></i>
-                                儲存
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
             </form>
         </div>
     </div>
@@ -293,7 +271,56 @@
         </div>
     </div>
 
-    {% if show_generated_results and (outputs or log_file or zip_file) %}
+    {% if allow_save_scheme %}
+    <div class="modal fade" id="mappingNextStepModal" tabindex="-1" aria-hidden="true" data-auto-show="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">檢查通過</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex align-items-center gap-2 mb-2 text-success fw-bold">
+                        <i class="bi bi-check-circle-fill"></i>
+                        選擇下一步
+                    </div>
+                    <div class="small text-muted mb-1">可以直接生成，或先儲存之後在已保存 Mapping 清單中操作</div>
+                    <div class="small text-muted mb-2">排程會執行已保存 Mapping 清單中所有 Mapping 項目</div>
+                    <form method="post" id="mappingNextStepSaveForm">
+                        <input type="hidden" name="action" value="save_scheme">
+                        <div class="mb-1">
+                            <!-- <label for="nextStepSchemeName" class="form-label small fw-bold text-uppercase text-muted">儲存名稱</label> -->
+                            <label for="nextStepSchemeName" class="d-flex align-items-center form-label gap-2 mb-2 text-muted fw-bold"><i class="bi bi-folder"></i>
+                                儲存名稱
+                            </label>
+                            <input class="form-control form-control-custom" id="nextStepSchemeName" type="text" name="scheme_name" maxlength="50" placeholder="輸入儲存名稱，例如：CH1 章節擷取">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer border-0 pt-0 d-flex justify-content-between">
+                    <button type="button" class="btn btn-white border" data-bs-dismiss="modal">稍後再說</button>
+                    <div class="d-flex gap-2">
+                        {% if allow_direct_run %}
+                        <form method="post" {% if has_warning and warning_confirm %}onsubmit="return confirm({{ warning_confirm|tojson }});"{% endif %}>
+                            <input type="hidden" name="action" value="run_cached">
+                            <button class="btn btn-success fw-bold" type="submit">
+                                <i class="bi bi-play-fill me-1"></i>
+                                生成
+                            </button>
+                        </form>
+                        {% endif %}
+                        <button class="btn btn-primary fw-bold" type="submit" form="mappingNextStepSaveForm">
+                            <i class="bi bi-floppy-fill me-1"></i>
+                            儲存
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not saved_tab_active and show_generated_results and (outputs or log_file or zip_file) %}
     <div class="main-card mb-4" id="mappingGeneratedResultSection">
         <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light bg-opacity-50">
             <h5 class="fw-bold mb-0">生成結果</h5>
@@ -410,22 +437,12 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="d-flex gap-2">
-                {% if allow_direct_run %}
-                <form method="post" {% if has_warning and warning_confirm %} onsubmit="return confirm({{ warning_confirm|tojson }});"{% endif %}>
-                    <input type="hidden" name="action" value="run_cached">
-                    <button class="btn btn-success fw-bold px-3" type="submit">
-                        <i class="bi bi-play-fill me-1"></i> 
-                        生成文件
-                    </button>
-                </form>
-                {% endif %}
-            </div>
+            <div></div>
         </div>
 
         <div class="px-4 py-4">
             {% if step_runs %}
-            <div class="list-group list-group-flush border rounded-3 overflow-hidden mb-2">
+            <div class="list-group list-group-flush border rounded-3 overflow-hidden">
                 {% for step in step_runs %}
                 <div class="list-group-item py-3">
                     {% if step.status == "error" %}
@@ -591,6 +608,8 @@ function openRenameSchemeModal(button) {
 document.addEventListener('DOMContentLoaded', function() {
     const mappingStatusSection = document.getElementById('mappingStatusSection');
     const mappingGeneratedResultSection = document.getElementById('mappingGeneratedResultSection');
+    const mappingNextStepModalEl = document.getElementById('mappingNextStepModal');
+    const nextStepSchemeName = document.getElementById('nextStepSchemeName');
     const renameSchemeInput = document.getElementById('renameSchemeInput');
     const renameSchemeCount = document.getElementById('renameSchemeCount');
 
@@ -617,6 +636,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     initTabFromHash();
     syncStatusSectionVisibility();
+
+    if (mappingNextStepModalEl?.dataset.autoShow === 'true' && typeof bootstrap !== 'undefined' && {{ 'true' if not saved_tab_active else 'false' }}) {
+        const nextStepModal = new bootstrap.Modal(mappingNextStepModalEl);
+        nextStepModal.show();
+        if (nextStepSchemeName) {
+            setTimeout(() => {
+                nextStepSchemeName.focus();
+                nextStepSchemeName.select();
+            }, 120);
+        }
+    }
+
     document.querySelectorAll('#mappingTabs [data-bs-toggle="tab"]').forEach((btn) => {
         btn.addEventListener('shown.bs.tab', (event) => {
             const target = event.target.getAttribute('data-bs-target');

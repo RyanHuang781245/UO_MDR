@@ -546,6 +546,18 @@ def test_mapping_source_relative_path_resolves_file(tmp_path: Path) -> None:
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_root_relative_dot_path_resolves_root_file(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description",
+        source_name="./source.docx",
+        source_files=["source.docx"],
+    )
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("input_file", ""))).name == "source.docx"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_duplicate_filename_requires_relative_path(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(
         tmp_path,
@@ -776,6 +788,38 @@ def test_mapping_copy_folder_keywords_copy_matching_subfolders(tmp_path: Path) -
     ]
 
 
+def test_mapping_copy_folder_can_use_root_directory_path(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    matched_dir = files_dir / "IFU"
+    matched_dir.mkdir()
+    (matched_dir / "demo.txt").write_text("demo", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [[".", "IFU", "Copy Folder", "", "pkg/folders", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=False,
+    )
+
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+    zip_file = result.get("zip_file")
+    assert zip_file
+    with zipfile.ZipFile(out_dir / zip_file, "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == ["pkg/folders/IFU/demo.txt"]
+
+
 def test_mapping_copy_file_keywords_copy_matching_files(tmp_path: Path) -> None:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"
@@ -808,6 +852,36 @@ def test_mapping_copy_file_keywords_copy_matching_files(tmp_path: Path) -> None:
     with zipfile.ZipFile(out_dir / zip_file, "r") as zf:
         names = sorted(zf.namelist())
     assert names == ["pkg/files/Shipping simulation test EO.pdf"]
+
+
+def test_mapping_copy_file_keywords_can_use_root_directory_path(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    (files_dir / "IFU_demo.docx").write_text("demo", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [[".", "IFU", "Copy File", "", "pkg/files", "", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=False,
+    )
+
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+    zip_file = result.get("zip_file")
+    assert zip_file
+    with zipfile.ZipFile(out_dir / zip_file, "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == ["pkg/files/IFU_demo.docx"]
 
 
 def test_mapping_validate_extract_only_runs_workflow_validation(tmp_path: Path, monkeypatch) -> None:

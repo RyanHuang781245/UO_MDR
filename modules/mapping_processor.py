@@ -42,7 +42,7 @@ from app.services.flow_service import (
 
 
 def _split_rel_parts(path: str) -> list[str]:
-    return [part for part in re.split(r"[\\/]+", str(path or "").strip()) if part]
+    return [part for part in re.split(r"[\\/]+", str(path or "").strip()) if part and part != "."]
 
 
 def _find_files(base: str, filename: str) -> list[str]:
@@ -175,6 +175,8 @@ def _resolve_input_directory(base: str, name: str) -> tuple[str | None, str]:
     raw_name = str(name or "").strip()
     if not raw_name:
         return None, "empty input name"
+    if raw_name.replace("\\", "/") in {".", "./", "/"}:
+        return base, ""
 
     if "/" in raw_name or "\\" in raw_name:
         resolved = _find_directory(base, raw_name)

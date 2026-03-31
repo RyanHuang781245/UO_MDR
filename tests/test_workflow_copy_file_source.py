@@ -1,10 +1,29 @@
 from pathlib import Path
 
+from app.blueprints.flows.execution_helpers import _resolve_runtime_step_params
+from app.blueprints.flows.flow_file_helpers import _normalize_step_file_value
 from modules.workflow import SUPPORTED_STEPS, run_workflow
 
 
 def test_copy_files_step_accepts_file_or_directory_source() -> None:
     assert SUPPORTED_STEPS["copy_files"]["accepts"]["source_dir"] == "file:path"
+
+
+def test_copy_files_root_directory_value_is_preserved_for_mixed_path_source() -> None:
+    assert _normalize_step_file_value(".", "file:path") == "."
+
+
+def test_copy_files_runtime_resolves_root_directory_for_mixed_path_source(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    files_dir.mkdir()
+
+    params = _resolve_runtime_step_params(
+        str(files_dir),
+        SUPPORTED_STEPS["copy_files"],
+        {"source_dir": ".", "keywords": "IFU"},
+    )
+
+    assert params["source_dir"] == str(files_dir)
 
 
 def test_workflow_copy_files_can_copy_single_selected_file(tmp_path: Path) -> None:

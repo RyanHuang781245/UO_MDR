@@ -1504,6 +1504,14 @@ function getParentRelPath(rel){
   return parts.join("/");
 }
 
+function isAvailableDirPath(value){
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  const normalized = normalizeBrowserRelPath(raw);
+  const dirOptions = Array.isArray(AVAILABLE_FILES?.dir) ? AVAILABLE_FILES.dir : [];
+  return dirOptions.some((item) => normalizeBrowserRelPath(item) === normalized);
+}
+
 function parseFileAccept(accept){
   const raw = String(accept || "file:docx");
   const ext = (raw.split(":")[1] || "").toLowerCase();
@@ -1606,11 +1614,9 @@ function toggleStepFileCreateFolder(show, mode = "create", targetPath = "", init
 }
 
 function getCopyFilesSourceKind(value){
-  const normalized = normalizeBrowserRelPath(String(value || "").trim());
-  if (!normalized) return "unknown";
-  if (normalized === ".") return "dir";
-  const dirOptions = Array.isArray(AVAILABLE_FILES?.dir) ? AVAILABLE_FILES.dir : [];
-  return dirOptions.includes(normalized) ? "dir" : "file";
+  const raw = String(value || "").trim();
+  if (!raw) return "unknown";
+  return isAvailableDirPath(raw) ? "dir" : "file";
 }
 
 function syncCopyTargetNameState(card){
@@ -1869,8 +1875,7 @@ function openStepFileBrowser(input, accept){
     stepFileState.currentRel = existing;
     stepFileState.selectedRel = input.value.trim() ? existing : null;
   } else if (stepFileState.mode === "mixed"){
-    const dirOptions = Array.isArray(AVAILABLE_FILES?.dir) ? AVAILABLE_FILES.dir : [];
-    if (existing && dirOptions.includes(existing)){
+    if (isAvailableDirPath(input.value)){
       stepFileState.currentRel = existing;
       stepFileState.selectedRel = existing;
     } else {

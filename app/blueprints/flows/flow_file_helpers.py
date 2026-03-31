@@ -56,4 +56,6 @@ def _normalize_step_file_value(raw_value: str, accept: str) -> str:
     rel = _normalize_task_file_rel_path(cleaned)
     if accept.endswith(":dir") and rel == "":
         return "."
+    if accept.endswith(":path") and rel == "":
+        return "."
     return rel

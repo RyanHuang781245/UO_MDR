@@ -211,6 +211,16 @@
                                 <a class="btn-action-icon" href="{{ url_for('tasks_bp.task_download_mapping_scheme', task_id=task_id, scheme_id=scheme.id) }}" title="下載 Mapping 檔">
                                     <i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載 Mapping 檔</span>
                                 </a>
+                                <button
+                                    class="btn-action-icon"
+                                    type="button"
+                                    title="重新命名"
+                                    data-scheme-id="{{ scheme.id }}"
+                                    data-scheme-name="{{ scheme.display_name }}"
+                                    onclick="openRenameSchemeModal(this)"
+                                >
+                                    <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
+                                </button>
                                 <form method="post" class="d-inline" onsubmit="return confirm('確定刪除 Mapping 方案「{{ scheme.display_name }}」？此動作無法復原。')">
                                     <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
                                     <button class="btn-action-icon text-danger" type="submit" name="action" value="delete_scheme" title="刪除方案">
@@ -232,6 +242,32 @@
         {% endif %}
     </div>
     </div>
+    </div>
+
+    <div class="modal fade" id="renameSchemeModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post" id="renameSchemeForm">
+                    <input type="hidden" name="action" value="rename_scheme">
+                    <input type="hidden" name="scheme_id" id="renameSchemeId">
+                    <div class="modal-header">
+                        <h5 class="modal-title">修改名稱</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-1">
+                            <label for="renameSchemeInput" class="form-label small fw-bold text-uppercase text-muted">新方案名稱 (最多 50 字)</label>
+                            <input type="text" class="form-control form-control-custom" id="renameSchemeInput" name="scheme_name" maxlength="50" required>
+                            <div class="form-text text-end small" id="renameSchemeCount">0/50</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 pt-0">
+                        <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary fw-bold">確定</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 
     {% if (messages or outputs or step_runs) or (allow_direct_run or log_file) %}
@@ -404,13 +440,13 @@
     width: 260px;
 }
 .saved-mapping-col-status {
-    width: 200px;
+    width: 120px;
 }
 .saved-mapping-col-created {
     width: 180px;
 }
 .saved-mapping-col-actions {
-    width: 300px;
+    width: 370px;
 }
 .mapping-name-truncate {
     display: inline-block;
@@ -439,8 +475,34 @@
 }
 </style>
 <script>
+let renameSchemeModalInstance = null;
+
+function openRenameSchemeModal(button) {
+    const modalEl = document.getElementById('renameSchemeModal');
+    const idInput = document.getElementById('renameSchemeId');
+    const nameInput = document.getElementById('renameSchemeInput');
+    const countEl = document.getElementById('renameSchemeCount');
+    if (!modalEl || !idInput || !nameInput || typeof bootstrap === 'undefined') return;
+
+    idInput.value = button?.dataset.schemeId || '';
+    nameInput.value = button?.dataset.schemeName || '';
+    if (countEl) {
+        const max = nameInput.getAttribute('maxlength') || '50';
+        countEl.textContent = `${nameInput.value.length}/${max}`;
+    }
+
+    renameSchemeModalInstance = renameSchemeModalInstance || new bootstrap.Modal(modalEl);
+    renameSchemeModalInstance.show();
+    setTimeout(() => {
+        nameInput.focus();
+        nameInput.select();
+    }, 120);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const mappingStatusSection = document.getElementById('mappingStatusSection');
+    const renameSchemeInput = document.getElementById('renameSchemeInput');
+    const renameSchemeCount = document.getElementById('renameSchemeCount');
 
     function syncStatusSectionVisibility() {
         if (!mappingStatusSection) return;
@@ -491,6 +553,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     syncMappingStepDetailOverflow();
     window.addEventListener('resize', syncMappingStepDetailOverflow);
+
+    if (renameSchemeInput && renameSchemeCount) {
+        renameSchemeInput.addEventListener('input', () => {
+            const max = renameSchemeInput.getAttribute('maxlength') || '50';
+            renameSchemeCount.textContent = `${renameSchemeInput.value.length}/${max}`;
+        });
+    }
 
     const forms = document.querySelectorAll('form');
     forms.forEach(form => {

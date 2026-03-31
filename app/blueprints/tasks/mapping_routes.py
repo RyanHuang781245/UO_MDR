@@ -19,6 +19,7 @@ from .mapping_scheme_helpers import (
     list_mapping_schemes,
     load_mapping_scheme,
     load_scheduled_mapping_scheme,
+    rename_mapping_scheme,
     save_mapping_scheme,
     set_scheduled_mapping_scheme,
     write_mapping_run_meta,
@@ -354,6 +355,21 @@ def task_mapping(task_id):
                         messages.append(f"已刪除方案：{active_scheme.get('display_name') or scheme_id}")
                     else:
                         messages.append("刪除失敗，請稍後再試。")
+                except Exception as e:
+                    messages = [str(e)]
+        elif action == "rename_scheme":
+            scheme_id = (request.form.get("scheme_id") or "").strip()
+            active_scheme = load_mapping_scheme(task_id, scheme_id)
+            if not active_scheme:
+                messages.append("找不到指定的 Mapping 方案。")
+            else:
+                try:
+                    renamed_scheme = rename_mapping_scheme(
+                        task_id,
+                        scheme_id,
+                        request.form.get("scheme_name") or "",
+                    )
+                    messages.append(f"已重新命名方案：{renamed_scheme.get('display_name') or scheme_id}")
                 except Exception as e:
                     messages = [str(e)]
         else:

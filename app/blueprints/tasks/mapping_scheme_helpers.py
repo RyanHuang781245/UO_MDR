@@ -227,6 +227,33 @@ def delete_mapping_scheme(task_id: str, scheme_id: str) -> bool:
     return not os.path.exists(scheme_dir)
 
 
+def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
+    scheme = load_mapping_scheme(task_id, scheme_id)
+    if not scheme:
+        raise FileNotFoundError("Mapping scheme not found")
+
+    cleaned_name = str(new_name or "").strip()
+    if not cleaned_name:
+        raise ValueError("方案名稱不可空白")
+
+    meta_path = mapping_scheme_meta_path(task_id, scheme_id)
+    with open(meta_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, dict):
+        raise ValueError("Mapping scheme metadata is invalid")
+
+    payload["name"] = cleaned_name
+    payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    updated_scheme = load_mapping_scheme(task_id, scheme_id)
+    if not updated_scheme:
+        raise RuntimeError("Failed to reload mapping scheme after rename")
+    return updated_scheme
+
+
 def execute_saved_mapping_scheme(
     task_id: str,
     scheme_id: str,

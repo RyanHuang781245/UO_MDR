@@ -84,7 +84,7 @@ def test_mapping_route_can_save_validated_scheme(app, client, monkeypatch) -> No
 
     assert response.status_code == 200
     assert "CH1 章節擷取" in html
-    assert "立即執行" in html
+    assert "生成" in html
     assert scheme_dirs
     matched_meta = None
     for scheme_dir in scheme_dirs:
@@ -293,3 +293,42 @@ def test_can_delete_saved_mapping_scheme(app, client) -> None:
     assert "刪除測試方案" not in html
     assert "尚未保存任何 Mapping 方案" in html
     assert not (task_dir / "mappings" / scheme["id"]).exists()
+
+
+def test_can_rename_saved_mapping_scheme(app, client) -> None:
+    task_id = "mapping-scheme-rename"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    source_path = task_dir / "Mapping_rename.xlsx"
+    source_path.write_bytes(b"dummy-rename")
+
+    scheme = save_mapping_scheme(
+        task_id,
+        str(source_path),
+        "舊名稱方案",
+        {
+            "mapping_file": "Mapping_rename.xlsx",
+            "mapping_display_name": "Mapping_rename.xlsx",
+            "reference_ok": True,
+            "extract_ok": True,
+        },
+        actor={"work_id": "A123", "label": "Tester"},
+    )
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={"action": "rename_scheme", "scheme_id": scheme["id"], "scheme_name": "新名稱方案"},
+    )
+    html = response.get_data(as_text=True)
+    meta = json.loads((task_dir / "mappings" / scheme["id"] / "meta.json").read_text(encoding="utf-8"))
+
+    assert response.status_code == 200
+    assert "新名稱方案" in html
+    assert "舊名稱方案" not in html
+    assert meta["name"] == "新名稱方案"

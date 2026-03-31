@@ -591,14 +591,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         });
 
                         // Show spinner only on the button that triggered submit
-                        const loadingText = isCheck ? '檢查中' : '處理中';
+                        const loadingText = isCheck ? '檢查中' : '生成中';
                         submitBtn.disabled = true;
-                        submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> ${loadingText}`;
+                        submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span><span class="small fw-semibold">${loadingText}</span>`;
                         
                         // Update status badge if it exists
                         const statusContainer = document.getElementById('status-badge-container');
                         if (statusContainer) {
-                            statusContainer.innerHTML = `<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> ${loadingText}</span>`;
+                            statusContainer.innerHTML = `<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i></span><span class="small fw-semibold">${loadingText}</span>`;
                         }
                     }
                 }

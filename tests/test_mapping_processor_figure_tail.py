@@ -183,6 +183,34 @@ def test_mapping_type_add_text_rejects_other_operation(tmp_path: Path) -> None:
     assert all(not (run.get("workflow_log") or []) for run in runs)
 
 
+def test_mapping_type_all_blank_operation_creates_extract_all_step(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "",
+        item_type="All",
+        source_name="source.docx",
+        source_files=["source.docx"],
+    )
+    assert _first_step_type(log_data) == "extract_word_all_content"
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("input_file", ""))).name == "source.docx"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_type_all_rejects_other_operation(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description",
+        item_type="All",
+        source_name="source.docx",
+        source_files=["source.docx"],
+    )
+    assert any("類型 All 時，操作欄僅支援留白或 All" in msg for msg in result.get("logs", []))
+    runs = log_data.get("runs") or []
+    assert runs
+    assert all(not (run.get("workflow_log") or []) for run in runs)
+
+
 def test_mapping_pdf_image_blank_operation_creates_pdf_step(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(
         tmp_path,

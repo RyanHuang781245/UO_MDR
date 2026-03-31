@@ -540,6 +540,8 @@ def process_mapping_excel(
 
     def _normalize_item_type(raw_type: str) -> str:
         text = (raw_type or "").strip().lower()
+        if text in {"all", "extract all", "全文", "擷取全文", "提取全文"}:
+            return "extract_all"
         if text in {"figure", "fig", "圖片", "图"}:
             return "figure"
         if text in {"table", "表格", "表"}:
@@ -596,6 +598,8 @@ def process_mapping_excel(
         return True, f"包含標題欄位值無效: {text}"
 
     def _guess_action(instruction: str, item_type: str = "") -> str:
+        if item_type == "extract_all":
+            return "Extract all"
         if item_type == "add_text":
             return "Append text"
         if item_type == "copy_file":
@@ -816,7 +820,7 @@ def process_mapping_excel(
         if include_title_error:
             _log("error", include_title_error, row_num, action_label, detail_label)
             continue
-        if not instruction and item_type not in {"pdf_image", "add_text", "copy_file", "copy_folder"}:
+        if not instruction and item_type not in {"extract_all", "pdf_image", "add_text", "copy_file", "copy_folder"}:
             _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
         if not out_name and item_type not in {"copy_file", "copy_folder"}:
@@ -1067,6 +1071,23 @@ def process_mapping_excel(
             _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": "insert_text", "params": params})
             _log("info", f"append text into {out_name}", row_num)
+            continue
+
+        if item_type == "extract_all":
+            if instruction and instruction.lower() != "all":
+                _log("error", f"類型 All 時，操作欄僅支援留白或 All: {instruction}", row_num, action_label, detail_label)
+                continue
+            infile, resolve_error = _resolve_input_file(task_files_dir, src_name)
+            if not infile:
+                _log("error", f"來源檔案解析失敗: {resolve_error}", row_num, action_label, detail_label)
+                continue
+            params = {"input_file": infile}
+            if template_path is not None:
+                params["template_index"] = target_idx
+                params["template_mode"] = "insert_after"
+            _attach_mapping_meta(params, row_num, action_label, detail_label)
+            groups[group_key]["steps"].append({"type": "extract_word_all_content", "params": params})
+            _log("info", f"extract all: {src_name}", row_num)
             continue
 
         if instruction.lower() == "add text":

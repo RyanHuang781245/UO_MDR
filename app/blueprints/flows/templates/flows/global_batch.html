@@ -173,7 +173,7 @@
   <div class="mb-1 d-flex justify-content-between align-items-center">
     <div>
       <h1 class="h3 mb-1 fw-bold">排程中心</h1>
-      <p class="text-muted mb-0 small"></i>批次執行多個任務流程，並即時監控進度</p>
+      <p class="text-muted mb-0 small"></i>批次執行多個任務。每個任務可選擇執行全部流程或全部已保存 Mapping。</p>
     </div>
   </div>
 
@@ -237,15 +237,16 @@
         <!-- 下方左側：待執行清單 -->
         <div class="col-lg-5">
           <form id="globalBatchForm" action="{{ url_for('global_batch_bp.run_global_batch') }}" method="post">
-            <input type="hidden" name="task_ids" id="taskIdsInput" value="{{ tasks|map(attribute='id')|join(',') }}">
+            <input type="hidden" name="task_ids" id="taskIdsInput" value="{{ batch_task_ids }}">
+            <input type="hidden" name="batch_items" id="batchItemsInput" value="{{ batch_item_tokens }}">
             <div class="main-card">
               <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center bg-light bg-opacity-25">
-                <span class="fw-bold"><i class="bi bi-collection me-2 text-primary"></i>待執行任務 (<span id="taskCount">{{ tasks|length }}</span>)</span>
+                <span class="fw-bold"><i class="bi bi-collection me-2 text-primary"></i>待執行項目 (<span id="taskCount">{{ tasks|length }}</span>)</span>
                 <div class="d-flex align-items-center gap-2">
                   {% if not batch_id %}
                   <a
                     class="btn btn-outline-primary btn-sm fw-bold px-3"
-                    href="{{ url_for('tasks_bp.tasks', append_to_batch=1, existing_task_ids=tasks|map(attribute='id')|join(',')) }}"
+                    href="{{ url_for('tasks_bp.tasks', append_to_batch=1, existing_task_ids=batch_task_ids, existing_batch_items=batch_item_tokens) }}"
                     id="addTasksBtn"
                     data-base-url="{{ url_for('tasks_bp.tasks') }}"
                   >
@@ -263,16 +264,33 @@
                     <tr>
                       <th class="batch-col-sort text-center"></th>
                       <th class="ps-3">任務資訊</th>
+                      <th style="width: 220px;" class="text-center">執行內容</th>
                       <th class="batch-col-action text-center">操作</th>
                     </tr>
                   </thead>
                   <tbody id="batchTaskList">
                     {% for t in tasks %}
-                    <tr data-task-id="{{ t.id }}" draggable="true" class="batch-row">
+                    <tr data-task-id="{{ t.task_id }}" data-item-kind="{{ t.kind }}" data-item-token="{{ t.item_token }}" draggable="true" class="batch-row">
                       <td class="text-center"><span class="batch-flow-handle"><i class="bi bi-grip-vertical"></i></span></td>
                       <td class="ps-3 overflow-hidden">
                         <div class="fw-bold text-dark mb-0 text-truncate" title="{{ t.name }}">{{ t.name }}</div>
-                        {% if t.missing %}<div class="badge bg-danger-subtle text-danger border border-danger-subtle small mt-1">任務已不存在</div>{% endif %}
+                        <div class="small text-muted text-truncate" title="{{ t.description }}">{{ t.description or '此任務可在排程中心選擇執行流程或 Mapping。' }}</div>
+                        {% if t.missing %}
+                        <div class="badge bg-danger-subtle text-danger border border-danger-subtle small mt-1">{{ t.status_label }}</div>
+                        {% endif %}
+                      </td>
+                      <td class="text-center">
+                        <select class="form-select form-select-sm form-control-custom batch-mode-select mx-auto" style="max-width: 190px;" data-task-token="{{ t.task_token }}" data-mapping-token="{{ t.mapping_token }}" {% if t.missing %}disabled{% endif %}>
+                          <option value="flow" {% if t.selected_mode == 'flow' %}selected{% endif %}>流程</option>
+                          {% if t.mapping_token %}
+                          <option value="mapping" {% if t.selected_mode == 'mapping' %}selected{% endif %}>全部 Mapping</option>
+                          {% endif %}
+                        </select>
+                        {% if t.mapping_token %}
+                        <div class="small text-muted mt-1" title="{{ t.mapping_status_label }}">已保存 Mapping：{{ t.mapping_count }} 個{% if t.mapping_count != t.runnable_mapping_count %}，可執行 {{ t.runnable_mapping_count }} 個{% endif %}</div>
+                        {% else %}
+                        <div class="small text-muted mt-1">尚未保存 Mapping</div>
+                        {% endif %}
                       </td>
                       <td class="text-center">
                         <div class="btn-group shadow-sm border rounded-2 bg-white">
@@ -284,7 +302,7 @@
                     </tr>
                     {% else %}
                     <tr id="emptyQueueRow">
-                      <td colspan="3" class="text-center text-muted py-5">
+                      <td colspan="4" class="text-center text-muted py-5">
                         <div class="opacity-50"><i class="bi bi-inbox-fill fs-1 mb-3 d-block"></i>尚未加入任務</div>
                       </td>
                     </tr>
@@ -341,7 +359,7 @@
               <tr>
                 <th class="text-start ps-4">Batch ID</th>
                 <th class="text-center">執行狀態</th>
-                <th class="text-center">任務數</th>
+                <th class="text-center">項目數</th>
                 <th class="text-center">成功 / 失敗</th>
                 <th class="text-center">建立時間</th>
                 <th class="text-center">操作</th>
@@ -497,6 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 const batchTaskList = document.getElementById("batchTaskList");
 const taskIdsInput = document.getElementById("taskIdsInput");
+const batchItemsInput = document.getElementById("batchItemsInput");
 const taskCountSpan = document.getElementById("taskCount");
 const startBtn = document.getElementById("startBatchBtn");
 const addTasksBtn = document.getElementById("addTasksBtn");
@@ -521,6 +540,7 @@ const copyFlowPathBtn = document.getElementById("copyFlowPathBtn");
 const { escapeHtml } = window.UiUtils;
 
 let taskIds = (taskIdsInput?.value || "").split(",").filter(Boolean);
+let batchItemTokens = (batchItemsInput?.value || "").split(",").filter(Boolean);
 let currentPathPayload = { resultPath: "", logPath: "" };
 let lastFocusedPathTrigger = null;
 const copyFlashTimers = new WeakMap();
@@ -576,7 +596,7 @@ function escapeAttr(value) {
 
 function syncSubmitState() {
   if (startBtn && !startBtn.dataset.locked) {
-    startBtn.disabled = taskIds.length === 0;
+    startBtn.disabled = batchItemTokens.length === 0;
   }
 }
 
@@ -591,13 +611,33 @@ function syncAddTasksLink() {
   } else {
     url.searchParams.delete("existing_task_ids");
   }
+  if (batchItemTokens.length > 0) {
+    url.searchParams.set("existing_batch_items", batchItemTokens.join(","));
+  } else {
+    url.searchParams.delete("existing_batch_items");
+  }
   addTasksBtn.href = url.toString();
 }
 
 function updateSequence() {
-  taskIds = Array.from(batchTaskList.querySelectorAll("tr[data-task-id]")).map((tr) => tr.getAttribute("data-task-id"));
+  const rows = Array.from(batchTaskList.querySelectorAll("tr[data-item-token]"));
+  batchItemTokens = rows.map((tr) => {
+    const select = tr.querySelector(".batch-mode-select");
+    const mode = select?.value || "flow";
+    const token = mode === "mapping"
+      ? (select?.dataset.mappingToken || "")
+      : (select?.dataset.taskToken || tr.getAttribute("data-item-token") || "");
+    tr.setAttribute("data-item-kind", mode === "mapping" ? "mapping_scheme" : "task");
+    tr.setAttribute("data-item-token", token);
+    return token;
+  }).filter(Boolean);
+  taskIds = rows
+    .filter((tr) => (tr.querySelector(".batch-mode-select")?.value || "flow") === "flow")
+    .map((tr) => tr.getAttribute("data-task-id"))
+    .filter(Boolean);
   taskIdsInput.value = taskIds.join(",");
-  taskCountSpan.textContent = taskIds.length;
+  if (batchItemsInput) batchItemsInput.value = batchItemTokens.join(",");
+  taskCountSpan.textContent = batchItemTokens.length;
   syncSubmitState();
   syncAddTasksLink();
 }
@@ -608,6 +648,8 @@ if (batchTaskList) {
     if (!row) return;
     if (e.target.closest(".batch-remove")) {
       row.remove();
+      updateSequence();
+    } else if (e.target.classList.contains("batch-mode-select")) {
       updateSequence();
     } else if (e.target.closest(".batch-move-up")) {
       const prev = row.previousElementSibling;
@@ -640,6 +682,11 @@ if (batchTaskList) {
   batchTaskList.addEventListener("dragend", (e) => {
     e.target.classList.remove("dragging-row");
     updateSequence();
+  });
+  batchTaskList.addEventListener("change", (e) => {
+    if (e.target.classList.contains("batch-mode-select")) {
+      updateSequence();
+    }
   });
 }
 
@@ -697,7 +744,7 @@ function updateHistoryRow(status) {
 
 function renderBatchResults(status) {
   const results = Array.isArray(status?.results) ? status.results : [];
-  const allTasks = Array.isArray(status?.tasks) ? status.tasks : [];
+  const allItems = Array.isArray(status?.items) ? status.items : [];
 
   if (batchResultsSummary) {
     const ok = results.filter((r) => r && r.ok).length;
@@ -709,7 +756,7 @@ function renderBatchResults(status) {
     }
   }
 
-  if (!results.length && !allTasks.length) {
+  if (!results.length && !allItems.length) {
     batchResultsList.innerHTML = `
       <div class="text-center py-5 text-muted">
         <i class="bi bi-info-circle fs-3 d-block mb-2"></i>
@@ -718,11 +765,18 @@ function renderBatchResults(status) {
     return;
   }
 
-  const renderedIds = new Set(results.map((r) => r.task_id).filter(Boolean));
-  const pending = allTasks
-    .filter((tid) => !renderedIds.has(tid))
-    .map((tid, idx) => {
-      const isCurrent = status.current_task_id && status.current_task_id === tid;
+  const itemKey = (item) => {
+    const kind = item?.kind || "task";
+    const taskId = item?.task_id || "";
+    const schemeId = item?.scheme_id || "";
+    return `${kind}:${taskId}:${schemeId}`;
+  };
+  const renderedIds = new Set(results.map((r) => itemKey(r)).filter(Boolean));
+  const pending = allItems
+    .filter((item) => !renderedIds.has(itemKey(item)))
+    .map((item) => {
+      const labelText = item.label || (item.kind === "mapping_scheme" ? `${item.task_id} / 全部 Mapping` : item.task_id || "");
+      const isCurrent = status.current_task_name && status.current_task_name === labelText;
       const label = isCurrent ? "執行中" : "等待中";
       const badge = isCurrent
         ? '<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>'
@@ -731,8 +785,8 @@ function renderBatchResults(status) {
         <div class="list-group-item px-4 py-3 batch-result-item">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <div>
-              <div class="fw-bold">${escapeHtml(tid)}</div>
-              <div class="small text-muted font-monospace">${escapeHtml(tid)}</div>
+              <div class="fw-bold">${escapeHtml(labelText)}</div>
+              <div class="small text-muted font-monospace">${escapeHtml(item.task_id || "")}</div>
             </div>
             ${badge}
           </div>
@@ -744,11 +798,13 @@ function renderBatchResults(status) {
     .map((r) => {
       const errors = Array.isArray(r.errors) ? r.errors : [];
       const flows = Array.isArray(r.flows) ? r.flows : [];
+      const mappingRuns = Array.isArray(r.mapping_runs) ? r.mapping_runs : [];
+      const itemLabel = r.label || (r.kind === "mapping_scheme" ? `${r.name || ""} / 全部 Mapping` : r.name || "");
       return `
         <div class="list-group-item px-4 py-3 batch-result-item">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <div>
-              <div class="fw-bold text-dark">${escapeHtml(r.name || "")}</div>
+              <div class="fw-bold text-dark">${escapeHtml(itemLabel)}</div>
               <div class="small text-muted font-monospace mb-1">${escapeHtml(r.task_id || "")}</div>
             </div>
             <span class="status-badge ${r.ok ? "status-badge-completed" : "status-badge-failed"}">
@@ -799,6 +855,53 @@ function renderBatchResults(status) {
                                    </button>
                                    ${ok ? `<a class="btn-action-icon p-1" href="/tasks/${taskId}/download/${jobId}/docx" title="下載 Word"><i class="bi bi-download"></i><span>下載</span></a>` : ""}
                                    <a class="btn-action-icon p-1" href="/tasks/${taskId}/download/${jobId}/log" title="下載 Log"><i class="bi bi-file-earmark-text"></i><span>Log</span></a>
+                                  </div>`
+                              : "<span class='text-muted small'>-</span>"}
+                          </td>
+                        </tr>`;
+                      })
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>`
+            : ""}
+          ${mappingRuns.length
+            ? `<div class="table-responsive border rounded my-3 shadow-sm">
+                <table class="table table-sm mb-0 flow-detail-table" style="table-layout: fixed;">
+                  <colgroup>
+                    <col style="width: 30%">
+                    <col style="width: 10%">
+                    <col style="width: 18%">
+                    <col style="width: 15%">
+                    <col style="width: 27%">
+                  </colgroup>
+                  <thead class="table-light">
+                    <tr>
+                      <th class="text-start ps-3">Mapping 方案</th>
+                      <th class="text-center">狀態</th>
+                      <th class="text-center">Run ID</th>
+                      <th class="text-center">輸出</th>
+                      <th class="text-center pe-3">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${mappingRuns
+                      .map((run) => {
+                        const ok = !!run.ok;
+                        const taskId = encodeURIComponent(r.task_id || "");
+                        const zipPath = run.zip_relpath || "";
+                        const logPath = run.log_relpath || "";
+                        const runLabel = run.scheme_name || r.scheme_name || "Mapping";
+                        return `<tr>
+                          <td class="text-start text-truncate ps-3" title="${escapeHtml(runLabel)}">${escapeHtml(runLabel)}</td>
+                          <td class="text-center">${ok ? "<i class='bi bi-check-circle-fill text-success'></i>" : "<i class='bi bi-x-circle-fill text-danger'></i>"}</td>
+                          <td class="text-center font-monospace">${escapeHtml(run.run_id || "")}</td>
+                          <td class="text-center font-monospace">${escapeHtml(String(run.output_count ?? 0))}</td>
+                          <td class="text-center pe-3">
+                            ${run.run_id
+                              ? `<div class="d-flex justify-content-center gap-1">
+                                   ${zipPath ? `<a class="btn-action-icon p-1" href="/tasks/${taskId}/output/download?filename=${encodeURIComponent(zipPath)}" title="下載 ZIP"><i class="bi bi-file-earmark-zip"></i><span>ZIP</span></a>` : ""}
+                                   ${logPath ? `<a class="btn-action-icon p-1" href="/tasks/${taskId}/output/download?filename=${encodeURIComponent(logPath)}" title="下載 Log"><i class="bi bi-file-earmark-text"></i><span>Log</span></a>` : ""}
                                   </div>`
                               : "<span class='text-muted small'>-</span>"}
                           </td>
@@ -897,12 +1000,12 @@ async function pollStatus() {
 
     if (batchStatusContainer) batchStatusContainer.style.display = "block";
     if (progressWrap) progressWrap.style.display = "block";
-    const total = Array.isArray(status.tasks) ? status.tasks.length : 0;
+    const total = Array.isArray(status.items) ? status.items.length : 0;
     const current = Math.min(status.current_index || 0, total);
     const percent = total > 0 ? Math.round((current / total) * 100) : 0;
     if (progressText) progressText.textContent = `${current} / ${total}`;
     if (progressBar) progressBar.style.width = `${percent}%`;
-    if (currentTaskInfo) currentTaskInfo.textContent = status.current_task_name ? `目前任務：${status.current_task_name}` : "等待執行中...";
+    if (currentTaskInfo) currentTaskInfo.textContent = status.current_task_name ? `目前項目：${status.current_task_name}` : "等待執行中...";
 
     renderBatchResults(status);
 

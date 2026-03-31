@@ -2,19 +2,11 @@
 {% block enable_sidebar %}false{% endblock %}
 {% block content %}
 <style>
-    :root {
-        --bs-blue-50: #eff6ff;
-        --bs-blue-100: #dbeafe;
-        --bs-blue-600: #2563eb;
-        --bs-emerald-50: #ecfdf5;
-        --bs-emerald-700: #047857;
-    }
-
     .main-card {
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--app-border);
         border-radius: 0.75rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        background: white;
+        background: var(--app-card-bg);
         overflow: hidden;
     }
 
@@ -24,7 +16,7 @@
         padding: 1rem 1.5rem;
         display: flex;
         align-items: center;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid var(--app-border);
     }
 
     .filter-bar {
@@ -47,9 +39,17 @@
 
     /* Form Controls */
     .form-control-custom {
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--app-border);
+        background-color: var(--app-card-bg);
+        color: var(--app-text);
         font-size: 0.875rem;
         padding: 0.5rem 0.75rem;
+    }
+    .form-control-custom:focus {
+        background-color: var(--app-card-bg);
+        color: var(--app-text);
+        border-color: var(--bs-blue-600);
+        box-shadow: 0 0 0 0.25rem rgba(37, 99, 235, 0.1);
     }
     textarea.form-control-custom {
         resize: vertical;
@@ -66,7 +66,7 @@
         left: 0.75rem;
         top: 50%;
         transform: translateY(-50%);
-        color: #94a3b8;
+        color: var(--bs-gray-500);
     }
     .search-wrapper input {
         padding-left: 2.25rem;
@@ -74,8 +74,8 @@
 
     .btn-action-icon {
         background: transparent;
-        border: 1px solid #e2e8f0;
-        color: #64748b;
+        border: 1px solid var(--app-border);
+        color: var(--bs-gray-500);
         padding: 0.4rem 0.75rem;
         border-radius: 0.5rem;
         transition: all 0.2s;
@@ -86,14 +86,14 @@
         white-space: nowrap;
     }
     .btn-action-icon:hover {
-        background: #f8fafc;
+        background: var(--bs-blue-50);
         color: var(--bs-blue-600);
         border-color: var(--bs-blue-100);
     }
     .btn-action-icon.text-danger:hover {
-        color: #dc3545;
-        background: #fff5f5;
-        border-color: #feb2b2;
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.1);
+        border-color: rgba(239, 68, 68, 0.2);
     }
     .task-pin-toggle.is-pinned {
         color: var(--bs-blue-600);
@@ -116,7 +116,8 @@
         pointer-events: all;
     }
     .task-loading-box {
-        background: #fff;
+        background: var(--app-card-bg);
+        color: var(--app-text);
         border-radius: 8px;
         padding: 16px 20px;
         box-shadow: 0 10px 30px rgba(0,0,0,0.2);
@@ -144,7 +145,8 @@
         right: 0;
         height: 100vh;
         width: min(90vw, 420px);
-        background: #fff;
+        background: var(--app-card-bg);
+        color: var(--app-text);
         box-shadow: -12px 0 28px rgba(0, 0, 0, 0.18);
         transform: translateX(100%);
         transition: transform 0.25s ease;
@@ -157,7 +159,7 @@
     }
     .task-desc-drawer-header {
         padding: 12px 16px;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid var(--app-border);
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -175,18 +177,18 @@
         justify-content: space-between;
         gap: 12px;
         padding: 10px 12px;
-        background: #f8fafc;
-        border: 1px solid #e5e7eb;
+        background: var(--app-bg);
+        border: 1px solid var(--app-border);
         border-radius: 10px;
         margin-bottom: 10px;
     }
     .task-detail-label {
-        color: #64748b;
+        color: var(--bs-gray-500);
         font-weight: 600;
         min-width: 90px;
     }
     .task-detail-value {
-        color: #0f172a;
+        color: var(--app-text);
         text-align: right;
         flex: 1;
         word-break: break-word;
@@ -216,8 +218,9 @@
     }
     .task-modal-panel {
         width: min(560px, 96vw);
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: var(--app-card-bg);
+        color: var(--app-text);
+        border: 1px solid var(--app-border);
         border-radius: 0.75rem;
         box-shadow: 0 20px 40px rgba(15, 23, 42, 0.28);
         overflow: hidden;
@@ -230,7 +233,7 @@
         align-items: center;
         justify-content: space-between;
         padding: 0.875rem 1rem;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 1px solid var(--app-border);
     }
     .task-modal-body {
         padding: 1rem;
@@ -241,14 +244,14 @@
         justify-content: flex-end;
         gap: 0.5rem;
         padding: 0.875rem 1rem;
-        border-top: 1px solid #e2e8f0;
-        background: #f8fafc;
+        border-top: 1px solid var(--app-border);
+        background: var(--app-bg);
     }
     .task-copy-warning {
         margin-top: 0.75rem;
-        border: 1px solid #fed7aa;
-        background: #fff7ed;
-        color: #9a3412;
+        border: 1px solid rgba(251, 146, 60, 0.3);
+        background: rgba(251, 146, 60, 0.1);
+        color: #ea580c;
         border-radius: 0.5rem;
         padding: 0.625rem 0.75rem;
         font-size: 0.875rem;
@@ -342,7 +345,7 @@
         
         <div class="table-responsive" style="overflow: visible;">
             <table class="table mb-0 align-middle">
-                <thead style="background-color: #f8fafc;">
+                <thead style="background-color: var(--app-table-thead-bg);">
                     <tr>
                         <th style="width: 60px;" class="text-center py-3 align-middle">
                             <input type="checkbox" class="form-check-input" id="masterCheckbox">
@@ -416,17 +419,17 @@
             <nav>
                 <ul class="pagination pagination-sm mb-0 gap-1">
                     <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page-1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page-1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items')) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
                     </li>
                     {% for p in range(1, pagination.total_pages + 1) %}
                         {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
                         <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=p, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) }}">{{ p }}</a>
+                            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=p, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items')) }}">{{ p }}</a>
                         </li>
                         {% endif %}
                     {% endfor %}
                     <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page+1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids')) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page+1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items')) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
                     </li>
                 </ul>
             </nav>
@@ -1355,6 +1358,7 @@ function initTaskDescDrawer(){
   const clearSelectionBtn = document.getElementById('clearSelectionBtn');
   const pageUrlParams = new URLSearchParams(window.location.search);
   const appendToBatch = pageUrlParams.get('append_to_batch') === '1';
+  const existingBatchItems = (pageUrlParams.get('existing_batch_items') || '').trim();
   const pinScopeKey = String({{ pin_scope_key|tojson }} || 'anonymous').trim() || 'anonymous';
   const PIN_STORAGE_KEY = `uo_mdr.task_pins.v1.${pinScopeKey}`;
   const persistedIdsRaw = appendToBatch
@@ -1443,11 +1447,14 @@ function initTaskDescDrawer(){
               url.searchParams.set('append_to_batch', '1');
               if (idsCsv) url.searchParams.set('existing_task_ids', idsCsv);
               else url.searchParams.delete('existing_task_ids');
+              if (existingBatchItems) url.searchParams.set('existing_batch_items', existingBatchItems);
+              else url.searchParams.delete('existing_batch_items');
           } else {
               if (idsCsv) url.searchParams.set('selected_task_ids', idsCsv);
               else url.searchParams.delete('selected_task_ids');
               url.searchParams.delete('append_to_batch');
               url.searchParams.delete('existing_task_ids');
+              url.searchParams.delete('existing_batch_items');
           }
           link.href = url.toString();
       });
@@ -1460,11 +1467,14 @@ function initTaskDescDrawer(){
           url.searchParams.set('append_to_batch', '1');
           if (idsCsv) url.searchParams.set('existing_task_ids', idsCsv);
           else url.searchParams.delete('existing_task_ids');
+          if (existingBatchItems) url.searchParams.set('existing_batch_items', existingBatchItems);
+          else url.searchParams.delete('existing_batch_items');
       } else {
           if (idsCsv) url.searchParams.set('selected_task_ids', idsCsv);
           else url.searchParams.delete('selected_task_ids');
           url.searchParams.delete('append_to_batch');
           url.searchParams.delete('existing_task_ids');
+          url.searchParams.delete('existing_batch_items');
       }
       window.history.replaceState(null, '', url.toString());
   }
@@ -1564,6 +1574,9 @@ function initTaskDescDrawer(){
           // Redirect to global batch page with selected task IDs
           const url = new URL("{{ url_for('global_batch_bp.global_batch_page') }}", window.location.origin);
           url.searchParams.set('task_ids', selected.join(','));
+          if (existingBatchItems) {
+              url.searchParams.set('items', existingBatchItems);
+          }
           window.location.href = url.toString();
       });
   }

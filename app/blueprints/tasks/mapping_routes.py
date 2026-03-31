@@ -13,6 +13,16 @@ from werkzeug.utils import secure_filename
 from app.services.task_service import load_task_context as _load_task_context
 from app.services.user_context_service import get_actor_info as _get_actor_info
 from .blueprint import tasks_bp
+from .mapping_scheme_helpers import (
+    delete_mapping_scheme,
+    execute_saved_mapping_scheme,
+    list_mapping_schemes,
+    load_mapping_scheme,
+    load_scheduled_mapping_scheme,
+    save_mapping_scheme,
+    set_scheduled_mapping_scheme,
+    write_mapping_run_meta,
+)
 
 _INVALID_UPLOAD_FILENAME_CHARS = '\\/:*?"<>|'
 _WINDOWS_RESERVED_FILE_NAMES = {
@@ -271,114 +281,209 @@ def task_mapping(task_id):
         action = request.form.get("action") or "run"
         mapping_path = None
         uploaded_new_mapping = False
-        if action == "run_cached":
-            if not last_mapping_file:
-                messages.append("找不到上次檢查的檔案，請重新上傳。")
-            else:
-                mapping_path = os.path.join(tdir, last_mapping_file)
-        else:
-            f = request.files.get("mapping_file")
-            if f and f.filename:
-                display_name = os.path.basename((f.filename or "").replace("\\", "/")).strip()
-                filename = _safe_uploaded_filename(
-                    f.filename,
-                    default_stem=f"mapping_{uuid.uuid4().hex[:8]}",
-                )
-                mapping_path = os.path.join(tdir, filename)
-                f.save(mapping_path)
-                uploaded_new_mapping = True
-                current_mapping_display_name = display_name or filename
-                try:
-                    Path(last_mapping_marker).write_text(filename, encoding="utf-8")
-                    last_mapping_file = filename
-                    validation_state = {
-                        "mapping_file": filename,
-                        "mapping_display_name": current_mapping_display_name,
-                        "reference_ok": False,
-                        "extract_ok": False,
-                        "run_id": "",
-                    }
-                except Exception:
-                    pass
-            elif last_mapping_file:
-                mapping_path = os.path.join(tdir, last_mapping_file)
-                current_mapping_display_name = current_mapping_display_name or last_mapping_file
-            else:
-                messages.append("請選擇檔案")
+        active_scheme = None
 
-        if action == "check_extract" and not validation_state.get("reference_ok"):
-            messages.append("請先通過檢查引用文件。")
-            mapping_path = None
-        if action == "run_cached" and not validation_state.get("extract_ok"):
-            messages.append("請先通過檢查擷取參數。")
-            mapping_path = None
-        if mapping_path:
-            try:
-                from modules.mapping_processor import process_mapping_excel
-                existing_run_id = str(validation_state.get("run_id") or "").strip()
-                current_run_id = existing_run_id if (existing_run_id and not uploaded_new_mapping) else uuid.uuid4().hex[:8]
-                run_out_dir = os.path.join(out_dir, current_run_id)
-                result = process_mapping_excel(
-                    mapping_path,
-                    files_dir,
-                    run_out_dir,
-                    log_dir=run_out_dir,
-                    validate_only=(action == "check"),
-                    validate_extract_only=(action == "check_extract"),
-                )
-                messages = result["logs"]
-                outputs = result["outputs"]
-                log_file_raw = result.get("log_file")
-                zip_file_raw = result.get("zip_file")
-                log_file_name = log_file_raw
-                zip_file_name = zip_file_raw
-                log_file = f"{current_run_id}/{log_file_raw}" if log_file_raw else None
-                zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else None
-                current_has_error = any("ERROR" in (m or "") for m in messages)
-                current_mapping_name = os.path.basename(mapping_path)
-                current_mapping_display_name = current_mapping_display_name or validation_state.get("mapping_display_name") or current_mapping_name
-                if action == "check":
-                    validation_state = {
-                        "mapping_file": current_mapping_name,
-                        "mapping_display_name": current_mapping_display_name,
-                        "reference_ok": not current_has_error,
-                        "extract_ok": False,
-                        "run_id": current_run_id,
-                    }
-                elif action == "check_extract":
-                    validation_state = {
-                        "mapping_file": current_mapping_name,
-                        "mapping_display_name": current_mapping_display_name,
-                        "reference_ok": bool(validation_state.get("reference_ok")),
-                        "extract_ok": not current_has_error,
-                        "run_id": current_run_id,
-                    }
-                elif action == "run_cached":
-                    validation_state = {
-                        "mapping_file": current_mapping_name,
-                        "mapping_display_name": current_mapping_display_name,
-                        "reference_ok": bool(validation_state.get("reference_ok")),
-                        "extract_ok": bool(validation_state.get("extract_ok")),
-                        "run_id": current_run_id,
-                    }
-                if action in {"check", "check_extract"}:
+        if action == "run_scheme":
+            scheme_id = (request.form.get("scheme_id") or "").strip()
+            active_scheme = load_mapping_scheme(task_id, scheme_id)
+            if not active_scheme:
+                messages.append("找不到指定的 Mapping 方案。")
+            elif not active_scheme.get("is_runnable"):
+                messages.append(f"方案「{active_scheme.get('display_name') or scheme_id}」目前不可執行，請先重新檢查。")
+            else:
+                try:
+                    work_id, actor_label = _get_actor_info()
+                    run_result = execute_saved_mapping_scheme(
+                        task_id,
+                        scheme_id,
+                        actor={"work_id": work_id, "label": actor_label},
+                        source="manual",
+                    )
+                    current_run_id = run_result["run_id"]
+                    messages = list(run_result.get("messages") or [])
+                    outputs = [f"{current_run_id}/{name}" for name in (run_result.get("outputs") or [])]
+                    log_file_name = run_result.get("log_file") or ""
+                    zip_file_name = run_result.get("zip_file") or ""
+                    log_file = run_result.get("log_relpath") or None
+                    zip_file = run_result.get("zip_relpath") or None
+                    current_mapping_display_name = active_scheme.get("display_name") or active_scheme.get("mapping_display_name") or ""
+                except Exception as e:
+                    messages = [str(e)]
+        elif action == "schedule_scheme":
+            scheme_id = (request.form.get("scheme_id") or "").strip()
+            active_scheme = load_mapping_scheme(task_id, scheme_id)
+            if not active_scheme:
+                messages.append("找不到指定的 Mapping 方案。")
+            elif not active_scheme.get("is_runnable"):
+                messages.append(f"方案「{active_scheme.get('display_name') or scheme_id}」目前不可設為排程，請先重新檢查。")
+            else:
+                try:
+                    set_scheduled_mapping_scheme(task_id, scheme_id)
+                    messages.append(f"已設為排程方案：{active_scheme.get('display_name') or scheme_id}")
+                except Exception as e:
+                    messages = [str(e)]
+        elif action == "save_scheme":
+            if not last_mapping_file or validation_state.get("mapping_file") != last_mapping_file:
+                messages.append("請先上傳並檢查 Mapping 檔案後再儲存方案。")
+            elif not validation_state.get("extract_ok"):
+                messages.append("請先通過檢查擷取參數，再儲存方案。")
+            else:
+                mapping_path = os.path.join(tdir, last_mapping_file)
+                scheme_name = (request.form.get("scheme_name") or "").strip()
+                try:
+                    work_id, actor_label = _get_actor_info()
+                    saved_scheme = save_mapping_scheme(
+                        task_id,
+                        mapping_path,
+                        scheme_name,
+                        validation_state,
+                        actor={"work_id": work_id, "label": actor_label},
+                    )
+                    messages.append(f"已儲存方案：{saved_scheme.get('display_name') or saved_scheme.get('id')}")
+                except Exception as e:
+                    messages = [str(e)]
+        elif action == "delete_scheme":
+            scheme_id = (request.form.get("scheme_id") or "").strip()
+            active_scheme = load_mapping_scheme(task_id, scheme_id)
+            if not active_scheme:
+                messages.append("找不到指定的 Mapping 方案。")
+            else:
+                try:
+                    deleted = delete_mapping_scheme(task_id, scheme_id)
+                    if deleted:
+                        messages.append(f"已刪除方案：{active_scheme.get('display_name') or scheme_id}")
+                    else:
+                        messages.append("刪除失敗，請稍後再試。")
+                except Exception as e:
+                    messages = [str(e)]
+        else:
+            if action == "run_cached":
+                if not last_mapping_file:
+                    messages.append("找不到上次檢查的檔案，請重新上傳。")
+                else:
+                    mapping_path = os.path.join(tdir, last_mapping_file)
+            else:
+                f = request.files.get("mapping_file")
+                if f and f.filename:
+                    display_name = os.path.basename((f.filename or "").replace("\\", "/")).strip()
+                    filename = _safe_uploaded_filename(
+                        f.filename,
+                        default_stem=f"mapping_{uuid.uuid4().hex[:8]}",
+                    )
+                    mapping_path = os.path.join(tdir, filename)
+                    f.save(mapping_path)
+                    uploaded_new_mapping = True
+                    current_mapping_display_name = display_name or filename
                     try:
-                        Path(validation_state_path).write_text(
-                            json.dumps(validation_state, ensure_ascii=False),
-                            encoding="utf-8",
-                        )
+                        Path(last_mapping_marker).write_text(filename, encoding="utf-8")
+                        last_mapping_file = filename
+                        validation_state = {
+                            "mapping_file": filename,
+                            "mapping_display_name": current_mapping_display_name,
+                            "reference_ok": False,
+                            "extract_ok": False,
+                            "run_id": "",
+                        }
                     except Exception:
                         pass
-                elif action == "run_cached":
-                    try:
-                        Path(validation_state_path).write_text(
-                            json.dumps(validation_state, ensure_ascii=False),
-                            encoding="utf-8",
-                        )
-                    except Exception:
-                        pass
-            except Exception as e:
-                messages = [str(e)]
+                elif last_mapping_file:
+                    mapping_path = os.path.join(tdir, last_mapping_file)
+                    current_mapping_display_name = current_mapping_display_name or last_mapping_file
+                else:
+                    messages.append("請選擇檔案")
+
+            if action == "check_extract" and not validation_state.get("reference_ok"):
+                messages.append("請先通過檢查引用文件。")
+                mapping_path = None
+            if action == "run_cached" and not validation_state.get("extract_ok"):
+                messages.append("請先通過檢查擷取參數。")
+                mapping_path = None
+            if mapping_path:
+                try:
+                    from modules.mapping_processor import process_mapping_excel
+
+                    existing_run_id = str(validation_state.get("run_id") or "").strip()
+                    current_run_id = existing_run_id if (existing_run_id and not uploaded_new_mapping) else uuid.uuid4().hex[:8]
+                    run_out_dir = os.path.join(out_dir, current_run_id)
+                    result = process_mapping_excel(
+                        mapping_path,
+                        files_dir,
+                        run_out_dir,
+                        log_dir=run_out_dir,
+                        validate_only=(action == "check"),
+                        validate_extract_only=(action == "check_extract"),
+                    )
+                    messages = result["logs"]
+                    outputs = result["outputs"]
+                    log_file_raw = result.get("log_file")
+                    zip_file_raw = result.get("zip_file")
+                    log_file_name = log_file_raw
+                    zip_file_name = zip_file_raw
+                    log_file = f"{current_run_id}/{log_file_raw}" if log_file_raw else None
+                    zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else None
+                    current_has_error = any("ERROR" in (m or "") for m in messages)
+                    current_mapping_name = os.path.basename(mapping_path)
+                    current_mapping_display_name = current_mapping_display_name or validation_state.get("mapping_display_name") or current_mapping_name
+                    if action == "check":
+                        validation_state = {
+                            "mapping_file": current_mapping_name,
+                            "mapping_display_name": current_mapping_display_name,
+                            "reference_ok": not current_has_error,
+                            "extract_ok": False,
+                            "run_id": current_run_id,
+                        }
+                    elif action == "check_extract":
+                        validation_state = {
+                            "mapping_file": current_mapping_name,
+                            "mapping_display_name": current_mapping_display_name,
+                            "reference_ok": bool(validation_state.get("reference_ok")),
+                            "extract_ok": not current_has_error,
+                            "run_id": current_run_id,
+                        }
+                    elif action == "run_cached":
+                        validation_state = {
+                            "mapping_file": current_mapping_name,
+                            "mapping_display_name": current_mapping_display_name,
+                            "reference_ok": bool(validation_state.get("reference_ok")),
+                            "extract_ok": bool(validation_state.get("extract_ok")),
+                            "run_id": current_run_id,
+                        }
+                    if action in {"check", "check_extract", "run_cached"}:
+                        try:
+                            Path(validation_state_path).write_text(
+                                json.dumps(validation_state, ensure_ascii=False),
+                                encoding="utf-8",
+                            )
+                        except Exception:
+                            pass
+                except Exception as e:
+                    messages = [str(e)]
+        if action in {"save_scheme", "schedule_scheme"} and not log_file:
+            preserved_run_id = str(validation_state.get("run_id") or "").strip()
+            if preserved_run_id:
+                preserved_run_dir = os.path.join(out_dir, preserved_run_id)
+                if os.path.isdir(preserved_run_dir):
+                    current_run_id = preserved_run_id
+                    preserved_log_name = ""
+                    preserved_zip_name = ""
+                    for candidate in os.listdir(preserved_run_dir):
+                        lower_name = candidate.lower()
+                        if not preserved_log_name and lower_name.endswith(".json"):
+                            preserved_log_name = candidate
+                        if not preserved_zip_name and lower_name.endswith(".zip"):
+                            preserved_zip_name = candidate
+                    if preserved_log_name:
+                        log_file_name = preserved_log_name
+                        log_file = f"{preserved_run_id}/{preserved_log_name}"
+                    if preserved_zip_name:
+                        zip_file_name = preserved_zip_name
+                        zip_file = f"{preserved_run_id}/{preserved_zip_name}"
+                    for root, _dirs, files in os.walk(preserved_run_dir):
+                        for name in files:
+                            if not name.lower().endswith(".docx"):
+                                continue
+                            rel = os.path.relpath(os.path.join(root, name), out_dir).replace("\\", "/")
+                            outputs.append(rel)
     if log_file:
         log_candidates = [
             os.path.join(out_dir, log_file),
@@ -515,7 +620,7 @@ def task_mapping(task_id):
     step_error_count = sum(1 for step in step_runs if step.get("status") == "error")
     rel_outputs = []
     for p in outputs:
-        rel = os.path.relpath(p, out_dir)
+        rel = os.path.relpath(p, out_dir) if os.path.isabs(p) else str(p)
         rel_outputs.append(rel.replace("\\", "/"))
     if request.method == "POST" and (request.form.get("action") == "run_cached") and current_run_id:
         run_dir = os.path.join(out_dir, current_run_id)
@@ -536,7 +641,7 @@ def task_mapping(task_id):
                     break
         status_text = "failed" if has_error else "completed"
         work_id, actor_label = _get_actor_info()
-        _write_mapping_run_meta(
+        write_mapping_run_meta(
             run_dir,
             {
                 "record_type": "mapping_run",
@@ -555,8 +660,14 @@ def task_mapping(task_id):
                 "error": first_error,
                 "actor_work_id": work_id,
                 "actor_label": actor_label,
+                "source": "manual",
             },
         )
+    scheduled_scheme = load_scheduled_mapping_scheme(task_id)
+    scheduled_scheme_id = (scheduled_scheme or {}).get("id") or (scheduled_scheme or {}).get("scheme_id") or ""
+    saved_schemes = list_mapping_schemes(task_id)
+    for scheme in saved_schemes:
+        scheme["is_scheduled"] = bool(scheduled_scheme_id and scheme.get("id") == scheduled_scheme_id)
     return render_template(
         "tasks/mapping.html",
         task_id=task_id,
@@ -574,17 +685,25 @@ def task_mapping(task_id):
         error_messages=error_messages,
         last_mapping_file=last_mapping_file,
         current_mapping_display_name=current_mapping_display_name or last_mapping_file,
+        saved_schemes=saved_schemes,
+        scheduled_scheme=scheduled_scheme,
         allow_check_extract=bool(
             last_mapping_file
             and validation_state.get("mapping_file") == last_mapping_file
             and validation_state.get("reference_ok")
         ),
-        allow_direct_run=bool(
+        allow_save_scheme=bool(
             last_mapping_file
             and validation_state.get("mapping_file") == last_mapping_file
             and validation_state.get("extract_ok")
             and request.method == "POST"
             and (request.form.get("action") == "check_extract")
+            and not has_error
+        ),
+        allow_direct_run=bool(
+            last_mapping_file
+            and validation_state.get("mapping_file") == last_mapping_file
+            and validation_state.get("extract_ok")
             and not has_error
         ),
     )
@@ -633,6 +752,30 @@ def task_download_mapping_example(task_id):
         404,
     )
 
+
+@tasks_bp.get("/tasks/<task_id>/mapping/schemes/<scheme_id>/download", endpoint="task_download_mapping_scheme")
+def task_download_mapping_scheme(task_id, scheme_id):
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    if not os.path.isdir(tdir):
+        abort(404)
+
+    scheme = load_mapping_scheme(task_id, scheme_id)
+    if not scheme or not scheme.get("source_exists"):
+        abort(404)
+
+    download_name = (
+        str(scheme.get("mapping_display_name") or "").strip()
+        or str(scheme.get("mapping_file") or "").strip()
+        or os.path.basename(str(scheme.get("source_path") or ""))
+        or f"{scheme_id}.xlsx"
+    )
+    return send_file(
+        scheme["source_path"],
+        as_attachment=True,
+        download_name=download_name,
+    )
+
+
 def _send_mapping_output_file(task_id: str, filename: str):
     safe_name = (filename or "").replace("\\", "/").strip("/")
     if not safe_name:
@@ -647,17 +790,6 @@ def _send_mapping_output_file(task_id: str, filename: str):
         if os.path.isfile(file_path):
             return send_from_directory(base_dir, safe_name, as_attachment=True)
     abort(404)
-
-
-def _write_mapping_run_meta(run_dir: str, payload: dict) -> None:
-    try:
-        os.makedirs(run_dir, exist_ok=True)
-        meta_path = os.path.join(run_dir, "meta.json")
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-    except Exception:
-        current_app.logger.exception("Failed to write mapping run meta")
-
 
 @tasks_bp.get("/tasks/<task_id>/output/download", endpoint="task_download_output_query")
 def task_download_output_query(task_id):

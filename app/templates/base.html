@@ -9,7 +9,7 @@
     <link href="{{ url_for('static', filename='file-tree.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='responsive-fixes.css') }}" rel="stylesheet">
     <style>
-      :root {
+      :root, [data-bs-theme="light"] {
         --bs-blue-50: #eff6ff;
         --bs-blue-100: #dbeafe;
         --bs-blue-600: #2563eb;
@@ -17,11 +17,38 @@
         --bs-emerald-700: #047857;
         --bs-gray-200: #e2e8f0;
         --bs-gray-500: #64748b;
+        
+        --app-bg: #f8fafc;
+        --app-text: #334155;
+        --app-card-bg: white;
+        --app-border: var(--bs-gray-200);
+        --app-table-thead-bg: #f8fafc;
+        --app-sidebar-bg: #f8f9fa; /* Bootstrap bg-light equivalent */
+        --app-sidebar-border: #dee2e6;
+      }
+
+      [data-bs-theme="dark"] {
+        --bs-blue-50: #1e293b;
+        --bs-blue-100: #334155;
+        --bs-blue-600: #3b82f6;
+        --bs-emerald-50: #064e3b;
+        --bs-emerald-700: #34d399;
+        --bs-gray-200: #334155;
+        --bs-gray-500: #94a3b8;
+
+        --app-bg: #0f172a;
+        --app-text: #f1f5f9;
+        --app-card-bg: #1e293b;
+        --app-border: #334155;
+        --app-table-thead-bg: #1e293b;
+        --app-sidebar-bg: #1e293b;
+        --app-sidebar-border: #334155;
       }
 
       body {
-        background-color: #f8fafc;
-        color: #334155;
+        background-color: var(--app-bg);
+        color: var(--app-text);
+        transition: background-color 0.3s, color 0.3s;
       }
 
       /* 防止 Bootstrap 在 Modal 開啟時造成位移 */
@@ -33,17 +60,17 @@
       }
 
       .main-card {
-        border: 1px solid var(--bs-gray-200);
+        border: 1px solid var(--app-border);
         border-radius: 0.75rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        background: white;
+        background: var(--app-card-bg);
         overflow: hidden;
         margin-bottom: 2rem;
       }
 
       /* Tabs Styling */
       .nav-tabs-custom {
-        border-bottom: 1px solid var(--bs-gray-200);
+        border-bottom: 1px solid var(--app-border);
         display: flex;
         gap: 0.5rem;
         padding: 0 1rem;
@@ -73,7 +100,7 @@
 
       /* Table Standards */
       table thead th {
-        background-color: #f8fafc;
+        background-color: var(--app-table-thead-bg);
         font-size: 0.875rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
@@ -81,17 +108,17 @@
         color: var(--bs-gray-500);
         padding: 0.75rem 1rem;
         text-align: center;
-        border-bottom: 1px solid var(--bs-gray-200);
+        border-bottom: 1px solid var(--app-border);
       }
       table tbody td {
         font-size: 0.875rem;
-        color: #334155;
+        color: var(--app-text);
         padding: 0.75rem 1rem;
         vertical-align: middle;
         text-align: center;
       }
       .row-selected {
-        background-color: rgba(37, 99, 235, 0.03) !important;
+        background-color: rgba(37, 99, 235, 0.05) !important;
       }
 
       /* Status Badges */
@@ -108,12 +135,12 @@
       .status-badge-completed {
         background-color: var(--bs-emerald-50);
         color: var(--bs-emerald-700);
-        border-color: #d1fae5;
+        border-color: rgba(16, 185, 129, 0.2);
       }
       .status-badge-failed {
-        background-color: #fef2f2;
-        color: #b91c1c;
-        border-color: #fee2e2;
+        background-color: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.2);
       }
       .status-badge-running {
         background-color: var(--bs-blue-50);
@@ -121,9 +148,9 @@
         border-color: var(--bs-blue-100);
       }
       .status-badge-queued {
-        background-color: #f8fafc;
+        background-color: var(--app-bg);
         color: var(--bs-gray-500);
-        border-color: var(--bs-gray-200);
+        border-color: var(--app-border);
       }
 
       /* Animations */
@@ -138,7 +165,7 @@
 
       /* Action Icons */
       .btn-action-icon {
-        color: #94a3b8;
+        color: var(--bs-gray-500);
         padding: 0.4rem;
         border-radius: 0.375rem;
         transition: all 0.2s;
@@ -164,11 +191,11 @@
         background: transparent;
       }
       .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
+        background: var(--app-border);
         border-radius: 10px;
       }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: #cbd5e1;
+        background: var(--bs-gray-500);
       }
 
       .navbar { 
@@ -258,11 +285,16 @@
       }
 
       /* Sidebar Active States */
+      #sidebarMenu {
+        background-color: var(--app-sidebar-bg) !important;
+        border-right: 1px solid var(--app-sidebar-border) !important;
+      }
       #sidebarMenu .nav-link {
         border-radius: 0.375rem;
         margin: 0.1rem 0.75rem;
         padding: 0.6rem 0.75rem;
         transition: all 0.2s;
+        color: var(--app-text) !important;
       }
       #sidebarMenu .nav-link:hover {
         background-color: var(--bs-blue-50);
@@ -276,7 +308,29 @@
       #sidebarMenu .nav-link.active i {
         color: var(--bs-blue-600);
       }
+
+      /* Theme Toggle Button */
+      .theme-toggle {
+        cursor: pointer;
+        padding: 0.5rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 0.2s;
+        color: var(--app-text);
+      }
+      .theme-toggle:hover {
+        background-color: var(--bs-blue-50);
+        color: var(--bs-blue-600);
+      }
     </style>
+    <script>
+      (function() {
+        const theme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-bs-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
@@ -287,7 +341,7 @@
         <div class="d-flex align-items-center me-auto overflow-hidden">
           <a class="navbar-brand fw-bold d-flex align-items-center me-2" href="{{ url_for('tasks_bp.tasks') }}">
             <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="me-2" style="height:30px;">
-            <span class="d-none d-sm-inline">法規文件轉換平台</span>
+            <span class="d-none d-sm-inline text-body">法規文件轉換平台</span>
           </a>
           {% if task and task.name %}
           <div class="d-flex align-items-center text-muted gap-2 overflow-hidden" style="font-size: 0.975rem;">
@@ -298,13 +352,22 @@
           {% endif %}
         </div>
         <div class="navbar-actions d-flex align-items-center gap-2">
+          <div class="theme-toggle" id="themeToggle" title="切換深淺模式">
+            <i class="bi bi-sun-fill d-none-dark"></i>
+            <i class="bi bi-moon-stars-fill d-none-light"></i>
+          </div>
+          <style>
+            [data-bs-theme="dark"] .d-none-dark { display: none; }
+            [data-bs-theme="light"] .d-none-light { display: none; }
+          </style>
+
           {% if not auth_enabled %}
             <span class="text-muted small">Auth disabled</span>
           {% endif %}
 
           {% if current_user %}
             <div class="dropdown">
-              <button class="btn btn-link text-dark text-decoration-none dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <button class="btn btn-link text-body text-decoration-none dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="bi bi-person-circle fs-5 me-2"></i>
                 <span class="fw-semibold">{{ current_user.display_name }}</span>
               </button>
@@ -343,37 +406,37 @@
     <div class="{{ 'container-fluid' if show_sidebar else 'container' }}">
       <div class="row g-0">
         {% if show_sidebar %}
-        <nav id="sidebarMenu" class="col-12 col-md-auto bg-light border-end sidebar-width" style="min-height: calc(100vh - 56px);">
+        <nav id="sidebarMenu" class="col-12 col-md-auto bg-body-tertiary border-end sidebar-width" style="min-height: calc(100vh - 56px);">
           <div class="position-sticky pt-3" style="top: 56px; height: calc(100vh - 56px); overflow-y: auto;">
             {% block sidebar %}
               <ul class="nav flex-column">
                 <li class="nav-item">
-                  <a class="nav-link link-dark {{ 'active' if request.path == url_for('tasks_bp.tasks') else '' }}" href="{{ url_for('tasks_bp.tasks') }}">
+                  <a class="nav-link {{ 'active' if request.path == url_for('tasks_bp.tasks') else '' }}" href="{{ url_for('tasks_bp.tasks') }}">
                     <i class="bi bi-list-task me-2"></i>
                     任務管理
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'global_batch_bp.global_batch_page' else '' }}" href="{{ url_for('global_batch_bp.global_batch_page') }}">
+                  <a class="nav-link {{ 'active' if request.endpoint == 'global_batch_bp.global_batch_page' else '' }}" href="{{ url_for('global_batch_bp.global_batch_page') }}">
                     <i class="bi bi-calendar2-week me-2"></i>
                     排程中心
                   </a>
                   {% if task and task.id %}
-                  <a class="nav-link link-dark {{ 'active' if request.path == url_for('tasks_bp.task_detail', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
+                  <a class="nav-link {{ 'active' if request.path == url_for('tasks_bp.task_detail', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
                     <i class="bi bi-info-circle me-2"></i>
                     任務詳情
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if request.path == url_for('tasks_bp.task_mapping', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
+                  <a class="nav-link {{ 'active' if request.path == url_for('tasks_bp.task_mapping', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
                     <i class="bi bi-diagram-3-fill me-2"></i>
                     Mapping
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flow_builder_bp.flow_builder' and '/batch' not in request.path else '' }}" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id) }}">
+                  <a class="nav-link {{ 'active' if request.endpoint == 'flow_builder_bp.flow_builder' and '/batch' not in request.path else '' }}" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id) }}">
                     <i class="bi bi-diagram-3 me-2"></i>
                     流程管理
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'flow_results_bp.flow_results' else '' }}" href="{{ url_for('flow_results_bp.flow_results', task_id=task.id) }}">
+                  <a class="nav-link {{ 'active' if request.endpoint == 'flow_results_bp.flow_results' else '' }}" href="{{ url_for('flow_results_bp.flow_results', task_id=task.id) }}">
                     <i class="bi bi-clipboard-check me-2"></i>
                     執行結果
                   </a>
-                  <a class="nav-link link-dark {{ 'active' if request.endpoint == 'tasks_bp.task_copy_files' else '' }}" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
+                  <a class="nav-link {{ 'active' if request.endpoint == 'tasks_bp.task_copy_files' else '' }}" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
                     <i class="bi bi-folder-symlink me-2"></i>
                     複製檔案
                   </a>
@@ -402,6 +465,17 @@
     <script src="{{ url_for('static', filename='file-tree.js') }}"></script>
     <script>
       document.addEventListener('DOMContentLoaded', () => {
+        // Theme Toggle Logic
+        const themeToggle = document.getElementById('themeToggle');
+        if (themeToggle) {
+          themeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-bs-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-bs-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+          });
+        }
+
         const toggleBtn = document.getElementById('sidebarToggle');
         const sidebar = document.getElementById('sidebarMenu');
 

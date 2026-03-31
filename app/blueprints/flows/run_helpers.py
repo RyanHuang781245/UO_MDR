@@ -359,6 +359,7 @@ def _list_mapping_runs(task_id: str) -> list[dict]:
             {
                 "run_id": name,
                 "mapping_file": (meta.get("mapping_display_name") or meta.get("mapping_file") or "").strip() or "未命名 Mapping",
+                "scheme_name": (meta.get("scheme_name") or "").strip(),
                 "started_at": started_at,
                 "status": (meta.get("status") or "unknown").strip().lower(),
                 "output_count": int(meta.get("output_count") or len(meta.get("outputs") or [])),
@@ -368,6 +369,7 @@ def _list_mapping_runs(task_id: str) -> list[dict]:
                 "log_file": log_rel,
                 "reference_ok": bool(meta.get("reference_ok")),
                 "extract_ok": bool(meta.get("extract_ok")),
+                "source": (meta.get("source") or "").strip() or "manual",
                 "error": (meta.get("error") or "").strip(),
             }
         )

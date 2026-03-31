@@ -2,14 +2,32 @@
 {% block content %}
 <div class="container-fluid px-0">
     <div class="mb-3">
-        <h1 class="h3 mb-1 fw-bold">Mapping 生成文件</h1>
-        <!-- <p class="text-muted">上傳 Mapping 定義檔（Excel）進行文件內容的批次擷取與生成。</p> -->
+        <h1 class="h3 mb-1 fw-bold">Mapping</h1>
+        <!-- <p class="text-muted mb-0 small">先上傳並檢查 Excel，再儲存為可重複使用的 Mapping 方案。排程仍然是從任務列表勾選 task，這裡只設定此 task 的預設 Mapping。</p> -->
     </div>
 
-    <!-- 上傳表單 -->
+    <ul class="nav nav-tabs nav-tabs-custom mb-4" id="mappingTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="create-scheme-tab" data-bs-toggle="tab" data-bs-target="#create-scheme-pane" type="button" role="tab" aria-controls="create-scheme-pane" aria-selected="true">
+                <i class="bi bi-plus-square me-2"></i>建立 Mapping
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="saved-schemes-tab" data-bs-toggle="tab" data-bs-target="#saved-schemes-pane" type="button" role="tab" aria-controls="saved-schemes-pane" aria-selected="false">
+                <i class="bi bi-folder-check me-2"></i>已保存 Mapping
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+    <div class="tab-pane fade show active" id="create-scheme-pane" role="tabpanel" aria-labelledby="create-scheme-tab" tabindex="0">
     <div class="main-card mb-4">
-        <div class="px-4 py-4">
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div>
+                <div class="fw-bold">建立 Mapping</div>
+                <div class="small text-muted">步驟 1 上傳 Excel，步驟 2 完成檢查，步驟 3 儲存方案。</div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
                 <button
                     class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2"
                     type="button"
@@ -19,8 +37,14 @@
                     <i class="bi bi-info-circle text-primary"></i>
                     Mapping 定義說明
                 </button>
+                <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}">
+                    <i class="bi bi-download"></i>
+                    下載 Mapping 範例
+                </a>
             </div>
+        </div>
 
+        <div class="px-4 py-4">
             <form method="post" enctype="multipart/form-data">
                 {% if last_mapping_file %}
                 <div class="mb-3 d-flex align-items-center gap-2">
@@ -37,18 +61,41 @@
                     <div class="col-sm-6 col-lg-2 d-grid align-items-end">
                         <button class="btn btn-outline-primary fw-bold px-2" name="action" value="check" type="submit">
                             <i class="bi bi-search me-1"></i>
-                            檢查引用文件
+                            步驟 1 檢查引用
                         </button>
                     </div>
                     <div class="col-sm-6 col-lg-2 d-grid align-items-end">
                         <button class="btn btn-primary fw-bold px-2" name="action" value="check_extract" type="submit" {% if not allow_check_extract %}disabled title="請先通過檢查引用文件"{% endif %}>
                             <i class="bi bi-sliders me-1"></i>
-                            檢查擷取參數
+                            步驟 2 檢查擷取
                         </button>
                     </div>
                 </div>
+                {% if allow_save_scheme %}
+                <div class="mt-3 p-3 rounded-3 border border-success border-opacity-25 bg-success bg-opacity-10">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <div>
+                            <div class="fw-bold text-success">檢查完成，可以儲存為方案</div>
+                            <div class="small text-muted">儲存後可直接執行，或加入排程中心。</div>
+                        </div>
+                        <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 可儲存</span>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-lg-8">
+                            <input class="form-control form-control-custom rounded-2" type="text" name="scheme_name" placeholder="輸入方案名稱，例如：CH1 章節擷取">
+                        </div>
+                        <div class="col-lg-4 d-grid">
+                            <button class="btn btn-success fw-bold" name="action" value="save_scheme" type="submit">
+                                <i class="bi bi-bookmark-check me-1"></i>
+                                步驟 3 儲存方案
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </form>
         </div>
+    </div>
     </div>
 
     <div class="modal fade" id="mappingDefinitionModal" tabindex="-1" aria-labelledby="mappingDefinitionModalLabel" aria-hidden="true">
@@ -104,18 +151,91 @@
                     <div class="small font-monospace mb-1">複製資料夾範例2（類型 Copy Folder，依名稱搜尋）：<span class="text-primary">IFU</span> 或 <span class="text-primary">Label,sample</span></div>
                 </div>
                 <div class="modal-footer">
-                    <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}">
-                        <i class="bi bi-download"></i>
-                        下載 Mapping 範例
-                    </a>
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">關閉</button>
                 </div>
             </div>
         </div>
     </div>
 
+    <div class="tab-pane fade" id="saved-schemes-pane" role="tabpanel" aria-labelledby="saved-schemes-tab" tabindex="0">
+    <div class="main-card mb-4">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0">已保存 Mapping</h5>
+            <div class="text-muted small">共 <span>{{ saved_schemes|length }}</span> 筆 Mapping</div>
+        </div>
+        {% if saved_schemes %}
+        <div class="table-responsive">
+            <table class="table mb-0 align-middle saved-mapping-table">
+                <colgroup>
+                    <col>
+                    <col class="saved-mapping-col-file">
+                    <col class="saved-mapping-col-status">
+                    <col class="saved-mapping-col-created">
+                    <col class="saved-mapping-col-actions">
+                </colgroup>
+                <thead style="background-color: #f8fafc;">
+                    <tr>
+                        <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">名稱</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">Mapping 檔案</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">狀態</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
+                        <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for scheme in saved_schemes %}
+                    <tr>
+                        <td class="ps-4 text-start ps-4">
+                            <div class="fw-bold text-primary mapping-name-truncate" title="{{ scheme.display_name }}">{{ scheme.display_name }}</div>
+                            <div class="small text-muted font-monospace">{{ scheme.id }}</div>
+                        </td>
+                        <td class="text-muted">{{ scheme.mapping_display_name or scheme.mapping_file }}</td>
+                        <td>
+                            {% if scheme.status_key == 'ready' %}
+                            <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> {{ scheme.status_label }}</span>
+                            {% elif scheme.status_key == 'needs_review' %}
+                            <span class="status-badge" style="background:#fffbeb;color:#b45309;border:1px solid #fde68a;"><i class="bi bi-arrow-repeat"></i> {{ scheme.status_label }}</span>
+                            {% else %}
+                            <span class="status-badge status-badge-failed"><i class="bi bi-exclamation-triangle-fill"></i> {{ scheme.status_label }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ scheme.saved_at }}</td>
+                        <td>
+                            <div class="d-flex justify-content-center gap-1">
+                                <form method="post" class="d-inline">
+                                    <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
+                                    <button class="btn-action-icon text-success" type="submit" name="action" value="run_scheme" {% if not scheme.is_runnable %}disabled title="請先重新檢查方案"{% else %}title="立即執行"{% endif %}>
+                                        <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">立即執行</span>
+                                    </button>
+                                </form>
+                                <a class="btn-action-icon" href="{{ url_for('tasks_bp.task_download_mapping_scheme', task_id=task_id, scheme_id=scheme.id) }}" title="下載 Mapping 檔">
+                                    <i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載 Mapping 檔</span>
+                                </a>
+                                <form method="post" class="d-inline" onsubmit="return confirm('確定刪除 Mapping 方案「{{ scheme.display_name }}」？此動作無法復原。')">
+                                    <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
+                                    <button class="btn-action-icon text-danger" type="submit" name="action" value="delete_scheme" title="刪除方案">
+                                        <i class="bi bi-trash"></i><span class="d-none d-lg-inline small fw-semibold">刪除</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-4 py-5 text-center text-muted">
+            <i class="bi bi-inbox fs-2 d-block mb-2 opacity-25"></i>
+            尚未保存任何 Mapping 方案
+        </div>
+        {% endif %}
+    </div>
+    </div>
+    </div>
+
     {% if (messages or outputs or step_runs) or (allow_direct_run or log_file) %}
-    <div class="main-card">
+    <div class="main-card" id="mappingStatusSection">
         <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light bg-opacity-50">
             <div class="d-flex align-items-center gap-3">
                 <h5 class="fw-bold mb-0">處理狀態</h5>
@@ -241,6 +361,31 @@
 </div>
 
 <style>
+.nav-tabs-custom {
+    border-bottom: 1px solid var(--bs-gray-200, #e2e8f0);
+    display: flex;
+    gap: 1.5rem;
+}
+.nav-tabs-custom .nav-link {
+    border: none;
+    background: none;
+    padding: 0.75rem 0;
+    color: var(--bs-gray-500, #64748b);
+    font-weight: 500;
+    position: relative;
+}
+.nav-tabs-custom .nav-link.active {
+    color: var(--bs-blue-600, #2563eb);
+}
+.nav-tabs-custom .nav-link.active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--bs-blue-600, #2563eb);
+}
 .hover-shadow:hover {
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     border-color: var(--bs-blue-600) !important;
@@ -251,6 +396,29 @@
 .mapping-step-grid {
     grid-template-columns: 260px minmax(0, 1fr);
     column-gap: 12px;
+}
+.saved-mapping-table {
+    table-layout: fixed;
+}
+.saved-mapping-col-file {
+    width: 240px;
+}
+.saved-mapping-col-status {
+    width: 200px;
+}
+.saved-mapping-col-created {
+    width: 180px;
+}
+.saved-mapping-col-actions {
+    width: 260px;
+}
+.mapping-name-truncate {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.875rem;
 }
 .mapping-step-detail-cell,
 .mapping-step-detail-inline,
@@ -272,6 +440,37 @@
 </style>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const mappingStatusSection = document.getElementById('mappingStatusSection');
+
+    function syncStatusSectionVisibility() {
+        if (!mappingStatusSection) return;
+        const savedTabBtn = document.getElementById('saved-schemes-tab');
+        const savedActive = savedTabBtn?.classList.contains('active');
+        mappingStatusSection.style.display = savedActive ? 'none' : '';
+    }
+
+    function initTabFromHash() {
+        const hash = window.location.hash;
+        if (hash === '#saved-schemes-pane') {
+            const btn = document.getElementById('saved-schemes-tab');
+            if (btn) {
+                bootstrap.Tab.getOrCreateInstance(btn).show();
+            }
+        }
+    }
+
+    initTabFromHash();
+    syncStatusSectionVisibility();
+    document.querySelectorAll('#mappingTabs [data-bs-toggle="tab"]').forEach((btn) => {
+        btn.addEventListener('shown.bs.tab', (event) => {
+            const target = event.target.getAttribute('data-bs-target');
+            if (target) {
+                window.history.replaceState(null, null, target);
+            }
+            syncStatusSectionVisibility();
+        });
+    });
+
     function syncMappingStepDetailOverflow() {
         document.querySelectorAll('.mapping-step-detail-inline').forEach((inlineEl) => {
             const targetId = inlineEl.getAttribute('data-expand-target');
@@ -303,8 +502,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const submitBtn = e.submitter || document.activeElement;
                 if (submitBtn) {
                     const btnText = submitBtn.innerText.trim();
-                    const isGenerate = btnText.includes('生成文件');
-                    const isCheck = btnText.includes('檢查引用文件') || btnText.includes('檢查擷取參數');
+                    const isGenerate = btnText.includes('生成文件') || btnText.includes('立即執行');
+                    const isCheck = btnText.includes('檢查引用') || btnText.includes('檢查擷取');
                     
                     if (isGenerate || isCheck) {
                         // Ensure name/value are sent even when button is disabled

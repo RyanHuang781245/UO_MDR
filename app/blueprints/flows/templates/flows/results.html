@@ -261,6 +261,9 @@
             <td class="text-center"><input type="checkbox" class="form-check-input run-select" value="{{ r.run_id }}"></td>
             <td class="text-start">
               <div class="fw-bold text-primary">{{ r.mapping_file }}</div>
+              {% if r.scheme_name %}
+              <div class="small text-muted">方案：{{ r.scheme_name }}</div>
+              {% endif %}
               <div class="small text-muted">引用檢查 {{ '通過' if r.reference_ok else '未通過' }} / 擷取參數 {{ '通過' if r.extract_ok else '未通過' }}</div>
             </td>
             <td class="text-muted font-monospace">{{ r.run_id }}</td>

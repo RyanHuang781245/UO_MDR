@@ -204,8 +204,8 @@
                             <div class="d-flex justify-content-center gap-1">
                                 <form method="post" class="d-inline">
                                     <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
-                                    <button class="btn-action-icon text-success" type="submit" name="action" value="run_scheme" {% if not scheme.is_runnable %}disabled title="請先重新檢查方案"{% else %}title="立即執行"{% endif %}>
-                                        <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">立即執行</span>
+                                    <button class="btn-action-icon text-success" type="submit" name="action" value="run_scheme" {% if not scheme.is_runnable %}disabled title="請先重新檢查方案"{% else %}title="生成"{% endif %}>
+                                        <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">生成</span>
                                     </button>
                                 </form>
                                 <a class="btn-action-icon" href="{{ url_for('tasks_bp.task_download_mapping_scheme', task_id=task_id, scheme_id=scheme.id) }}" title="下載 Mapping 檔">
@@ -214,7 +214,7 @@
                                 <form method="post" class="d-inline" onsubmit="return confirm('確定刪除 Mapping 方案「{{ scheme.display_name }}」？此動作無法復原。')">
                                     <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
                                     <button class="btn-action-icon text-danger" type="submit" name="action" value="delete_scheme" title="刪除方案">
-                                        <i class="bi bi-trash"></i><span class="d-none d-lg-inline small fw-semibold">刪除</span>
+                                        <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
                             </div>
@@ -401,7 +401,7 @@
     table-layout: fixed;
 }
 .saved-mapping-col-file {
-    width: 240px;
+    width: 260px;
 }
 .saved-mapping-col-status {
     width: 200px;
@@ -410,7 +410,7 @@
     width: 180px;
 }
 .saved-mapping-col-actions {
-    width: 260px;
+    width: 300px;
 }
 .mapping-name-truncate {
     display: inline-block;
@@ -502,7 +502,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const submitBtn = e.submitter || document.activeElement;
                 if (submitBtn) {
                     const btnText = submitBtn.innerText.trim();
-                    const isGenerate = btnText.includes('生成文件') || btnText.includes('立即執行');
+                    const isGenerate = btnText.includes('生成文件') || btnText.includes('生成');
                     const isCheck = btnText.includes('檢查引用') || btnText.includes('檢查擷取');
                     
                     if (isGenerate || isCheck) {
@@ -522,7 +522,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         });
 
                         // Show spinner only on the button that triggered submit
-                        const loadingText = isCheck ? '檢查中...' : '處理中...';
+                        const loadingText = isCheck ? '檢查中' : '處理中';
                         submitBtn.disabled = true;
                         submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> ${loadingText}`;
                         

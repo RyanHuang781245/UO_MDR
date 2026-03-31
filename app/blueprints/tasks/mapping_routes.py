@@ -115,6 +115,7 @@ def task_mapping(task_id):
     }
     current_run_id = None
     current_mapping_display_name = ""
+    current_action = ""
     try:
         mapping_page = int(request.values.get("mpage", "1"))
     except (TypeError, ValueError):
@@ -299,6 +300,7 @@ def task_mapping(task_id):
         return f"{trimmed}…", True
     if request.method == "POST":
         action = request.form.get("action") or "run"
+        current_action = action
         mapping_path = None
         uploaded_new_mapping = False
         active_scheme = None
@@ -724,6 +726,8 @@ def task_mapping(task_id):
         saved_schemes=saved_schemes,
         saved_schemes_pagination=saved_schemes_pagination,
         scheduled_scheme=scheduled_scheme,
+        show_processing_status=current_action in {"check", "check_extract"},
+        show_generated_results=current_action == "run_cached",
         allow_check_extract=bool(
             last_mapping_file
             and validation_state.get("mapping_file") == last_mapping_file

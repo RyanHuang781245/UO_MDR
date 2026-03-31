@@ -100,9 +100,8 @@ def test_mapping_route_uses_per_run_output_subdirectory(app, client, monkeypatch
     assert log_dir == output_dir
     run_id = output_dir.name
     assert len(run_id) == 8
-    assert f"{run_id}/pkg/result.docx" in html
-    assert f"{run_id}/mapping_log.json" in html
-    assert f"{run_id}/mapping_outputs.zip" in html
+    assert "生成結果" not in html
+    assert f"{run_id}/pkg/result.docx" not in html
 
 
 def test_mapping_route_reuses_same_run_id_across_check_extract_and_run(app, client, monkeypatch) -> None:
@@ -278,6 +277,71 @@ def test_mapping_run_cached_writes_result_meta(app, client, monkeypatch) -> None
     assert payload["output_count"] == 1
     assert payload["zip_file"] == "mapping_outputs.zip"
     assert payload["log_file"] == "mapping_log.json"
+
+
+def test_mapping_run_cached_does_not_show_processing_status(app, client, monkeypatch) -> None:
+    task_id = "mapping-run-hide-status"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_process_mapping_excel(
+        mapping_path,
+        task_files_dir,
+        output_dir,
+        log_dir=None,
+        validate_only=False,
+        validate_extract_only=False,
+    ):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        Path(log_dir or output_dir).mkdir(parents=True, exist_ok=True)
+        (Path(log_dir or output_dir) / "mapping_log.json").write_text(
+            '{"messages":[],"runs":[{"output":"pkg","workflow_log":[{"step":1,"type":"copy_file","params":{"mapping_row":3,"source":"C:\\\\tmp\\\\labeling.pdf","destination":"C:\\\\dest\\\\pkg\\\\files"},"status":"ok","error":""}]}]}',
+            encoding="utf-8",
+        )
+        if validate_only or validate_extract_only:
+            return {"logs": [], "outputs": [], "log_file": "mapping_log.json", "zip_file": None}
+        out_path = Path(output_dir) / "pkg" / "result.docx"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"docx")
+        (Path(output_dir) / "mapping_outputs.zip").write_bytes(b"zip")
+        return {
+            "logs": [],
+            "outputs": [str(out_path)],
+            "log_file": "mapping_log.json",
+            "zip_file": "mapping_outputs.zip",
+        }
+
+    monkeypatch.setattr("modules.mapping_processor.process_mapping_excel", fake_process_mapping_excel)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    assert client.post(
+        url,
+        data={"action": "check", "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx")},
+        content_type="multipart/form-data",
+    ).status_code == 200
+    assert client.post(
+        url,
+        data={"action": "check_extract"},
+        content_type="multipart/form-data",
+    ).status_code == 200
+
+    response_run = client.post(
+        url,
+        data={"action": "run_cached"},
+        content_type="multipart/form-data",
+    )
+    html = response_run.get_data(as_text=True)
+
+    assert response_run.status_code == 200
+    assert "處理狀態" not in html
+    assert "生成結果" in html
+    assert "處理步驟" in html
+    assert "(Row 3) 複製檔案" in html
+    assert "下載 ZIP" in html
+    assert "下載 Log" in html
+    assert "產出文件" in html
 
 
 def test_flow_results_mapping_tab_renders_mapping_runs(app, client) -> None:

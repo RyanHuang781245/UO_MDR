@@ -367,3 +367,50 @@ def test_saved_mapping_schemes_list_supports_pagination(app, client) -> None:
     assert response.status_code == 200
     assert "共 <span>11</span> 筆 Mapping (第 2 / 2 頁)" in html
     assert "#saved-schemes-pane" in html
+
+
+def test_saved_mapping_scheme_run_does_not_show_processing_status(app, client, monkeypatch) -> None:
+    task_id = "mapping-scheme-run-hide-status"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    source_path = task_dir / "mapping.xlsx"
+    source_path.write_bytes(b"dummy")
+
+    scheme = save_mapping_scheme(
+        task_id,
+        str(source_path),
+        "執行測試方案",
+        {
+            "mapping_file": "mapping.xlsx",
+            "mapping_display_name": "mapping.xlsx",
+            "reference_ok": True,
+            "extract_ok": True,
+        },
+        actor={"work_id": "A123", "label": "Tester"},
+    )
+
+    monkeypatch.setattr(
+        "app.blueprints.tasks.mapping_routes.execute_saved_mapping_scheme",
+        lambda *args, **kwargs: {
+            "run_id": "run-hide-status",
+            "messages": [],
+            "outputs": ["pkg/result.docx"],
+            "log_file": "mapping_log.json",
+            "zip_file": "mapping_outputs.zip",
+            "log_relpath": "run-hide-status/mapping_log.json",
+            "zip_relpath": "run-hide-status/mapping_outputs.zip",
+        },
+    )
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    response = client.post(url, data={"action": "run_scheme", "scheme_id": scheme["id"], "mpage": "1"})
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "處理狀態" not in html
+    assert "生成結果" not in html

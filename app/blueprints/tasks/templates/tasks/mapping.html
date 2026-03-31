@@ -76,8 +76,8 @@
                 <div class="mt-3 p-3 rounded-3 border border-success border-opacity-25 bg-success bg-opacity-10">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                         <div>
-                            <div class="fw-bold text-success">檢查完成，可以儲存為方案</div>
-                            <div class="small text-muted">儲存後可直接執行，或加入排程中心。</div>
+                            <div class="fw-bold text-success">檢查通過</div>
+                            <div class="small text-muted">選擇儲存後可在已保存 Mapping 頁面中操作。排程會執行已保存 Mapping 頁面中所有保存的項目</div>
                         </div>
                         <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 可儲存</span>
                     </div>
@@ -88,7 +88,7 @@
                         <div class="col-lg-4 d-grid">
                             <button class="btn btn-success fw-bold" name="action" value="save_scheme" type="submit">
                                 <i class="bi bi-bookmark-check me-1"></i>
-                                步驟 3 儲存方案
+                                儲存
                             </button>
                         </div>
                     </div>
@@ -293,11 +293,106 @@
         </div>
     </div>
 
-    {% if (messages or outputs or step_runs) or (allow_direct_run or log_file) %}
+    {% if show_generated_results and (outputs or log_file or zip_file) %}
+    <div class="main-card mb-4" id="mappingGeneratedResultSection">
+        <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light bg-opacity-50">
+            <h5 class="fw-bold mb-0">生成結果</h5>
+            <div class="d-flex gap-2">
+                {% if log_file %}
+                <a class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=log_file) }}">
+                    <i class="bi bi-file-earmark-text text-muted"></i>
+                    下載 Log
+                </a>
+                {% endif %}
+                {% if zip_file %}
+                <a class="btn btn-primary fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=zip_file) }}">
+                    <i class="bi bi-file-earmark-zip"></i>
+                    下載 ZIP
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="px-4 py-4">
+            {% if outputs %}
+            <div class="bg-light p-4 rounded-3 border">
+                <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
+                    <i class="bi bi-file-earmark-text"></i>
+                    產出文件
+                </h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for name in outputs %}
+                    <a class="d-flex align-items-center gap-2 p-2 bg-white border rounded-2 text-decoration-none text-dark hover-shadow transition-all" style="max-width: 100%;" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=name) }}">
+                        <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
+                        <span class="text-truncate small fw-medium">{{ name }}</span>
+                        <i class="bi bi-download ms-auto text-muted small flex-shrink-0"></i>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if step_runs %}
+            <div class="list-group list-group-flush border rounded-3 overflow-hidden {% if outputs %}mt-4{% endif %}">
+                <div class="list-group-item py-3 bg-light bg-opacity-50">
+                    <h6 class="fw-bold mb-0 d-flex align-items-center gap-2">
+                        <i class="bi bi-list-check me-1"></i>
+                        處理步驟
+                    </h6>
+                </div>
+                {% for step in step_runs %}
+                <div class="list-group-item py-3">
+                    {% if step.status == "error" %}
+                    <details open>
+                        <summary class="d-grid align-items-center mapping-step-grid" style="list-style: none; cursor: pointer;">
+                            <div class="d-flex align-items-center gap-2 text-danger fw-bold">
+                                <i class="bi bi-exclamation-triangle-fill"></i>
+                                <span>{{ step.action }}</span>
+                            </div>
+                            {% if step.detail %}
+                            <div class="text-muted small text-truncate mapping-step-detail-cell">{{ step.detail_short if step.detail_long else step.detail }}</div>
+                            {% endif %}
+                        </summary>
+                        <div class="mt-2 p-3 bg-danger bg-opacity-10 border border-danger border-opacity-25 rounded-2 small text-danger font-monospace">
+                            {{ step.error }}
+                        </div>
+                    </details>
+                    {% else %}
+                    <div class="d-grid align-items-center mapping-step-grid">
+                        <div class="d-flex align-items-center gap-2 text-success fw-bold">
+                            <i class="bi bi-check-circle-fill"></i>
+                            <span>{{ step.action }}</span>
+                        </div>
+                        {% if step.detail %}
+                        {% if step.detail_long %}
+                        <details class="text-muted small mapping-step-detail-expand">
+                            <summary class="mapping-step-detail-summary" style="list-style: none; cursor: pointer;">{{ step.detail_short }} <i class="bi bi-chevron-down ms-1 small text-muted"></i></summary>
+                            <div class="mt-2 p-3 bg-light rounded-2 border border-gray-200 mapping-step-detail-body">{{ step.detail }}</div>
+                        </details>
+                        {% else %}
+                        <div class="text-muted small text-truncate mapping-step-detail-inline" data-expand-target="generated-mapping-step-detail-{{ loop.index0 }}">{{ step.detail }}</div>
+                        <details class="text-muted small mapping-step-detail-expand d-none" id="generated-mapping-step-detail-{{ loop.index0 }}">
+                            <summary class="mapping-step-detail-summary" style="list-style: none; cursor: pointer;">{{ step.detail }} <i class="bi bi-chevron-down ms-1 small text-muted"></i></summary>
+                            <div class="mt-2 p-3 bg-light rounded-2 border border-gray-200 mapping-step-detail-body">{{ step.detail }}</div>
+                        </details>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if show_processing_status and ((messages or outputs or step_runs) or (allow_direct_run or log_file)) %}
     <div class="main-card" id="mappingStatusSection">
         <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light bg-opacity-50">
             <div class="d-flex align-items-center gap-3">
-                <h5 class="fw-bold mb-0">處理狀態</h5>
+                <h5 class="fw-bold mb-0">
+                    <i class="bi bi-list-check"></i>
+                    處理步驟
+                </h5>
                 <div class="d-flex align-items-center gap-2" id="status-badge-container">
                     {% if step_runs %}
                     <span class="status-badge status-badge-completed">
@@ -325,39 +420,10 @@
                     </button>
                 </form>
                 {% endif %}
-                {% if log_file %}
-                <a class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=log_file) }}">
-                    <i class="bi bi-file-earmark-text text-muted"></i> 
-                    下載 Log
-                </a>
-                {% endif %}
-                {% if zip_file %}
-                <a class="btn btn-primary fw-medium d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=zip_file) }}">
-                    <i class="bi bi-file-earmark-zip"></i>
-                    下載 ZIP
-                </a>
-                {% endif %}
             </div>
         </div>
 
         <div class="px-4 py-4">
-            {% if outputs %}
-            <div class="bg-light p-4 rounded-3 border mb-4">
-                <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
-                    <i class="bi bi-file-earmark-text"></i>
-                    產出文件
-                </h6>
-                <div class="d-flex flex-wrap gap-2">
-                    {% for name in outputs %}
-                    <a class="d-flex align-items-center gap-2 p-2 bg-white border rounded-2 text-decoration-none text-dark hover-shadow transition-all" style="max-width: 100%;" href="{{ url_for('tasks_bp.task_download_output_query', task_id=task_id, filename=name) }}">
-                        <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
-                        <span class="text-truncate small fw-medium">{{ name }}</span>
-                        <i class="bi bi-download ms-auto text-muted small flex-shrink-0"></i>
-                    </a>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
             {% if step_runs %}
             <div class="list-group list-group-flush border rounded-3 overflow-hidden mb-2">
                 {% for step in step_runs %}
@@ -524,14 +590,19 @@ function openRenameSchemeModal(button) {
 
 document.addEventListener('DOMContentLoaded', function() {
     const mappingStatusSection = document.getElementById('mappingStatusSection');
+    const mappingGeneratedResultSection = document.getElementById('mappingGeneratedResultSection');
     const renameSchemeInput = document.getElementById('renameSchemeInput');
     const renameSchemeCount = document.getElementById('renameSchemeCount');
 
     function syncStatusSectionVisibility() {
-        if (!mappingStatusSection) return;
         const savedTabBtn = document.getElementById('saved-schemes-tab');
         const savedActive = savedTabBtn?.classList.contains('active');
-        mappingStatusSection.style.display = savedActive ? 'none' : '';
+        if (mappingStatusSection) {
+            mappingStatusSection.style.display = savedActive ? 'none' : '';
+        }
+        if (mappingGeneratedResultSection) {
+            mappingGeneratedResultSection.style.display = savedActive ? 'none' : '';
+        }
     }
 
     function initTabFromHash() {
@@ -616,12 +687,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         // Show spinner only on the button that triggered submit
                         const loadingText = isCheck ? '檢查中' : '生成中';
                         submitBtn.disabled = true;
-                        submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span><span class="small fw-semibold">${loadingText}</span>`;
+                        submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>${loadingText}`;
                         
                         // Update status badge if it exists
                         const statusContainer = document.getElementById('status-badge-container');
                         if (statusContainer) {
-                            statusContainer.innerHTML = `<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i></span><span class="small fw-semibold">${loadingText}</span>`;
+                            statusContainer.innerHTML = `<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i></span>${loadingText}`;
                         }
                     }
                 }

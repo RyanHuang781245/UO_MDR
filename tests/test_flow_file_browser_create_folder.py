@@ -34,7 +34,7 @@ def test_flow_create_task_folder_endpoint_creates_child_directory(app, client) -
     files_dir.mkdir(parents=True, exist_ok=True)
 
     with app.test_request_context():
-        url = url_for("flows_bp.api_flow_create_task_folder", task_id=task_id)
+        url = url_for("flow_file_bp.api_flow_create_task_folder", task_id=task_id)
 
     response = client.post(url, data={"parent": "輸出-USTAR II System", "name": "IFU_New"})
 
@@ -53,7 +53,7 @@ def test_flow_create_task_folder_endpoint_rejects_nested_name(app, client) -> No
     (task_root / "files").mkdir(parents=True, exist_ok=True)
 
     with app.test_request_context():
-        url = url_for("flows_bp.api_flow_create_task_folder", task_id=task_id)
+        url = url_for("flow_file_bp.api_flow_create_task_folder", task_id=task_id)
 
     response = client.post(url, data={"parent": "", "name": "A/B"})
 
@@ -73,7 +73,7 @@ def test_flow_rename_task_folder_endpoint_renames_child_directory(app, client) -
     target_dir.mkdir(parents=True, exist_ok=True)
 
     with app.test_request_context():
-        url = url_for("flows_bp.api_flow_rename_task_folder", task_id=task_id)
+        url = url_for("flow_file_bp.api_flow_rename_task_folder", task_id=task_id)
 
     response = client.post(url, data={"path": "輸出區/舊名稱", "name": "新名稱"})
 
@@ -95,7 +95,7 @@ def test_flow_delete_task_folder_endpoint_deletes_child_directory(app, client) -
     (target_dir / "x.txt").write_text("x", encoding="utf-8")
 
     with app.test_request_context():
-        url = url_for("flows_bp.api_flow_delete_task_folder", task_id=task_id)
+        url = url_for("flow_file_bp.api_flow_delete_task_folder", task_id=task_id)
 
     response = client.post(url, data={"path": "輸出區/待刪除"})
 

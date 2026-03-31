@@ -34,7 +34,8 @@ def create_app(config_name: str | None = None) -> Flask:
 
     db.init_app(app)
     login_manager.init_app(app)
-    ldap_manager.init_app(app)
+    if app.config.get("AUTH_ENABLED", True):
+        ldap_manager.init_app(app)
 
     nas_service.init_nas_config(app)
     task_service.init_task_store(app)

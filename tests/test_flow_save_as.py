@@ -49,7 +49,7 @@ def test_flow_save_as_creates_new_flow_without_overwriting_original(app, client)
     original_path.write_text(json.dumps(original_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     with app.test_request_context():
-        url = url_for("flows_bp.run_flow", task_id=task_id)
+        url = url_for("flow_execution_bp.run_flow", task_id=task_id)
 
     response = client.post(
         url,
@@ -94,7 +94,7 @@ def test_flow_save_as_rejects_existing_name(app, client) -> None:
     (flow_dir / "既有流程.json").write_text("{}", encoding="utf-8")
 
     with app.test_request_context():
-        url = url_for("flows_bp.run_flow", task_id=task_id)
+        url = url_for("flow_execution_bp.run_flow", task_id=task_id)
 
     response = client.post(
         url,

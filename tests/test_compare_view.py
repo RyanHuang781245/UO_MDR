@@ -4,7 +4,7 @@ import types
 
 from spire.doc import Document, FileFormat
 
-from app.blueprints.tasks import routes as task_routes
+from app.blueprints.tasks import compare_compat as task_routes
 from modules.workflow import run_workflow
 
 

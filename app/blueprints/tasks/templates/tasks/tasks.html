@@ -263,7 +263,7 @@
             <h1 class="h3 mb-1 fw-bold">任務管理</h1>
             <p class="text-muted mb-0 small">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑</p>
         </div>
-        <a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('flows_bp.global_batch_page') }}">
+        <a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('global_batch_bp.global_batch_page') }}">
             <i class="bi bi-calendar2-week"></i>
             排程中心
         </a>
@@ -1070,7 +1070,7 @@ async function loadFolders(rel = ''){
     root_index: String(nasState.rootIndex),
     path: nasState.currentRel
   });
-  const resp = await fetch(`/api/nas/dirs?${qs.toString()}`);
+  const resp = await fetch(`{{ url_for('nas_bp.api_nas_list_dirs') }}?${qs.toString()}`);
   const data = await resp.json();
   if(!resp.ok){
     setStatus(data.error || '讀取失敗');
@@ -1562,7 +1562,7 @@ function initTaskDescDrawer(){
           const selected = Array.from(selectedTaskIds);
           if (!selected.length) return;
           // Redirect to global batch page with selected task IDs
-          const url = new URL("{{ url_for('flows_bp.global_batch_page') }}", window.location.origin);
+          const url = new URL("{{ url_for('global_batch_bp.global_batch_page') }}", window.location.origin);
           url.searchParams.set('task_ids', selected.join(','));
           window.location.href = url.toString();
       });

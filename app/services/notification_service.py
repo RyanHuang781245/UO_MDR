@@ -8,8 +8,8 @@ from typing import Iterable
 
 from flask import current_app
 
-from modules.auth_models import User
-from modules.settings_models import SystemSetting
+from app.models.auth import User
+from app.models.settings import SystemSetting
 
 
 def _get_system_settings() -> SystemSetting | None:

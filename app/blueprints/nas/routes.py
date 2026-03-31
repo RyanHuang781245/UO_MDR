@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import os
 
-from flask import Blueprint, current_app, flash, jsonify, redirect, request, url_for
+from flask import current_app, flash, jsonify, redirect, request, url_for
 from flask_login import current_user
 
 from app.services import nas_service
 from app.services.auth_service import user_is_admin
 
-nas_bp = Blueprint("nas_bp", __name__, template_folder="templates")
+from .blueprint import nas_bp
 
 
-@nas_bp.get("/api/nas/dirs", endpoint="api_nas_list_dirs")
+@nas_bp.get("/dirs", endpoint="api_nas_list_dirs")
 def api_nas_list_dirs():
     root_index = request.args.get("root_index", type=int)
     rel_path_raw = (request.args.get("path") or "").strip()
@@ -19,7 +19,7 @@ def api_nas_list_dirs():
     return jsonify(payload), status
 
 
-@nas_bp.post("/nas/add-root", endpoint="add_nas_root_route")
+@nas_bp.post("/add-root", endpoint="add_nas_root_route")
 def add_nas_root_route():
     if not user_is_admin(current_user):
         return "Permission denied.", 403
@@ -43,7 +43,7 @@ def add_nas_root_route():
     return redirect(url_for("tasks_bp.tasks"))
 
 
-@nas_bp.post("/nas/remove-root", endpoint="remove_nas_root_route")
+@nas_bp.post("/remove-root", endpoint="remove_nas_root_route")
 def remove_nas_root_route():
     if not user_is_admin(current_user):
         return "Permission denied.", 403

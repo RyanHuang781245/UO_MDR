@@ -59,7 +59,7 @@ def test_flow_save_overwrites_without_creating_version_snapshot(app, client) -> 
     _write_flow(flow_dir / "版本流程.json", original_payload)
 
     with app.test_request_context():
-        url = url_for("flows_bp.run_flow", task_id=task_id)
+        url = url_for("flow_execution_bp.run_flow", task_id=task_id)
 
     response = client.post(
         url,
@@ -103,7 +103,7 @@ def test_flow_save_skips_version_when_content_is_unchanged(app, client) -> None:
     _write_flow(flow_dir / "版本流程.json", payload)
 
     with app.test_request_context():
-        url = url_for("flows_bp.run_flow", task_id=task_id)
+        url = url_for("flow_execution_bp.run_flow", task_id=task_id)
 
     response = client.post(
         url,
@@ -183,7 +183,7 @@ def test_flow_restore_uses_selected_version_and_backs_up_current(app, client) ->
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name="版本流程", version_id="version-1")
+        url = url_for("flow_version_bp.restore_flow_version", task_id=task_id, flow_name="版本流程", version_id="version-1")
 
     response = client.post(url)
     assert response.status_code == 200
@@ -266,7 +266,7 @@ def test_flow_restore_only_keeps_latest_before_restore_backup(app, client) -> No
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name="版本流程", version_id="version-1")
+        url = url_for("flow_version_bp.restore_flow_version", task_id=task_id, flow_name="版本流程", version_id="version-1")
 
     first = client.post(url)
     assert first.status_code == 200
@@ -340,7 +340,7 @@ def test_flow_version_list_and_count_only_include_manual_snapshots(app, client) 
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.list_flow_versions", task_id=task_id, flow_name="版本流程")
+        url = url_for("flow_version_api_bp.list_flow_versions", task_id=task_id, flow_name="版本流程")
 
     response = client.get(url)
     assert response.status_code == 200
@@ -373,7 +373,7 @@ def test_create_flow_version_endpoint_creates_manual_snapshot(app, client) -> No
     _write_flow(flow_dir / "版本流程.json", payload)
 
     with app.test_request_context():
-        url = url_for("flows_bp.create_flow_version", task_id=task_id, flow_name="版本流程")
+        url = url_for("flow_version_api_bp.create_flow_version", task_id=task_id, flow_name="版本流程")
 
     response = client.post(url, data={"version_name": "送審前"})
     assert response.status_code == 200
@@ -437,7 +437,7 @@ def test_create_flow_version_endpoint_rejects_duplicate_manual_name(app, client)
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.create_flow_version", task_id=task_id, flow_name="版本流程")
+        url = url_for("flow_version_api_bp.create_flow_version", task_id=task_id, flow_name="版本流程")
 
     response = client.post(url, data={"version_name": "送審前"})
     assert response.status_code == 400
@@ -494,7 +494,7 @@ def test_delete_flow_version_endpoint_removes_manual_snapshot(app, client) -> No
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.delete_flow_version", task_id=task_id, flow_name="版本流程", version_id="manual-1")
+        url = url_for("flow_version_api_bp.delete_flow_version", task_id=task_id, flow_name="版本流程", version_id="manual-1")
 
     response = client.post(url)
     assert response.status_code == 200
@@ -556,7 +556,7 @@ def test_rename_flow_version_endpoint_updates_manual_snapshot_name(app, client) 
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.rename_flow_version", task_id=task_id, flow_name="版本流程", version_id="manual-1")
+        url = url_for("flow_version_api_bp.rename_flow_version", task_id=task_id, flow_name="版本流程", version_id="manual-1")
 
     response = client.post(url, data={"version_name": "送審後"})
     assert response.status_code == 200
@@ -629,7 +629,7 @@ def test_rename_flow_version_endpoint_rejects_duplicate_manual_name(app, client)
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.rename_flow_version", task_id=task_id, flow_name="版本流程", version_id="manual-2")
+        url = url_for("flow_version_api_bp.rename_flow_version", task_id=task_id, flow_name="版本流程", version_id="manual-2")
 
     response = client.post(url, data={"version_name": "v1"})
     assert response.status_code == 400
@@ -697,7 +697,7 @@ def test_flow_builder_can_preview_version_in_readonly_mode(app, client) -> None:
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.flow_builder", task_id=task_id, flow="版本流程", version_id="preview-1")
+        url = url_for("flow_builder_bp.flow_builder", task_id=task_id, flow="版本流程", version_id="preview-1")
 
     response = client.get(url)
     assert response.status_code == 200
@@ -759,8 +759,8 @@ def test_flow_builder_shows_undo_last_restore_only_once(app, client) -> None:
         encoding="utf-8",
     )
     with app.test_request_context():
-        url = url_for("flows_bp.flow_builder", task_id=task_id, flow="版本流程", show_restore_notice="1")
-        clean_url = url_for("flows_bp.flow_builder", task_id=task_id, flow="版本流程")
+        url = url_for("flow_builder_bp.flow_builder", task_id=task_id, flow="版本流程", show_restore_notice="1")
+        clean_url = url_for("flow_builder_bp.flow_builder", task_id=task_id, flow="版本流程")
 
     response = client.get(url)
     assert response.status_code == 200
@@ -834,7 +834,7 @@ def test_restore_before_restore_sets_undo_success_flash(app, client) -> None:
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.restore_flow_version", task_id=task_id, flow_name="版本流程", version_id="backup-1")
+        url = url_for("flow_version_bp.restore_flow_version", task_id=task_id, flow_name="版本流程", version_id="backup-1")
 
     response = client.post(url)
     assert response.status_code == 200
@@ -852,7 +852,7 @@ def test_flow_save_version_creates_named_manual_snapshot(app, client) -> None:
     (tdir / "files").mkdir(parents=True, exist_ok=True)
 
     with app.test_request_context():
-        url = url_for("flows_bp.run_flow", task_id=task_id)
+        url = url_for("flow_execution_bp.run_flow", task_id=task_id)
 
     response = client.post(
         url,
@@ -931,7 +931,7 @@ def test_flow_save_version_rejects_duplicate_manual_name(app, client) -> None:
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.run_flow", task_id=task_id)
+        url = url_for("flow_execution_bp.run_flow", task_id=task_id)
 
     response = client.post(
         url,

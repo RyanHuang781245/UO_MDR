@@ -27,7 +27,7 @@
         <!-- 流程編輯區 -->
         <div class="tab-pane fade {% if not request.args.get('fpage') %}show active{% endif %}" id="builder-pane" role="tabpanel" aria-labelledby="builder-tab">
             <div class="main-card mb-4" style="overflow: visible;">
-                <form id="flow_form" action="{{ url_for('flows_bp.run_flow', task_id=task.id) }}" method="post">
+                <form id="flow_form" action="{{ url_for('flow_execution_bp.run_flow', task_id=task.id) }}" method="post">
                     <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
                     <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
                     <input type="hidden" name="save_as_name" id="saveAsNameInput" value="">
@@ -174,7 +174,7 @@
                                     <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ f.created }}</td>
                                     <td>
                                         <div class="d-flex justify-content-center gap-1">
-                                            <form action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製步驟，執行前請確認 NAS 與任務資料夾內容一致。')"{% endif %}>
+                                            <form action="{{ url_for('flow_execution_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製步驟，執行前請確認 NAS 與任務資料夾內容一致。')"{% endif %}>
                                                 <input type="hidden" name="apply_formatting" value="false">
                                                 <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
                                                 <button class="btn-action-icon text-success" type="submit" title="快速執行">
@@ -182,10 +182,10 @@
                                                 </button>
                                             </form>
 
-                                            <button class="btn-action-icon apply-formatting-btn" type="button" data-bs-toggle="modal" data-bs-target="#applyFormattingModal" data-flow="{{ f.name }}" data-action="{{ url_for('flows_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" title="套用格式並執行">
+                                            <button class="btn-action-icon apply-formatting-btn" type="button" data-bs-toggle="modal" data-bs-target="#applyFormattingModal" data-flow="{{ f.name }}" data-action="{{ url_for('flow_execution_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" title="套用格式並執行">
                                                 <i class="bi bi-text-paragraph"></i><span class="d-none d-lg-inline small fw-semibold">套用格式並執行</span>
                                             </button>
-                                            <a class="btn-action-icon" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=f.name) }}" title="編輯流程">
+                                            <a class="btn-action-icon" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id, flow=f.name) }}" title="編輯流程">
                                                 <i class="bi bi-pencil-square"></i><span class="d-none d-lg-inline small fw-semibold">編輯</span>
                                             </a>
                                             <button class="btn-action-icon flow-version-btn" type="button" data-flow="{{ f.name }}" title="流程版本">
@@ -194,10 +194,10 @@
                                             <button class="btn-action-icon" type="button" onclick="renameFlow('{{ f.name }}')" title="重新命名">
                                                 <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
                                             </button>
-                                            <!-- <a class="btn-action-icon" href="{{ url_for('flows_bp.export_flow', task_id=task.id, flow_name=f.name) }}" title="導出流程">
+                                            <!-- <a class="btn-action-icon" href="{{ url_for('flow_crud_bp.export_flow', task_id=task.id, flow_name=f.name) }}" title="導出流程">
                                                 <i class="bi bi-box-arrow-up"></i>
                                             </a> -->
-                                            <form action="{{ url_for('flows_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除流程「{{ f.name }}」?')">
+                                            <form action="{{ url_for('flow_crud_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除流程「{{ f.name }}」?')">
                                                 <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
                                                 <button class="btn-action-icon text-danger" type="submit" title="刪除流程">
                                                     <i class="bi bi-trash"></i>
@@ -222,17 +222,17 @@
                         <nav>
                             <ul class="pagination pagination-sm mb-0 gap-1">
                                 <li class="page-item {% if not flow_pagination.has_prev %}disabled{% endif %}">
-                                    <a class="page-link" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page-1) if flow_pagination.has_prev else '#' }}"title="上一頁"><i class="bi bi-chevron-left"></i></a>
+                                    <a class="page-link" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page-1) if flow_pagination.has_prev else '#' }}"title="上一頁"><i class="bi bi-chevron-left"></i></a>
                                 </li>
                                 {% for p in range(1, flow_pagination.total_pages + 1) %}
                                     {% if p >= flow_pagination.page - 2 and p <= flow_pagination.page + 2 %}
                                     <li class="page-item {% if p == flow_pagination.page %}active{% endif %}">
-                                        <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=p) }}">{{ p }}</a>
+                                        <a class="page-link rounded-2" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id, fpage=p) }}">{{ p }}</a>
                                     </li>
                                     {% endif %}
                                 {% endfor %}
                                 <li class="page-item {% if not flow_pagination.has_next %}disabled{% endif %}">
-                                    <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page+1) if flow_pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+                                    <a class="page-link rounded-2" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id, fpage=flow_pagination.page+1) if flow_pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
                                 </li>
                             </ul>
                         </nav>
@@ -247,7 +247,7 @@
 <div class="modal fade" id="importFlowModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form action="{{ url_for('flows_bp.import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data">
+      <form action="{{ url_for('flow_crud_bp.import_flow', task_id=task.id) }}" method="post" enctype="multipart/form-data">
         <div class="modal-header">
           <h5 class="modal-title">匯入流程</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -903,11 +903,11 @@ const PREVIEW_VERSION = {{ preview_version|tojson }};
 const TEMPLATE_PARSE_URL = "{{ url_for('tasks_bp.parse_template_doc', task_id=task.id) }}";
 const TEMPLATE_FILE = {{ template_file|tojson }};
 const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
-const ACTIVE_RUNS_URL = "{{ url_for('flows_bp.flow_run_active', task_id=task.id) }}";
-const TASK_FILE_BROWSER_URL = "{{ url_for('flows_bp.api_flow_list_task_files', task_id=task.id) }}";
-const TASK_FILE_CREATE_FOLDER_URL = "{{ url_for('flows_bp.api_flow_create_task_folder', task_id=task.id) }}";
-const TASK_FILE_RENAME_FOLDER_URL = "{{ url_for('flows_bp.api_flow_rename_task_folder', task_id=task.id) }}";
-const TASK_FILE_DELETE_FOLDER_URL = "{{ url_for('flows_bp.api_flow_delete_task_folder', task_id=task.id) }}";
+const ACTIVE_RUNS_URL = "{{ url_for('flow_results_bp.flow_run_active', task_id=task.id) }}";
+const TASK_FILE_BROWSER_URL = "{{ url_for('flow_file_bp.api_flow_list_task_files', task_id=task.id) }}";
+const TASK_FILE_CREATE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_create_task_folder', task_id=task.id) }}";
+const TASK_FILE_RENAME_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_rename_task_folder', task_id=task.id) }}";
+const TASK_FILE_DELETE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_delete_task_folder', task_id=task.id) }}";
 const BOOL_DEFAULTS = {
   include_caption: "true",
   use_chapter_title: "false",
@@ -1189,7 +1189,7 @@ function renderRunToasts(){
     const toast = document.createElement("div");
     toast.className = "run-status-toast";
     toast.dataset.jobId = jobId;
-    toast.dataset.statusUrl = `{{ url_for('flows_bp.flow_run_status', task_id=task.id, job_id='__JOB__') }}`.replace("__JOB__", jobId);
+    toast.dataset.statusUrl = `{{ url_for('flow_results_bp.flow_run_status', task_id=task.id, job_id='__JOB__') }}`.replace("__JOB__", jobId);
     toast.innerHTML = `
       <div class="run-status-title">流程執行中</div>
       <div class="run-status-body">正在執行：<span class="run-status-name">（讀取中）</span></div>
@@ -3026,7 +3026,8 @@ function renameFlow(current){
       alert('流程名稱長度不可超過 50 字');
       return;
     }
-    submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name, fpage: String(CURRENT_FLOW_PAGE) });
+    const renameUrl = `{{ url_for('flow_crud_bp.rename_flow', task_id=task.id, flow_name='__FLOW__') }}`.replace('__FLOW__', encodeURIComponent(current));
+    submitPostForm(renameUrl, { name, fpage: String(CURRENT_FLOW_PAGE) });
   }
 }
 
@@ -3068,7 +3069,7 @@ function renderFlowVersionsRows(flowName, versions){
         if (!resp.ok || !data.ok) {
           throw new Error(data.error || '回復失敗');
         }
-        const nextUrl = new URL(`{{ url_for('flows_bp.flow_builder', task_id=task.id) }}`, window.location.origin);
+        const nextUrl = new URL(`{{ url_for('flow_builder_bp.flow_builder', task_id=task.id) }}`, window.location.origin);
         nextUrl.searchParams.set('flow', flowName);
         nextUrl.searchParams.set('show_restore_notice', '1');
         window.location.href = nextUrl.toString();
@@ -3133,7 +3134,7 @@ async function openFlowVersions(flowName){
   }
   if (flowVersionsModal) flowVersionsModal.show();
   try {
-    const url = `{{ url_for('flows_bp.list_flow_versions', task_id=task.id, flow_name='__FLOW__') }}`.replace('__FLOW__', encodeURIComponent(flowName));
+    const url = `{{ url_for('flow_version_api_bp.list_flow_versions', task_id=task.id, flow_name='__FLOW__') }}`.replace('__FLOW__', encodeURIComponent(flowName));
     const resp = await fetch(url, { cache: 'no-store' });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.ok) {
@@ -3158,7 +3159,7 @@ function updateVisibleFlowVersionCount(flowName, versionCount){
 
 async function createFlowVersion(flowName, versionName){
   try {
-    const url = `{{ url_for('flows_bp.create_flow_version', task_id=task.id, flow_name='__FLOW__') }}`.replace('__FLOW__', encodeURIComponent(flowName));
+    const url = `{{ url_for('flow_version_api_bp.create_flow_version', task_id=task.id, flow_name='__FLOW__') }}`.replace('__FLOW__', encodeURIComponent(flowName));
     const body = new URLSearchParams({ version_name: versionName });
     const resp = await fetch(url, {
       method: 'POST',
@@ -3220,7 +3221,7 @@ function bindRestoreFlowButton(button, confirmMessageBuilder, options = {}){
       if (!resp.ok || !data.ok) {
         throw new Error(data.error || '回復失敗');
       }
-      const nextUrl = new URL(`{{ url_for('flows_bp.flow_builder', task_id=task.id) }}`, window.location.origin);
+      const nextUrl = new URL(`{{ url_for('flow_builder_bp.flow_builder', task_id=task.id) }}`, window.location.origin);
       nextUrl.searchParams.set('flow', flowName);
       if (options.showRestoreNotice) {
         nextUrl.searchParams.set('show_restore_notice', '1');

@@ -308,7 +308,7 @@ def test_flow_results_mapping_tab_renders_mapping_runs(app, client) -> None:
     )
 
     with app.test_request_context():
-        url = url_for("flows_bp.flow_results", task_id=task_id, tab="mapping")
+        url = url_for("flow_results_bp.flow_results", task_id=task_id, tab="mapping")
 
     response = client.get(url)
     html = response.get_data(as_text=True)

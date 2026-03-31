@@ -126,12 +126,12 @@
 
   <ul class="nav nav-tabs nav-tabs-custom mb-4" id="resultsTabs" role="tablist">
     <li class="nav-item">
-      <a class="nav-link {% if active_tab == 'flows' %}active{% endif %}" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab='flows') }}">
+      <a class="nav-link {% if active_tab == 'flows' %}active{% endif %}" href="{{ url_for('flow_results_bp.flow_results', task_id=task.id, view='single', tab='flows') }}">
         <i class="bi bi-diagram-3 me-2"></i>流程執行結果
       </a>
     </li>
     <li class="nav-item">
-      <a class="nav-link {% if active_tab == 'mapping' %}active{% endif %}" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab='mapping') }}">
+      <a class="nav-link {% if active_tab == 'mapping' %}active{% endif %}" href="{{ url_for('flow_results_bp.flow_results', task_id=task.id, view='single', tab='mapping') }}">
         <i class="bi bi-diagram-3-fill me-2"></i>Mapping 執行結果
       </a>
     </li>
@@ -223,7 +223,7 @@
             <td class="text-center"><input type="checkbox" class="form-check-input run-select" value="{{ r.job_id }}"></td>
             <td class="text-start">
               {% if r.flow_name and r.flow_name != '未命名流程' %}
-              <a href="{{ url_for('flows_bp.flow_builder', task_id=task.id, flow=r.flow_name) }}" class="text-decoration-none fw-bold text-primary">{{ r.flow_name }}</a>
+              <a href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id, flow=r.flow_name) }}" class="text-decoration-none fw-bold text-primary">{{ r.flow_name }}</a>
               {% else %}
               <span class="text-muted">未命名流程</span>
               {% endif %}
@@ -297,17 +297,17 @@
       <nav>
         <ul class="pagination pagination-sm mb-0 gap-1">
           <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=pagination.page-1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+            <a class="page-link" href="{{ url_for('flow_results_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=pagination.page-1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
           </li>
           {% for p in range(1, pagination.total_pages + 1) %}
             {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
             <li class="page-item {% if p == pagination.page %}active{% endif %}">
-              <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=p, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) }}">{{ p }}</a>
+              <a class="page-link rounded-2" href="{{ url_for('flow_results_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=p, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) }}">{{ p }}</a>
             </li>
             {% endif %}
           {% endfor %}
           <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-            <a class="page-link rounded-2" href="{{ url_for('flows_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=pagination.page+1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+            <a class="page-link rounded-2" href="{{ url_for('flow_results_bp.flow_results', task_id=task.id, view='single', tab=active_tab, page=pagination.page+1, q=filters.q, status=filters.status, start_date=filters.start_date, end_date=filters.end_date) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
           </li>
         </ul>
       </nav>
@@ -385,38 +385,38 @@ document.getElementById("deleteSelectedRunsBtn")?.addEventListener("click", () =
   const selected = getSelectedRunIds();
   if (!selected.length) return;
   if (!confirm(`確定要刪除 ${selected.length} 筆執行結果嗎？`)) return;
-  submitPostForm("{{ url_for('flows_bp.delete_flow_runs_bulk', task_id=task.id) }}", { job_ids: selected.join(",") });
+  submitPostForm("{{ url_for('flow_results_bp.delete_flow_runs_bulk', task_id=task.id) }}", { job_ids: selected.join(",") });
 });
 
 document.getElementById("downloadSelectedRunsDocxBtn")?.addEventListener("click", () => {
   const selected = getSelectedRunIds();
   if (!selected.length) return;
-  submitPostForm("{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}", { job_ids: selected.join(","), kind: "docx" });
+  submitPostForm("{{ url_for('flow_results_bp.download_flow_runs_bulk', task_id=task.id) }}", { job_ids: selected.join(","), kind: "docx" });
 });
 
 document.getElementById("downloadSelectedRunsLogBtn")?.addEventListener("click", () => {
   const selected = getSelectedRunIds();
   if (!selected.length) return;
-  submitPostForm("{{ url_for('flows_bp.download_flow_runs_bulk', task_id=task.id) }}", { job_ids: selected.join(","), kind: "log" });
+  submitPostForm("{{ url_for('flow_results_bp.download_flow_runs_bulk', task_id=task.id) }}", { job_ids: selected.join(","), kind: "log" });
 });
 {% else %}
 document.getElementById("deleteSelectedMappingRunsBtn")?.addEventListener("click", () => {
   const selected = getSelectedRunIds();
   if (!selected.length) return;
   if (!confirm(`確定要刪除 ${selected.length} 筆 Mapping 執行結果嗎？`)) return;
-  submitPostForm("{{ url_for('flows_bp.delete_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(",") });
+  submitPostForm("{{ url_for('mapping_run_bp.delete_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(",") });
 });
 
 document.getElementById("downloadSelectedMappingZipBtn")?.addEventListener("click", () => {
   const selected = getSelectedRunIds();
   if (!selected.length) return;
-  submitPostForm("{{ url_for('flows_bp.download_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(","), kind: "zip" });
+  submitPostForm("{{ url_for('mapping_run_bp.download_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(","), kind: "zip" });
 });
 
 document.getElementById("downloadSelectedMappingLogBtn")?.addEventListener("click", () => {
   const selected = getSelectedRunIds();
   if (!selected.length) return;
-  submitPostForm("{{ url_for('flows_bp.download_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(","), kind: "log" });
+  submitPostForm("{{ url_for('mapping_run_bp.download_mapping_runs_bulk', task_id=task.id) }}", { run_ids: selected.join(","), kind: "log" });
 });
 {% endif %}
 
@@ -438,7 +438,7 @@ function applyRunFilter() {
   if (status) params.set("status", status);
   if (startDate) params.set("start_date", startDate);
   if (endDate) params.set("end_date", endDate);
-  window.location.href = `{{ url_for('flows_bp.flow_results', task_id=task.id) }}?${params.toString()}`;
+  window.location.href = `{{ url_for('flow_results_bp.flow_results', task_id=task.id) }}?${params.toString()}`;
 }
 
 runSearchInput?.addEventListener("input", () => {

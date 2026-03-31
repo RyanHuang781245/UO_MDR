@@ -2,22 +2,21 @@
 
 from datetime import datetime
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import current_app, flash, redirect, render_template, request, url_for
 from flask_ldap3_login.forms import LDAPLoginForm
 from flask_login import current_user, login_user, logout_user
 
-from app.services.auth_service import build_ldap_profile, is_allowed_group_member, sanitize_next_url
-from modules.auth_models import (
-    Role,
+from app.models.auth import (
     ROLE_EDITOR,
+    Role,
     commit_session,
     db,
     get_user_by_work_id,
-    sync_user_from_ldap,
     upsert_user_role,
 )
+from app.services.auth_service import build_ldap_profile, is_allowed_group_member, sanitize_next_url
 
-auth_bp = Blueprint("auth_bp", __name__, template_folder="templates")
+from .blueprint import auth_bp
 
 
 @auth_bp.route("/login", methods=["GET", "POST"], endpoint="login")

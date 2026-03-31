@@ -151,7 +151,7 @@
                 {% if flow %}
                   <span class="audit-pill shadow-sm">
                     <i class="fas fa-wind mr-1 opacity-50"></i>
-                    <a href="{{ url_for('flows_bp.flow_builder', task_id=e.get('task_id'), flow=flow) }}" class="text-decoration-none text-inherit">{{ flow }}</a>
+                    <a href="{{ url_for('flow_builder_bp.flow_builder', task_id=e.get('task_id'), flow=flow) }}" class="text-decoration-none text-inherit">{{ flow }}</a>
                   </span>
                 {% endif %}
                 {% if job_id %}

@@ -7,9 +7,9 @@ from typing import Optional
 from flask import current_app
 from sqlalchemy import or_
 
+from app.extensions import db
+from app.models.nas import NasRoot, ensure_schema as ensure_nas_schema
 from app.utils import parse_bool
-from modules.auth_models import db
-from modules.nas_models import NasRoot, ensure_schema as ensure_nas_schema
 
 def load_allowed_roots_from_env():
     roots = []
@@ -85,6 +85,9 @@ def _guess_platform(path: str) -> Optional[str]:
 
 
 def get_configured_nas_roots() -> list[str]:
+    config_roots = current_app.config.get("NAS_ALLOWED_ROOTS") or current_app.config.get("ALLOWED_SOURCE_ROOTS", [])
+    if current_app.config.get("TESTING") and config_roots:
+        return list(config_roots)
     try:
         env, platform = _get_env_platform()
         roots = (
@@ -100,11 +103,9 @@ def get_configured_nas_roots() -> list[str]:
         db_roots = [path for (path,) in roots]
         if db_roots:
             return db_roots
-        roots = current_app.config.get("NAS_ALLOWED_ROOTS") or current_app.config.get("ALLOWED_SOURCE_ROOTS", [])
-        return list(roots) if roots else []
+        return list(config_roots) if config_roots else []
     except Exception:
-        roots = current_app.config.get("NAS_ALLOWED_ROOTS") or current_app.config.get("ALLOWED_SOURCE_ROOTS", [])
-        return list(roots) if roots else []
+        return list(config_roots) if config_roots else []
 
 def resolve_nas_path_in_root(raw_path: str, root_index: int, allow_recursive=None) -> str:
     allow_recursive = (

@@ -4,7 +4,8 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from flask import current_app
-from modules.auth_models import AuditLog, db
+
+from app.models.auth import AuditLog, db
 
 
 def record_audit(

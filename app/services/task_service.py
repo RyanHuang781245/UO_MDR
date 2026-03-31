@@ -7,11 +7,12 @@ import zipfile
 from datetime import datetime
 
 from flask import current_app
+from flask_login import current_user
 
-from modules.settings_models import SystemSetting
-
-from modules.auth_models import commit_session, db
-from modules.task_models import TaskRecord, ensure_schema as ensure_task_schema
+from app.extensions import db
+from app.models.auth import ROLE_ADMIN, commit_session, user_has_role
+from app.models.settings import SystemSetting
+from app.models.task import TaskRecord, ensure_schema as ensure_task_schema
 
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
@@ -145,6 +146,50 @@ def task_name_exists(name, exclude_id=None):
         if tname == name:
             return True
     return False
+
+
+def load_task_context(task_id: str) -> dict:
+    task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    meta_path = os.path.join(task_dir, "meta.json")
+    task = {"id": task_id}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as file_obj:
+                meta = json.load(file_obj)
+            task.update(
+                {
+                    "name": meta.get("name", task_id),
+                    "description": meta.get("description", ""),
+                    "creator": meta.get("creator", "") or "",
+                    "nas_path": meta.get("nas_path", "") or "",
+                }
+            )
+        except Exception:
+            pass
+    return task
+
+
+def get_creator_work_id(meta: dict) -> str:
+    creator_work_id = (meta.get("creator_work_id") or "").strip()
+    if creator_work_id:
+        return creator_work_id
+    creator = (meta.get("creator") or "").strip()
+    if creator:
+        return creator.split()[0]
+    return ""
+
+
+def can_delete_task(meta: dict) -> bool:
+    if not current_app.config.get("AUTH_ENABLED", True):
+        return True
+    if not current_user or not getattr(current_user, "is_authenticated", False):
+        return False
+    if user_has_role(current_user.id, ROLE_ADMIN):
+        return True
+    creator_work_id = get_creator_work_id(meta)
+    return bool(creator_work_id) and current_user.work_id == creator_work_id
+
+
 def gather_available_files(files_dir):
     mapping = {"docx": [], "pdf": [], "zip": [], "dir": [], "path": []}
     for rel in list_files(files_dir):

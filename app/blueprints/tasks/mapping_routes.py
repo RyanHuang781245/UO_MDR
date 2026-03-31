@@ -52,6 +52,21 @@ _WINDOWS_RESERVED_FILE_NAMES = {
 }
 
 
+def _paginate_saved_mapping_schemes(schemes_all: list[dict], page: int, per_page: int = 10) -> tuple[list[dict], dict]:
+    total_count = len(schemes_all)
+    total_pages = max((total_count + per_page - 1) // per_page, 1)
+    page = min(max(page, 1), total_pages)
+    start = (page - 1) * per_page
+    schemes = schemes_all[start : start + per_page]
+    return schemes, {
+        "page": page,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+    }
+
+
 def _safe_uploaded_filename(filename: str, default_stem: str = "upload") -> str:
     raw_name = os.path.basename((filename or "").replace("\\", "/")).strip()
     secured = secure_filename(raw_name)
@@ -100,6 +115,10 @@ def task_mapping(task_id):
     }
     current_run_id = None
     current_mapping_display_name = ""
+    try:
+        mapping_page = int(request.values.get("mpage", "1"))
+    except (TypeError, ValueError):
+        mapping_page = 1
 
     # 如果是頁面跳轉/重新整理 (GET)，則清掉之前的暫存紀錄與檔案
     if request.method == "GET":
@@ -681,9 +700,10 @@ def task_mapping(task_id):
         )
     scheduled_scheme = load_scheduled_mapping_scheme(task_id)
     scheduled_scheme_id = (scheduled_scheme or {}).get("id") or (scheduled_scheme or {}).get("scheme_id") or ""
-    saved_schemes = list_mapping_schemes(task_id)
-    for scheme in saved_schemes:
+    saved_schemes_all = list_mapping_schemes(task_id)
+    for scheme in saved_schemes_all:
         scheme["is_scheduled"] = bool(scheduled_scheme_id and scheme.get("id") == scheduled_scheme_id)
+    saved_schemes, saved_schemes_pagination = _paginate_saved_mapping_schemes(saved_schemes_all, mapping_page)
     return render_template(
         "tasks/mapping.html",
         task_id=task_id,
@@ -702,6 +722,7 @@ def task_mapping(task_id):
         last_mapping_file=last_mapping_file,
         current_mapping_display_name=current_mapping_display_name or last_mapping_file,
         saved_schemes=saved_schemes,
+        saved_schemes_pagination=saved_schemes_pagination,
         scheduled_scheme=scheduled_scheme,
         allow_check_extract=bool(
             last_mapping_file

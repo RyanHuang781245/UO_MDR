@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set saved_tab_active = request.values.get('mpage') %}
 <div class="container-fluid px-0">
     <div class="mb-3">
         <h1 class="h3 mb-1 fw-bold">Mapping</h1>
@@ -8,19 +9,19 @@
 
     <ul class="nav nav-tabs nav-tabs-custom mb-4" id="mappingTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="create-scheme-tab" data-bs-toggle="tab" data-bs-target="#create-scheme-pane" type="button" role="tab" aria-controls="create-scheme-pane" aria-selected="true">
+            <button class="nav-link {% if not saved_tab_active %}active{% endif %}" id="create-scheme-tab" data-bs-toggle="tab" data-bs-target="#create-scheme-pane" type="button" role="tab" aria-controls="create-scheme-pane" aria-selected="{{ 'false' if saved_tab_active else 'true' }}">
                 <i class="bi bi-plus-square me-2"></i>建立 Mapping
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="saved-schemes-tab" data-bs-toggle="tab" data-bs-target="#saved-schemes-pane" type="button" role="tab" aria-controls="saved-schemes-pane" aria-selected="false">
+            <button class="nav-link {% if saved_tab_active %}active{% endif %}" id="saved-schemes-tab" data-bs-toggle="tab" data-bs-target="#saved-schemes-pane" type="button" role="tab" aria-controls="saved-schemes-pane" aria-selected="{{ 'true' if saved_tab_active else 'false' }}">
                 <i class="bi bi-folder-check me-2"></i>已保存 Mapping
             </button>
         </li>
     </ul>
 
     <div class="tab-content">
-    <div class="tab-pane fade show active" id="create-scheme-pane" role="tabpanel" aria-labelledby="create-scheme-tab" tabindex="0">
+    <div class="tab-pane fade {% if not saved_tab_active %}show active{% endif %}" id="create-scheme-pane" role="tabpanel" aria-labelledby="create-scheme-tab" tabindex="0">
     <div class="main-card mb-4">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
@@ -157,11 +158,11 @@
         </div>
     </div>
 
-    <div class="tab-pane fade" id="saved-schemes-pane" role="tabpanel" aria-labelledby="saved-schemes-tab" tabindex="0">
+    <div class="tab-pane fade {% if saved_tab_active %}show active{% endif %}" id="saved-schemes-pane" role="tabpanel" aria-labelledby="saved-schemes-tab" tabindex="0">
     <div class="main-card mb-4">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
             <h5 class="fw-bold mb-0">已保存 Mapping</h5>
-            <div class="text-muted small">共 <span>{{ saved_schemes|length }}</span> 筆 Mapping</div>
+            <div class="text-muted small">共 <span>{{ saved_schemes_pagination.total_count }}</span> 筆 Mapping (第 {{ saved_schemes_pagination.page }} / {{ saved_schemes_pagination.total_pages }} 頁)</div>
         </div>
         {% if saved_schemes %}
         <div class="table-responsive">
@@ -203,6 +204,7 @@
                         <td>
                             <div class="d-flex justify-content-center gap-1">
                                 <form method="post" class="d-inline">
+                                    <input type="hidden" name="mpage" value="{{ saved_schemes_pagination.page }}">
                                     <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
                                     <button class="btn-action-icon text-success" type="submit" name="action" value="run_scheme" {% if not scheme.is_runnable %}disabled title="請先重新檢查方案"{% else %}title="生成"{% endif %}>
                                         <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">生成</span>
@@ -222,6 +224,7 @@
                                     <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
                                 </button>
                                 <form method="post" class="d-inline" onsubmit="return confirm('確定刪除 Mapping 方案「{{ scheme.display_name }}」？此動作無法復原。')">
+                                    <input type="hidden" name="mpage" value="{{ saved_schemes_pagination.page }}">
                                     <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
                                     <button class="btn-action-icon text-danger" type="submit" name="action" value="delete_scheme" title="刪除方案">
                                         <i class="bi bi-trash"></i>
@@ -233,6 +236,25 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+        <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+            <nav>
+                <ul class="pagination pagination-sm mb-0 gap-1">
+                    <li class="page-item {% if not saved_schemes_pagination.has_prev %}disabled{% endif %}">
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.task_mapping', task_id=task_id, mpage=saved_schemes_pagination.page-1) if saved_schemes_pagination.has_prev else '#' }}#saved-schemes-pane" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+                    </li>
+                    {% for p in range(1, saved_schemes_pagination.total_pages + 1) %}
+                        {% if p >= saved_schemes_pagination.page - 2 and p <= saved_schemes_pagination.page + 2 %}
+                        <li class="page-item {% if p == saved_schemes_pagination.page %}active{% endif %}">
+                            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.task_mapping', task_id=task_id, mpage=p) }}#saved-schemes-pane">{{ p }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {% if not saved_schemes_pagination.has_next %}disabled{% endif %}">
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.task_mapping', task_id=task_id, mpage=saved_schemes_pagination.page+1) if saved_schemes_pagination.has_next else '#' }}#saved-schemes-pane" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+                    </li>
+                </ul>
+            </nav>
         </div>
         {% else %}
         <div class="px-4 py-5 text-center text-muted">
@@ -250,6 +272,7 @@
                 <form method="post" id="renameSchemeForm">
                     <input type="hidden" name="action" value="rename_scheme">
                     <input type="hidden" name="scheme_id" id="renameSchemeId">
+                    <input type="hidden" name="mpage" value="{{ saved_schemes_pagination.page }}">
                     <div class="modal-header">
                         <h5 class="modal-title">修改名稱</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

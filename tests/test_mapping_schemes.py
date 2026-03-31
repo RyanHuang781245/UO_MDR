@@ -332,3 +332,38 @@ def test_can_rename_saved_mapping_scheme(app, client) -> None:
     assert "新名稱方案" in html
     assert "舊名稱方案" not in html
     assert meta["name"] == "新名稱方案"
+
+
+def test_saved_mapping_schemes_list_supports_pagination(app, client) -> None:
+    task_id = "mapping-scheme-pagination"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    source_path = task_dir / "Mapping_page.xlsx"
+    source_path.write_bytes(b"dummy-page")
+
+    for idx in range(11):
+        save_mapping_scheme(
+            task_id,
+            str(source_path),
+            f"方案{idx + 1:02d}",
+            {
+                "mapping_file": "Mapping_page.xlsx",
+                "mapping_display_name": "Mapping_page.xlsx",
+                "reference_ok": True,
+                "extract_ok": True,
+            },
+            actor={"work_id": "A123", "label": "Tester"},
+        )
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id, mpage=2)
+
+    response = client.get(url)
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "共 <span>11</span> 筆 Mapping (第 2 / 2 頁)" in html
+    assert "#saved-schemes-pane" in html

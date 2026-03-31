@@ -2,99 +2,6 @@
 {% block enable_sidebar %}false{% endblock %}
 {% block content %}
 <style>
-    .main-card {
-        border: 1px solid var(--app-border);
-        border-radius: 0.75rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        background: var(--app-card-bg);
-        overflow: hidden;
-    }
-
-    /* Dynamic Toolbar */
-    .toolbar-container {
-        min-height: 80px;
-        padding: 1rem 1.5rem;
-        display: flex;
-        align-items: center;
-        border-bottom: 1px solid var(--app-border);
-    }
-
-    .filter-bar {
-        display: flex;
-        width: 100%;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-    }
-
-    .action-bar {
-        background-color: var(--bs-blue-50);
-        border: 1px solid var(--bs-blue-100);
-        border-radius: 0.5rem;
-        padding: 0.75rem 1rem;
-        display: none; /* 預設隱藏 */
-        width: 100%;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    /* Form Controls */
-    .form-control-custom {
-        border: 1px solid var(--app-border);
-        background-color: var(--app-card-bg);
-        color: var(--app-text);
-        font-size: 0.875rem;
-        padding: 0.5rem 0.75rem;
-    }
-    .form-control-custom:focus {
-        background-color: var(--app-card-bg);
-        color: var(--app-text);
-        border-color: var(--bs-blue-600);
-        box-shadow: 0 0 0 0.25rem rgba(37, 99, 235, 0.1);
-    }
-    textarea.form-control-custom {
-        resize: vertical;
-        min-height: 60px;
-        max-height: 250px;
-    }
-    .search-wrapper {
-        position: relative;
-        flex: 1;
-        min-width: 250px;
-    }
-    .search-wrapper i {
-        position: absolute;
-        left: 0.75rem;
-        top: 50%;
-        transform: translateY(-50%);
-        color: var(--bs-gray-500);
-    }
-    .search-wrapper input {
-        padding-left: 2.25rem;
-    }
-
-    .btn-action-icon {
-        background: transparent;
-        border: 1px solid var(--app-border);
-        color: var(--bs-gray-500);
-        padding: 0.4rem 0.75rem;
-        border-radius: 0.5rem;
-        transition: all 0.2s;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        text-decoration: none;
-        white-space: nowrap;
-    }
-    .btn-action-icon:hover {
-        background: var(--bs-blue-50);
-        color: var(--bs-blue-600);
-        border-color: var(--bs-blue-100);
-    }
-    .btn-action-icon.text-danger:hover {
-        color: #ef4444;
-        background: rgba(239, 68, 68, 0.1);
-        border-color: rgba(239, 68, 68, 0.2);
-    }
     .task-pin-toggle.is-pinned {
         color: var(--bs-blue-600);
         border-color: var(--bs-blue-100);
@@ -102,6 +9,9 @@
     }
     .task-pinned-row:not(.row-selected) {
         background: rgba(37, 99, 235, 0.03);
+    }
+    .task-name-link {
+        cursor: pointer;
     }
 
     /* Loading Overlay & Drawer */
@@ -318,9 +228,9 @@
         </div>
 
         <!-- Toolbar Section -->
-        <div class="toolbar-container">
+        <div class="toolbar-container" id="taskToolbarContainer">
             <!-- Filter Bar -->
-            <div id="filterBar" class="filter-bar">
+            <div id="filterBar" class="filter-bar" aria-hidden="false">
                 <div class="search-wrapper">
                     <i class="bi bi-search"></i>
                     <input type="text" id="taskSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋任務名稱或描述...">
@@ -328,9 +238,9 @@
             </div>
 
             <!-- Action Bar (Show when selected) -->
-            <div id="actionBar" class="action-bar">
+            <div id="actionBar" class="action-bar" aria-hidden="true">
                 <div class="d-flex align-items-center gap-3">
-                    <button class="btn btn-link p-1 text-primary" id="clearSelectionBtn">
+                    <button class="btn btn-link p-1 text-primary" id="clearSelectionBtn" type="button">
                         <i class="bi bi-x-lg"></i>
                     </button>
                     <span class="fw-semibold text-primary small" id="selectionText">已選取 0 項任務</span>
@@ -364,7 +274,7 @@
                             <input type="checkbox" class="form-check-input task-select" value="{{ t.id }}">
                         </td>
                         <td class="text-start">
-                            <a class="text-decoration-none fw-bold text-primary task-desc-truncate d-block" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}" title="{{ t.name }}">
+                            <a class="text-decoration-none fw-bold text-primary task-desc-truncate d-block task-name-link" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}" title="{{ t.name }}">
                                 {{ t.name }}
                             </a>
                         </td>
@@ -389,7 +299,7 @@
                                 <button class="btn-action-icon task-pin-toggle" type="button" title="設為置頂" aria-pressed="false">
                                     <i class="bi bi-pin-angle"></i>
                                 </button>
-                                <button class="btn-action-icon task-detail-trigger" title="查看詳情">
+                                <button class="btn-action-icon task-detail-trigger" type="button" title="查看詳情">
                                     <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span>  
                                 </button>
                                 {% if t.can_delete %}
@@ -1245,6 +1155,7 @@ function initTaskDescDrawer(){
   const titleEl = document.getElementById('taskDescDrawerTitle');
   const bodyEl = document.getElementById('taskDescDrawerBody');
   const closeBtn = document.getElementById('taskDescDrawerClose');
+  const taskTableBody = document.getElementById('taskTableBody');
   if(!drawer || !backdrop || !bodyEl || !titleEl) return;
   let closeTimer = null;
 
@@ -1288,32 +1199,36 @@ function initTaskDescDrawer(){
     }, 260);
   }
 
-  document.querySelectorAll('.task-detail-trigger').forEach(btn => {
-    btn.addEventListener('click', (event) => {
-      event.preventDefault();
-      const row = btn.closest('tr');
-      const id = getRowText(row, '.task-id-data');
-      const name = getRowText(row, '.text-primary');
-      const desc = getRowText(row, '.task-desc-data');
-      const creator = getRowText(row, '.task-creator-data');
-      const created = getRowText(row, '.task-created-data');
-      const lastEditor = getRowText(row, '.task-last-editor-data');
-      const lastEdited = getRowText(row, '.task-last-edited-data');
-      const nasPath = getRowText(row, '.task-nas-data');
-      const title = name ? `任務詳情 : ${name}` : '任務詳情';
-      const detailHtml = renderDetailBody({
-        id,
-        name,
-        creator,
-        created,
-        lastEditor,
-        lastEdited,
-        nasPath,
-        desc
-      });
-      openDrawer(title, '');
-      bodyEl.innerHTML = detailHtml;
+  function openTaskDrawerFromRow(row){
+    if(!row) return;
+    const id = getRowText(row, '.task-id-data');
+    const name = getRowText(row, '.task-name-link');
+    const desc = getRowText(row, '.task-desc-data');
+    const creator = getRowText(row, '.task-creator-data');
+    const created = getRowText(row, '.task-created-data');
+    const lastEditor = getRowText(row, '.task-last-editor-data');
+    const lastEdited = getRowText(row, '.task-last-edited-data');
+    const nasPath = getRowText(row, '.task-nas-data');
+    const title = name ? `任務詳情 : ${name}` : '任務詳情';
+    const detailHtml = renderDetailBody({
+      id,
+      name,
+      creator,
+      created,
+      lastEditor,
+      lastEdited,
+      nasPath,
+      desc
     });
+    openDrawer(title, '');
+    bodyEl.innerHTML = detailHtml;
+  }
+
+  taskTableBody?.addEventListener('click', (event) => {
+    const trigger = event.target.closest('.task-detail-trigger');
+    if(!trigger) return;
+    event.preventDefault();
+    openTaskDrawerFromRow(trigger.closest('tr'));
   });
 
   if(closeBtn){
@@ -1328,7 +1243,6 @@ function initTaskDescDrawer(){
 
   // Task Search Logic
   const taskSearchInput = document.getElementById('taskSearchInput');
-  const taskTableBody = document.getElementById('taskTableBody');
   const totalTaskCount = document.getElementById('totalTaskCount');
 
   if(taskSearchInput && taskTableBody){
@@ -1337,7 +1251,7 @@ function initTaskDescDrawer(){
       const rows = taskTableBody.querySelectorAll('.task-row');
       let visibleCount = 0;
       rows.forEach(row => {
-        const name = row.querySelector('.text-primary')?.textContent?.toLowerCase() || '';
+        const name = row.querySelector('.task-name-link')?.textContent?.toLowerCase() || '';
         const desc = row.querySelector('.task-desc-data')?.textContent?.toLowerCase() || '';
         const isVisible = name.includes(term) || desc.includes(term);
         row.style.display = isVisible ? '' : 'none';
@@ -1352,6 +1266,7 @@ function initTaskDescDrawer(){
   const masterCheckbox = document.getElementById('masterCheckbox');
   const taskCheckboxes = () => Array.from(document.querySelectorAll('.task-select'));
   const allTaskIds = ({{ all_task_ids|tojson }});
+  const toolbarContainer = document.getElementById('taskToolbarContainer');
   const filterBar = document.getElementById('filterBar');
   const actionBar = document.getElementById('actionBar');
   const selectionText = document.getElementById('selectionText');
@@ -1483,18 +1398,18 @@ function initTaskDescDrawer(){
       refreshPinState();
       syncVisibleCheckboxes();
       const count = selectedTaskIds.size;
+      const hasSelection = count > 0;
 
-      if (count > 0) {
-          if(filterBar) filterBar.style.display = 'none';
-          if(actionBar) actionBar.style.display = 'flex';
+      toolbarContainer?.classList.toggle('is-selection-mode', hasSelection);
+      if(filterBar) filterBar.setAttribute('aria-hidden', hasSelection ? 'true' : 'false');
+      if(actionBar) actionBar.setAttribute('aria-hidden', hasSelection ? 'false' : 'true');
+
+      if (hasSelection) {
           if(selectionText) {
               selectionText.textContent = appendToBatch
                   ? `已加入 ${count} 項任務（含既有排程）`
                   : `已選取 ${count} 項任務`;
           }
-      } else {
-          if(filterBar) filterBar.style.display = 'flex';
-          if(actionBar) actionBar.style.display = 'none';
       }
 
       taskCheckboxes().forEach(cb => {

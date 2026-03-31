@@ -1,121 +1,73 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
-  :root {
-    --bs-blue-50: #eff6ff;
-    --bs-blue-100: #dbeafe;
-    --bs-blue-600: #2563eb;
-    --bs-gray-200: #e2e8f0;
-    --bs-gray-500: #64748b;
-  }
-
-  .main-card {
-    border: 1px solid var(--bs-gray-200);
-    border-radius: 0.75rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    background: #fff;
-    overflow: hidden;
-  }
-
-  .nav-tabs-custom {
-    border-bottom: 1px solid var(--bs-gray-200);
-    padding: 0 1.5rem;
-  }
-
-  .nav-tabs-custom .nav-link {
-    border: none;
-    color: var(--bs-gray-500);
-    font-weight: 500;
-    padding: 0.75rem 1rem;
-    position: relative;
-    background: none;
-  }
-
-  .nav-tabs-custom .nav-link.active {
-    color: var(--bs-blue-600);
-  }
-
-  .nav-tabs-custom .nav-link.active::after {
-    content: "";
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: 2px;
-    background-color: var(--bs-blue-600);
-  }
-
-  .toolbar-container {
-    min-height: 80px;
-    padding: 1rem 1.5rem;
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid #f1f5f9;
-  }
-
-  .filter-bar {
-    display: flex;
-    width: 100%;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .action-bar {
-    background: var(--bs-blue-50);
-    border: 1px solid var(--bs-blue-100);
-    border-radius: 0.5rem;
-    padding: 0.75rem 1rem;
-    display: none;
-    width: 100%;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .form-control-custom {
-    border: 1px solid var(--bs-gray-200);
-    font-size: 0.875rem;
-    padding: 0.5rem 0.75rem;
-  }
-
-  .search-wrapper {
-    position: relative;
-    flex: 1;
-    min-width: 250px;
-  }
-
-  .search-wrapper i {
-    position: absolute;
-    left: 0.75rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #94a3b8;
-  }
-
-  .search-wrapper input {
-    padding-left: 2.25rem;
-  }
-
   .results-table {
     table-layout: fixed;
     width: 100%;
   }
 
-  .results-table thead th {
-    background: #f8fafc;
-    font-size: 0.875rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+  .results-filter-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .results-filter-bar .search-wrapper {
+    min-width: 0;
+  }
+
+  .results-filter-controls {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 320px);
+    gap: 0.75rem;
+    justify-content: end;
+  }
+
+  .results-status-filter {
+    width: 180px;
+  }
+
+  .results-date-range {
+    width: 320px;
+    max-width: 100%;
+  }
+
+  .results-date-range .input-group-text {
+    background: var(--app-card-bg);
     color: var(--bs-gray-500);
   }
 
   .results-table tbody td {
-    font-size: 0.875rem;
     vertical-align: middle;
   }
 
-  .row-selected {
-    background: rgba(37, 99, 235, 0.03) !important;
+  .results-action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 991.98px) {
+    .results-filter-bar,
+    .results-filter-controls {
+      grid-template-columns: 1fr;
+    }
+
+    .results-status-filter,
+    .results-date-range {
+      width: 100%;
+    }
+
+    .results-action-buttons {
+      width: 100%;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .results-table {
+      min-width: 780px;
+    }
   }
 </style>
 
@@ -149,14 +101,14 @@
       目前沒有{{ '流程' if active_tab == 'flows' else 'Mapping' }}執行結果。
     </div>
     {% else %}
-    <div class="toolbar-container">
-      <div id="filterBar" class="filter-bar">
+    <div class="toolbar-container" id="resultsToolbarContainer">
+      <div id="filterBar" class="filter-bar results-filter-bar" aria-hidden="false">
         <div class="search-wrapper">
           <i class="bi bi-search"></i>
           <input type="text" id="runSearchInput" value="{{ filters.q }}" class="form-control form-control-custom rounded-2" placeholder="{{ '搜尋流程名稱 / Job ID' if active_tab == 'flows' else '搜尋 Mapping 檔名 / Run ID' }}">
         </div>
-        <div class="d-flex gap-2">
-          <select id="runStatusFilter" class="form-select form-control-custom rounded-2" style="width: 180px;">
+        <div class="results-filter-controls">
+          <select id="runStatusFilter" class="form-select form-control-custom rounded-2 results-status-filter">
             <option value="" {% if not filters.status %}selected{% endif %}>全部狀態</option>
             <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>完成</option>
             <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>失敗</option>
@@ -165,28 +117,28 @@
             <option value="queued" {% if filters.status == 'queued' %}selected{% endif %}>排隊中</option>
             {% endif %}
           </select>
-          <div class="input-group" style="width: 320px;">
-            <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-calendar3"></i></span>
+          <div class="input-group results-date-range">
+            <span class="input-group-text border-end-0"><i class="bi bi-calendar3"></i></span>
             <input type="date" id="runDateStart" value="{{ filters.start_date }}" class="form-control form-control-custom border-start-0 text-center">
-            <span class="input-group-text bg-white border-start-0 border-end-0 text-muted">~</span>
+            <span class="input-group-text border-start-0 border-end-0">~</span>
             <input type="date" id="runDateEnd" value="{{ filters.end_date }}" class="form-control form-control-custom border-start-0 text-center">
           </div>
         </div>
       </div>
 
-      <div id="actionBar" class="action-bar">
+      <div id="actionBar" class="action-bar" aria-hidden="true">
         <div class="d-flex align-items-center gap-3">
           <button class="btn btn-link p-1 text-primary" id="clearSelectionBtn" type="button"><i class="bi bi-x-lg"></i></button>
           <span class="fw-semibold text-primary small" id="selectionText">已選取 0 筆</span>
         </div>
-        <div class="d-flex gap-2">
+        <div class="results-action-buttons">
           {% if active_tab == 'flows' %}
-          <button class="btn btn-white btn-sm border bg-white text-primary fw-medium px-3" id="downloadSelectedRunsDocxBtn" type="button"><i class="bi bi-download"></i> 下載文件</button>
-          <button class="btn btn-white btn-sm border bg-white text-secondary fw-medium px-3" id="downloadSelectedRunsLogBtn" type="button"><i class="bi bi-file-earmark-text"></i> 下載 Log</button>
+          <button class="btn btn-toolbar-secondary btn-sm px-3" id="downloadSelectedRunsDocxBtn" type="button"><i class="bi bi-download"></i> 下載文件</button>
+          <button class="btn btn-toolbar-secondary btn-sm px-3" id="downloadSelectedRunsLogBtn" type="button"><i class="bi bi-file-earmark-text"></i> 下載 Log</button>
           <button class="btn btn-danger btn-sm px-3" id="deleteSelectedRunsBtn" type="button"><i class="bi bi-trash3"></i> 刪除</button>
           {% else %}
-          <button class="btn btn-white btn-sm border bg-white text-primary fw-medium px-3" id="downloadSelectedMappingZipBtn" type="button"><i class="bi bi-download"></i> 下載 ZIP</button>
-          <button class="btn btn-white btn-sm border bg-white text-secondary fw-medium px-3" id="downloadSelectedMappingLogBtn" type="button"><i class="bi bi-file-earmark-text"></i> 下載 Log</button>
+          <button class="btn btn-toolbar-secondary btn-sm px-3" id="downloadSelectedMappingZipBtn" type="button"><i class="bi bi-download"></i> 下載 ZIP</button>
+          <button class="btn btn-toolbar-secondary btn-sm px-3" id="downloadSelectedMappingLogBtn" type="button"><i class="bi bi-file-earmark-text"></i> 下載 Log</button>
           <button class="btn btn-danger btn-sm px-3" id="deleteSelectedMappingRunsBtn" type="button"><i class="bi bi-trash3"></i> 刪除</button>
           {% endif %}
         </div>
@@ -336,6 +288,7 @@ function submitPostForm(action, fields) {
 
 const masterCheckbox = document.getElementById("masterCheckbox");
 const runCheckboxes = () => Array.from(document.querySelectorAll(".run-select"));
+const resultsToolbarContainer = document.getElementById("resultsToolbarContainer");
 const filterBar = document.getElementById("filterBar");
 const actionBar = document.getElementById("actionBar");
 const selectionText = document.getElementById("selectionText");
@@ -348,13 +301,14 @@ function updateRunUI() {
   const selected = getSelectedRunIds();
   const count = selected.length;
   const total = runCheckboxes().length;
-  if (count > 0) {
-    filterBar.style.display = "none";
-    actionBar.style.display = "flex";
+  const hasSelection = count > 0;
+
+  resultsToolbarContainer?.classList.toggle("is-selection-mode", hasSelection);
+  filterBar?.setAttribute("aria-hidden", hasSelection ? "true" : "false");
+  actionBar?.setAttribute("aria-hidden", hasSelection ? "false" : "true");
+
+  if (hasSelection) {
     selectionText.textContent = `已選取 ${count} 筆`;
-  } else {
-    filterBar.style.display = "flex";
-    actionBar.style.display = "none";
   }
   runCheckboxes().forEach((cb) => {
     cb.closest("tr")?.classList.toggle("row-selected", cb.checked);

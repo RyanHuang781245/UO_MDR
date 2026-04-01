@@ -2,73 +2,540 @@
 {% block content %}
 <style>
   /* 基礎變數與通用樣式已在 base.html 或由 GEMINI.md 定義 */
-  .batch-col-sort { width: 60px; }
-  .batch-col-action { width: 140px; }
-  
   .batch-flow-handle {
     cursor: grab;
-    font-size: 1.25rem;
-    color: var(--bs-gray-400, #94a3b8);
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.65rem;
+    border: 1px solid var(--app-border);
+    background: var(--app-bg);
+    font-size: 1.05rem;
+    color: var(--bs-gray-500);
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  
-  .batch-row.dragging-row {
-    opacity: 0.4;
-    background: var(--bs-blue-50) !important;
-    border: 1px dashed var(--bs-blue-600);
-  }
 
   .nav-tabs-custom {
-    border-bottom: 1px solid var(--bs-gray-200);
-    margin-bottom: 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .batch-status-card {
+    position: sticky;
+    top: 1rem;
+    z-index: 20;
+    padding: 0.875rem 1rem;
+  }
+
+  .batch-status-shell {
     display: flex;
-    gap: 2rem;
+    flex-direction: column;
+    gap: 0.625rem;
   }
-  
-  .nav-tabs-custom .nav-link {
-    border: none;
-    background: none;
-    padding: 0.75rem 0;
-    color: var(--bs-gray-500);
-    font-weight: 500;
-    position: relative;
-    transition: all 0.2s;
+
+  .batch-status-title {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-weight: 700;
+    white-space: nowrap;
   }
-  
-  .nav-tabs-custom .nav-link.active {
+
+  .batch-status-title i {
     color: var(--bs-blue-600);
   }
-  
-  .nav-tabs-custom .nav-link.active::after {
-    content: '';
-    position: absolute;
-    bottom: -1px;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: var(--bs-blue-600);
+
+  .batch-status-body {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: center;
   }
 
-  .status-progress-card {
-    background: var(--bs-blue-50);
-    border: 1px solid var(--bs-blue-100);
-    border-radius: 0.75rem;
-    padding: 1.25rem;
+  .batch-status-current-wrap {
+    min-width: 0;
   }
 
-  /* 針對列表結果的優化 */
-  .batch-result-item {
-    transition: background-color 0.2s;
+  .batch-status-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--bs-gray-500);
+    margin-bottom: 0.2rem;
   }
-  .batch-result-item:hover {
-    background-color: #f8fafc;
+
+  .batch-status-current {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--app-text);
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  
-  .flow-sub-table {
+
+  .batch-status-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .batch-status-metric {
+    text-align: right;
+  }
+
+  .batch-status-count {
+    font-size: 1.35rem;
+    line-height: 1;
+  }
+
+  .batch-progress-track {
+    height: 6px;
+    background: rgba(37, 99, 235, 0.12);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .batch-queue-card,
+  .batch-results-card {
+    min-height: 620px;
+  }
+
+  .batch-card-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--app-border);
+    background: rgba(248, 250, 252, 0.72);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .batch-card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-weight: 700;
+  }
+
+  .batch-card-title i {
+    color: var(--bs-blue-600);
+  }
+
+  .batch-card-subtitle {
+    margin-top: 0.35rem;
+    color: var(--bs-gray-500);
     font-size: 0.8125rem;
-    background: #fdfdfd;
+  }
+
+  .batch-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .batch-queue-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    padding: 1rem;
+    max-height: 620px;
+    overflow: auto;
+  }
+
+  .batch-queue-item {
+    border: 1px solid var(--app-border);
+    border-radius: 1rem;
+    background: var(--app-card-bg);
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  }
+
+  .batch-queue-item:hover {
+    border-color: var(--bs-blue-100);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  }
+
+  .batch-queue-item.dragging-row {
+    opacity: 0.55;
+    background: var(--bs-blue-50);
+    border-style: dashed;
+    border-color: var(--bs-blue-600);
+    transform: scale(0.99);
+  }
+
+  .batch-queue-item.is-readonly .batch-flow-handle {
+    cursor: default;
+    opacity: 0.7;
+  }
+
+  .batch-queue-top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.875rem;
+    align-items: center;
+  }
+
+  .batch-queue-content {
+    min-width: 0;
+  }
+
+  .batch-queue-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0;
+  }
+
+  .batch-queue-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--app-text);
+  }
+
+  .batch-queue-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .batch-mode-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .batch-mode-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid var(--app-border);
+    border-radius: 0.875rem;
+    background: var(--app-bg);
+    flex-wrap: wrap;
+  }
+
+  .batch-mode-option {
+    border: 0;
+    background: transparent;
+    color: var(--bs-gray-500);
+    border-radius: 0.7rem;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.2;
+    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .batch-mode-option:hover:not(:disabled),
+  .batch-mode-option:focus-visible:not(:disabled) {
+    background: rgba(37, 99, 235, 0.08);
+    color: var(--bs-blue-600);
+    outline: none;
+  }
+
+  .batch-mode-option.is-active {
+    background: var(--app-card-bg);
+    color: var(--bs-blue-600);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  }
+
+  .batch-mode-option:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .batch-mode-helper {
+    font-size: 0.75rem;
+    color: var(--bs-gray-500);
+    line-height: 1.4;
+  }
+
+  .batch-queue-side {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .batch-sort-btn {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .batch-queue-empty,
+  .batch-results-empty {
+    padding: 2rem 1.25rem;
+    text-align: center;
+    color: var(--bs-gray-500);
+  }
+
+  .batch-empty-stats {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+
+  .batch-empty-stat {
+    min-width: 110px;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--app-border);
+    border-radius: 0.85rem;
+    background: var(--app-bg);
+  }
+
+  .batch-empty-stat-label {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--bs-gray-500);
+    margin-bottom: 0.35rem;
+  }
+
+  .batch-empty-stat strong {
+    font-size: 1.1rem;
+    color: var(--app-text);
+  }
+
+  .batch-results-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    padding: 1rem;
+    flex: 1 1 auto;
+    overflow: visible;
+  }
+
+  .batch-result-card {
+    border: 1px solid var(--app-border);
+    border-radius: 1rem;
+    background: var(--app-card-bg);
+    overflow: hidden;
+  }
+
+  .batch-result-card.is-success {
+    border-color: rgba(4, 120, 87, 0.18);
+  }
+
+  .batch-result-card.is-failed {
+    border-color: rgba(239, 68, 68, 0.22);
+  }
+
+  .batch-result-card.is-pending {
+    border-style: dashed;
+  }
+
+  .batch-result-toggle {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    padding: 1rem 1.1rem;
+    text-align: left;
+  }
+
+  .batch-result-card.is-open .batch-result-toggle {
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  .batch-result-toggle:hover,
+  .batch-result-toggle:focus-visible {
+    background: rgba(248, 250, 252, 0.78);
+    outline: none;
+  }
+
+  .batch-result-summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .batch-result-main {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .batch-result-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .batch-result-name {
+    font-weight: 700;
+    color: var(--app-text);
+  }
+
+  .batch-result-meta {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.6rem;
+  }
+
+  .batch-result-meta-chip {
+    font-size: 0.75rem;
+    color: var(--bs-gray-500);
+    background: var(--app-bg);
+    border: 1px solid var(--app-border);
+    border-radius: 999px;
+    padding: 0.28rem 0.65rem;
+  }
+
+  .batch-result-arrow {
+    color: var(--bs-gray-500);
+    transition: transform 0.2s ease;
+  }
+
+  .batch-result-card.is-open .batch-result-arrow {
+    transform: rotate(180deg);
+  }
+
+  .batch-result-body {
+    display: none;
+    padding: 1rem 1.1rem 1.1rem;
+  }
+
+  .batch-result-card.is-open .batch-result-body {
+    display: block;
+  }
+
+  .batch-error-list {
+    margin-bottom: 1rem;
+  }
+
+  .batch-section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--bs-gray-500);
+    margin-bottom: 0.55rem;
+  }
+
+  .batch-subrun-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .batch-subrun-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: center;
+    border: 1px solid var(--app-border);
+    border-radius: 0.85rem;
+    padding: 0.85rem 0.9rem;
+    background: rgba(248, 250, 252, 0.62);
+  }
+
+  .batch-subrun-main {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+
+  .batch-subrun-name {
+    display: block;
+    font-weight: 600;
+    color: var(--app-text);
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .batch-subrun-subtext {
+    font-size: 0.75rem;
+    color: var(--bs-gray-500);
+    margin-top: 0.2rem;
+    line-height: 1.35;
+  }
+
+  .batch-subrun-note {
+    font-size: 0.8125rem;
+    color: var(--bs-gray-500);
+    line-height: 1.35;
+  }
+
+  .batch-subrun-note.is-error {
+    color: #dc2626;
+  }
+
+  .batch-subrun-meta {
+    flex: 1 1 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .batch-subrun-meta-line {
+    font-size: 0.78rem;
+    color: var(--bs-gray-500);
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .batch-subrun-meta-line.is-error {
+    color: #dc2626;
+  }
+
+  .batch-subrun-meta-line strong {
+    color: var(--app-text);
+    font-weight: 600;
+    margin-right: 0.3rem;
+  }
+
+  .batch-subrun-pill {
+    flex: 0 0 auto;
+    min-width: 84px;
+    justify-content: center;
+    align-self: center;
+  }
+
+  .batch-subrun-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
+  }
+
+  .batch-subrun-actions .btn-action-icon {
+    /* padding: 0.32rem 0.6rem; */
+    font-size: 0.75rem;
+  }
+
+  .batch-result-pending-note {
+    margin-top: 0.45rem;
+    font-size: 0.8125rem;
+    color: var(--bs-gray-500);
   }
 
   .path-popup {
@@ -167,6 +634,98 @@
     color: var(--bs-blue-600);
     outline: none;
   }
+
+  @media (max-width: 1279.98px) {
+    .batch-subrun-meta-line {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+    }
+  }
+
+  @media (max-width: 991.98px) {
+    .batch-status-body,
+    .batch-card-header,
+    .batch-result-summary {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .batch-status-card {
+      position: static;
+      top: auto;
+    }
+
+    .batch-status-body {
+      align-items: flex-start;
+    }
+
+    .batch-status-meta {
+      justify-content: flex-start;
+    }
+
+    .batch-queue-card,
+    .batch-results-card {
+      min-height: 0;
+    }
+
+    .batch-queue-list,
+    .batch-results-list {
+      max-height: none;
+    }
+
+    .batch-subrun-pill {
+      width: fit-content;
+      align-self: flex-start;
+    }
+
+    .batch-subrun-name,
+    .batch-subrun-meta-line {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+    }
+
+    .batch-subrun-actions {
+      justify-content: flex-start;
+      width: 100%;
+      margin-left: 0;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .batch-status-card {
+      padding: 0.875rem;
+    }
+
+    .batch-card-header,
+    .batch-queue-list,
+    .batch-results-list {
+      padding: 1rem;
+    }
+
+    .batch-queue-top {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .batch-queue-bottom {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .batch-queue-side {
+      justify-content: space-between;
+    }
+
+    .batch-mode-switch {
+      width: 100%;
+    }
+
+    .batch-mode-option {
+      flex: 1 1 0;
+      justify-content: center;
+    }
+  }
 </style>
 
 <div class="container-fluid px-0">
@@ -195,39 +754,34 @@
     <!-- 頁籤一：當前排程與執行狀態 -->
     <div class="tab-pane fade show active" id="queue-pane">
       <!-- 頂部：即時進度 (全寬) - 僅在執行中或查看詳情時顯示 -->
-      <div class="mb-4" id="batchStatusContainer" {% if not batch_id %}style="display:none"{% endif %}>
-        <div class="main-card">
-          <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center bg-light bg-opacity-25">
-            <span class="fw-bold"><i class="bi bi-activity me-2 text-primary"></i>執行狀態</span>
-            <div class="d-flex align-items-center gap-2">
-              <span class="status-badge" id="batchStatusLabel">
+      <div class="mb-3" id="batchStatusContainer" {% if not batch_id %}style="display:none"{% endif %}>
+        <div class="main-card batch-status-card">
+          <div class="batch-status-shell">
+            <div class="batch-status-body" id="batchProgressWrap">
+              <div class="batch-status-title"><i class="bi bi-activity"></i>執行狀態</div>
+              <div class="batch-status-current-wrap">
+                <!-- <div class="batch-status-label">目前項目</div> -->
+                <div id="currentTaskInfo" class="batch-status-current">準備中...</div>
+              </div>
+              <div class="batch-status-meta">
+                <span class="status-badge" id="batchStatusLabel">
+                  {% if batch_id %}
+                    <i class="bi bi-arrow-repeat spin"></i> 讀取中...
+                  {% else %}
+                    <i class="bi bi-dash-circle"></i> 尚未執行
+                  {% endif %}
+                </span>
                 {% if batch_id %}
-                  <i class="bi bi-arrow-repeat spin"></i> 讀取中...
-                {% else %}
-                  <i class="bi bi-dash-circle"></i> 尚未執行
+                <code class="text-primary small fw-bold font-monospace bg-blue-50 px-2 py-1 rounded" id="activeBatchId">#{{ batch_id }}</code>
                 {% endif %}
-              </span>
-              {% if batch_id %}
-              <code class="text-primary small fw-bold font-monospace bg-blue-50 px-2 py-1 rounded">#{{ batch_id }}</code>
-              {% endif %}
+                <div class="batch-status-metric">
+                  <span id="progressText" class="batch-status-count font-monospace text-primary fw-bold">0 / 0</span>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div class="p-4">
-            <!-- 進度條區塊 -->
-            <div class="status-progress-card" id="batchProgressWrap">
-              <div class="d-flex justify-content-between align-items-end mb-2">
-                <div>
-                  <div class="small text-muted fw-bold text-uppercase mb-1">正在處理</div>
-                  <div id="currentTaskInfo" class="fw-bold text-dark">準備中...</div>
-                </div>
-                <div class="text-end">
-                  <span id="progressText" class="h4 mb-0 font-monospace text-primary fw-bold">0 / 0</span>
-                </div>
-              </div>
-              <div class="progress" style="height: 12px; background-color: rgba(37, 99, 235, 0.1);">
-                <div id="batchProgressBar" class="progress-bar progress-bar-striped progress-bar-animated shadow-sm" role="progressbar" style="width: 0%"></div>
-              </div>
+            <div class="progress batch-progress-track">
+              <div id="batchProgressBar" class="progress-bar progress-bar-striped progress-bar-animated shadow-sm" role="progressbar" style="width: 0%"></div>
             </div>
           </div>
         </div>
@@ -239,10 +793,19 @@
           <form id="globalBatchForm" action="{{ url_for('global_batch_bp.run_global_batch') }}" method="post">
             <input type="hidden" name="task_ids" id="taskIdsInput" value="{{ batch_task_ids }}">
             <input type="hidden" name="batch_items" id="batchItemsInput" value="{{ batch_item_tokens }}">
-            <div class="main-card">
-              <div class="px-4 py-3 border-bottom d-flex justify-content-between align-items-center bg-light bg-opacity-25">
-                <span class="fw-bold"><i class="bi bi-collection me-2 text-primary"></i>待執行項目 (<span id="taskCount">{{ tasks|length }}</span>)</span>
-                <div class="d-flex align-items-center gap-2">
+            <div class="main-card batch-queue-card">
+              <div class="batch-card-header">
+                <div>
+                  <div class="batch-card-title"><i class="bi bi-collection"></i>待執行項目 (<span id="taskCount">{{ tasks|length }}</span>)</div>
+                  <div class="batch-card-subtitle">
+                    {% if batch_id %}
+                    目前檢視的是已送出的排程，清單內容唯讀。
+                    {% else %}
+                    先調整順序與執行模式，再送出整批排程。
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="batch-card-actions">
                   {% if not batch_id %}
                   <a
                     class="btn btn-outline-primary btn-sm fw-bold px-3"
@@ -258,57 +821,90 @@
                   </button>
                 </div>
               </div>
-              <div class="table-responsive overflow-auto" style="max-height: 600px;">
-                <table class="table mb-0 align-middle" style="table-layout: fixed;">
-                  <thead class="table-light">
-                    <tr>
-                      <th class="batch-col-sort text-center"></th>
-                      <th class="ps-3">任務資訊</th>
-                      <th style="width: 220px;" class="text-center">執行內容</th>
-                      <th class="batch-col-action text-center">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody id="batchTaskList">
-                    {% for t in tasks %}
-                    <tr data-task-id="{{ t.task_id }}" data-item-kind="{{ t.kind }}" data-item-token="{{ t.item_token }}" draggable="true" class="batch-row">
-                      <td class="text-center"><span class="batch-flow-handle"><i class="bi bi-grip-vertical"></i></span></td>
-                      <td class="ps-3 overflow-hidden">
-                        <div class="fw-bold text-dark mb-0 text-truncate" title="{{ t.name }}">{{ t.name }}</div>
-                        <div class="small text-muted text-truncate" title="{{ t.description }}">{{ t.description or '此任務可在排程中心選擇執行流程或 Mapping。' }}</div>
+              <div id="batchTaskList" class="batch-queue-list">
+                {% for t in tasks %}
+                <article
+                  class="batch-queue-item{% if batch_id %} is-readonly{% endif %}"
+                  data-task-id="{{ t.task_id }}"
+                  data-item-kind="{{ t.kind }}"
+                  data-item-token="{{ t.item_token }}"
+                  draggable="{{ 'false' if batch_id else 'true' }}"
+                >
+                  <div class="batch-queue-top">
+                    <span class="batch-flow-handle" aria-hidden="true"><i class="bi bi-grip-vertical"></i></span>
+                    <div class="batch-queue-content">
+                      <div class="batch-queue-title-row">
+                        <div class="batch-queue-title">{{ t.name }}</div>
                         {% if t.missing %}
-                        <div class="badge bg-danger-subtle text-danger border border-danger-subtle small mt-1">{{ t.status_label }}</div>
+                        <span class="status-badge status-badge-failed">{{ t.status_label }}</span>
                         {% endif %}
-                      </td>
-                      <td class="text-center">
-                        <select class="form-select form-select-sm form-control-custom batch-mode-select mx-auto" style="max-width: 190px;" data-task-token="{{ t.task_token }}" data-mapping-token="{{ t.mapping_token }}" {% if t.missing %}disabled{% endif %}>
-                          <option value="flow" {% if t.selected_mode == 'flow' %}selected{% endif %}>流程</option>
-                          {% if t.mapping_token %}
-                          <option value="mapping" {% if t.selected_mode == 'mapping' %}selected{% endif %}>全部 Mapping</option>
-                          {% endif %}
-                        </select>
-                        {% if t.mapping_token %}
-                        <div class="small text-muted mt-1" title="{{ t.mapping_status_label }}">已保存 Mapping：{{ t.mapping_count }} 個{% if t.mapping_count != t.runnable_mapping_count %}，可執行 {{ t.runnable_mapping_count }} 個{% endif %}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="batch-queue-bottom">
+                    <div class="batch-mode-block">
+                      <div
+                        class="batch-mode-switch"
+                        data-task-token="{{ t.task_token }}"
+                        data-mapping-token="{{ t.mapping_token }}"
+                      >
+                        <button
+                          type="button"
+                          class="batch-mode-option{% if t.selected_mode == 'flow' %} is-active{% endif %}"
+                          data-mode="flow"
+                          aria-pressed="{{ 'true' if t.selected_mode == 'flow' else 'false' }}"
+                          {% if t.missing or batch_id %}disabled{% endif %}
+                        >
+                          全部流程
+                        </button>
+                        <!-- <button
+                          type="button"
+                          class="batch-mode-option{% if t.selected_mode == 'mapping' %} is-active{% endif %}"
+                          data-mode="mapping"
+                          aria-pressed="{{ 'true' if t.selected_mode == 'mapping' else 'false' }}"
+                          {% if not t.mapping_token or t.missing or batch_id %}disabled{% endif %}
+                        >
+                          全部 Mapping{% if t.mapping_count %} ({{ t.mapping_count }}){% endif %}
+                        </button> -->
+                        <button
+                          type="button"
+                          class="batch-mode-option{% if t.selected_mode == 'mapping' %} is-active{% endif %}"
+                          data-mode="mapping"
+                          aria-pressed="{{ 'true' if t.selected_mode == 'mapping' else 'false' }}"
+                          {% if not t.mapping_token or t.missing or batch_id %}disabled{% endif %}
+                        >
+                          全部 Mapping
+                        </button>
+                      </div>
+                      <div class="batch-mode-helper" title="{{ t.mapping_status_label }}">
+                        <!-- {% if t.mapping_token %}
+                        已保存 Mapping {{ t.mapping_count }} 個{% if t.mapping_count != t.runnable_mapping_count %}，可執行 {{ t.runnable_mapping_count }} 個{% endif %}
                         {% else %}
-                        <div class="small text-muted mt-1">尚未保存 Mapping</div>
-                        {% endif %}
-                      </td>
-                      <td class="text-center">
-                        <div class="btn-group shadow-sm border rounded-2 bg-white">
-                          <button type="button" class="btn btn-sm btn-white border-0 batch-move-up" title="上移"><i class="bi bi-chevron-up"></i></button>
-                          <button type="button" class="btn btn-sm btn-white border-0 batch-move-down" title="下移"><i class="bi bi-chevron-down"></i></button>
-                          <button type="button" class="btn btn-sm btn-white border-0 text-danger batch-remove" title="移除"><i class="bi bi-x-lg"></i></button>
-                        </div>
-                      </td>
-                    </tr>
-                    {% else %}
-                    <tr id="emptyQueueRow">
-                      <td colspan="4" class="text-center text-muted py-5">
-                        <div class="opacity-50"><i class="bi bi-inbox-fill fs-1 mb-3 d-block"></i>尚未加入任務</div>
-                      </td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
+                        尚未保存 Mapping
+                        {% endif %} -->
+                      </div>
+                    </div>
+
+                    <div class="batch-queue-side">
+                      <button type="button" class="btn-action-icon batch-sort-btn batch-move-up" title="上移" {% if batch_id %}disabled{% endif %}>
+                        <i class="bi bi-chevron-up"></i>
+                      </button>
+                      <button type="button" class="btn-action-icon batch-sort-btn batch-move-down" title="下移" {% if batch_id %}disabled{% endif %}>
+                        <i class="bi bi-chevron-down"></i>
+                      </button>
+                      <button type="button" class="btn-action-icon batch-sort-btn text-danger batch-remove" title="移除" {% if batch_id %}disabled{% endif %}>
+                        <i class="bi bi-x-lg"></i>
+                      </button>
+                    </div>
+                  </div>
+                </article>
+                {% endfor %}
+
+                <div class="batch-queue-empty{% if tasks %} d-none{% endif %}" id="emptyQueueState">
+                  <i class="bi bi-inbox-fill fs-1 mb-3 d-block opacity-25"></i>
+                  尚未加入任務
+                </div>
               </div>
             </div>
           </form>
@@ -316,25 +912,39 @@
 
         <!-- 下方右側：執行結果明細 -->
         <div class="col-lg-7">
-          <div class="main-card d-flex flex-column">
-            <div class="px-4 py-3 border-bottom bg-light bg-opacity-25 d-flex justify-content-between align-items-center">
-              <span class="fw-bold"><i class="bi bi-list-check me-2 text-primary"></i>執行結果明細</span>
+          <div class="main-card d-flex flex-column batch-results-card">
+            <div class="batch-card-header">
+              <div>
+                <div class="batch-card-title"><i class="bi bi-list-check"></i>執行結果明細</div>
+                <div class="batch-card-subtitle">依任務顯示結果摘要，展開後再看流程或 Mapping 細節。</div>
+              </div>
               <div id="batchResultsSummary" class="small text-muted">
                 {% if batch_status and batch_status.results %}
                   成功 {{ batch_status.results|selectattr('ok')|list|length }} / 失敗 {{ batch_status.results|rejectattr('ok')|list|length }}
                 {% endif %}
               </div>
             </div>
-            <div id="batchResultsList" class="overflow-auto" style="max-height: 600px;">
+            <div id="batchResultsList" class="batch-results-list">
               {% if batch_status and batch_status.results %}
                 <!-- 由 JS 動態渲染或後端初步渲染 -->
               {% else %}
-                <div class="text-center text-muted py-5" id="batchEmptyHint">
+                <div class="batch-results-empty" id="batchEmptyHint">
                   <i class="bi bi-clipboard-data fs-2 d-block mb-3 opacity-25"></i>
                   {% if batch_id %}
                     <div class="spinner-border spinner-border-sm text-primary me-2"></div>正在讀取批次資訊...
                   {% else %}
-                    尚未開始執行，暫無執行結果
+                    <div class="fw-semibold text-body mb-2">尚未開始執行</div>
+                    <div>排程送出後，這裡會依任務顯示成功、失敗與等待中的項目。</div>
+                    <div class="batch-empty-stats">
+                      <div class="batch-empty-stat">
+                        <span class="batch-empty-stat-label">待執行</span>
+                        <strong>{{ tasks|length }}</strong>
+                      </div>
+                      <div class="batch-empty-stat">
+                        <span class="batch-empty-stat-label">含 Mapping</span>
+                        <strong>{{ tasks|selectattr('mapping_token')|list|length }}</strong>
+                      </div>
+                    </div>
                   {% endif %}
                 </div>
               {% endif %}
@@ -514,6 +1124,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 const batchTaskList = document.getElementById("batchTaskList");
+const emptyQueueState = document.getElementById("emptyQueueState");
 const taskIdsInput = document.getElementById("taskIdsInput");
 const batchItemsInput = document.getElementById("batchItemsInput");
 const taskCountSpan = document.getElementById("taskCount");
@@ -594,6 +1205,29 @@ function escapeAttr(value) {
   return escapeHtml(String(value ?? "")).replace(/"/g, "&quot;");
 }
 
+function getQueueRows() {
+  return Array.from(batchTaskList?.querySelectorAll(".batch-queue-item[data-item-token]") || []);
+}
+
+function getRowMode(row) {
+  const active = row?.querySelector(".batch-mode-option.is-active");
+  return active?.dataset.mode || "flow";
+}
+
+function setRowMode(row, mode) {
+  const options = Array.from(row?.querySelectorAll(".batch-mode-option") || []);
+  options.forEach((option) => {
+    const active = option.dataset.mode === mode;
+    option.classList.toggle("is-active", active);
+    option.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function syncQueueEmptyState() {
+  if (!emptyQueueState) return;
+  emptyQueueState.classList.toggle("d-none", getQueueRows().length > 0);
+}
+
 function syncSubmitState() {
   if (startBtn && !startBtn.dataset.locked) {
     startBtn.disabled = batchItemTokens.length === 0;
@@ -620,71 +1254,82 @@ function syncAddTasksLink() {
 }
 
 function updateSequence() {
-  const rows = Array.from(batchTaskList.querySelectorAll("tr[data-item-token]"));
+  const rows = getQueueRows();
   batchItemTokens = rows.map((tr) => {
-    const select = tr.querySelector(".batch-mode-select");
-    const mode = select?.value || "flow";
+    const modeSwitch = tr.querySelector(".batch-mode-switch");
+    const mode = getRowMode(tr);
     const token = mode === "mapping"
-      ? (select?.dataset.mappingToken || "")
-      : (select?.dataset.taskToken || tr.getAttribute("data-item-token") || "");
+      ? (modeSwitch?.dataset.mappingToken || "")
+      : (modeSwitch?.dataset.taskToken || tr.getAttribute("data-item-token") || "");
     tr.setAttribute("data-item-kind", mode === "mapping" ? "mapping_scheme" : "task");
     tr.setAttribute("data-item-token", token);
     return token;
   }).filter(Boolean);
   taskIds = rows
-    .filter((tr) => (tr.querySelector(".batch-mode-select")?.value || "flow") === "flow")
+    .filter((tr) => getRowMode(tr) === "flow")
     .map((tr) => tr.getAttribute("data-task-id"))
     .filter(Boolean);
   taskIdsInput.value = taskIds.join(",");
   if (batchItemsInput) batchItemsInput.value = batchItemTokens.join(",");
   taskCountSpan.textContent = batchItemTokens.length;
+  syncQueueEmptyState();
   syncSubmitState();
   syncAddTasksLink();
 }
 
 if (batchTaskList) {
   batchTaskList.addEventListener("click", (e) => {
-    const row = e.target.closest("tr");
+    const row = e.target.closest(".batch-queue-item");
     if (!row) return;
     if (e.target.closest(".batch-remove")) {
+      if (e.target.closest(".batch-remove")?.disabled) return;
       row.remove();
       updateSequence();
-    } else if (e.target.classList.contains("batch-mode-select")) {
-      updateSequence();
     } else if (e.target.closest(".batch-move-up")) {
+      if (e.target.closest(".batch-move-up")?.disabled) return;
       const prev = row.previousElementSibling;
-      if (prev) {
+      if (prev && prev.classList.contains("batch-queue-item")) {
         batchTaskList.insertBefore(row, prev);
         updateSequence();
       }
     } else if (e.target.closest(".batch-move-down")) {
+      if (e.target.closest(".batch-move-down")?.disabled) return;
       const next = row.nextElementSibling;
-      if (next) {
+      if (next && next.classList.contains("batch-queue-item")) {
         batchTaskList.insertBefore(next, row);
         updateSequence();
       }
+    } else {
+      const option = e.target.closest(".batch-mode-option");
+      if (!option || option.disabled) return;
+      setRowMode(row, option.dataset.mode || "flow");
+      updateSequence();
     }
   });
 
   let draggingRow = null;
   batchTaskList.addEventListener("dragstart", (e) => {
-    draggingRow = e.target.closest("tr");
-    e.target.classList.add("dragging-row");
+    draggingRow = e.target.closest(".batch-queue-item");
+    if (!draggingRow || draggingRow.classList.contains("is-readonly")) {
+      e.preventDefault();
+      draggingRow = null;
+      return;
+    }
+    draggingRow.classList.add("dragging-row");
   });
   batchTaskList.addEventListener("dragover", (e) => {
     e.preventDefault();
-    const row = e.target.closest("tr");
+    const row = e.target.closest(".batch-queue-item");
     if (!row || !draggingRow || row === draggingRow) return;
     const rect = row.getBoundingClientRect();
     const next = e.clientY - rect.top > rect.height / 2;
     batchTaskList.insertBefore(draggingRow, next ? row.nextSibling : row);
   });
   batchTaskList.addEventListener("dragend", (e) => {
-    e.target.classList.remove("dragging-row");
-    updateSequence();
-  });
-  batchTaskList.addEventListener("change", (e) => {
-    if (e.target.classList.contains("batch-mode-select")) {
+    e.target.closest(".batch-queue-item")?.classList.remove("dragging-row");
+    if (draggingRow) {
+      draggingRow.classList.remove("dragging-row");
+      draggingRow = null;
       updateSequence();
     }
   });
@@ -692,6 +1337,7 @@ if (batchTaskList) {
 
 syncSubmitState();
 syncAddTasksLink();
+syncQueueEmptyState();
 
 function statusBadge(status) {
   if (status === "completed") return '<span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>';
@@ -742,6 +1388,169 @@ function updateHistoryRow(status) {
   cells[3].innerHTML = `<span class="text-success">${okCount}</span> / <span class="text-danger">${failCount}</span>`;
 }
 
+function buildResultMetaChips(result) {
+  const flows = Array.isArray(result?.flows) ? result.flows : [];
+  const mappingRuns = Array.isArray(result?.mapping_runs) ? result.mapping_runs : [];
+  const errors = Array.isArray(result?.errors) ? result.errors : [];
+  const chips = [];
+  if (flows.length) chips.push(`<span class="batch-result-meta-chip">流程 ${flows.length}</span>`);
+  if (mappingRuns.length) chips.push(`<span class="batch-result-meta-chip">Mapping ${mappingRuns.length}</span>`);
+  if (errors.length) chips.push(`<span class="batch-result-meta-chip">錯誤 ${errors.length}</span>`);
+  return chips.join("");
+}
+
+function getBatchItemDisplayLabel(item) {
+  const kind = item?.kind === "mapping_scheme" ? "mapping_scheme" : "task";
+  const baseName = String(item?.name || item?.task_name || item?.task_id || "").trim() || "未命名任務";
+  const rawLabel = String(item?.label || "").trim();
+  if (rawLabel && !rawLabel.startsWith("/")) {
+    return rawLabel;
+  }
+  return `${baseName} / ${kind === "mapping_scheme" ? "全部 Mapping" : "全部流程"}`;
+}
+
+function renderSubrunMetaLines(lines) {
+  const filtered = (Array.isArray(lines) ? lines : []).filter((line) => line && line.value !== undefined && line.value !== null && String(line.value).trim() !== "");
+  if (!filtered.length) {
+    return '<div class="batch-subrun-meta-line"><span class="text-muted">-</span></div>';
+  }
+  return filtered.map((line) => `
+    <div class="batch-subrun-meta-line${line.error ? " is-error" : ""}">
+      <strong>${escapeHtml(line.label || "")}</strong>${escapeHtml(String(line.value))}
+    </div>
+  `).join("");
+}
+
+function renderFlowDetailRows(flows, taskId) {
+  if (!flows.length) return "";
+  return `
+    <div class="batch-detail-group">
+      <div class="batch-section-label">流程細節</div>
+      <div class="batch-subrun-list">
+        ${flows.map((flow) => {
+          const ok = !!flow.ok;
+          const jobId = encodeURIComponent(flow.job_id || "");
+          const encodedTaskId = encodeURIComponent(taskId || "");
+          const flowName = flow.flow || "未命名流程";
+          const message = (flow.error || "").trim();
+          const resultPath = flow.result_relpath || flow.result_path || "";
+          const logPath = flow.log_relpath || flow.log_path || "";
+          const metaLines = renderSubrunMetaLines([
+            { label: "Job ID", value: flow.job_id || "-" },
+            ...(message ? [{ label: "訊息", value: message, error: !ok }] : []),
+          ]);
+          return `
+            <div class="batch-subrun-row">
+              <div class="batch-subrun-main">
+                <div class="batch-subrun-name" title="${escapeAttr(flowName)}">${escapeHtml(flowName)}</div>
+                <div class="batch-subrun-subtext">${escapeHtml(flow.job_id || "")}</div>
+              </div>
+              <span class="status-badge ${ok ? "status-badge-completed batch-subrun-pill" : "status-badge-failed batch-subrun-pill"}">
+                <i class="bi ${ok ? "bi-check-circle-fill" : "bi-x-circle-fill"}"></i>${ok ? "完成" : "失敗"}
+              </span>
+              <div class="batch-subrun-actions">
+                <button type="button" class="btn-action-icon flow-path-btn" data-result-path="${escapeAttr(resultPath)}" data-log-path="${escapeAttr(logPath)}" title="查看路徑">
+                  <i class="bi bi-folder2-open"></i><span>路徑</span>
+                </button>
+                ${ok && flow.job_id ? `<a class="btn-action-icon" href="/tasks/${encodedTaskId}/download/${jobId}/docx" title="下載 Word"><i class="bi bi-download"></i><span>下載</span></a>` : ""}
+                ${flow.job_id ? `<a class="btn-action-icon" href="/tasks/${encodedTaskId}/download/${jobId}/log" title="下載 Log"><i class="bi bi-file-earmark-text"></i><span>Log</span></a>` : ""}
+              </div>
+            </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
+function renderMappingDetailRows(mappingRuns, taskId) {
+  if (!mappingRuns.length) return "";
+  return `
+    <div class="batch-detail-group">
+      <div class="batch-section-label">Mapping 細節</div>
+      <div class="batch-subrun-list">
+        ${mappingRuns.map((run) => {
+          const ok = !!run.ok;
+          const encodedTaskId = encodeURIComponent(taskId || "");
+          const zipPath = run.zip_relpath || "";
+          const logPath = run.log_relpath || "";
+          const runLabel = run.scheme_name || "Mapping";
+          const metaLines = renderSubrunMetaLines([
+            { label: "Run ID", value: run.run_id || "-" },
+            { label: "輸出", value: String(run.output_count ?? 0) },
+          ]);
+          return `
+            <div class="batch-subrun-row">
+              <div class="batch-subrun-main">
+                <div class="batch-subrun-name" title="${escapeAttr(runLabel)}">${escapeHtml(runLabel)}</div>
+                <div class="batch-subrun-subtext">${escapeHtml(run.run_id || "")}</div>
+              </div>
+              <span class="status-badge ${ok ? "status-badge-completed batch-subrun-pill" : "status-badge-failed batch-subrun-pill"}">
+                <i class="bi ${ok ? "bi-check-circle-fill" : "bi-x-circle-fill"}"></i>${ok ? "完成" : "失敗"}
+              </span>
+              <div class="batch-subrun-meta">${metaLines}</div>
+              <div class="batch-subrun-actions">
+                ${zipPath ? `<a class="btn-action-icon" href="/tasks/${encodedTaskId}/output/download?filename=${encodeURIComponent(zipPath)}" title="下載 ZIP"><i class="bi bi-file-earmark-zip"></i><span>ZIP</span></a>` : ""}
+                ${logPath ? `<a class="btn-action-icon" href="/tasks/${encodedTaskId}/output/download?filename=${encodeURIComponent(logPath)}" title="下載 Log"><i class="bi bi-file-earmark-text"></i><span>Log</span></a>` : ""}
+              </div>
+            </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
+function renderPendingResultCard(item, status) {
+  const labelText = getBatchItemDisplayLabel(item);
+  const isCurrent = status.current_task_name && status.current_task_name === labelText;
+  const badge = isCurrent
+    ? '<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>'
+    : '<span class="status-badge status-badge-queued"><i class="bi bi-hourglass-split"></i> 排隊中</span>';
+  return `
+    <article class="batch-result-card is-pending">
+      <div class="batch-result-toggle">
+        <div class="batch-result-summary">
+          <div class="batch-result-main">
+            <div class="batch-result-title">
+              <div class="batch-result-name">${escapeHtml(labelText)}</div>
+            </div>
+            <div class="small text-muted font-monospace mt-2">${escapeHtml(item.task_id || "")}</div>
+            <div class="batch-result-pending-note">${isCurrent ? "正在處理這個項目。" : "尚未輪到這個項目，等待前序任務完成。"}</div>
+          </div>
+          ${badge}
+        </div>
+      </div>
+    </article>`;
+}
+
+function renderFinishedResultCard(result, index) {
+  const errors = Array.isArray(result.errors) ? result.errors : [];
+  const flows = Array.isArray(result.flows) ? result.flows : [];
+  const mappingRuns = Array.isArray(result.mapping_runs) ? result.mapping_runs : [];
+  const itemLabel = getBatchItemDisplayLabel(result);
+  const openByDefault = !result.ok || errors.length > 0;
+  return `
+    <article class="batch-result-card ${result.ok ? "is-success" : "is-failed"} ${openByDefault ? "is-open" : ""}">
+      <button type="button" class="batch-result-toggle" aria-expanded="${openByDefault ? "true" : "false"}" data-result-card="result-${index}">
+        <div class="batch-result-summary">
+          <div class="batch-result-main">
+            <div class="batch-result-title">
+              <div class="batch-result-name">${escapeHtml(itemLabel)}</div>
+              <span class="status-badge ${result.ok ? "status-badge-completed" : "status-badge-failed"}">
+                <i class="bi ${result.ok ? "bi-check-circle-fill" : "bi-x-circle-fill"}"></i>${result.ok ? "完成" : "失敗"}
+              </span>
+            </div>
+            <div class="small text-muted font-monospace mt-2">${escapeHtml(result.task_id || "")}</div>
+            <div class="batch-result-meta">${buildResultMetaChips(result)}</div>
+          </div>
+          <i class="bi bi-chevron-down batch-result-arrow" aria-hidden="true"></i>
+        </div>
+      </button>
+      <div class="batch-result-body" id="result-${index}">
+        ${errors.length ? `<div class="alert alert-danger py-2 px-3 small batch-error-list">${errors.map((error) => escapeHtml(error)).join("<br>")}</div>` : ""}
+        ${renderFlowDetailRows(flows, result.task_id || "")}
+        ${renderMappingDetailRows(mappingRuns, result.task_id || "")}
+      </div>
+    </article>`;
+}
+
 function renderBatchResults(status) {
   const results = Array.isArray(status?.results) ? status.results : [];
   const allItems = Array.isArray(status?.items) ? status.items : [];
@@ -758,7 +1567,7 @@ function renderBatchResults(status) {
 
   if (!results.length && !allItems.length) {
     batchResultsList.innerHTML = `
-      <div class="text-center py-5 text-muted">
+      <div class="batch-results-empty">
         <i class="bi bi-info-circle fs-3 d-block mb-2"></i>
         目前此批次尚無結果
       </div>`;
@@ -774,151 +1583,23 @@ function renderBatchResults(status) {
   const renderedIds = new Set(results.map((r) => itemKey(r)).filter(Boolean));
   const pending = allItems
     .filter((item) => !renderedIds.has(itemKey(item)))
-    .map((item) => {
-      const labelText = item.label || (item.kind === "mapping_scheme" ? `${item.task_id} / 全部 Mapping` : item.task_id || "");
-      const isCurrent = status.current_task_name && status.current_task_name === labelText;
-      const label = isCurrent ? "執行中" : "等待中";
-      const badge = isCurrent
-        ? '<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>'
-        : '<span class="status-badge status-badge-queued"><i class="bi bi-hourglass-split"></i> 排隊中</span>';
-      return `
-        <div class="list-group-item px-4 py-3 batch-result-item">
-          <div class="d-flex justify-content-between align-items-start mb-2">
-            <div>
-              <div class="fw-bold">${escapeHtml(labelText)}</div>
-              <div class="small text-muted font-monospace">${escapeHtml(item.task_id || "")}</div>
-            </div>
-            ${badge}
-          </div>
-          <div class="small text-muted italic">${label}</div>
-        </div>`;
-    });
+    .map((item) => renderPendingResultCard(item, status));
 
   batchResultsList.innerHTML = results
-    .map((r) => {
-      const errors = Array.isArray(r.errors) ? r.errors : [];
-      const flows = Array.isArray(r.flows) ? r.flows : [];
-      const mappingRuns = Array.isArray(r.mapping_runs) ? r.mapping_runs : [];
-      const itemLabel = r.label || (r.kind === "mapping_scheme" ? `${r.name || ""} / 全部 Mapping` : r.name || "");
-      return `
-        <div class="list-group-item px-4 py-3 batch-result-item">
-          <div class="d-flex justify-content-between align-items-start mb-2">
-            <div>
-              <div class="fw-bold text-dark">${escapeHtml(itemLabel)}</div>
-              <div class="small text-muted font-monospace mb-1">${escapeHtml(r.task_id || "")}</div>
-            </div>
-            <span class="status-badge ${r.ok ? "status-badge-completed" : "status-badge-failed"}">
-              <i class="bi ${r.ok ? "bi-check-circle-fill" : "bi-x-circle-fill"}"></i>
-              ${r.ok ? "成功" : "失敗"}
-            </span>
-          </div>
-          ${errors.length ? `<div class="alert alert-danger py-2 px-3 small my-3">${errors.map((e) => escapeHtml(e)).join("<br>")}</div>` : ""}
-          ${flows.length
-            ? `<div class="table-responsive border rounded my-3 shadow-sm">
-                <table class="table table-sm mb-0 flow-detail-table" style="table-layout: fixed;">
-                  <colgroup>
-                    <col style="width: 35%">
-                    <col style="width: 10%">
-                    <col style="width: 20%">
-                    <col style="width: 35%">
-                  </colgroup>
-                  <thead class="table-light">
-                    <tr>
-                      <th class="text-start ps-3">流程</th>
-                      <th class="text-center">狀態</th>
-                      <th class="text-start">訊息</th>
-                      <th class="text-center pe-3">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${flows
-                      .map((f) => {
-                        const ok = !!f.ok;
-                        const taskId = encodeURIComponent(r.task_id || "");
-                        const jobId = encodeURIComponent(f.job_id || "");
-                        const flowName = f.flow || "";
-                        const errorMsg = f.error || (ok ? "完成" : "失敗");
-                        const resultPath = f.result_relpath || f.result_path || "";
-                        const logPath = f.log_relpath || f.log_path || "";
-                        return `<tr>
-                          <td class="text-start text-truncate ps-3" title="${escapeHtml(flowName)}">${escapeHtml(flowName)}</td>
-                          <td class="text-center">${ok ? "<i class='bi bi-check-circle-fill text-success'></i>" : "<i class='bi bi-x-circle-fill text-danger'></i>"}</td>
-                          <td class="text-start small text-truncate ${ok ? "text-muted" : "text-danger"}" title="${escapeHtml(errorMsg)}">${escapeHtml(errorMsg)}</td>
-                          <td class="text-center pe-3">
-                            ${f.job_id
-                              ? `<div class="d-flex justify-content-center gap-1">
-                                   <button type="button" class="btn-action-icon p-1 flow-path-btn"
-                                     data-result-path="${escapeAttr(resultPath)}"
-                                     data-log-path="${escapeAttr(logPath)}"
-                                     title="查看路徑">
-                                     <i class="bi bi-folder2-open"></i><span>路徑</span>
-                                   </button>
-                                   ${ok ? `<a class="btn-action-icon p-1" href="/tasks/${taskId}/download/${jobId}/docx" title="下載 Word"><i class="bi bi-download"></i><span>下載</span></a>` : ""}
-                                   <a class="btn-action-icon p-1" href="/tasks/${taskId}/download/${jobId}/log" title="下載 Log"><i class="bi bi-file-earmark-text"></i><span>Log</span></a>
-                                  </div>`
-                              : "<span class='text-muted small'>-</span>"}
-                          </td>
-                        </tr>`;
-                      })
-                      .join("")}
-                  </tbody>
-                </table>
-              </div>`
-            : ""}
-          ${mappingRuns.length
-            ? `<div class="table-responsive border rounded my-3 shadow-sm">
-                <table class="table table-sm mb-0 flow-detail-table" style="table-layout: fixed;">
-                  <colgroup>
-                    <col style="width: 30%">
-                    <col style="width: 10%">
-                    <col style="width: 18%">
-                    <col style="width: 15%">
-                    <col style="width: 27%">
-                  </colgroup>
-                  <thead class="table-light">
-                    <tr>
-                      <th class="text-start ps-3">Mapping 方案</th>
-                      <th class="text-center">狀態</th>
-                      <th class="text-center">Run ID</th>
-                      <th class="text-center">輸出</th>
-                      <th class="text-center pe-3">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${mappingRuns
-                      .map((run) => {
-                        const ok = !!run.ok;
-                        const taskId = encodeURIComponent(r.task_id || "");
-                        const zipPath = run.zip_relpath || "";
-                        const logPath = run.log_relpath || "";
-                        const runLabel = run.scheme_name || r.scheme_name || "Mapping";
-                        return `<tr>
-                          <td class="text-start text-truncate ps-3" title="${escapeHtml(runLabel)}">${escapeHtml(runLabel)}</td>
-                          <td class="text-center">${ok ? "<i class='bi bi-check-circle-fill text-success'></i>" : "<i class='bi bi-x-circle-fill text-danger'></i>"}</td>
-                          <td class="text-center font-monospace">${escapeHtml(run.run_id || "")}</td>
-                          <td class="text-center font-monospace">${escapeHtml(String(run.output_count ?? 0))}</td>
-                          <td class="text-center pe-3">
-                            ${run.run_id
-                              ? `<div class="d-flex justify-content-center gap-1">
-                                   ${zipPath ? `<a class="btn-action-icon p-1" href="/tasks/${taskId}/output/download?filename=${encodeURIComponent(zipPath)}" title="下載 ZIP"><i class="bi bi-file-earmark-zip"></i><span>ZIP</span></a>` : ""}
-                                   ${logPath ? `<a class="btn-action-icon p-1" href="/tasks/${taskId}/output/download?filename=${encodeURIComponent(logPath)}" title="下載 Log"><i class="bi bi-file-earmark-text"></i><span>Log</span></a>` : ""}
-                                  </div>`
-                              : "<span class='text-muted small'>-</span>"}
-                          </td>
-                        </tr>`;
-                      })
-                      .join("")}
-                  </tbody>
-                </table>
-              </div>`
-            : ""}
-        </div>`;
-    })
+    .map((result, index) => renderFinishedResultCard(result, index))
     .join("") + pending.join("");
 }
 
 if (batchResultsList) {
   batchResultsList.addEventListener("click", (e) => {
+    const toggle = e.target.closest(".batch-result-toggle");
+    if (toggle) {
+      const card = toggle.closest(".batch-result-card");
+      if (!card) return;
+      const isOpen = card.classList.toggle("is-open");
+      toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      return;
+    }
     const btn = e.target.closest(".flow-path-btn");
     if (!btn) return;
     const resultPath = btn.dataset.resultPath || "";

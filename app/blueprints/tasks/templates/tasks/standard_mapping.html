@@ -86,13 +86,22 @@
     gap: 0.3rem;
     min-width: 0;
   }
-  .standard-source-panel__file {
+  /* .standard-source-panel__file {
     color: var(--bs-gray-500);
     font-size: 0.875rem;
     line-height: 1.5;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  } */
+  .standard-source-panel__file {
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: #212529;
+  transition: all 0.2s ease-in-out;
   }
   .standard-source-panel__hint {
     color: var(--bs-blue-600);
@@ -208,10 +217,10 @@
   .standard-table tbody tr:first-child > * {
     border-top: 1px solid var(--bs-gray-200);
   }
-  .standard-table tr.is-header th:nth-child(1) { width: 16%; }
-  .standard-table tr.is-header th:nth-child(2) { width: 10%; }
-  .standard-table tr.is-header th:nth-child(3) { width: 18%; }
-  .standard-table tr.is-header th:nth-child(4) { width: 56%; }
+  .standard-table tr.is-header th:nth-child(1) { width: 15%; }
+  .standard-table tr.is-header th:nth-child(2) { width: 15%; }
+  .standard-table tr.is-header th:nth-child(3) { width: 15%; }
+  .standard-table tr.is-header th:nth-child(4) { width: 55%; }
   .standard-table tr.is-header th:nth-child(4),
   .standard-table tr td:nth-child(1) {
     text-align: left;
@@ -574,14 +583,20 @@
     <h1 class="h3 mb-1 fw-bold">標準清單更新</h1>
     <!-- <p class="text-muted mb-0 small">在任務內直接選擇 Word 與標準 Excel，預覽候選比對結果、人工改選後再下載新的 Word。</p> -->
   </div>
-  <details class="standard-source-panel mb-4" {% if not has_preview %}open{% endif %}>
+  <details class="standard-source-panel mb-3" {% if not has_preview %}open{% endif %}>
     <summary>
       <div class="standard-source-panel__summary">
         <div class="standard-source-panel__files">
-          <div class="fw-bold">選擇更新檔案與更新標準</div>
+          <div class="fw-bold">更新文件與參照標準</div>
           {% if has_preview %}
-            <div class="standard-source-panel__file" title="{{ selected_word }}">Word：{{ selected_word }}</div>
-            <div class="standard-source-panel__file" title="{{ selected_excel }}">Excel ：{{ selected_excel }}</div>
+            <div class="standard-source-panel__file" title="{{ selected_word }}">
+              <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
+              Word ：{{ selected_word }}
+            </div>
+            <div class="standard-source-panel__file" title="{{ selected_excel }}">
+              <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
+              Excel ：{{ selected_excel }}
+            </div>
           {% else %}
             <div class="small text-muted">請先選擇要更新的 Word 與標準總表。</div>
           {% endif %}
@@ -655,7 +670,7 @@
       </div>
     </div>
 
-    <div class="main-card mb-4">
+    <div class="main-card mb-3">
       <div class="standard-preview-bar">
         <div class="standard-preview-bar__main">
           <div class="standard-preview-status-row">

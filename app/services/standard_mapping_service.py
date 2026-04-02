@@ -20,6 +20,41 @@ ISO_FAMILY_SHEETS = ["ISO", "BS-EN-DIN(歐洲國家標準)"]
 RED_COLOR = "FF0000"
 BLUE_COLOR = "2563EB"
 
+HEADER_ALIASES = {
+    "Standards": [
+        "Standards",
+        "Standard",
+        "Standard No",
+        "Standard Number",
+    ],
+    "Issued Year": [
+        "Issued Year",
+        "Issue Year",
+        "Year",
+    ],
+    "EU Harmonised Standards under MDR 2017/745 (YES/NO)": [
+        "EU Harmonised Standards",
+        "EU Harmonised Standards under MDR",
+        "EU Harmonised Standards under MDR 2017/745 (YES/NO)",
+        "EU Harmonised Standards under MDR 2017/745(YES/NO)",
+        "EU Harmonized Standards under MDR 2017/745 (YES/NO)",
+        "EU Harmonized Standards under MDR 2017/745(YES/NO)",
+        "EU Harmonised Standards under MDR 2017/745",
+        "EU Harmonized Standards under MDR 2017/745",
+    ],
+    "Title": [
+        "Title",
+        "Standard Title",
+    ],
+}
+
+HEADER_KEYWORDS = {
+    "Standards": {"STANDARD"},
+    "Issued Year": {"ISSUED", "YEAR"},
+    "EU Harmonised Standards under MDR 2017/745 (YES/NO)": {"EU", "HARMONISED", "MDR", "2017/745"},
+    "Title": {"TITLE"},
+}
+
 
 def qn(tag: str) -> str:
     prefix, local = tag.split(":")
@@ -39,7 +74,34 @@ def normalize_key_for_search(text: str) -> str:
     text = normalize_text(text).upper()
     text = text.replace("–", "-").replace("—", "-")
     text = text.replace("：", ":").replace("／", "/")
-    return re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s*([\(\)])\s*", r"\1", text)
+    return text
+
+
+def compact_key_for_search(text: str) -> str:
+    normalized = normalize_key_for_search(text)
+    return re.sub(r"[^A-Z0-9]+", "", normalized)
+
+
+def header_matches_target(header_text: str, target_name: str) -> bool:
+    normalized_header = normalize_key_for_search(header_text)
+    compact_header = compact_key_for_search(header_text)
+    aliases = HEADER_ALIASES.get(target_name, [target_name])
+
+    for alias in aliases:
+        if normalized_header == normalize_key_for_search(alias):
+            return True
+        if compact_header == compact_key_for_search(alias):
+            return True
+
+    keywords = HEADER_KEYWORDS.get(target_name)
+    if keywords:
+        header_words = set(re.findall(r"[A-Z0-9/]+", normalized_header))
+        if keywords.issubset(header_words):
+            return True
+
+    return False
 
 
 def detect_search_family(standard_name: str) -> str | None:
@@ -560,11 +622,15 @@ def expand_row_to_logical_cells(parsed_row: list[dict]) -> list[dict | None]:
 def find_header_row_and_map(parsed_rows: list[list[dict]]) -> tuple[int, dict] | tuple[None, None]:
     for row_idx, row in enumerate(parsed_rows):
         expanded = expand_row_to_logical_cells(row)
-        texts = [normalize_key_for_search(x["text"]) if x else "" for x in expanded]
-        has_standards = any("STANDARDS" in t for t in texts)
-        has_issued_year = any("ISSUED YEAR" in t for t in texts)
-        has_title = any("TITLE" in t for t in texts)
-        has_harmonised = any("EU HARMONISED STANDARDS UNDER MDR 2017/745" in t for t in texts)
+        texts = [x["text"] if x else "" for x in expanded]
+        has_standards = any(header_matches_target(t, "Standards") for t in texts if t)
+        has_issued_year = any(header_matches_target(t, "Issued Year") for t in texts if t)
+        has_title = any(header_matches_target(t, "Title") for t in texts if t)
+        has_harmonised = any(
+            header_matches_target(t, "EU Harmonised Standards under MDR 2017/745 (YES/NO)")
+            for t in texts
+            if t
+        )
         if has_standards and has_issued_year and has_title and has_harmonised:
             header_map = {}
             for item in row:
@@ -576,9 +642,8 @@ def find_header_row_and_map(parsed_rows: list[list[dict]]) -> tuple[int, dict] |
 
 
 def get_logical_col(header_map: dict, target_name: str) -> int | None:
-    target_norm = normalize_key_for_search(target_name)
     for header_name, logical_col in header_map.items():
-        if normalize_key_for_search(header_name) == target_norm:
+        if header_matches_target(header_name, target_name):
             return logical_col
     return None
 

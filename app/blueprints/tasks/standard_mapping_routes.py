@@ -80,7 +80,7 @@ def _parse_iso_priority(values) -> tuple[str, ...]:
         raise ValueError("優先級設定格式不正確") from exc
 
     if sorted(positions.values()) != [1, 2, 3]:
-        raise ValueError("優先級設定必須為 1、2、3 且不可重複")
+        raise ValueError("優先級設定不可重複")
 
     ordered = [label for label, _ in sorted(positions.items(), key=lambda item: item[1])]
     return normalize_iso_priority(ordered)
@@ -153,15 +153,15 @@ def task_standard_mapping(task_id):
     files_dir = _task_files_dir(task_id)
     selected_word = (request.values.get("word_path") or "").strip()
     selected_excel = (request.values.get("excel_path") or "").strip()
-    try:
-        iso_priority = _parse_iso_priority(request.values)
-        prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.values)
-    except ValueError as exc:
-        flash(str(exc), "danger")
-        iso_priority = DEFAULT_ISO_PRIORITY
-        prefer_latest_en_variants = DEFAULT_PREFER_LATEST_EN_VARIANTS
 
     if request.method == "GET":
+        try:
+            iso_priority = _parse_iso_priority(request.values)
+            prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.values)
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            iso_priority = DEFAULT_ISO_PRIORITY
+            prefer_latest_en_variants = DEFAULT_PREFER_LATEST_EN_VARIANTS
         return _render_standard_mapping_page(
             task_id,
             selected_word=selected_word,
@@ -173,6 +173,19 @@ def task_standard_mapping(task_id):
     action = (request.form.get("action") or "preview").strip().lower()
     if action != "preview":
         return redirect(url_for("tasks_bp.task_standard_mapping", task_id=task_id))
+
+    try:
+        iso_priority = _parse_iso_priority(request.form)
+        prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return _render_standard_mapping_page(
+            task_id,
+            selected_word=selected_word,
+            selected_excel=selected_excel,
+            iso_priority=DEFAULT_ISO_PRIORITY,
+            prefer_latest_en_variants=DEFAULT_PREFER_LATEST_EN_VARIANTS,
+        )
 
     try:
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})

@@ -53,7 +53,7 @@
     font-size: 1.8rem;
     font-weight: 800;
   }
-  .standard-summary-card__copy {
+  .standard-summary-card__depiction {
     margin-top: 0.35rem;
     color: var(--bs-gray-500);
     font-size: 0.8125rem;
@@ -636,22 +636,22 @@
       <div class="standard-summary-card standard-summary-card--updated">
         <div class="standard-summary-card__label">已更新欄位數</div>
         <div class="standard-summary-card__value">{{ stats.updated }}</div>
-        <div class="standard-summary-card__copy">已更新標準或年份，更新部分使用紅字標記</div>
+        <div class="standard-summary-card__depiction">已更新標準或年份，更新部分使用紅字標記</div>
       </div>
       <div class="standard-summary-card standard-summary-card--same">
         <div class="standard-summary-card__label">無需更新欄位數</div>
         <div class="standard-summary-card__value">{{ stats.same }}</div>
-        <div class="standard-summary-card__copy">無需更新標準或年份，與目前標準和年份一致</div>
+        <div class="standard-summary-card__depiction">無需更新標準或年份，與目前標準和年份一致</div>
       </div>
       <div class="standard-summary-card standard-summary-card--missing">
         <div class="standard-summary-card__label">查無標準欄位數</div>
         <div class="standard-summary-card__value">{{ stats.missing }}</div>
-        <div class="standard-summary-card__copy">未找到符合標準，保留原始值並使用藍字標記</div>
+        <div class="standard-summary-card__depiction">未找到符合標準，保留原始值並使用藍字標記</div>
       </div>
       <div class="standard-summary-card standard-summary-card--override">
         <div class="standard-summary-card__label">人工改選欄位數</div>
         <div class="standard-summary-card__value" id="overrideCount">0</div>
-        <div class="standard-summary-card__copy">依目前改選結果輸出至新的 Word</div>
+        <div class="standard-summary-card__depiction">依目前改選結果輸出至新的 Word</div>
       </div>
     </div>
 

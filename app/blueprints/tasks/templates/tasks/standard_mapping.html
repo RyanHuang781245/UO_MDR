@@ -117,6 +117,24 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
   }
+  .standard-priority-panel {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    padding: 1rem;
+  }
+  .standard-priority-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.875rem;
+    margin-top: 0.75rem;
+  }
+  .standard-priority-summary {
+    margin-top: 0.5rem;
+    color: var(--bs-gray-500);
+    font-size: 0.8125rem;
+    line-height: 1.55;
+  }
   .standard-preview-bar {
     display: flex;
     align-items: flex-start;
@@ -137,21 +155,13 @@
     font-size: 0.875rem;
     line-height: 1.6;
   }
-  .standard-preview-bar__actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
   .standard-preview-bar__stamp {
     color: var(--bs-gray-500);
     font-size: 0.8125rem;
     white-space: nowrap;
   }
   .standard-preview-status-row {
-    /* padding: 0.9rem 1.25rem 0; */
-    padding: none;
+    padding: 0;
   }
   .standard-preview-status-row > [aria-hidden="true"] {
     display: none !important;
@@ -177,9 +187,16 @@
   }
   .standard-preview-filters {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 220px;
+    grid-template-columns: minmax(0, 1fr) 220px auto;
     gap: 0.875rem;
     padding: 1rem 1.25rem 1rem;
+  }
+  .standard-preview-filter-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
   }
   .standard-preview-empty {
     display: none;
@@ -501,6 +518,7 @@
       grid-template-columns: 1fr;
       flex-direction: column;
     }
+    .standard-priority-grid,
     .standard-preview-filters {
       grid-template-columns: 1fr;
     }
@@ -514,11 +532,11 @@
       flex-direction: column;
       align-items: flex-start;
     }
-    .standard-preview-bar__actions {
+    .standard-preview-filter-actions {
       width: 100%;
       justify-content: flex-start;
     }
-    .standard-preview-bar .btn {
+    .standard-preview-filter-actions .btn {
       width: 100%;
     }
     .standard-table {
@@ -650,6 +668,39 @@
               </select>
             </div>
           </div>
+          <div class="standard-priority-panel">
+            <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+              <div class="fw-bold">ISO 系列自動選用優先級</div>
+              <div class="small text-muted">{{ iso_priority | join(' > ') }}</div>
+            </div>
+            <div class="standard-priority-grid">
+              <div>
+                <label class="form-label small fw-bold text-uppercase text-muted">BS EN ISO 順位</label>
+                <select class="form-select form-control-custom rounded-2" name="priority_bs_en_iso">
+                  {% for position in [1, 2, 3] %}
+                    <option value="{{ position }}" {% if iso_priority_positions['BS EN ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label small fw-bold text-uppercase text-muted">EN ISO 順位</label>
+                <select class="form-select form-control-custom rounded-2" name="priority_en_iso">
+                  {% for position in [1, 2, 3] %}
+                    <option value="{{ position }}" {% if iso_priority_positions['EN ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label small fw-bold text-uppercase text-muted">ISO 順位</label>
+                <select class="form-select form-control-custom rounded-2" name="priority_iso">
+                  {% for position in [1, 2, 3] %}
+                    <option value="{{ position }}" {% if iso_priority_positions['ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="standard-priority-summary">更新預覽時會依這組順位保留候選，再於保留候選中比較年份與人工改選。</div>
+          </div>
           <div class="d-flex justify-content-end">
             <button class="btn btn-primary fw-bold px-4" type="submit">
               <i class="bi bi-search me-2"></i>產生預覽
@@ -687,10 +738,11 @@
     <div class="main-card mb-3">
       <div class="standard-preview-bar">
         <div class="standard-preview-bar__main">
+          <div class="standard-preview-bar__title mb-2">目前規則：{{ iso_priority | join(' > ') }}</div>
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
               <i class="bi bi-info-circle"></i>
-              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單，改選後表格會立即同步更新</div>
+              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單；若要調整自動選用規則，請展開上方設定區重新產生預覽</div>
             </div>
             <div id="actionBar" class="standard-preview-note" aria-hidden="true">
               <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -702,10 +754,6 @@
               </div>
             </div>
           </div>
-        </div>
-        <div class="standard-preview-bar__actions">
-          <button class="btn btn-outline-primary btn-sm px-3 export-overrides-btn" type="button">匯出覆寫 Log</button>
-          <button class="btn btn-primary btn-sm px-3" form="downloadForm" type="submit">下載目前結果</button>
         </div>
       </div>
       <div class="standard-preview-filters">
@@ -720,6 +768,16 @@
           <option value="same">只看無需更新</option>
           <option value="overridden">只看人工改選</option>
         </select>
+        <div class="standard-preview-filter-actions">
+          <button class="btn btn-outline-primary px-3 export-overrides-btn" type="button">
+            <i class="bi bi-file-earmark-text"></i>
+            匯出改選 Log
+          </button>
+          <button class="btn btn-primary px-3" form="downloadForm" type="submit">
+            <i class="bi bi-file-earmark-word"></i>
+            下載目前結果
+          </button>
+        </div>
       </div>
       <div id="standardPreviewEmpty" class="standard-preview-empty">目前篩選條件下沒有符合的列。</div>
     </div>
@@ -727,6 +785,9 @@
     <form id="downloadForm" action="{{ url_for('tasks_bp.task_standard_mapping_download', task_id=task_id) }}" method="post">
       <input type="hidden" name="word_path" value="{{ selected_word }}">
       <input type="hidden" name="excel_path" value="{{ selected_excel }}">
+      <input type="hidden" name="priority_bs_en_iso" value="{{ iso_priority_positions['BS EN ISO'] }}">
+      <input type="hidden" name="priority_en_iso" value="{{ iso_priority_positions['EN ISO'] }}">
+      <input type="hidden" name="priority_iso" value="{{ iso_priority_positions['ISO'] }}">
       <input id="overridesJsonInput" type="hidden" name="overrides_json" value="{}">
     </form>
 

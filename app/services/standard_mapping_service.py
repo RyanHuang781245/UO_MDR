@@ -19,6 +19,7 @@ EXCEL_STANDARD_COL_INDEX = 5
 ISO_FAMILY_SHEETS = ["ISO", "BS-EN-DIN(歐洲國家標準)"]
 RED_COLOR = "FF0000"
 BLUE_COLOR = "2563EB"
+DEFAULT_ISO_PRIORITY = ("BS EN ISO", "EN ISO", "ISO")
 
 HEADER_ALIASES = {
     "Standards": [
@@ -126,6 +127,30 @@ def classify_standard_level(std_no: str) -> tuple[str, int]:
     if s.startswith("ISO "):
         return "ISO", 1
     return "OTHER", 0
+
+
+def normalize_iso_priority(priority_order: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if not priority_order:
+        return DEFAULT_ISO_PRIORITY
+    normalized = []
+    seen = set()
+    for item in priority_order:
+        value = normalize_key_for_search(item)
+        if value == "BS EN ISO":
+            label = "BS EN ISO"
+        elif value == "EN ISO":
+            label = "EN ISO"
+        elif value == "ISO":
+            label = "ISO"
+        else:
+            continue
+        if label not in seen:
+            normalized.append(label)
+            seen.add(label)
+    for label in DEFAULT_ISO_PRIORITY:
+        if label not in seen:
+            normalized.append(label)
+    return tuple(normalized[:3])
 
 
 def extract_iso_family_core(std_no: str) -> str:
@@ -432,7 +457,11 @@ def load_excel_index(excel_path: str) -> dict:
     return index
 
 
-def find_latest_year_from_excel(standard_name: str, excel_index: dict) -> dict | None:
+def find_latest_year_from_excel(
+    standard_name: str,
+    excel_index: dict,
+    iso_priority: list[str] | tuple[str, ...] | None = None,
+) -> dict | None:
     family = detect_search_family(standard_name)
     if not family:
         return None
@@ -441,6 +470,8 @@ def find_latest_year_from_excel(standard_name: str, excel_index: dict) -> dict |
         return None
 
     candidates = []
+    normalized_iso_priority = normalize_iso_priority(iso_priority)
+
     if family == "ISO_FAMILY":
         target_sheets = ISO_FAMILY_SHEETS
     elif family == "ASTM":
@@ -482,40 +513,41 @@ def find_latest_year_from_excel(standard_name: str, excel_index: dict) -> dict |
 
     all_candidates = [dict(item) for item in candidates]
     if family == "ISO_FAMILY":
-        bs_candidates = [x for x in all_candidates if x["standard_level_rank"] == 3]
-        en_candidates = [x for x in all_candidates if x["standard_level_rank"] == 2]
-        iso_candidates = [x for x in all_candidates if x["standard_level_rank"] == 1]
-        if bs_candidates and en_candidates:
-            candidates = bs_candidates + en_candidates
-            allowed_ids = {id(x) for x in candidates}
+        priority_index = {label: idx for idx, label in enumerate(normalized_iso_priority)}
+        grouped_candidates = {
+            label: [x for x in all_candidates if x["standard_level"] == label]
+            for label in normalized_iso_priority
+        }
+        available_groups = [label for label in normalized_iso_priority if grouped_candidates.get(label)]
+        if not available_groups:
+            return None
+
+        allowed_groups = [available_groups[0]]
+        if len(available_groups) > 1 and "ISO" not in available_groups[:2]:
+            allowed_groups.append(available_groups[1])
+
+        candidates = []
+        for label in allowed_groups:
+            candidates.extend(grouped_candidates.get(label, []))
+
+        allowed_labels = set(allowed_groups)
+        if len(allowed_groups) == 2:
+            allowed_desc = " / ".join(allowed_groups)
+            excluded_desc = " / ".join([label for label in normalized_iso_priority if label not in allowed_labels]) or "較低優先級候選"
             for candidate in all_candidates:
-                if id(candidate) in allowed_ids:
-                    candidate["decision_reason"] = "保留高優先級 BS EN ISO / EN ISO 候選，進入最終排序"
+                if candidate["standard_level"] in allowed_labels:
+                    candidate["decision_reason"] = f"保留高優先級 {allowed_desc} 候選，進入最終排序"
                 else:
                     candidate["decision"] = "excluded"
-                    candidate["decision_reason"] = "排除較低優先級 ISO 候選"
-        elif bs_candidates:
-            candidates = bs_candidates
-            allowed_ids = {id(x) for x in candidates}
-            for candidate in all_candidates:
-                if id(candidate) in allowed_ids:
-                    candidate["decision_reason"] = "僅保留最高優先級 BS EN ISO 候選"
-                else:
-                    candidate["decision"] = "excluded"
-                    candidate["decision_reason"] = "排除低於 BS EN ISO 的候選"
-        elif en_candidates:
-            candidates = en_candidates
-            allowed_ids = {id(x) for x in candidates}
-            for candidate in all_candidates:
-                if id(candidate) in allowed_ids:
-                    candidate["decision_reason"] = "僅保留最高可用優先級 EN ISO 候選"
-                else:
-                    candidate["decision"] = "excluded"
-                    candidate["decision_reason"] = "排除低於 EN ISO 的 ISO 候選"
+                    candidate["decision_reason"] = f"排除較低優先級 {excluded_desc}"
         else:
-            candidates = iso_candidates
+            top_label = allowed_groups[0]
             for candidate in all_candidates:
-                candidate["decision_reason"] = "僅找到 ISO 候選，全部進入最終排序"
+                if candidate["standard_level"] == top_label:
+                    candidate["decision_reason"] = f"僅保留最高可用優先級 {top_label} 候選"
+                else:
+                    candidate["decision"] = "excluded"
+                    candidate["decision_reason"] = f"排除低於 {top_label} 的候選"
     else:
         for candidate in all_candidates:
             candidate["decision_reason"] = "符合查詢條件，進入最終排序"
@@ -524,7 +556,11 @@ def find_latest_year_from_excel(standard_name: str, excel_index: dict) -> dict |
         return None
 
     candidates.sort(
-        key=lambda x: (x["latest_year"], x["standard_level_rank"], len(x["matched_standard_no"])),
+        key=lambda x: (
+            -priority_index.get(x["standard_level"], 99) if family == "ISO_FAMILY" else 0,
+            x["latest_year"],
+            len(x["matched_standard_no"]),
+        ),
         reverse=True,
     )
     selected = candidates[0]
@@ -543,7 +579,7 @@ def find_latest_year_from_excel(standard_name: str, excel_index: dict) -> dict |
             1 if x.get("decision") == "selected" else 0,
             1 if x.get("decision") == "kept" else 0,
             x.get("latest_year") or 0,
-            x.get("standard_level_rank") or 0,
+            -priority_index.get(x.get("standard_level"), 99) if family == "ISO_FAMILY" else (x.get("standard_level_rank") or 0),
             len(x.get("matched_standard_no") or ""),
         ),
         reverse=True,
@@ -552,6 +588,7 @@ def find_latest_year_from_excel(standard_name: str, excel_index: dict) -> dict |
     result["all_candidates"] = ordered_candidates
     result["selected_candidate_id"] = make_candidate_id(selected)
     result["auto_selected_candidate_id"] = make_candidate_id(selected)
+    result["iso_priority"] = list(normalized_iso_priority)
     return result
 
 
@@ -837,8 +874,10 @@ def process_document(
     excel_path: str,
     override_map: dict | None = None,
     output_path: str | None = None,
+    iso_priority: list[str] | tuple[str, ...] | None = None,
 ) -> dict:
     override_map = override_map or {}
+    normalized_iso_priority = normalize_iso_priority(iso_priority)
     excel_index = load_excel_index(excel_path)
     with tempfile.TemporaryDirectory() as tmpdir:
         unzip_docx(word_path, tmpdir)
@@ -852,7 +891,7 @@ def process_document(
             row_key = make_row_key(rec["table_index"], rec["row_index"])
             standards = rec["standards"]
             word_year_text = normalize_text(rec["issued_year"])
-            match_info = find_latest_year_from_excel(standards, excel_index)
+            match_info = find_latest_year_from_excel(standards, excel_index, normalized_iso_priority)
             if match_info:
                 match_info = apply_candidate_override(match_info, override_map.get(row_key))
 
@@ -939,4 +978,5 @@ def process_document(
             "updated_count": updated_count,
             "preview_tables": preview_tables,
             "reference_payload": reference_payload,
+            "iso_priority": list(normalized_iso_priority),
         }

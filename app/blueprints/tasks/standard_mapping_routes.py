@@ -7,7 +7,7 @@ from pathlib import Path
 
 from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
-from app.services.standard_mapping_service import process_document
+from app.services.standard_mapping_service import DEFAULT_ISO_PRIORITY, normalize_iso_priority, process_document
 from app.services.task_service import deduplicate_name, list_files, load_task_context as _load_task_context
 from .blueprint import tasks_bp
 from .mapping_routes import _safe_uploaded_filename
@@ -60,6 +60,27 @@ def _parse_override_map(raw_value: str) -> dict[str, str]:
     return {}
 
 
+def _parse_iso_priority(values) -> tuple[str, ...]:
+    raw_positions = {
+        "BS EN ISO": (values.get("priority_bs_en_iso") or "").strip(),
+        "EN ISO": (values.get("priority_en_iso") or "").strip(),
+        "ISO": (values.get("priority_iso") or "").strip(),
+    }
+    if not any(raw_positions.values()):
+        return DEFAULT_ISO_PRIORITY
+
+    try:
+        positions = {label: int(position) for label, position in raw_positions.items()}
+    except ValueError as exc:
+        raise ValueError("優先級設定格式不正確") from exc
+
+    if sorted(positions.values()) != [1, 2, 3]:
+        raise ValueError("優先級設定必須為 1、2、3 且不可重複")
+
+    ordered = [label for label, _ in sorted(positions.items(), key=lambda item: item[1])]
+    return normalize_iso_priority(ordered)
+
+
 def _build_stats(report: list[dict]) -> dict[str, int]:
     stats = {"updated": 0, "same": 0, "missing": 0}
     for item in report:
@@ -74,10 +95,19 @@ def _build_stats(report: list[dict]) -> dict[str, int]:
     return stats
 
 
-def _render_standard_mapping_page(task_id: str, *, preview_result: dict | None = None, selected_word: str = "", selected_excel: str = ""):
+def _render_standard_mapping_page(
+    task_id: str,
+    *,
+    preview_result: dict | None = None,
+    selected_word: str = "",
+    selected_excel: str = "",
+    iso_priority: tuple[str, ...] | list[str] | None = None,
+):
     files_dir = _task_files_dir(task_id)
     word_options, excel_options = _list_standard_mapping_files(files_dir)
     reference_payload = (preview_result or {}).get("reference_payload", {})
+    active_iso_priority = tuple((preview_result or {}).get("iso_priority") or normalize_iso_priority(iso_priority))
+    iso_priority_positions = {label: index + 1 for index, label in enumerate(active_iso_priority)}
     interactive_rows = len({item.get("row_key", "") for item in reference_payload.values() if item.get("row_key")})
     return render_template(
         "tasks/standard_mapping.html",
@@ -94,6 +124,8 @@ def _render_standard_mapping_page(task_id: str, *, preview_result: dict | None =
         interactive_fields=len(reference_payload),
         has_preview=bool(preview_result and (preview_result.get("preview_tables") or [])),
         last_generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if preview_result else "",
+        iso_priority=active_iso_priority,
+        iso_priority_positions=iso_priority_positions,
     )
 
 
@@ -102,9 +134,19 @@ def task_standard_mapping(task_id):
     files_dir = _task_files_dir(task_id)
     selected_word = (request.values.get("word_path") or "").strip()
     selected_excel = (request.values.get("excel_path") or "").strip()
+    try:
+        iso_priority = _parse_iso_priority(request.values)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        iso_priority = DEFAULT_ISO_PRIORITY
 
     if request.method == "GET":
-        return _render_standard_mapping_page(task_id, selected_word=selected_word, selected_excel=selected_excel)
+        return _render_standard_mapping_page(
+            task_id,
+            selected_word=selected_word,
+            selected_excel=selected_excel,
+            iso_priority=iso_priority,
+        )
 
     action = (request.form.get("action") or "preview").strip().lower()
     if action != "preview":
@@ -113,20 +155,21 @@ def task_standard_mapping(task_id):
     try:
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
-        result = process_document(word_path, excel_path)
+        result = process_document(word_path, excel_path, iso_priority=iso_priority)
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")
-        return _render_standard_mapping_page(task_id, selected_word=selected_word, selected_excel=selected_excel)
+        return _render_standard_mapping_page(task_id, selected_word=selected_word, selected_excel=selected_excel, iso_priority=iso_priority)
     except Exception as exc:
         current_app.logger.exception("Standard mapping preview failed")
         flash(f"預覽失敗：{exc}", "danger")
-        return _render_standard_mapping_page(task_id, selected_word=selected_word, selected_excel=selected_excel)
+        return _render_standard_mapping_page(task_id, selected_word=selected_word, selected_excel=selected_excel, iso_priority=iso_priority)
 
     return _render_standard_mapping_page(
         task_id,
         preview_result=result,
         selected_word=selected_word,
         selected_excel=selected_excel,
+        iso_priority=iso_priority,
     )
 
 
@@ -137,6 +180,7 @@ def task_standard_mapping_download(task_id):
     selected_excel = (request.form.get("excel_path") or "").strip()
 
     try:
+        iso_priority = _parse_iso_priority(request.form)
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
@@ -152,6 +196,7 @@ def task_standard_mapping_download(task_id):
             excel_path=excel_path,
             override_map=override_map,
             output_path=output_path,
+            iso_priority=iso_priority,
         )
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")

@@ -135,6 +135,26 @@
     font-size: 0.8125rem;
     line-height: 1.55;
   }
+  .standard-header-panel {
+    margin-top: 0.875rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--bs-gray-200);
+  }
+  .standard-header-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    margin-top: 0.75rem;
+  }
+  .standard-header-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+  .standard-header-option label {
+    line-height: 1.5;
+  }
   .standard-priority-switch {
     margin-top: 0.875rem;
     padding-top: 0.875rem;
@@ -524,6 +544,7 @@
       flex-direction: column;
     }
     .standard-priority-grid,
+    .standard-header-grid,
     .standard-preview-filters {
       grid-template-columns: 1fr;
     }
@@ -731,6 +752,36 @@
               更新標準清單預設優先級為 BS EN ISO > EN ISO > ISO
               {% if prefer_latest_en_variants %}目前已啟用年份優先規則。{% else %}目前停用年份優先規則，完全依優先級選用。{% endif %}
             </div>
+            <div class="standard-header-panel">
+              <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+                <div class="fw-bold">表格辨識欄位</div>
+                <div class="small text-muted">{{ required_headers | join('、') }}</div>
+              </div>
+              <div class="standard-header-grid">
+                {% for header_name in default_required_headers %}
+                  {% set is_core_header = header_name in ['Standards', 'Issued Year'] %}
+                  <div class="standard-header-option">
+                    <input
+                      class="form-check-input mt-1"
+                      type="checkbox"
+                      name="required_headers"
+                      value="{{ header_name }}"
+                      id="requiredHeader{{ loop.index }}"
+                      {% if header_name in required_headers %}checked{% endif %}
+                    >
+                    <label class="form-check-label" for="requiredHeader{{ loop.index }}">
+                      <span class="fw-semibold">{{ header_name }}</span>
+                      {% if is_core_header %}
+                        <span class="text-muted small">（必填）</span>
+                      {% endif %}
+                    </label>
+                  </div>
+                {% endfor %}
+              </div>
+              <div class="standard-priority-summary">
+                勾選這次用來辨識表格的必要欄位。若文件沒有 `EU Harmonised Standards under MDR 2017/745 (YES/NO)`，可取消該欄後重新預覽。
+              </div>
+            </div>
           </div>
           <div class="d-flex justify-content-end">
             <button class="btn btn-primary fw-bold px-3" type="submit">
@@ -776,7 +827,7 @@
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
               <i class="bi bi-info-circle"></i>
-              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單；若要調整自動選用規則，請展開上方設定區重新產生預覽</div>
+              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單；若要調整自動選用規則或表格辨識欄位，請展開上方設定區重新產生預覽</div>
             </div>
             <div id="actionBar" class="standard-preview-note" aria-hidden="true">
               <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -823,6 +874,9 @@
       <input type="hidden" name="priority_en_iso" value="{{ iso_priority_positions['EN ISO'] }}">
       <input type="hidden" name="priority_iso" value="{{ iso_priority_positions['ISO'] }}">
       <input type="hidden" name="prefer_latest_en_variants" value="{{ 1 if prefer_latest_en_variants else 0 }}">
+      {% for header_name in required_headers %}
+        <input type="hidden" name="required_headers" value="{{ header_name }}">
+      {% endfor %}
       <input id="overridesJsonInput" type="hidden" name="overrides_json" value="{}">
     </form>
 

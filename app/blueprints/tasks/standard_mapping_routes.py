@@ -8,9 +8,11 @@ from pathlib import Path
 from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
 from app.services.standard_mapping_service import (
+    DEFAULT_REQUIRED_HEADERS,
     DEFAULT_ISO_PRIORITY,
     DEFAULT_PREFER_LATEST_EN_VARIANTS,
     normalize_iso_priority,
+    normalize_required_headers,
     process_document,
 )
 from app.services.task_service import deduplicate_name, list_files, load_task_context as _load_task_context
@@ -98,6 +100,19 @@ def _parse_prefer_latest_en_variants(values) -> bool:
     return raw_value in {"1", "true", "on", "yes"}
 
 
+def _parse_required_headers(values) -> tuple[str, ...]:
+    raw_headers = []
+    if hasattr(values, "getlist"):
+        raw_headers = [str(item).strip() for item in values.getlist("required_headers") if str(item).strip()]
+    elif values.get("required_headers"):
+        raw_headers = [str(values.get("required_headers")).strip()]
+
+    required_headers = normalize_required_headers(raw_headers)
+    if "Standards" not in required_headers or "Issued Year" not in required_headers:
+        raise ValueError("表格辨識欄位至少必須包含 Standards 與 Issued Year")
+    return required_headers
+
+
 def _build_stats(report: list[dict]) -> dict[str, int]:
     stats = {"updated": 0, "same": 0, "missing": 0}
     for item in report:
@@ -120,11 +135,13 @@ def _render_standard_mapping_page(
     selected_excel: str = "",
     iso_priority: tuple[str, ...] | list[str] | None = None,
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
+    required_headers: tuple[str, ...] | list[str] | None = None,
 ):
     files_dir = _task_files_dir(task_id)
     word_options, excel_options = _list_standard_mapping_files(files_dir)
     reference_payload = (preview_result or {}).get("reference_payload", {})
     active_iso_priority = tuple((preview_result or {}).get("iso_priority") or normalize_iso_priority(iso_priority))
+    active_required_headers = tuple((preview_result or {}).get("required_headers") or normalize_required_headers(required_headers))
     iso_priority_positions = {label: index + 1 for index, label in enumerate(active_iso_priority)}
     interactive_rows = len({item.get("row_key", "") for item in reference_payload.values() if item.get("row_key")})
     return render_template(
@@ -145,6 +162,8 @@ def _render_standard_mapping_page(
         iso_priority=active_iso_priority,
         iso_priority_positions=iso_priority_positions,
         prefer_latest_en_variants=(preview_result or {}).get("prefer_latest_en_variants", prefer_latest_en_variants),
+        required_headers=active_required_headers,
+        default_required_headers=DEFAULT_REQUIRED_HEADERS,
     )
 
 
@@ -158,16 +177,19 @@ def task_standard_mapping(task_id):
         try:
             iso_priority = _parse_iso_priority(request.values)
             prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.values)
+            required_headers = _parse_required_headers(request.values)
         except ValueError as exc:
             flash(str(exc), "danger")
             iso_priority = DEFAULT_ISO_PRIORITY
             prefer_latest_en_variants = DEFAULT_PREFER_LATEST_EN_VARIANTS
+            required_headers = DEFAULT_REQUIRED_HEADERS
         return _render_standard_mapping_page(
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
+            required_headers=required_headers,
         )
 
     action = (request.form.get("action") or "preview").strip().lower()
@@ -177,6 +199,7 @@ def task_standard_mapping(task_id):
     try:
         iso_priority = _parse_iso_priority(request.form)
         prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
+        required_headers = _parse_required_headers(request.form)
     except ValueError as exc:
         flash(str(exc), "danger")
         return _render_standard_mapping_page(
@@ -185,6 +208,7 @@ def task_standard_mapping(task_id):
             selected_excel=selected_excel,
             iso_priority=DEFAULT_ISO_PRIORITY,
             prefer_latest_en_variants=DEFAULT_PREFER_LATEST_EN_VARIANTS,
+            required_headers=DEFAULT_REQUIRED_HEADERS,
         )
 
     try:
@@ -195,6 +219,7 @@ def task_standard_mapping(task_id):
             excel_path,
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
+            required_headers=required_headers,
         )
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")
@@ -204,6 +229,7 @@ def task_standard_mapping(task_id):
             selected_excel=selected_excel,
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
+            required_headers=required_headers,
         )
     except Exception as exc:
         current_app.logger.exception("Standard mapping preview failed")
@@ -214,6 +240,7 @@ def task_standard_mapping(task_id):
             selected_excel=selected_excel,
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
+            required_headers=required_headers,
         )
 
     return _render_standard_mapping_page(
@@ -223,6 +250,7 @@ def task_standard_mapping(task_id):
         selected_excel=selected_excel,
         iso_priority=iso_priority,
         prefer_latest_en_variants=prefer_latest_en_variants,
+        required_headers=required_headers,
     )
 
 
@@ -235,6 +263,7 @@ def task_standard_mapping_download(task_id):
     try:
         iso_priority = _parse_iso_priority(request.form)
         prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
+        required_headers = _parse_required_headers(request.form)
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
@@ -252,6 +281,7 @@ def task_standard_mapping_download(task_id):
             output_path=output_path,
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
+            required_headers=required_headers,
         )
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")

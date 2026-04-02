@@ -21,6 +21,12 @@ RED_COLOR = "FF0000"
 BLUE_COLOR = "2563EB"
 DEFAULT_ISO_PRIORITY = ("BS EN ISO", "EN ISO", "ISO")
 DEFAULT_PREFER_LATEST_EN_VARIANTS = True
+DEFAULT_REQUIRED_HEADERS = (
+    "Standards",
+    "Issued Year",
+    "EU Harmonised Standards under MDR 2017/745 (YES/NO)",
+    "Title",
+)
 
 HEADER_ALIASES = {
     "Standards": [
@@ -152,6 +158,22 @@ def normalize_iso_priority(priority_order: list[str] | tuple[str, ...] | None) -
         if label not in seen:
             normalized.append(label)
     return tuple(normalized[:3])
+
+
+def normalize_required_headers(required_headers: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if not required_headers:
+        return DEFAULT_REQUIRED_HEADERS
+    normalized = []
+    seen = set()
+    for item in required_headers:
+        for header_name in DEFAULT_REQUIRED_HEADERS:
+            if header_matches_target(item, header_name) and header_name not in seen:
+                normalized.append(header_name)
+                seen.add(header_name)
+                break
+    if not normalized:
+        return DEFAULT_REQUIRED_HEADERS
+    return tuple(normalized)
 
 
 def extract_iso_family_core(std_no: str) -> str:
@@ -665,19 +687,19 @@ def expand_row_to_logical_cells(parsed_row: list[dict]) -> list[dict | None]:
     return expanded
 
 
-def find_header_row_and_map(parsed_rows: list[list[dict]]) -> tuple[int, dict] | tuple[None, None]:
+def find_header_row_and_map(
+    parsed_rows: list[list[dict]],
+    required_headers: list[str] | tuple[str, ...] | None = None,
+) -> tuple[int, dict] | tuple[None, None]:
+    active_required_headers = normalize_required_headers(required_headers)
     for row_idx, row in enumerate(parsed_rows):
         expanded = expand_row_to_logical_cells(row)
         texts = [x["text"] if x else "" for x in expanded]
-        has_standards = any(header_matches_target(t, "Standards") for t in texts if t)
-        has_issued_year = any(header_matches_target(t, "Issued Year") for t in texts if t)
-        has_title = any(header_matches_target(t, "Title") for t in texts if t)
-        has_harmonised = any(
-            header_matches_target(t, "EU Harmonised Standards under MDR 2017/745 (YES/NO)")
-            for t in texts
-            if t
-        )
-        if has_standards and has_issued_year and has_title and has_harmonised:
+        header_presence = {
+            header_name: any(header_matches_target(t, header_name) for t in texts if t)
+            for header_name in DEFAULT_REQUIRED_HEADERS
+        }
+        if all(header_presence.get(header_name, False) for header_name in active_required_headers):
             header_map = {}
             for item in row:
                 cell_text = normalize_text(item["text"])
@@ -694,14 +716,18 @@ def get_logical_col(header_map: dict, target_name: str) -> int | None:
     return None
 
 
-def parse_word_tables_for_update(document_xml_path: str) -> tuple[etree._ElementTree, list[dict]]:
+def parse_word_tables_for_update(
+    document_xml_path: str,
+    required_headers: list[str] | tuple[str, ...] | None = None,
+) -> tuple[etree._ElementTree, list[dict]]:
     tree = etree.parse(document_xml_path)
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
     all_records = []
+    active_required_headers = normalize_required_headers(required_headers)
     for table_index, tbl in enumerate(tables):
         parsed_rows = parse_table_rows(tbl)
-        header_row_idx, header_map = find_header_row_and_map(parsed_rows)
+        header_row_idx, header_map = find_header_row_and_map(parsed_rows, active_required_headers)
         if header_row_idx is None:
             continue
         standards_col = get_logical_col(header_map, "Standards")
@@ -755,16 +781,21 @@ def parse_word_tables_for_update(document_xml_path: str) -> tuple[etree._Element
     return tree, all_records
 
 
-def build_preview_tables(tree: etree._ElementTree, row_reference_map: dict) -> tuple[list[dict], dict]:
+def build_preview_tables(
+    tree: etree._ElementTree,
+    row_reference_map: dict,
+    required_headers: list[str] | tuple[str, ...] | None = None,
+) -> tuple[list[dict], dict]:
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
     preview_tables = []
     reference_payload: dict[str, dict] = {}
     table_number = 0
+    active_required_headers = normalize_required_headers(required_headers)
 
     for table_index, tbl in enumerate(tables):
         parsed_rows = parse_table_rows(tbl)
-        header_row_idx, header_map = find_header_row_and_map(parsed_rows)
+        header_row_idx, header_map = find_header_row_and_map(parsed_rows, active_required_headers)
         if header_row_idx is None:
             continue
         standards_col = get_logical_col(header_map, "Standards")
@@ -877,14 +908,16 @@ def process_document(
     output_path: str | None = None,
     iso_priority: list[str] | tuple[str, ...] | None = None,
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
+    required_headers: list[str] | tuple[str, ...] | None = None,
 ) -> dict:
     override_map = override_map or {}
     normalized_iso_priority = normalize_iso_priority(iso_priority)
+    normalized_required_headers = normalize_required_headers(required_headers)
     excel_index = load_excel_index(excel_path)
     with tempfile.TemporaryDirectory() as tmpdir:
         unzip_docx(word_path, tmpdir)
         document_xml_path = os.path.join(tmpdir, "word", "document.xml")
-        tree, records = parse_word_tables_for_update(document_xml_path)
+        tree, records = parse_word_tables_for_update(document_xml_path, normalized_required_headers)
         report = []
         updated_count = 0
         row_reference_map = {}
@@ -977,7 +1010,7 @@ def process_document(
             })
 
         tree.write(document_xml_path, xml_declaration=True, encoding="UTF-8", standalone="yes")
-        preview_tables, reference_payload = build_preview_tables(tree, row_reference_map)
+        preview_tables, reference_payload = build_preview_tables(tree, row_reference_map, normalized_required_headers)
         if output_path:
             zip_to_docx(tmpdir, output_path)
         return {
@@ -987,4 +1020,5 @@ def process_document(
             "reference_payload": reference_payload,
             "iso_priority": list(normalized_iso_priority),
             "prefer_latest_en_variants": prefer_latest_en_variants,
+            "required_headers": list(normalized_required_headers),
         }

@@ -361,11 +361,19 @@ def astm_two_digit_to_full_year(two_digit: int) -> int:
     return 2000 + two_digit if 0 <= two_digit <= 49 else 1900 + two_digit
 
 
+def normalize_astm_standard_text(std_no: str) -> str:
+    text = normalize_text(std_no).upper()
+    text = text.replace("–", "-").replace("—", "-")
+    return re.sub(r"\s*-\s*", "-", text)
+
+
 def extract_latest_year_from_astm_style(std_no: str) -> int | None:
-    matches = re.findall(r"-(\d{2})(?!\d)", normalize_text(std_no).upper())
+    normalized = normalize_astm_standard_text(std_no)
+    matches = re.findall(r"-(\d{2}[A-Z]?)(?!\d)", normalized)
     if not matches:
         return None
-    return max(astm_two_digit_to_full_year(int(x)) for x in matches)
+    years = [astm_two_digit_to_full_year(int(re.match(r"\d{2}", x).group(0))) for x in matches]
+    return max(years) if years else None
 
 
 def extract_standard_match_key(std_no: str, sheet_name: str) -> str:

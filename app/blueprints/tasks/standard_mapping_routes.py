@@ -77,6 +77,8 @@ def _build_stats(report: list[dict]) -> dict[str, int]:
 def _render_standard_mapping_page(task_id: str, *, preview_result: dict | None = None, selected_word: str = "", selected_excel: str = ""):
     files_dir = _task_files_dir(task_id)
     word_options, excel_options = _list_standard_mapping_files(files_dir)
+    reference_payload = (preview_result or {}).get("reference_payload", {})
+    interactive_rows = len({item.get("row_key", "") for item in reference_payload.values() if item.get("row_key")})
     return render_template(
         "tasks/standard_mapping.html",
         task_id=task_id,
@@ -86,9 +88,11 @@ def _render_standard_mapping_page(task_id: str, *, preview_result: dict | None =
         selected_word=selected_word,
         selected_excel=selected_excel,
         preview_tables=(preview_result or {}).get("preview_tables", []),
-        reference_payload=(preview_result or {}).get("reference_payload", {}),
+        reference_payload=reference_payload,
         stats=_build_stats((preview_result or {}).get("report", [])) if preview_result else {"updated": 0, "same": 0, "missing": 0, "total": 0},
-        candidate_rows=len((preview_result or {}).get("reference_payload", {})),
+        interactive_rows=interactive_rows,
+        interactive_fields=len(reference_payload),
+        has_preview=bool(preview_result and (preview_result.get("preview_tables") or [])),
         last_generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if preview_result else "",
     )
 

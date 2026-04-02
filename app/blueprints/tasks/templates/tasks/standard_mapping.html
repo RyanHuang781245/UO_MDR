@@ -31,17 +31,206 @@
     font-size: 0.8125rem;
     line-height: 1.55;
   }
+  .standard-source-panel {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    background: white;
+  }
+  .standard-source-panel > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .standard-source-panel > summary::-webkit-details-marker {
+    display: none;
+  }
+  .standard-source-panel__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    border-bottom: 1px solid var(--bs-gray-200);
+  }
+  .standard-source-panel__files {
+    display: grid;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+  .standard-source-panel__file {
+    color: var(--bs-gray-500);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .standard-source-panel__hint {
+    color: var(--bs-blue-600);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .standard-source-panel__body {
+    padding: 1.25rem;
+  }
   .standard-form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
   }
+  .standard-preview-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--bs-gray-200);
+  }
+  .standard-preview-bar__main {
+    min-width: 0;
+  }
+  .standard-preview-bar__title {
+    font-weight: 700;
+  }
+  .standard-preview-bar__meta {
+    margin-top: 0.25rem;
+    color: var(--bs-gray-500);
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+  .standard-preview-bar__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .standard-preview-bar__stamp {
+    color: var(--bs-gray-500);
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+  .standard-preview-status-row {
+    /* padding: 0.9rem 1.25rem 0; */
+    padding: none;
+  }
+  .standard-preview-status-row > [aria-hidden="true"] {
+    display: none !important;
+  }
+  .standard-preview-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.25rem 1rem;
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    color: var(--bs-gray-500);
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+  .standard-preview-note i {
+    color: var(--bs-blue-600);
+    margin-top: 0.1rem;
+  }
+  .standard-preview-note code {
+    font-size: 0.8125rem;
+  }
+  .standard-preview-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem 1rem;
+  }
+  .standard-preview-empty {
+    display: none;
+    margin: 0 1.25rem 1rem;
+    padding: 0.875rem 1rem;
+    border: 1px dashed var(--bs-gray-200);
+    border-radius: 0.75rem;
+    color: var(--bs-gray-500);
+    background: #f8fafc;
+  }
+  .standard-preview-empty.is-visible {
+    display: block;
+  }
   .standard-table {
     min-width: 960px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
   }
   .standard-table td,
   .standard-table th {
     vertical-align: top;
+    border-right: 1px solid var(--bs-gray-200);
+    border-bottom: 1px solid var(--bs-gray-200);
+    background-clip: padding-box;
+  }
+  .standard-table tr > *:first-child {
+    border-left: 1px solid var(--bs-gray-200);
+  }
+  .standard-table tbody tr:first-child > * {
+    border-top: 1px solid var(--bs-gray-200);
+  }
+  .standard-table tr.is-header th:nth-child(1) { width: 16%; }
+  .standard-table tr.is-header th:nth-child(2) { width: 10%; }
+  .standard-table tr.is-header th:nth-child(3) { width: 18%; }
+  .standard-table tr.is-header th:nth-child(4) { width: 56%; }
+  .standard-table tr.is-header th:nth-child(4),
+  .standard-table tr td:nth-child(1) {
+    text-align: left;
+  }
+  .standard-table tr td:nth-child(4) {
+    text-align: left;
+  }
+  .preview-cell__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+  }
+  .preview-cell__content {
+    width: 100%;
+    line-height: 1.55;
+    word-break: break-word;
+  }
+  .preview-cell__inner.is-collapsed .preview-cell__content {
+    position: relative;
+    max-height: 3.85rem;
+    overflow: hidden;
+  }
+  .preview-cell__inner.is-truncated.is-collapsed .preview-cell__content::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1.8rem;
+    background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.96) 100%);
+    pointer-events: none;
+  }
+  .preview-cell__toggle {
+    display: none;
+    border: 1px solid var(--bs-gray-200);
+    background: white;
+    color: var(--bs-blue-600);
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+  .preview-cell__inner.is-truncated .preview-cell__toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .standard-table td[data-header-text]::before {
+    display: none;
+    content: attr(data-header-text);
   }
   .standard-table tr.is-header th {
     background: #f8fafc;
@@ -49,6 +238,7 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
     font-weight: 700;
+    vertical-align: middle;
   }
   .standard-table tr.is-category td {
     background: #f3fdf8;
@@ -62,10 +252,20 @@
   }
   .preview-cell.has-reference {
     cursor: pointer;
-    background-image: linear-gradient(to bottom, transparent calc(100% - 3px), rgba(37, 99, 235, 0.12) calc(100% - 3px));
+    position: relative;
   }
   .preview-cell.has-reference:hover {
     background-color: var(--bs-blue-50);
+  }
+  .preview-cell.has-reference::after {
+    content: "";
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.28);
   }
   .reference-tooltip {
     position: fixed;
@@ -83,6 +283,11 @@
     backdrop-filter: blur(12px);
     box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
     overflow: hidden;
+  }
+  .reference-tooltip-card {
+    max-height: min(78vh, 720px);
+    display: flex;
+    flex-direction: column;
   }
   .reference-tooltip-header {
     display: flex;
@@ -146,6 +351,7 @@
   }
   .reference-tooltip-section {
     padding: 1rem;
+    min-height: 0;
   }
   .reference-tooltip-section__title {
     margin-bottom: 0.75rem;
@@ -239,10 +445,93 @@
       grid-template-columns: 1fr;
       flex-direction: column;
     }
+    .standard-preview-filters {
+      grid-template-columns: 1fr;
+    }
   }
   @media (max-width: 767.98px) {
     .standard-mapping-summary {
       grid-template-columns: 1fr;
+    }
+    .standard-source-panel__summary,
+    .standard-preview-bar {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .standard-preview-bar__actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    .standard-preview-bar .btn {
+      width: 100%;
+    }
+    .standard-table {
+      min-width: 0;
+    }
+    .standard-table tr.is-header {
+      display: none;
+    }
+    .standard-table tr[data-row-key] {
+      display: block;
+      margin: 0.75rem;
+      border: 1px solid var(--bs-gray-200);
+      border-radius: 1rem;
+      background: white;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .standard-table tr[data-row-key].row-selected {
+      border-color: var(--bs-blue-100);
+      background: var(--bs-blue-50);
+    }
+    .standard-table tr.is-category {
+      display: block;
+      margin: 0.75rem;
+      border-radius: 0.875rem;
+      overflow: hidden;
+    }
+    .standard-table tr.is-category td {
+      border: 0;
+      padding: 0.875rem 1rem;
+    }
+    .standard-table tr[data-row-key] td {
+      display: block;
+      border: 0;
+      border-top: 1px solid var(--bs-gray-200);
+      padding: 0.85rem 1rem;
+    }
+    .standard-table tr[data-row-key] td:first-child {
+      border-top: 0;
+    }
+    .standard-table td[data-header-text]::before {
+      display: block;
+      margin-bottom: 0.35rem;
+      color: var(--bs-gray-500);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .preview-cell__inner.is-collapsed .preview-cell__content {
+      max-height: 4.8rem;
+    }
+    .reference-tooltip {
+      width: calc(100vw - 24px);
+    }
+    .preview-cell.has-reference::after {
+      top: 0.8rem;
+      right: 0.8rem;
+    }
+    .reference-tooltip-card {
+      border-radius: 1.2rem;
+      max-height: calc(100vh - 84px);
+    }
+    .reference-candidate__actions {
+      width: 100%;
+      align-items: stretch;
+    }
+    .reference-candidate-list {
+      max-height: calc(100vh - 360px);
     }
   }
 </style>
@@ -252,31 +541,24 @@
     <h1 class="h3 mb-1 fw-bold">標準清單更新</h1>
     <!-- <p class="text-muted mb-0 small">在任務內直接選擇 Word 與標準 Excel，預覽候選比對結果、人工改選後再下載新的 Word。</p> -->
   </div>
-
-  <!-- <ul class="nav nav-tabs nav-tabs-custom mb-4" role="tablist">
-    <li class="nav-item">
-      <a class="nav-link" href="{{ url_for('tasks_bp.task_mapping', task_id=task_id) }}">
-        <i class="bi bi-diagram-3 me-2"></i>Mapping
-      </a>
-    </li>
-    <li class="nav-item">
-      <a class="nav-link active" href="{{ url_for('tasks_bp.task_standard_mapping', task_id=task_id) }}">
-        <i class="bi bi-table me-2"></i>Standard Mapping
-      </a>
-    </li>
-  </ul> -->
-
-  <div class="main-card mb-4">
-    <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center gap-3 flex-wrap">
-      <div>
-        <div class="fw-bold">選擇更新檔案與更新標準</div>
-        <!-- <div class="small text-muted">所有檔案都從此任務的 `files` 目錄讀取。</div> -->
+  <details class="standard-source-panel mb-4" {% if not has_preview %}open{% endif %}>
+    <summary>
+      <div class="standard-source-panel__summary">
+        <div class="standard-source-panel__files">
+          <div class="fw-bold">選擇更新檔案與更新標準</div>
+          {% if has_preview %}
+            <div class="standard-source-panel__file" title="{{ selected_word }}">Word：{{ selected_word }}</div>
+            <div class="standard-source-panel__file" title="{{ selected_excel }}">Excel ：{{ selected_excel }}</div>
+          {% else %}
+            <div class="small text-muted">請先選擇要更新的 Word 與標準總表。</div>
+          {% endif %}
+        </div>
+        <div class="standard-source-panel__hint">
+          {% if has_preview %}展開重新選檔{% else %}展開選檔{% endif %}
+        </div>
       </div>
-      <!-- <a class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_detail', task_id=task_id) }}">
-        <i class="bi bi-folder2-open"></i>查看任務檔案
-      </a> -->
-    </div>
-    <div class="p-4">
+    </summary>
+    <div class="standard-source-panel__body">
       {% if not word_options or not excel_options %}
         <div class="alert alert-warning mb-0">
           {% if not word_options %}找不到可用的 Word 檔。{% endif %}
@@ -314,7 +596,7 @@
         </form>
       {% endif %}
     </div>
-  </div>
+  </details>
 
   {% if preview_tables %}
     <div class="standard-mapping-summary mb-4">
@@ -335,8 +617,8 @@
       </div>
       <div class="standard-summary-card">
         <div class="standard-summary-card__label">可互動列</div>
-        <div class="standard-summary-card__value">{{ candidate_rows }}</div>
-        <div class="standard-summary-card__copy">每列 `Standards` 與 `Issued Year` 都可查看來源與候選。</div>
+        <div class="standard-summary-card__value">{{ interactive_rows }}</div>
+        <div class="standard-summary-card__copy">共 {{ interactive_fields }} 個互動欄位；每列可檢視來源並人工改選。</div>
       </div>
       <div class="standard-summary-card">
         <div class="standard-summary-card__label">人工改選</div>
@@ -345,27 +627,44 @@
       </div>
     </div>
 
-    <div class="toolbar-container mb-4">
-      <div id="filterBar" class="filter-bar" aria-hidden="false">
-        <div>
-          <div class="fw-bold">目前預覽檔案</div>
-          <div class="small text-muted font-monospace">{{ selected_word }}<br>{{ selected_excel }}</div>
+    <div class="main-card mb-4">
+      <div class="standard-preview-bar">
+        <div class="standard-preview-bar__main">
+          <div class="standard-preview-status-row">
+            <div id="filterBar" class="standard-preview-note" aria-hidden="false">
+              <i class="bi bi-info-circle"></i>
+              <div>點一下 <code>Standards</code> 或 <code>Issued Year</code> 欄位即可固定候選卡片，改選後表格會立即同步更新。</div>
+            </div>
+            <div id="actionBar" class="standard-preview-note" aria-hidden="true">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-semibold text-primary">已選取 <span id="actionOverrideCount">0</span> 筆人工改選</span>
+                <button class="btn btn-sm btn-link p-0 text-primary fw-semibold" id="clearSelectionBtn" type="button">
+                  <i class="bi bi-x-lg me-1"></i>清除改選
+                </button>
+                <div class="fw-semibold text-primary">預覽與下載會使用目前改選結果</div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="d-flex align-items-center gap-3 flex-wrap">
-          <div class="small text-muted">預覽產生時間：{{ last_generated_at }}</div>
+        <div class="standard-preview-bar__actions">
+          <button class="btn btn-outline-primary btn-sm px-3 export-overrides-btn" type="button">匯出覆寫 Log</button>
           <button class="btn btn-primary btn-sm px-3" form="downloadForm" type="submit">下載目前結果</button>
         </div>
       </div>
-      <div id="actionBar" class="action-bar" aria-hidden="true">
-        <div class="d-flex align-items-center gap-3">
-          <button class="btn btn-link p-1 text-primary" id="clearSelectionBtn" type="button"><i class="bi bi-x-lg"></i></button>
-          <span class="fw-semibold text-primary small">已選取 <span id="actionOverrideCount">0</span> 筆人工改選</span>
+      <div class="standard-preview-filters">
+        <div class="search-wrapper">
+          <i class="bi bi-search"></i>
+          <input type="text" id="standardSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋標準號、標題或分類...">
         </div>
-        <div class="d-flex gap-2 flex-wrap">
-          <button class="btn btn-toolbar-secondary btn-sm px-3" id="exportOverridesBtn" type="button">匯出覆寫 JSON</button>
-          <button class="btn btn-primary btn-sm px-3" form="downloadForm" type="submit">下載修改後 Word</button>
-        </div>
+        <select id="standardStatusFilter" class="form-select form-control-custom rounded-2">
+          <option value="all">全部狀態</option>
+          <option value="updated">只看已更新</option>
+          <option value="missing">只看查無來源</option>
+          <option value="same">只看無需更新</option>
+          <option value="overridden">只看人工改選</option>
+        </select>
       </div>
+      <div id="standardPreviewEmpty" class="standard-preview-empty">目前篩選條件下沒有符合的列。</div>
     </div>
 
     <form id="downloadForm" action="{{ url_for('tasks_bp.task_standard_mapping_download', task_id=task_id) }}" method="post">
@@ -375,7 +674,7 @@
     </form>
 
     {% for table in preview_tables %}
-      <div class="main-card mb-4">
+      <div class="main-card mb-4 standard-preview-table">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
           <div class="fw-bold">{{ table.title }}</div>
           <div class="small text-muted">{{ table.meta }}</div>
@@ -384,13 +683,28 @@
           <table class="table mb-0 align-middle standard-table">
             <tbody>
               {% for row in table.rows %}
-                <tr class="{{ ' '.join(row.classes) }}"{% if row.row_key %} data-row-key="{{ row.row_key }}"{% endif %}>
+                {% set is_data_row = row.row_key %}
+                <tr
+                  class="{{ ' '.join(row.classes) }}"
+                  {% if is_data_row %}data-row-key="{{ row.row_key }}"{% endif %}
+                  data-row-status="{% if 'status-updated' in row.classes %}updated{% elif 'status-not_found' in row.classes %}missing{% elif 'status-same_no_update' in row.classes %}same{% else %}neutral{% endif %}"
+                >
                   {% for cell in row.cells %}
                     <{{ cell.tag }}
                       {% if cell.colspan > 1 %}colspan="{{ cell.colspan }}"{% endif %}
                       class="preview-cell{% if cell.reference_key %} has-reference{% endif %}"
                       {% if cell.reference_key %}data-reference-key="{{ cell.reference_key }}"{% endif %}
-                    >{{ cell.content_html | safe }}</{{ cell.tag }}>
+                      {% if cell.header_text %}data-header-text="{{ cell.header_text }}"{% endif %}
+                    >
+                      {% if cell.tag == 'td' and is_data_row %}
+                        <div class="preview-cell__inner">
+                          <div class="preview-cell__content">{{ cell.content_html | safe }}</div>
+                          <button class="preview-cell__toggle" type="button" hidden>展開</button>
+                        </div>
+                      {% else %}
+                        {{ cell.content_html | safe }}
+                      {% endif %}
+                    </{{ cell.tag }}>
                   {% endfor %}
                 </tr>
               {% endfor %}
@@ -418,8 +732,11 @@
   const overridesJsonInput = document.getElementById("overridesJsonInput");
   const filterBar = document.getElementById("filterBar");
   const actionBar = document.getElementById("actionBar");
-  const exportOverridesBtn = document.getElementById("exportOverridesBtn");
+  const exportOverridesBtns = Array.from(document.querySelectorAll(".export-overrides-btn"));
   const clearSelectionBtn = document.getElementById("clearSelectionBtn");
+  const standardSearchInput = document.getElementById("standardSearchInput");
+  const standardStatusFilter = document.getElementById("standardStatusFilter");
+  const standardPreviewEmpty = document.getElementById("standardPreviewEmpty");
   const overrideSelections = {};
   const originalCellHtml = {};
   const referenceKeysByRow = Object.entries(referencePayload).reduce((acc, [referenceKey, meta]) => {
@@ -437,7 +754,10 @@
   document.querySelectorAll("[data-reference-key]").forEach((cell) => {
     const referenceKey = cell.dataset.referenceKey || "";
     if (!referenceKey) return;
-    originalCellHtml[referenceKey] = cell.innerHTML;
+    const content = cell.querySelector(".preview-cell__content");
+    if (content) {
+      originalCellHtml[referenceKey] = content.innerHTML;
+    }
   });
 
   function escapeHtml(value) {
@@ -564,6 +884,31 @@
     }).join("");
   }
 
+  function refreshCellOverflow(cell) {
+    const inner = cell?.querySelector(".preview-cell__inner");
+    const content = cell?.querySelector(".preview-cell__content");
+    const toggle = cell?.querySelector(".preview-cell__toggle");
+    if (!inner || !content || !toggle) return;
+
+    inner.classList.remove("is-expanded");
+    inner.classList.remove("is-truncated");
+    inner.classList.add("is-collapsed");
+    toggle.hidden = true;
+    toggle.textContent = "展開";
+
+    const hasOverflow = content.scrollHeight > content.clientHeight + 2 || content.scrollWidth > content.clientWidth + 2;
+    if (hasOverflow) {
+      inner.classList.add("is-truncated");
+      toggle.hidden = false;
+    } else {
+      inner.classList.remove("is-collapsed");
+    }
+  }
+
+  function refreshAllCellOverflows() {
+    document.querySelectorAll(".standard-table td").forEach((cell) => refreshCellOverflow(cell));
+  }
+
   function updateRowPreview(rowKey) {
     const keys = referenceKeysByRow[rowKey];
     if (!keys) return;
@@ -573,13 +918,21 @@
       if (keys.standards) {
         const standardsCell = document.querySelector(`[data-reference-key="${CSS.escape(keys.standards)}"]`);
         if (standardsCell && Object.prototype.hasOwnProperty.call(originalCellHtml, keys.standards)) {
-          standardsCell.innerHTML = originalCellHtml[keys.standards];
+          const standardsContent = standardsCell.querySelector(".preview-cell__content");
+          if (standardsContent) {
+            standardsContent.innerHTML = originalCellHtml[keys.standards];
+          }
+          refreshCellOverflow(standardsCell);
         }
       }
       if (keys.issuedYear) {
         const issuedYearCell = document.querySelector(`[data-reference-key="${CSS.escape(keys.issuedYear)}"]`);
         if (issuedYearCell && Object.prototype.hasOwnProperty.call(originalCellHtml, keys.issuedYear)) {
-          issuedYearCell.innerHTML = originalCellHtml[keys.issuedYear];
+          const issuedYearContent = issuedYearCell.querySelector(".preview-cell__content");
+          if (issuedYearContent) {
+            issuedYearContent.innerHTML = originalCellHtml[keys.issuedYear];
+          }
+          refreshCellOverflow(issuedYearCell);
         }
       }
       if (row) {
@@ -595,7 +948,11 @@
       if (cell) {
         const oldStandard = standardsMeta.word_standard || "";
         const newStandard = standardsMeta.matched_display_standard_no || standardsMeta.matched_standard_no || oldStandard;
-        cell.innerHTML = renderSegmentsHtml(buildDiffSegments(oldStandard, newStandard));
+        const content = cell.querySelector(".preview-cell__content");
+        if (content) {
+          content.innerHTML = renderSegmentsHtml(buildDiffSegments(oldStandard, newStandard));
+        }
+        refreshCellOverflow(cell);
       }
     }
     if (issuedYearMeta && keys.issuedYear) {
@@ -603,7 +960,11 @@
       if (cell) {
         const oldYear = issuedYearMeta.word_year || "";
         const newYear = String(issuedYearMeta.excel_year || oldYear);
-        cell.innerHTML = renderSegmentsHtml(buildYearSegments(oldYear, newYear));
+        const content = cell.querySelector(".preview-cell__content");
+        if (content) {
+          content.innerHTML = renderSegmentsHtml(buildYearSegments(oldYear, newYear));
+        }
+        refreshCellOverflow(cell);
       }
     }
     if (row) {
@@ -703,6 +1064,7 @@
     filterBar.setAttribute("aria-hidden", hasOverrides ? "true" : "false");
     actionBar.setAttribute("aria-hidden", hasOverrides ? "false" : "true");
     Object.keys(referenceKeysByRow).forEach((rowKey) => updateRowPreview(rowKey));
+    applyPreviewFilters();
   }
 
   function hideTooltip(force = false) {
@@ -726,6 +1088,11 @@
     if (tooltip.hidden) return;
     const width = tooltip.offsetWidth || 460;
     const height = tooltip.offsetHeight || 240;
+    if (window.innerWidth <= 767) {
+      tooltip.style.left = "12px";
+      tooltip.style.top = `${Math.max(64, window.innerHeight - height - 12)}px`;
+      return;
+    }
     let left = event.clientX + 20;
     let top = event.clientY + 18;
     if (left + width > window.innerWidth - 12) left = event.clientX - width - 12;
@@ -752,6 +1119,60 @@
     hideTimer = window.setTimeout(() => hideTooltip(false), 120);
   }
 
+  function applyPreviewFilters() {
+    const keyword = (standardSearchInput?.value || "").trim().toLowerCase();
+    const status = (standardStatusFilter?.value || "all").toLowerCase();
+    let visibleTables = 0;
+
+    document.querySelectorAll(".standard-preview-table").forEach((tableCard) => {
+      const rows = Array.from(tableCard.querySelectorAll("tbody > tr"));
+      let currentCategory = null;
+      let hasVisibleDataRow = false;
+
+      rows.forEach((row) => {
+        if (row.classList.contains("is-header")) {
+          row.hidden = false;
+          return;
+        }
+        if (row.classList.contains("is-category")) {
+          currentCategory = row;
+          row.dataset.hasVisibleRows = "false";
+          row.hidden = true;
+          return;
+        }
+
+        const rowKey = row.dataset.rowKey || "";
+        const text = row.innerText.toLowerCase();
+        const rowStatus = (row.dataset.rowStatus || "neutral").toLowerCase();
+        const overridden = Boolean(rowKey && overrideSelections[rowKey]);
+        const keywordMatch = !keyword || text.includes(keyword);
+        const statusMatch = (
+          status === "all"
+          || rowStatus === status
+          || (status === "overridden" && overridden)
+        );
+        const visible = keywordMatch && statusMatch;
+        row.hidden = !visible;
+        if (visible) {
+          hasVisibleDataRow = true;
+          if (currentCategory) {
+            currentCategory.dataset.hasVisibleRows = "true";
+            currentCategory.hidden = false;
+          }
+        }
+      });
+
+      tableCard.hidden = !hasVisibleDataRow;
+      if (hasVisibleDataRow) {
+        visibleTables += 1;
+      }
+    });
+
+    if (standardPreviewEmpty) {
+      standardPreviewEmpty.classList.toggle("is-visible", visibleTables === 0);
+    }
+  }
+
   document.querySelectorAll(".preview-cell.has-reference").forEach((cell) => {
     const referenceKey = cell.dataset.referenceKey || "";
     if (!referenceKey) return;
@@ -769,6 +1190,24 @@
     cell.addEventListener("click", (event) => {
       event.stopPropagation();
       openTooltip(referenceKey, event, true);
+    });
+  });
+
+  document.querySelectorAll(".preview-cell__toggle").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const cell = button.closest("td");
+      const inner = cell?.querySelector(".preview-cell__inner");
+      if (!cell || !inner || !inner.classList.contains("is-truncated")) return;
+      if (inner.classList.contains("is-expanded")) {
+        inner.classList.remove("is-expanded");
+        inner.classList.add("is-collapsed");
+        button.textContent = "展開";
+      } else {
+        inner.classList.add("is-expanded");
+        inner.classList.remove("is-collapsed");
+        button.textContent = "收合";
+      }
     });
   });
 
@@ -805,17 +1244,19 @@
     syncOverrideState();
     renderActiveTooltip();
   });
-  exportOverridesBtn.addEventListener("click", () => {
-    const payload = { generated_at: new Date().toISOString(), overrides: overrideSelections };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "standard_mapping_overrides.json";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+  exportOverridesBtns.forEach((button) => {
+    button.addEventListener("click", () => {
+      const payload = { generated_at: new Date().toISOString(), overrides: overrideSelections };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "standard_mapping_overrides.json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    });
   });
   clearSelectionBtn.addEventListener("click", () => {
     Object.keys(overrideSelections).forEach((key) => delete overrideSelections[key]);
@@ -831,6 +1272,16 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") hideTooltip(true);
   });
+  window.addEventListener("resize", () => {
+    window.clearTimeout(window.__standardMappingResizeTimer__);
+    window.__standardMappingResizeTimer__ = window.setTimeout(() => {
+      refreshAllCellOverflows();
+      applyPreviewFilters();
+    }, 120);
+  });
+  refreshAllCellOverflows();
+  standardSearchInput?.addEventListener("input", applyPreviewFilters);
+  standardStatusFilter?.addEventListener("change", applyPreviewFilters);
   syncOverrideState();
 </script>
 {% endif %}

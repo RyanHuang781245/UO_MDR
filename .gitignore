@@ -9,5 +9,7 @@ test.py
 uv.lock
 .vscode/
 .env
+.playwright_env/
+node_modules/
 AGENTS.md
 GEMINI.md

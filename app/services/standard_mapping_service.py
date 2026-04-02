@@ -655,6 +655,11 @@ def build_preview_tables(tree: etree._ElementTree, row_reference_map: dict) -> t
         issued_year_col = get_logical_col(header_map, "Issued Year")
         harmonised_col = get_logical_col(header_map, "EU Harmonised Standards under MDR 2017/745 (YES/NO)")
         title_col = get_logical_col(header_map, "Title")
+        header_row_items = parsed_rows[header_row_idx]
+        header_labels = {
+            item["tc_idx"]: normalize_text(item["text"])
+            for item in header_row_items
+        }
         table_number += 1
         rows_data = []
 
@@ -696,6 +701,7 @@ def build_preview_tables(tree: etree._ElementTree, row_reference_map: dict) -> t
                     "colspan": item["grid_span"],
                     "content_html": format_cell_runs_as_html(item["tc"]),
                     "reference_key": reference_key,
+                    "header_text": header_labels.get(item["tc_idx"], ""),
                 })
 
             rows_data.append({
@@ -706,7 +712,6 @@ def build_preview_tables(tree: etree._ElementTree, row_reference_map: dict) -> t
 
         preview_tables.append({
             "title": f"表格 {table_number}",
-            "meta": "點一下 Standards 或 Issued Year 欄位可固定卡片並改選候選。",
             "rows": rows_data,
         })
 

@@ -299,6 +299,10 @@
   .preview-cell.has-reference:hover {
     background-color: var(--bs-blue-50);
   }
+  .preview-cell.has-reference.is-active {
+    background-color: var(--bs-blue-50);
+    box-shadow: inset 0 0 0 2px var(--bs-blue-600);
+  }
   .preview-cell.has-reference::after {
     content: "";
     position: absolute;
@@ -308,6 +312,10 @@
     height: 0.45rem;
     border-radius: 999px;
     background: rgba(37, 99, 235, 0.28);
+  }
+  .preview-cell.has-reference.is-active::after {
+    background: var(--bs-blue-600);
+    transform: scale(1.15);
   }
   .reference-tooltip {
     position: fixed;
@@ -1110,12 +1118,24 @@
     applyPreviewFilters();
   }
 
+  function syncActiveReferenceCell() {
+    document.querySelectorAll(".preview-cell.has-reference.is-active").forEach((cell) => {
+      cell.classList.remove("is-active");
+    });
+    if (!activeReferenceKey) return;
+    const activeCell = document.querySelector(`.preview-cell.has-reference[data-reference-key="${CSS.escape(activeReferenceKey)}"]`);
+    if (activeCell) {
+      activeCell.classList.add("is-active");
+    }
+  }
+
   function hideTooltip(force = false) {
     if (!force && isTooltipPinned) return;
     tooltip.hidden = true;
     tooltipContent.innerHTML = "";
     activeReferenceKey = "";
     isTooltipPinned = false;
+    syncActiveReferenceCell();
   }
 
   function renderActiveTooltip() {
@@ -1152,6 +1172,7 @@
     }
     activeReferenceKey = referenceKey;
     isTooltipPinned = pin;
+    syncActiveReferenceCell();
     renderActiveTooltip();
     positionTooltip(event);
   }

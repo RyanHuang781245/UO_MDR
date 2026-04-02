@@ -528,6 +528,10 @@
                     <i class="bi bi-clipboard-check me-2"></i>
                     執行結果
                   </a>
+                  <a class="nav-link {{ 'active' if request.endpoint == 'tasks_bp.task_standard_mapping' else '' }}" href="{{ url_for('tasks_bp.task_standard_mapping', task_id=task.id) }}">
+                    <i class="bi bi-folder-symlink me-2"></i>
+                    標準更新
+                  </a>
                   <a class="nav-link {{ 'active' if request.endpoint == 'tasks_bp.task_copy_files' else '' }}" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
                     <i class="bi bi-folder-symlink me-2"></i>
                     複製檔案

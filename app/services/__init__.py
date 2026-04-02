@@ -5,6 +5,7 @@ from . import (
     nas_service,
     notification_service,
     system_service,
+    standard_mapping_service,
     task_service,
     user_context_service,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "nas_service",
     "notification_service",
     "system_service",
+    "standard_mapping_service",
     "task_service",
     "user_context_service",
 ]

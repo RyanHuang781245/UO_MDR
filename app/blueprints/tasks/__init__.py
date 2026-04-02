@@ -10,6 +10,7 @@ def register_task_routes() -> None:
     from . import compare_routes  # noqa: F401
     from . import mapping_routes  # noqa: F401
     from . import nas_routes  # noqa: F401
+    from . import standard_mapping_routes  # noqa: F401
     from . import task_routes  # noqa: F401
 
     _ROUTES_REGISTERED = True

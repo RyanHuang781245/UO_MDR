@@ -619,6 +619,11 @@ def parse_word_tables_for_update(document_xml_path: str) -> tuple[etree._Element
             title_text = get_text_at(title_col)
             nonempty_texts = [normalize_text(item["text"]) for item in row_items if normalize_text(item["text"])]
 
+            is_single_cell_category = len(row_items) == 1 and len(nonempty_texts) == 1
+            if is_single_cell_category:
+                current_category = nonempty_texts[0]
+                continue
+
             if standards_text == "" and issued_year_text == "" and harmonised_text == "" and title_text == "":
                 if nonempty_texts:
                     current_category = nonempty_texts[0]
@@ -660,20 +665,36 @@ def build_preview_tables(tree: etree._ElementTree, row_reference_map: dict) -> t
             item["tc_idx"]: normalize_text(item["text"])
             for item in header_row_items
         }
+        fixed_columns = [
+            ("Standards", standards_col),
+            ("Issued Year", issued_year_col),
+            ("EU Harmonised Standards under MDR 2017/745 (YES/NO)", harmonised_col),
+            ("Title", title_col),
+        ]
         table_number += 1
         rows_data = []
 
         for row_idx, row in enumerate(parsed_rows):
+            def get_item(tc_idx: int | None):
+                if tc_idx is None or tc_idx >= len(row):
+                    return None
+                return row[tc_idx]
+
             row_classes = []
             if row_idx == header_row_idx:
                 row_classes.append("is-header")
             elif row_idx > header_row_idx:
                 nonempty_texts = [normalize_text(item["text"]) for item in row if normalize_text(item["text"])]
-                standards_text = normalize_text(row[standards_col]["text"]) if standards_col is not None and standards_col < len(row) else ""
-                issued_year_text = normalize_text(row[issued_year_col]["text"]) if issued_year_col is not None and issued_year_col < len(row) else ""
-                harmonised_text = normalize_text(row[harmonised_col]["text"]) if harmonised_col is not None and harmonised_col < len(row) else ""
-                title_text = normalize_text(row[title_col]["text"]) if title_col is not None and title_col < len(row) else ""
-                if (
+                is_single_cell_category = len(row) == 1 and len(nonempty_texts) == 1
+                standards_item = get_item(standards_col)
+                issued_year_item = get_item(issued_year_col)
+                harmonised_item = get_item(harmonised_col)
+                title_item = get_item(title_col)
+                standards_text = normalize_text(standards_item["text"]) if standards_item else ""
+                issued_year_text = normalize_text(issued_year_item["text"]) if issued_year_item else ""
+                harmonised_text = normalize_text(harmonised_item["text"]) if harmonised_item else ""
+                title_text = normalize_text(title_item["text"]) if title_item else ""
+                if is_single_cell_category or (
                     standards_text == ""
                     and issued_year_text == ""
                     and harmonised_text == ""
@@ -687,22 +708,42 @@ def build_preview_tables(tree: etree._ElementTree, row_reference_map: dict) -> t
                 row_classes.append(f"status-{row_meta.get('status', '').lower().replace(':', '-')}")
 
             cells = []
-            for item in row:
-                tag = "th" if row_idx == header_row_idx else "td"
-                reference_key = None
-                if row_meta and item["tc_idx"] == standards_col:
-                    reference_key = f"{row_meta['row_key']}:standards"
-                    reference_payload[reference_key] = {**row_meta, "field_label": "Standards"}
-                elif row_meta and item["tc_idx"] == issued_year_col:
-                    reference_key = f"{row_meta['row_key']}:issued_year"
-                    reference_payload[reference_key] = {**row_meta, "field_label": "Issued Year"}
+            if row_idx == header_row_idx:
+                for label, tc_idx in fixed_columns:
+                    item = get_item(tc_idx)
+                    cells.append({
+                        "tag": "th",
+                        "colspan": 1,
+                        "content_html": format_cell_runs_as_html(item["tc"]) if item is not None else html.escape(label),
+                        "reference_key": None,
+                        "header_text": label,
+                    })
+            elif "is-category" in row_classes:
+                category_item = next((item for item in row if normalize_text(item["text"])), None)
                 cells.append({
-                    "tag": tag,
-                    "colspan": item["grid_span"],
-                    "content_html": format_cell_runs_as_html(item["tc"]),
-                    "reference_key": reference_key,
-                    "header_text": header_labels.get(item["tc_idx"], ""),
+                    "tag": "td",
+                    "colspan": 4,
+                    "content_html": format_cell_runs_as_html(category_item["tc"]) if category_item is not None else "",
+                    "reference_key": None,
+                    "header_text": "",
                 })
+            else:
+                for label, tc_idx in fixed_columns:
+                    item = get_item(tc_idx)
+                    reference_key = None
+                    if row_meta and label == "Standards":
+                        reference_key = f"{row_meta['row_key']}:standards"
+                        reference_payload[reference_key] = {**row_meta, "field_label": "Standards"}
+                    elif row_meta and label == "Issued Year":
+                        reference_key = f"{row_meta['row_key']}:issued_year"
+                        reference_payload[reference_key] = {**row_meta, "field_label": "Issued Year"}
+                    cells.append({
+                        "tag": "td",
+                        "colspan": 1,
+                        "content_html": format_cell_runs_as_html(item["tc"]) if item is not None else "",
+                        "reference_key": reference_key,
+                        "header_text": header_labels.get(tc_idx, label),
+                    })
 
             rows_data.append({
                 "classes": row_classes,

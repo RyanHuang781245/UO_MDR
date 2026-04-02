@@ -3,7 +3,7 @@
 <style>
   .standard-mapping-summary {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.875rem;
   }
   .standard-summary-card {
@@ -12,6 +12,34 @@
     background: white;
     padding: 1rem 1rem 0.9rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .standard-summary-card--updated {
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    border-color: #bfdbfe;
+  }
+  .standard-summary-card--updated .standard-summary-card__value {
+    color: var(--bs-blue-600);
+  }
+  .standard-summary-card--same {
+    background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+    border-color: #a7f3d0;
+  }
+  .standard-summary-card--same .standard-summary-card__value {
+    color: var(--bs-emerald-700);
+  }
+  .standard-summary-card--missing {
+    background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+    border-color: #fecaca;
+  }
+  .standard-summary-card--missing .standard-summary-card__value {
+    color: #b91c1c;
+  }
+  .standard-summary-card--override {
+    background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+    border-color: #fde68a;
+  }
+  .standard-summary-card--override .standard-summary-card__value {
+    color: #b45309;
   }
   .standard-summary-card__label {
     font-size: 0.75rem;
@@ -436,7 +464,7 @@
   }
   @media (max-width: 1200px) {
     .standard-mapping-summary {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   @media (max-width: 991.98px) {
@@ -600,30 +628,25 @@
 
   {% if preview_tables %}
     <div class="standard-mapping-summary mb-4">
-      <div class="standard-summary-card">
-        <div class="standard-summary-card__label">已更新</div>
+      <div class="standard-summary-card standard-summary-card--updated">
+        <div class="standard-summary-card__label">已更新欄位數</div>
         <div class="standard-summary-card__value">{{ stats.updated }}</div>
-        <div class="standard-summary-card__copy">Word 與 Excel 不一致，因此已更新標準名稱或年份。</div>
+        <div class="standard-summary-card__copy">已更新標準或年份，更新部分使用紅字標記</div>
       </div>
-      <div class="standard-summary-card">
-        <div class="standard-summary-card__label">無需更新</div>
+      <div class="standard-summary-card standard-summary-card--same">
+        <div class="standard-summary-card__label">無需更新欄位數</div>
         <div class="standard-summary-card__value">{{ stats.same }}</div>
-        <div class="standard-summary-card__copy">已命中參考來源，但目前內容與年份一致。</div>
+        <div class="standard-summary-card__copy">無需更新標準或年份，與目前標準和年份一致</div>
       </div>
-      <div class="standard-summary-card">
-        <div class="standard-summary-card__label">查無來源</div>
+      <div class="standard-summary-card standard-summary-card--missing">
+        <div class="standard-summary-card__label">查無標準欄位數</div>
         <div class="standard-summary-card__value">{{ stats.missing }}</div>
-        <div class="standard-summary-card__copy">未找到符合條件的候選，會保留原始值與藍色提示。</div>
+        <div class="standard-summary-card__copy">未找到符合標準，保留原始值並使用藍字標記</div>
       </div>
-      <div class="standard-summary-card">
-        <div class="standard-summary-card__label">可互動列</div>
-        <div class="standard-summary-card__value">{{ interactive_rows }}</div>
-        <div class="standard-summary-card__copy">共 {{ interactive_fields }} 個互動欄位；每列可檢視來源並人工改選。</div>
-      </div>
-      <div class="standard-summary-card">
-        <div class="standard-summary-card__label">人工改選</div>
+      <div class="standard-summary-card standard-summary-card--override">
+        <div class="standard-summary-card__label">人工改選欄位數</div>
         <div class="standard-summary-card__value" id="overrideCount">0</div>
-        <div class="standard-summary-card__copy">下載時會依目前改選結果重跑並輸出新的 Word。</div>
+        <div class="standard-summary-card__copy">依目前改選結果輸出至新的 Word</div>
       </div>
     </div>
 
@@ -637,7 +660,7 @@
             </div>
             <div id="actionBar" class="standard-preview-note" aria-hidden="true">
               <div class="d-flex align-items-center gap-2 flex-wrap">
-                <span class="fw-semibold text-primary">已選取 <span id="actionOverrideCount">0</span> 筆人工改選</span>
+                <i class="bi bi-info-circle"></i><span class="fw-semibold text-primary">已選取 <span id="actionOverrideCount">0</span> 筆人工改選</span>
                 <button class="btn btn-sm btn-link p-0 text-primary fw-semibold" id="clearSelectionBtn" type="button">
                   <i class="bi bi-x-lg me-1"></i>清除改選
                 </button>

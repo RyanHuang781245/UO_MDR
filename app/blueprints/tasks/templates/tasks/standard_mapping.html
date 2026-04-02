@@ -192,10 +192,15 @@
   }
   .standard-table td,
   .standard-table th {
-    vertical-align: top;
     border-right: 1px solid var(--bs-gray-200);
     border-bottom: 1px solid var(--bs-gray-200);
     background-clip: padding-box;
+  }
+  .standard-table td {
+    vertical-align: middle;
+  }
+  .standard-table th {
+    vertical-align: top;
   }
   .standard-table tr > *:first-child {
     border-left: 1px solid var(--bs-gray-200);
@@ -261,7 +266,7 @@
     content: attr(data-header-text);
   }
   .standard-table tr.is-header th {
-    background: #f8fafc;
+    background: #f3fdf8;
     font-size: 0.875rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -656,7 +661,7 @@
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
               <i class="bi bi-info-circle"></i>
-              <div>點一下 <code>Standards</code> 或 <code>Issued Year</code> 欄位即可固定候選卡片，改選後表格會立即同步更新。</div>
+              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單，改選後表格會立即同步更新</div>
             </div>
             <div id="actionBar" class="standard-preview-note" aria-hidden="true">
               <div class="d-flex align-items-center gap-2 flex-wrap">

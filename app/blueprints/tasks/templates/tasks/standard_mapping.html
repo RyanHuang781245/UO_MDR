@@ -670,12 +670,12 @@
           </div>
           <div class="standard-priority-panel">
             <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-              <div class="fw-bold">ISO 系列自動選用優先級</div>
+              <div class="fw-bold">更新優先級</div>
               <div class="small text-muted">{{ iso_priority | join(' > ') }}</div>
             </div>
             <div class="standard-priority-grid">
               <div>
-                <label class="form-label small fw-bold text-uppercase text-muted">BS EN ISO 順位</label>
+                <label class="form-label small fw-bold text-uppercase text-muted">BS EN ISO 優先級</label>
                 <select class="form-select form-control-custom rounded-2" name="priority_bs_en_iso">
                   {% for position in [1, 2, 3] %}
                     <option value="{{ position }}" {% if iso_priority_positions['BS EN ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
@@ -683,7 +683,7 @@
                 </select>
               </div>
               <div>
-                <label class="form-label small fw-bold text-uppercase text-muted">EN ISO 順位</label>
+                <label class="form-label small fw-bold text-uppercase text-muted">EN ISO 優先級</label>
                 <select class="form-select form-control-custom rounded-2" name="priority_en_iso">
                   {% for position in [1, 2, 3] %}
                     <option value="{{ position }}" {% if iso_priority_positions['EN ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
@@ -691,7 +691,7 @@
                 </select>
               </div>
               <div>
-                <label class="form-label small fw-bold text-uppercase text-muted">ISO 順位</label>
+                <label class="form-label small fw-bold text-uppercase text-muted">ISO 優先級</label>
                 <select class="form-select form-control-custom rounded-2" name="priority_iso">
                   {% for position in [1, 2, 3] %}
                     <option value="{{ position }}" {% if iso_priority_positions['ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
@@ -702,8 +702,9 @@
             <div class="standard-priority-summary">更新預覽時會依這組順位保留候選，再於保留候選中比較年份與人工改選。</div>
           </div>
           <div class="d-flex justify-content-end">
-            <button class="btn btn-primary fw-bold px-4" type="submit">
-              <i class="bi bi-search me-2"></i>產生預覽
+            <button class="btn btn-primary fw-bold px-3" type="submit">
+              <i class="bi bi-arrow-repeat"></i>
+              更新標準清單
             </button>
           </div>
         </form>

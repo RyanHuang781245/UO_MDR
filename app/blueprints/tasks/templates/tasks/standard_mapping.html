@@ -135,6 +135,11 @@
     font-size: 0.8125rem;
     line-height: 1.55;
   }
+  .standard-priority-switch {
+    margin-top: 0.875rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--bs-gray-200);
+  }
   .standard-preview-bar {
     display: flex;
     align-items: flex-start;
@@ -650,7 +655,10 @@
           <input type="hidden" name="action" value="preview">
           <div class="standard-form-grid">
             <div>
-              <label class="form-label small fw-bold text-uppercase text-muted">Word 文件</label>
+              <label class="form-label small fw-bold text-uppercase text-muted">
+                <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
+                Word 文件
+              </label>
               <select class="form-select form-control-custom rounded-2" name="word_path" required>
                 <option value="">請選擇 Word 檔案</option>
                 {% for item in word_options %}
@@ -659,7 +667,10 @@
               </select>
             </div>
             <div>
-              <label class="form-label small fw-bold text-uppercase text-muted">Excel 標準總表</label>
+              <label class="form-label small fw-bold text-uppercase text-muted">
+                <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
+                Excel 標準總表
+              </label>
               <select class="form-select form-control-custom rounded-2" name="excel_path" required>
                 <option value="">請選擇 Excel 檔案</option>
                 {% for item in excel_options %}
@@ -699,7 +710,27 @@
                 </select>
               </div>
             </div>
-            <div class="standard-priority-summary">更新預覽時會依這組順位保留候選，再於保留候選中比較年份與人工改選。</div>
+            <div class="standard-priority-switch">
+              <div class="form-check form-switch mb-0">
+                <input type="hidden" name="prefer_latest_en_variants" value="0">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  id="preferLatestEnVariants"
+                  name="prefer_latest_en_variants"
+                  value="1"
+                  {% if prefer_latest_en_variants %}checked{% endif %}
+                >
+                <label class="form-check-label fw-semibold" for="preferLatestEnVariants">
+                  同時檢索到 BS EN ISO 和 EN ISO 時，優先選擇年份最新
+                </label>
+              </div>
+            </div>
+            <div class="standard-priority-summary">
+              更新標準清單預設優先級為 BS EN ISO > EN ISO > ISO
+              {% if prefer_latest_en_variants %}目前已啟用年份優先規則。{% else %}目前停用年份優先規則，完全依優先級選用。{% endif %}
+            </div>
           </div>
           <div class="d-flex justify-content-end">
             <button class="btn btn-primary fw-bold px-3" type="submit">
@@ -739,7 +770,9 @@
     <div class="main-card mb-3">
       <div class="standard-preview-bar">
         <div class="standard-preview-bar__main">
-          <div class="standard-preview-bar__title mb-2">目前規則：{{ iso_priority | join(' > ') }}</div>
+          <div class="standard-preview-bar__title mb-2">
+            目前規則：{{ iso_priority | join(' > ') }}{% if prefer_latest_en_variants %}；年份優先{% endif %}
+          </div>
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
               <i class="bi bi-info-circle"></i>
@@ -789,6 +822,7 @@
       <input type="hidden" name="priority_bs_en_iso" value="{{ iso_priority_positions['BS EN ISO'] }}">
       <input type="hidden" name="priority_en_iso" value="{{ iso_priority_positions['EN ISO'] }}">
       <input type="hidden" name="priority_iso" value="{{ iso_priority_positions['ISO'] }}">
+      <input type="hidden" name="prefer_latest_en_variants" value="{{ 1 if prefer_latest_en_variants else 0 }}">
       <input id="overridesJsonInput" type="hidden" name="overrides_json" value="{}">
     </form>
 

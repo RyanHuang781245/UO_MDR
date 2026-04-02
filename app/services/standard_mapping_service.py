@@ -20,6 +20,7 @@ ISO_FAMILY_SHEETS = ["ISO", "BS-EN-DIN(歐洲國家標準)"]
 RED_COLOR = "FF0000"
 BLUE_COLOR = "2563EB"
 DEFAULT_ISO_PRIORITY = ("BS EN ISO", "EN ISO", "ISO")
+DEFAULT_PREFER_LATEST_EN_VARIANTS = True
 
 HEADER_ALIASES = {
     "Standards": [
@@ -461,6 +462,7 @@ def find_latest_year_from_excel(
     standard_name: str,
     excel_index: dict,
     iso_priority: list[str] | tuple[str, ...] | None = None,
+    prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
 ) -> dict | None:
     family = detect_search_family(standard_name)
     if not family:
@@ -514,40 +516,23 @@ def find_latest_year_from_excel(
     all_candidates = [dict(item) for item in candidates]
     if family == "ISO_FAMILY":
         priority_index = {label: idx for idx, label in enumerate(normalized_iso_priority)}
-        grouped_candidates = {
-            label: [x for x in all_candidates if x["standard_level"] == label]
-            for label in normalized_iso_priority
-        }
-        available_groups = [label for label in normalized_iso_priority if grouped_candidates.get(label)]
-        if not available_groups:
+        candidates = [x for x in all_candidates if x["standard_level"] in normalized_iso_priority]
+        if not candidates:
             return None
-
-        allowed_groups = [available_groups[0]]
-        if len(available_groups) > 1 and "ISO" not in available_groups[:2]:
-            allowed_groups.append(available_groups[1])
-
-        candidates = []
-        for label in allowed_groups:
-            candidates.extend(grouped_candidates.get(label, []))
-
-        allowed_labels = set(allowed_groups)
-        if len(allowed_groups) == 2:
-            allowed_desc = " / ".join(allowed_groups)
-            excluded_desc = " / ".join([label for label in normalized_iso_priority if label not in allowed_labels]) or "較低優先級候選"
-            for candidate in all_candidates:
-                if candidate["standard_level"] in allowed_labels:
-                    candidate["decision_reason"] = f"保留高優先級 {allowed_desc} 候選，進入最終排序"
-                else:
-                    candidate["decision"] = "excluded"
-                    candidate["decision_reason"] = f"排除較低優先級 {excluded_desc}"
-        else:
-            top_label = allowed_groups[0]
-            for candidate in all_candidates:
-                if candidate["standard_level"] == top_label:
-                    candidate["decision_reason"] = f"僅保留最高可用優先級 {top_label} 候選"
-                else:
-                    candidate["decision"] = "excluded"
-                    candidate["decision_reason"] = f"排除低於 {top_label} 的候選"
+        has_en_variant_pair = (
+            any(x["standard_level"] == "EN ISO" for x in candidates)
+            and any(x["standard_level"] == "BS EN ISO" for x in candidates)
+        )
+        for candidate in all_candidates:
+            if candidate["standard_level"] not in normalized_iso_priority:
+                candidate["decision"] = "excluded"
+                candidate["decision_reason"] = "不屬於 EN ISO / BS EN ISO / ISO 候選，排除"
+            elif prefer_latest_en_variants and has_en_variant_pair and candidate["standard_level"] in {"EN ISO", "BS EN ISO"}:
+                candidate["decision_reason"] = "EN ISO 與 BS EN ISO 同時存在，依年份較新優先"
+            elif prefer_latest_en_variants and has_en_variant_pair and candidate["standard_level"] == "ISO":
+                candidate["decision_reason"] = "保留 ISO 候選，但 EN ISO 與 BS EN ISO 會先依年份比較"
+            else:
+                candidate["decision_reason"] = f"納入 { ' > '.join(normalized_iso_priority) } 優先級候選，進入排序"
     else:
         for candidate in all_candidates:
             candidate["decision_reason"] = "符合查詢條件，進入最終排序"
@@ -555,12 +540,26 @@ def find_latest_year_from_excel(
     if not candidates:
         return None
 
+    has_en_variant_pair = (
+        family == "ISO_FAMILY"
+        and any(x["standard_level"] == "EN ISO" for x in candidates)
+        and any(x["standard_level"] == "BS EN ISO" for x in candidates)
+    )
+
+    def candidate_sort_key(candidate: dict) -> tuple:
+        latest_year = candidate["latest_year"]
+        name_length = len(candidate["matched_standard_no"])
+        if family == "ISO_FAMILY":
+            priority_rank = -priority_index.get(candidate["standard_level"], 99)
+            if prefer_latest_en_variants and has_en_variant_pair:
+                if candidate["standard_level"] in {"EN ISO", "BS EN ISO"}:
+                    return (2, latest_year, priority_rank, name_length)
+                return (1, priority_rank, latest_year, name_length)
+            return (1, priority_rank, latest_year, name_length)
+        return (1, 0, latest_year, name_length)
+
     candidates.sort(
-        key=lambda x: (
-            -priority_index.get(x["standard_level"], 99) if family == "ISO_FAMILY" else 0,
-            x["latest_year"],
-            len(x["matched_standard_no"]),
-        ),
+        key=candidate_sort_key,
         reverse=True,
     )
     selected = candidates[0]
@@ -569,7 +568,10 @@ def find_latest_year_from_excel(
             candidate["decision"] = "kept"
             candidate["decision_reason"] = "通過篩選，但排序結果未被選用"
     selected["decision"] = "selected"
-    selected["decision_reason"] = "最終採用：依優先級與年份排序後選中"
+    if family == "ISO_FAMILY" and prefer_latest_en_variants and has_en_variant_pair:
+        selected["decision_reason"] = "最終採用：EN ISO 與 BS EN ISO 同時存在，依年份較新選中"
+    else:
+        selected["decision_reason"] = "最終採用：依優先級與年份排序後選中"
 
     for candidate in all_candidates:
         candidate["candidate_id"] = make_candidate_id(candidate)
@@ -578,9 +580,7 @@ def find_latest_year_from_excel(
         key=lambda x: (
             1 if x.get("decision") == "selected" else 0,
             1 if x.get("decision") == "kept" else 0,
-            x.get("latest_year") or 0,
-            -priority_index.get(x.get("standard_level"), 99) if family == "ISO_FAMILY" else (x.get("standard_level_rank") or 0),
-            len(x.get("matched_standard_no") or ""),
+            *candidate_sort_key(x),
         ),
         reverse=True,
     )
@@ -589,6 +589,7 @@ def find_latest_year_from_excel(
     result["selected_candidate_id"] = make_candidate_id(selected)
     result["auto_selected_candidate_id"] = make_candidate_id(selected)
     result["iso_priority"] = list(normalized_iso_priority)
+    result["prefer_latest_en_variants"] = prefer_latest_en_variants
     return result
 
 
@@ -875,6 +876,7 @@ def process_document(
     override_map: dict | None = None,
     output_path: str | None = None,
     iso_priority: list[str] | tuple[str, ...] | None = None,
+    prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
 ) -> dict:
     override_map = override_map or {}
     normalized_iso_priority = normalize_iso_priority(iso_priority)
@@ -891,7 +893,12 @@ def process_document(
             row_key = make_row_key(rec["table_index"], rec["row_index"])
             standards = rec["standards"]
             word_year_text = normalize_text(rec["issued_year"])
-            match_info = find_latest_year_from_excel(standards, excel_index, normalized_iso_priority)
+            match_info = find_latest_year_from_excel(
+                standards,
+                excel_index,
+                normalized_iso_priority,
+                prefer_latest_en_variants=prefer_latest_en_variants,
+            )
             if match_info:
                 match_info = apply_candidate_override(match_info, override_map.get(row_key))
 
@@ -979,4 +986,5 @@ def process_document(
             "preview_tables": preview_tables,
             "reference_payload": reference_payload,
             "iso_priority": list(normalized_iso_priority),
+            "prefer_latest_en_variants": prefer_latest_en_variants,
         }

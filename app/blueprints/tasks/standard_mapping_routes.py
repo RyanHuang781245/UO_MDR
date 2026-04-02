@@ -7,7 +7,12 @@ from pathlib import Path
 
 from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
-from app.services.standard_mapping_service import DEFAULT_ISO_PRIORITY, normalize_iso_priority, process_document
+from app.services.standard_mapping_service import (
+    DEFAULT_ISO_PRIORITY,
+    DEFAULT_PREFER_LATEST_EN_VARIANTS,
+    normalize_iso_priority,
+    process_document,
+)
 from app.services.task_service import deduplicate_name, list_files, load_task_context as _load_task_context
 from .blueprint import tasks_bp
 from .mapping_routes import _safe_uploaded_filename
@@ -81,6 +86,18 @@ def _parse_iso_priority(values) -> tuple[str, ...]:
     return normalize_iso_priority(ordered)
 
 
+def _parse_prefer_latest_en_variants(values) -> bool:
+    if hasattr(values, "getlist"):
+        raw_values = [str(item).strip().lower() for item in values.getlist("prefer_latest_en_variants") if str(item).strip()]
+        if raw_values:
+            return raw_values[-1] in {"1", "true", "on", "yes"}
+        return DEFAULT_PREFER_LATEST_EN_VARIANTS
+    raw_value = str(values.get("prefer_latest_en_variants") or "").strip().lower()
+    if not raw_value:
+        return DEFAULT_PREFER_LATEST_EN_VARIANTS
+    return raw_value in {"1", "true", "on", "yes"}
+
+
 def _build_stats(report: list[dict]) -> dict[str, int]:
     stats = {"updated": 0, "same": 0, "missing": 0}
     for item in report:
@@ -102,6 +119,7 @@ def _render_standard_mapping_page(
     selected_word: str = "",
     selected_excel: str = "",
     iso_priority: tuple[str, ...] | list[str] | None = None,
+    prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
 ):
     files_dir = _task_files_dir(task_id)
     word_options, excel_options = _list_standard_mapping_files(files_dir)
@@ -126,6 +144,7 @@ def _render_standard_mapping_page(
         last_generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if preview_result else "",
         iso_priority=active_iso_priority,
         iso_priority_positions=iso_priority_positions,
+        prefer_latest_en_variants=(preview_result or {}).get("prefer_latest_en_variants", prefer_latest_en_variants),
     )
 
 
@@ -136,9 +155,11 @@ def task_standard_mapping(task_id):
     selected_excel = (request.values.get("excel_path") or "").strip()
     try:
         iso_priority = _parse_iso_priority(request.values)
+        prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.values)
     except ValueError as exc:
         flash(str(exc), "danger")
         iso_priority = DEFAULT_ISO_PRIORITY
+        prefer_latest_en_variants = DEFAULT_PREFER_LATEST_EN_VARIANTS
 
     if request.method == "GET":
         return _render_standard_mapping_page(
@@ -146,6 +167,7 @@ def task_standard_mapping(task_id):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=iso_priority,
+            prefer_latest_en_variants=prefer_latest_en_variants,
         )
 
     action = (request.form.get("action") or "preview").strip().lower()
@@ -155,14 +177,31 @@ def task_standard_mapping(task_id):
     try:
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
-        result = process_document(word_path, excel_path, iso_priority=iso_priority)
+        result = process_document(
+            word_path,
+            excel_path,
+            iso_priority=iso_priority,
+            prefer_latest_en_variants=prefer_latest_en_variants,
+        )
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")
-        return _render_standard_mapping_page(task_id, selected_word=selected_word, selected_excel=selected_excel, iso_priority=iso_priority)
+        return _render_standard_mapping_page(
+            task_id,
+            selected_word=selected_word,
+            selected_excel=selected_excel,
+            iso_priority=iso_priority,
+            prefer_latest_en_variants=prefer_latest_en_variants,
+        )
     except Exception as exc:
         current_app.logger.exception("Standard mapping preview failed")
         flash(f"預覽失敗：{exc}", "danger")
-        return _render_standard_mapping_page(task_id, selected_word=selected_word, selected_excel=selected_excel, iso_priority=iso_priority)
+        return _render_standard_mapping_page(
+            task_id,
+            selected_word=selected_word,
+            selected_excel=selected_excel,
+            iso_priority=iso_priority,
+            prefer_latest_en_variants=prefer_latest_en_variants,
+        )
 
     return _render_standard_mapping_page(
         task_id,
@@ -170,6 +209,7 @@ def task_standard_mapping(task_id):
         selected_word=selected_word,
         selected_excel=selected_excel,
         iso_priority=iso_priority,
+        prefer_latest_en_variants=prefer_latest_en_variants,
     )
 
 
@@ -181,6 +221,7 @@ def task_standard_mapping_download(task_id):
 
     try:
         iso_priority = _parse_iso_priority(request.form)
+        prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
@@ -197,6 +238,7 @@ def task_standard_mapping_download(task_id):
             override_map=override_map,
             output_path=output_path,
             iso_priority=iso_priority,
+            prefer_latest_en_variants=prefer_latest_en_variants,
         )
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")

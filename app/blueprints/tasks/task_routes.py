@@ -14,14 +14,12 @@ from app.services.audit_service import record_audit
 from app.services.flow_service import parse_template_paragraphs
 from app.services.nas_service import get_configured_nas_roots, resolve_nas_path
 from app.services.task_service import (
-    build_file_tree,
     can_delete_task as _can_delete_task,
     deduplicate_name,
     delete_task_record,
     enforce_max_copy_size,
     ensure_windows_long_path,
     list_dirs,
-    list_files,
     list_tasks,
     load_task_context as _load_task_context,
     record_task_in_db,
@@ -466,30 +464,10 @@ def task_detail(task_id):
             description = meta.get("description", "")
             creator = meta.get("creator", "") or ""
             nas_path = meta.get("nas_path", "") or ""
-    nas_diff = None
-    if nas_path and os.path.isdir(nas_path):
-        try:
-            task_files = {p.replace("\\", "/") for p in list_files(files_dir)}
-            nas_files = {p.replace("\\", "/") for p in list_files(nas_path)}
-            added = sorted(nas_files - task_files)
-            removed = sorted(task_files - nas_files)
-            if added or removed:
-                limit = 5
-                nas_diff = {
-                    "added": added[:limit],
-                    "removed": removed[:limit],
-                    "added_count": len(added),
-                    "removed_count": len(removed),
-                    "limit": limit,
-                }
-        except Exception:
-            current_app.logger.exception("Failed to compare NAS files")
-    tree = build_file_tree(files_dir)
     return render_template(
         "tasks/task_detail.html",
         task={"id": task_id, "name": name, "description": description, "creator": creator, "nas_path": nas_path},
-        nas_diff=nas_diff,
-        files_tree=tree,
+        files_api_url=url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id),
     )
 
 @tasks_bp.post("/tasks/<task_id>/templates/parse", endpoint="parse_template_doc")

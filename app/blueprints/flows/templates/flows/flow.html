@@ -1,6 +1,5 @@
 ﻿{% extends "base.html" %}
 {% block content %}
-{% from "_file_tree.html" import render_file_tree %}
 
 <div id="runStatusContainer" class="run-status-container"></div>
 
@@ -315,8 +314,9 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-4">
-        <div class="file-tree-container border rounded-3 p-3 bg-white">
-          {{ render_file_tree(files_tree) }}
+        <div class="file-tree-container border rounded-3 p-3 bg-white" id="flowFileTreePanel" data-api-url="{{ url_for('flow_file_bp.api_flow_list_task_files', task_id=task.id) }}">
+          <div class="small text-muted mb-3" id="flowFileTreeStatus">開啟視窗後載入檔案結構</div>
+          <ul class="file-tree file-tree-root" id="flowFileTreeRoot"></ul>
         </div>
       </div>
     </div>
@@ -908,6 +908,9 @@ const TASK_FILE_BROWSER_URL = "{{ url_for('flow_file_bp.api_flow_list_task_files
 const TASK_FILE_CREATE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_create_task_folder', task_id=task.id) }}";
 const TASK_FILE_RENAME_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_rename_task_folder', task_id=task.id) }}";
 const TASK_FILE_DELETE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_delete_task_folder', task_id=task.id) }}";
+const flowFileTreeModalEl = document.getElementById("filesModal");
+const flowFileTreeRoot = document.getElementById("flowFileTreeRoot");
+const flowFileTreeStatus = document.getElementById("flowFileTreeStatus");
 const BOOL_DEFAULTS = {
   include_caption: "true",
   use_chapter_title: "false",
@@ -954,6 +957,174 @@ function _setRuleVisibility(visible){
   _syncRuleToggleSwitch();
   _saveRuleVisibilityPreference(showExtractionRules);
 }
+
+function setFlowFileTreeStatus(message, tone = "muted"){
+  if (!flowFileTreeStatus) return;
+  flowFileTreeStatus.className = `small mb-3 text-${tone}`;
+  flowFileTreeStatus.textContent = message;
+}
+
+function createFlowFileTreePlaceholder(text){
+  const item = document.createElement("li");
+  item.className = "file-tree-item file";
+
+  const row = document.createElement("div");
+  row.className = "file-tree-row";
+
+  const bullet = document.createElement("span");
+  bullet.className = "file-tree-bullet";
+  bullet.setAttribute("aria-hidden", "true");
+
+  const label = document.createElement("span");
+  label.className = "file-tree-label text-muted";
+  label.textContent = text;
+
+  row.append(bullet, label);
+  item.append(row);
+  return item;
+}
+
+function createFlowFileNode(entry, level){
+  const item = document.createElement("li");
+  item.className = "file-tree-item file";
+  item.dataset.level = String(level);
+
+  const row = document.createElement("div");
+  row.className = "file-tree-row";
+
+  const bullet = document.createElement("span");
+  bullet.className = "file-tree-bullet";
+  bullet.setAttribute("aria-hidden", "true");
+
+  const label = document.createElement("span");
+  label.className = "file-tree-label";
+  label.textContent = entry.name;
+
+  row.append(bullet, label);
+  item.append(row);
+  return item;
+}
+
+async function populateFlowFileTree(relPath, listEl, level){
+  listEl.replaceChildren(createFlowFileTreePlaceholder("載入中..."));
+
+  const url = new URL(TASK_FILE_BROWSER_URL, window.location.origin);
+  if (relPath){
+    url.searchParams.set("path", relPath);
+  }
+  const resp = await fetch(url.toString(), { cache: "no-store" });
+  const data = await resp.json();
+  if (!resp.ok || !data.ok){
+    throw new Error(data.error || "載入檔案結構失敗");
+  }
+
+  listEl.replaceChildren();
+  const dirCount = Array.isArray(data.dirs) ? data.dirs.length : 0;
+  const fileCount = Array.isArray(data.files) ? data.files.length : 0;
+
+  if (!dirCount && !fileCount){
+    listEl.append(createFlowFileTreePlaceholder("空資料夾"));
+    return { dirCount, fileCount };
+  }
+
+  (data.dirs || []).forEach((entry) => {
+    listEl.append(createFlowFileDirNode(entry, level));
+  });
+  (data.files || []).forEach((entry) => {
+    listEl.append(createFlowFileNode(entry, level));
+  });
+  return { dirCount, fileCount };
+}
+
+function createFlowFileDirNode(entry, level){
+  const item = document.createElement("li");
+  item.className = "file-tree-item dir";
+  item.dataset.level = String(level);
+  item.dataset.path = entry.path;
+  item.dataset.loaded = "0";
+  item.dataset.loading = "0";
+
+  const row = document.createElement("div");
+  row.className = "file-tree-row";
+  row.setAttribute("role", "button");
+  row.setAttribute("tabindex", "0");
+  row.setAttribute("aria-expanded", "false");
+
+  const caret = document.createElement("span");
+  caret.className = "file-tree-caret";
+  caret.setAttribute("aria-hidden", "true");
+
+  const label = document.createElement("span");
+  label.className = "file-tree-label";
+  label.textContent = entry.name;
+
+  const childList = document.createElement("ul");
+  childList.className = "file-tree";
+
+  const toggle = async () => {
+    if (item.dataset.loading === "1"){
+      return;
+    }
+
+    if (item.classList.contains("is-open")){
+      item.classList.remove("is-open");
+      row.setAttribute("aria-expanded", "false");
+      return;
+    }
+
+    if (item.dataset.loaded !== "1"){
+      item.dataset.loading = "1";
+      label.classList.add("text-muted");
+      try{
+        await populateFlowFileTree(entry.path, childList, level + 1);
+        item.dataset.loaded = "1";
+      }finally{
+        item.dataset.loading = "0";
+        label.classList.remove("text-muted");
+      }
+    }
+
+    item.classList.add("is-open");
+    row.setAttribute("aria-expanded", "true");
+  };
+
+  row.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggle().catch((err) => {
+      setFlowFileTreeStatus(err.message || "載入檔案結構失敗", "danger");
+    });
+  });
+
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " "){
+      event.preventDefault();
+      toggle().catch((err) => {
+        setFlowFileTreeStatus(err.message || "載入檔案結構失敗", "danger");
+      });
+    }
+  });
+
+  row.append(caret, label);
+  item.append(row, childList);
+  return item;
+}
+
+async function loadFlowFileTreeRoot(){
+  if (!flowFileTreeRoot) return;
+
+  setFlowFileTreeStatus("載入檔案結構中...");
+  try{
+    const counts = await populateFlowFileTree("", flowFileTreeRoot, 0);
+    setFlowFileTreeStatus(`根目錄共載入 ${counts.dirCount} 個資料夾、${counts.fileCount} 個檔案。`);
+  }catch(err){
+    flowFileTreeRoot.replaceChildren(createFlowFileTreePlaceholder("檔案結構載入失敗"));
+    setFlowFileTreeStatus(err.message || "檔案結構載入失敗", "danger");
+  }
+}
+
+flowFileTreeModalEl?.addEventListener("show.bs.modal", () => {
+  loadFlowFileTreeRoot();
+});
 
 const FIELD_META = {
   pdf_zip: {

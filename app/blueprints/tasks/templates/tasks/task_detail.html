@@ -1,5 +1,4 @@
-﻿{% extends "base.html" %}
-{% from "_file_tree.html" import render_file_tree %}
+{% extends "base.html" %}
 {% block content %}
 <div class="container-fluid px-0">
     <div class="mb-3">
@@ -7,7 +6,6 @@
         <!-- <p class="text-muted">檢視任務基本資訊與檔案結構，並同步 NAS 變更。</p> -->
     </div>
 
-    <!-- 任務基本資訊 -->
     <div class="main-card mb-4 position-relative">
         <div class="px-4 py-4 border-bottom">
             <div class="d-flex align-items-center gap-3">
@@ -18,7 +16,6 @@
                   </div>
               </div>
             </div>
-            <!-- 任務 ID (右上角) -->
             <div class="position-absolute top-0 end-0 mt-3 me-4 text-muted small d-flex align-items-center gap-1 opacity-75">
                 任務 ID: <code class="text-primary fw-bold">{{ task.id }}</code>
                 <button class="btn btn-link p-0 text-muted" style="font-size: inherit;" onclick="copyToClipboard('{{ task.id }}', this)" title="複製 ID">
@@ -42,7 +39,6 @@
         </div>
     </div>
 
-    <!-- 檔案結構 -->
     <div class="main-card">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
             <h5 class="fw-bold mb-0">檔案結構</h5>
@@ -65,44 +61,12 @@
             {% endif %}
         </div>
         <div class="px-4 py-4">
-            <div class="alert alert-warning border-0 shadow-sm py-3 mb-4 {% if not nas_diff %}d-none{% endif %}" id="nasDiffAlert">
-                {% if nas_diff %}
-                <div class="d-flex align-items-center gap-2 mb-2">
-                    <i class="bi bi-exclamation-triangle-fill fs-5"></i>
-                    <strong class="mb-0">NAS 檔案內容已變更</strong>
-                </div>
-                <div class="small text-muted mb-3">偵測到新增 <span class="badge bg-success bg-opacity-10 text-success">{{ nas_diff.added_count }}</span>、刪除 <span class="badge bg-danger bg-opacity-10 text-danger">{{ nas_diff.removed_count }}</span> 個項目。</div>
-                <div class="row g-3">
-                    {% if nas_diff.added %}
-                    <div class="col-md-6">
-                        <div class="small fw-bold text-success mb-1">新增：</div>
-                        <ul class="list-unstyled small mb-0 p-3 bg-white rounded-2 border border-success border-opacity-25" style="max-height: 120px; overflow-y: auto;">
-                            {% for item in nas_diff.added %}
-                            <li><i class="bi bi-plus-circle-fill me-1"></i>{{ item }}</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    {% endif %}
-                    {% if nas_diff.removed %}
-                    <div class="col-md-6">
-                        <div class="small fw-bold text-danger mb-1">刪除：</div>
-                        <ul class="list-unstyled small mb-0 p-3 bg-white rounded-2 border border-danger border-opacity-25" style="max-height: 120px; overflow-y: auto;">
-                            {% for item in nas_diff.removed %}
-                            <li><i class="bi bi-dash-circle-fill me-1"></i>{{ item }}</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    {% endif %}
-                </div>
-                {% if nas_diff.added_count > nas_diff.added|length or nas_diff.removed_count > nas_diff.removed|length %}
-                <div class="small text-muted mt-2 fst-italic">僅顯示前 {{ nas_diff.limit }} 筆項目。</div>
-                {% endif %}
-                {% endif %}
-            </div>
-            
-            <div class="file-tree-container p-3 border rounded-3 bg-white">
+            <div class="alert alert-warning border-0 shadow-sm py-3 mb-4 d-none" id="nasDiffAlert"></div>
+
+            <div class="file-tree-container p-3 border rounded-3 bg-white" id="taskFileTreePanel" data-api-url="{{ files_api_url }}">
               <p class="text-muted small mb-3">點擊資料夾名稱可展開。如需處理文件，請至「流程管理」頁面。</p>
-                {{ render_file_tree(files_tree) }}
+              <div class="small text-muted mb-3" id="fileTreeStatus">載入檔案結構中...</div>
+              <ul class="file-tree file-tree-root" id="taskFileTreeRoot"></ul>
             </div>
         </div>
     </div>
@@ -112,6 +76,10 @@
 const nasDiffBtn = document.getElementById('nasDiffBtn');
 const nasDiffStatus = document.getElementById('nasDiffStatus');
 const nasDiffAlert = document.getElementById('nasDiffAlert');
+const fileTreePanel = document.getElementById('taskFileTreePanel');
+const fileTreeRoot = document.getElementById('taskFileTreeRoot');
+const fileTreeStatus = document.getElementById('fileTreeStatus');
+const filesApiUrl = fileTreePanel?.dataset.apiUrl || '';
 
 function copyToClipboard(text, btn) {
   if (navigator.clipboard) {
@@ -128,17 +96,212 @@ function copyToClipboard(text, btn) {
   }
 }
 
+function setFileTreeStatus(message, tone = 'muted'){
+  if(!fileTreeStatus) return;
+  fileTreeStatus.className = `small mb-3 text-${tone}`;
+  fileTreeStatus.textContent = message;
+}
+
+function buildFileApiUrl(relPath = ''){
+  const url = new URL(filesApiUrl, window.location.origin);
+  if(relPath){
+    url.searchParams.set('path', relPath);
+  }
+  return url.toString();
+}
+
+function createTreePlaceholder(text){
+  const item = document.createElement('li');
+  item.className = 'file-tree-item file';
+
+  const row = document.createElement('div');
+  row.className = 'file-tree-row';
+
+  const bullet = document.createElement('span');
+  bullet.className = 'file-tree-bullet';
+  bullet.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.className = 'file-tree-label text-muted';
+  label.textContent = text;
+
+  row.append(bullet, label);
+  item.append(row);
+  return item;
+}
+
+function createFileNode(entry, level){
+  const item = document.createElement('li');
+  item.className = 'file-tree-item file';
+  item.dataset.level = String(level);
+
+  const row = document.createElement('div');
+  row.className = 'file-tree-row';
+
+  const bullet = document.createElement('span');
+  bullet.className = 'file-tree-bullet';
+  bullet.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.className = 'file-tree-label';
+  label.textContent = entry.name;
+
+  row.append(bullet, label);
+  item.append(row);
+  return item;
+}
+
+async function populateDirectory(relPath, listEl, level){
+  listEl.replaceChildren(createTreePlaceholder('載入中...'));
+
+  const resp = await fetch(buildFileApiUrl(relPath), { cache: 'no-store' });
+  const data = await resp.json();
+  if(!resp.ok || !data.ok){
+    throw new Error(data.error || '載入檔案結構失敗');
+  }
+
+  listEl.replaceChildren();
+  const dirCount = (data.dirs || []).length;
+  const fileCount = (data.files || []).length;
+
+  if(!dirCount && !fileCount){
+    listEl.append(createTreePlaceholder('空資料夾'));
+    return { dirCount, fileCount };
+  }
+
+  (data.dirs || []).forEach((entry) => {
+    listEl.append(createDirNode(entry, level));
+  });
+  (data.files || []).forEach((entry) => {
+    listEl.append(createFileNode(entry, level));
+  });
+
+  return { dirCount, fileCount };
+}
+
+function createDirNode(entry, level){
+  const item = document.createElement('li');
+  item.className = 'file-tree-item dir';
+  item.dataset.level = String(level);
+  item.dataset.path = entry.path;
+  item.dataset.loaded = '0';
+  item.dataset.loading = '0';
+
+  const row = document.createElement('div');
+  row.className = 'file-tree-row';
+  row.setAttribute('role', 'button');
+  row.setAttribute('tabindex', '0');
+  row.setAttribute('aria-expanded', 'false');
+
+  const caret = document.createElement('span');
+  caret.className = 'file-tree-caret';
+  caret.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.className = 'file-tree-label';
+  label.textContent = entry.name;
+
+  const childList = document.createElement('ul');
+  childList.className = 'file-tree';
+
+  const toggle = async () => {
+    if(item.dataset.loading === '1'){
+      return;
+    }
+
+    if(item.classList.contains('is-open')){
+      item.classList.remove('is-open');
+      row.setAttribute('aria-expanded', 'false');
+      return;
+    }
+
+    if(item.dataset.loaded !== '1'){
+      item.dataset.loading = '1';
+      label.classList.add('text-muted');
+      try{
+        await populateDirectory(entry.path, childList, level + 1);
+        item.dataset.loaded = '1';
+      }finally{
+        item.dataset.loading = '0';
+        label.classList.remove('text-muted');
+      }
+    }
+
+    item.classList.add('is-open');
+    row.setAttribute('aria-expanded', 'true');
+  };
+
+  row.addEventListener('click', (event) => {
+    event.stopPropagation();
+    toggle().catch((err) => {
+      setFileTreeStatus(err.message || '載入檔案結構失敗', 'danger');
+    });
+  });
+
+  row.addEventListener('keydown', (event) => {
+    if(event.key === 'Enter' || event.key === ' '){
+      event.preventDefault();
+      toggle().catch((err) => {
+        setFileTreeStatus(err.message || '載入檔案結構失敗', 'danger');
+      });
+    }
+  });
+
+  row.append(caret, label);
+  item.append(row, childList);
+  return item;
+}
+
+async function loadRootDirectory(){
+  if(!fileTreeRoot || !filesApiUrl){
+    return;
+  }
+
+  setFileTreeStatus('載入檔案結構中...');
+  try{
+    const counts = await populateDirectory('', fileTreeRoot, 0);
+    setFileTreeStatus(`根目錄共載入 ${counts.dirCount} 個資料夾、${counts.fileCount} 個檔案。`);
+  }catch(err){
+    fileTreeRoot.replaceChildren(createTreePlaceholder('檔案結構載入失敗'));
+    setFileTreeStatus(err.message || '檔案結構載入失敗', 'danger');
+  }
+}
+
+function escapeHtml(value){
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function createDiffList(title, items, tone, iconClass){
+  if(!items || !items.length){
+    return '';
+  }
+  const rows = items.map((item) => `<li><i class="${iconClass} me-1"></i>${escapeHtml(item)}</li>`).join('');
+  return `
+    <div class="col-md-4">
+      <div class="small fw-bold text-${tone} mb-1">${title}：</div>
+      <ul class="list-unstyled small mb-0 p-3 bg-white rounded-2 border border-${tone} border-opacity-25" style="max-height: 120px; overflow-y: auto;">
+        ${rows}
+      </ul>
+    </div>
+  `;
+}
+
 function renderNasDiff(diff){
   if(!nasDiffAlert) return;
-  if(!diff || (diff.added_count === 0 && diff.removed_count === 0)){
+  if(!diff || (diff.added_count === 0 && diff.removed_count === 0 && (diff.updated_count || 0) === 0)){
     nasDiffAlert.classList.add('d-none');
     nasDiffAlert.innerHTML = '';
     return;
   }
-  
-  const addedItems = (diff.added || []).map(item => `<li><i class="bi bi-plus-circle-fill me-1"></i>${item}</li>`).join('');
-  const removedItems = (diff.removed || []).map(item => `<li><i class="bi bi-dash-circle-fill me-1"></i>${item}</li>`).join('');
-  const showLimit = (diff.added_count > (diff.added || []).length) || (diff.removed_count > (diff.removed || []).length);
+
+  const showLimit = (diff.added_count > (diff.added || []).length)
+    || (diff.removed_count > (diff.removed || []).length)
+    || ((diff.updated_count || 0) > (diff.updated || []).length);
 
   nasDiffAlert.classList.remove('d-none');
   nasDiffAlert.innerHTML = `
@@ -146,22 +309,15 @@ function renderNasDiff(diff){
         <i class="bi bi-exclamation-triangle-fill fs-5"></i>
         <strong class="mb-0">NAS 檔案內容已變更</strong>
     </div>
-    <div class="small text-muted mb-3">偵測到新增 <span class="badge bg-success bg-opacity-10 text-success">${diff.added_count}</span>、刪除 <span class="badge bg-danger bg-opacity-10 text-danger">${diff.removed_count}</span> 個項目。</div>
+    <div class="small text-muted mb-3">
+      偵測到新增 <span class="badge bg-success bg-opacity-10 text-success">${diff.added_count}</span>、
+      更新 <span class="badge bg-primary bg-opacity-10 text-primary">${diff.updated_count || 0}</span>、
+      刪除 <span class="badge bg-danger bg-opacity-10 text-danger">${diff.removed_count}</span> 個項目。
+    </div>
     <div class="row g-3">
-        ${diff.added_count > 0 ? `
-        <div class="col-md-6">
-            <div class="small fw-bold text-success mb-1">新增：</div>
-            <ul class="list-unstyled small mb-0 p-3 bg-white rounded-2 border border-success border-opacity-25" style="max-height: 120px; overflow-y: auto;">
-                ${addedItems}
-            </ul>
-        </div>` : ''}
-        ${diff.removed_count > 0 ? `
-        <div class="col-md-6">
-            <div class="small fw-bold text-danger mb-1">刪除：</div>
-            <ul class="list-unstyled small mb-0 p-3 bg-white rounded-2 border border-danger border-opacity-25" style="max-height: 120px; overflow-y: auto;">
-                ${removedItems}
-            </ul>
-        </div>` : ''}
+      ${createDiffList('新增', diff.added || [], 'success', 'bi bi-plus-circle-fill')}
+      ${createDiffList('更新', diff.updated || [], 'primary', 'bi bi-arrow-repeat')}
+      ${createDiffList('刪除', diff.removed || [], 'danger', 'bi bi-dash-circle-fill')}
     </div>
     ${showLimit ? `<div class="small text-muted mt-2 fst-italic">僅顯示前 ${diff.limit} 筆項目。</div>` : ''}
   `;
@@ -190,6 +346,10 @@ if(nasDiffBtn){
     }
   });
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadRootDirectory();
+});
 </script>
 
 {% endblock %}

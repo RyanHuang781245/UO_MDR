@@ -24,7 +24,6 @@ from app.services.flow_version_service import (
     load_flow_version_entry as _load_flow_version_entry,
 )
 from app.services.task_service import (
-    build_file_tree,
     gather_available_files,
     load_task_context as _load_task_context,
 )
@@ -167,7 +166,6 @@ def build_flow_builder_context(task_id: str, args) -> dict:
         "preset": preset,
         "loaded_name": loaded_name,
         "job_id": job_id,
-        "files_tree": build_file_tree(files_dir),
         "template_file": template_file,
         "template_paragraphs": template_paragraphs,
         "document_format": document_format,

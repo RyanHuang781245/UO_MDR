@@ -86,6 +86,57 @@ def get_ilvl(p: etree._Element) -> int | None:
     v = il.get(qn("w:val"))
     return int(v) if v and v.isdigit() else None
 
+
+def parse_styles_numpr(styles_xml: bytes | None) -> tuple[dict[str, str], dict[str, tuple[int, int | None]]]:
+    if not styles_xml:
+        return {}, {}
+    root = etree.fromstring(styles_xml)
+    style_based: dict[str, str] = {}
+    style_numpr: dict[str, tuple[int, int | None]] = {}
+    for st in root.xpath(".//w:style[@w:type='paragraph']", namespaces=NS):
+        sid = st.get(qn("w:styleId"))
+        if not sid:
+            continue
+        based = st.find("w:basedOn", namespaces=NS)
+        if based is not None:
+            base_id = based.get(qn("w:val"))
+            if base_id:
+                style_based[sid] = base_id
+        pPr = st.find("w:pPr", namespaces=NS)
+        if pPr is None:
+            continue
+        numPr = pPr.find("w:numPr", namespaces=NS)
+        if numPr is None:
+            continue
+        num_id_node = numPr.find("w:numId", namespaces=NS)
+        ilvl_node = numPr.find("w:ilvl", namespaces=NS)
+        num_id_raw = (num_id_node.get(qn("w:val")) or "").strip() if num_id_node is not None else ""
+        ilvl_raw = (ilvl_node.get(qn("w:val")) or "").strip() if ilvl_node is not None else ""
+        if not num_id_raw.isdigit():
+            continue
+        style_numpr[sid] = (
+            int(num_id_raw),
+            int(ilvl_raw) if ilvl_raw.isdigit() else None,
+        )
+    return style_based, style_numpr
+
+
+def resolve_style_numpr(
+    style_id: str | None,
+    style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None,
+) -> tuple[int | None, int | None]:
+    if not style_id or not style_numpr:
+        return None, None
+    cur = style_id
+    for _ in range(30):
+        if cur in style_numpr:
+            return style_numpr[cur]
+        cur = style_based.get(cur)
+        if not cur:
+            break
+    return None, None
+
 def _parse_number_parts(number_text: str) -> list[int]:
     parts: list[int] = []
     for token in (number_text or "").split("."):
@@ -261,22 +312,28 @@ def _strip_leading_whitespace_after_prefix(p: etree._Element, prefix_run: etree.
             t.text = new_text
             break
 
-def _get_paragraph_numpr(p: etree._Element) -> tuple[int, int] | None:
+def _get_paragraph_numpr(
+    p: etree._Element,
+    *,
+    style_based: dict[str, str] | None = None,
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
+) -> tuple[int, int] | None:
     pPr = p.find("w:pPr", namespaces=NS)
-    if pPr is None:
+    if pPr is not None:
+        numPr = pPr.find("w:numPr", namespaces=NS)
+        if numPr is not None:
+            num_id_node = numPr.find("w:numId", namespaces=NS)
+            ilvl_node = numPr.find("w:ilvl", namespaces=NS)
+            if num_id_node is not None and ilvl_node is not None:
+                num_id_raw = (num_id_node.get(qn("w:val")) or "").strip()
+                ilvl_raw = (ilvl_node.get(qn("w:val")) or "").strip()
+                if num_id_raw.isdigit() and ilvl_raw.isdigit():
+                    return int(num_id_raw), int(ilvl_raw)
+
+    num_id, ilvl = resolve_style_numpr(get_pStyle(p), style_based or {}, style_numpr)
+    if num_id is None or ilvl is None:
         return None
-    numPr = pPr.find("w:numPr", namespaces=NS)
-    if numPr is None:
-        return None
-    num_id_node = numPr.find("w:numId", namespaces=NS)
-    ilvl_node = numPr.find("w:ilvl", namespaces=NS)
-    if num_id_node is None or ilvl_node is None:
-        return None
-    num_id_raw = (num_id_node.get(qn("w:val")) or "").strip()
-    ilvl_raw = (ilvl_node.get(qn("w:val")) or "").strip()
-    if not num_id_raw.isdigit() or not ilvl_raw.isdigit():
-        return None
-    return int(num_id_raw), int(ilvl_raw)
+    return num_id, ilvl
 
 def _format_number_token(value: int, num_fmt: str) -> str:
     fmt = (num_fmt or "decimal").strip().lower()
@@ -413,8 +470,11 @@ def _render_numbering_prefix(
     p: etree._Element,
     content_children: list[etree._Element],
     numbering_xml: bytes | None,
+    *,
+    style_based: dict[str, str] | None = None,
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
 ) -> str:
-    numpr = _get_paragraph_numpr(p)
+    numpr = _get_paragraph_numpr(p, style_based=style_based, style_numpr=style_numpr)
     if numpr is None:
         return ""
 
@@ -424,7 +484,7 @@ def _render_numbering_prefix(
 
     for block in content_children:
         for para in iter_paragraphs(block):
-            para_numpr = _get_paragraph_numpr(para)
+            para_numpr = _get_paragraph_numpr(para, style_based=style_based, style_numpr=style_numpr)
             if para_numpr is None:
                 continue
             num_id, ilvl = para_numpr
@@ -467,13 +527,22 @@ def materialize_paragraph_numpr_as_text(
     p: etree._Element | None,
     content_children: list[etree._Element],
     numbering_xml: bytes | None,
+    *,
+    style_based: dict[str, str] | None = None,
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
 ) -> bool:
     if p is None or p.tag != qn("w:p"):
         return False
-    if _get_paragraph_numpr(p) is None:
+    if _get_paragraph_numpr(p, style_based=style_based, style_numpr=style_numpr) is None:
         return False
 
-    prefix = _render_numbering_prefix(p, content_children, numbering_xml)
+    prefix = _render_numbering_prefix(
+        p,
+        content_children,
+        numbering_xml,
+        style_based=style_based,
+        style_numpr=style_numpr,
+    )
     _remove_paragraph_numpr(p)
     _strip_paragraph_indents(p)
 
@@ -1238,6 +1307,8 @@ def match_heading_by_number_and_title(
     paragraph_text: str,
     heading_number: str | None = None,
     heading_title: str | None = None,
+    *,
+    require_number_match_if_provided: bool = False,
 ) -> bool:
     """Match heading text using chapter number and/or title (test2.py style)."""
     txt = normalize_text(paragraph_text)
@@ -1252,6 +1323,8 @@ def match_heading_by_number_and_title(
             if title:
                 return title in txt
             return True
+        if require_number_match_if_provided:
+            return False
         # Some documents put chapter number in TOC line, but real heading line is title-only.
         if title and (txt == title or txt.endswith(title)):
             return True
@@ -1261,6 +1334,60 @@ def match_heading_by_number_and_title(
         return txt == title or title in txt
 
     return False
+
+
+def _paragraph_matches_requested_start(
+    p: etree._Element,
+    *,
+    paragraph_text: str,
+    requested_heading_text: str,
+    requested_number_parts: list[int],
+    ordinal_start_idx: int | None,
+    block_index: int,
+    body_children: list[etree._Element],
+    numbering_xml: bytes | None,
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
+    style_heading_rank: dict[str, int] | None = None,
+    strict_number_match: bool = False,
+) -> bool:
+    if paragraph_text != requested_heading_text:
+        return False
+
+    if not strict_number_match:
+        return True
+
+    heading_depth = get_effective_heading_depth(
+        p,
+        style_outline,
+        style_based,
+        style_heading_rank,
+    )
+    ilvl = get_ilvl(p)
+    if heading_depth is None and ilvl is None:
+        return False
+
+    if not requested_number_parts:
+        return True
+
+    candidate_number_parts = _extract_leading_number_parts(paragraph_text)
+    if not candidate_number_parts:
+        rendered_prefix = normalize_text(
+            _render_numbering_prefix(
+                p,
+                body_children,
+                numbering_xml,
+                style_based=style_based,
+                style_numpr=style_numpr,
+            )
+        ).rstrip(".．")
+        if rendered_prefix:
+            candidate_number_parts = _parse_number_parts(rendered_prefix.replace("．", "."))
+    if candidate_number_parts:
+        return candidate_number_parts == requested_number_parts
+
+    return ordinal_start_idx == block_index
 
 
 def _get_explicit_outline_depth(p: etree._Element) -> int | None:
@@ -1274,7 +1401,7 @@ def _get_explicit_outline_depth(p: etree._Element) -> int | None:
     return int(v) if v and v.isdigit() else None
 
 
-def _looks_like_heading_boundary_text(paragraph_text: str, *, max_words: int = 18) -> bool:
+def _looks_like_heading_boundary_text(paragraph_text: str, *, max_words: int = 28) -> bool:
     text = normalize_text(paragraph_text)
     if not text:
         return False
@@ -1313,14 +1440,45 @@ def _matches_explicit_heading_boundary(
     paragraph_text: str,
     heading_number: str | None,
     heading_title: str | None,
+    block_index: int,
+    body_children: list[etree._Element],
+    numbering_xml: bytes | None,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
     style_heading_rank: dict[str, int] | None = None,
+    ordinal_match_block_index: int | None = None,
+    strict_number_match: bool = False,
 ) -> bool:
+    if strict_number_match:
+        txt = normalize_text(paragraph_text)
+        num = normalize_text(heading_number or "").rstrip(".")
+        title = normalize_text(heading_title or "")
+        requested_parts = _parse_number_parts(num.replace("．", ".")) if num else []
+
+        if title and not (txt == title or title in txt or txt.endswith(title)):
+            return False
+        if requested_parts:
+            candidate_parts = _extract_boundary_number_parts(
+                p,
+                paragraph_text=txt,
+                body_children=body_children,
+                numbering_xml=numbering_xml,
+                style_based=style_based,
+                style_numpr=style_numpr,
+            )
+            if candidate_parts:
+                if candidate_parts != requested_parts:
+                    return False
+            elif ordinal_match_block_index != block_index:
+                return False
+        return bool(title or requested_parts)
+
     if not match_heading_by_number_and_title(
         paragraph_text=paragraph_text,
         heading_number=heading_number,
         heading_title=heading_title,
+        require_number_match_if_provided=strict_number_match,
     ):
         return False
 
@@ -1414,13 +1572,23 @@ def _extract_boundary_number_parts(
     paragraph_text: str,
     body_children: list[etree._Element],
     numbering_xml: bytes | None,
+    style_based: dict[str, str] | None = None,
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
 ) -> list[int]:
     candidate_parts = _extract_leading_number_parts(paragraph_text)
     if candidate_parts:
         return candidate_parts
     if not numbering_xml:
         return []
-    rendered_prefix = normalize_text(_render_numbering_prefix(p, body_children, numbering_xml)).rstrip(".．")
+    rendered_prefix = normalize_text(
+        _render_numbering_prefix(
+            p,
+            body_children,
+            numbering_xml,
+            style_based=style_based,
+            style_numpr=style_numpr,
+        )
+    ).rstrip(".．")
     if not rendered_prefix:
         return []
     return _parse_number_parts(rendered_prefix.replace("．", "."))
@@ -1463,6 +1631,7 @@ def _find_number_boundary_fallback_index(
     reference_style: str | None,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
     style_heading_rank: dict[str, int] | None = None,
     numbering_xml: bytes | None = None,
     ignore_toc: bool = True,
@@ -1490,6 +1659,8 @@ def _find_number_boundary_fallback_index(
                 paragraph_text=txt,
                 body_children=body_children,
                 numbering_xml=numbering_xml,
+                style_based=style_based,
+                style_numpr=style_numpr,
             )
             if _is_plain_text_number_boundary(
                 reference_number_parts,
@@ -1557,6 +1728,7 @@ def find_section_range_children(
     start_number: str,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
     style_heading_rank: dict[str, int] | None = None,
     explicit_end_title: str | None = None,
     explicit_end_number: str | None = None,
@@ -1566,7 +1738,13 @@ def find_section_range_children(
     llm_boundary_fallback: bool | None = None,
     llm_boundary_model_id: str | None = None,
     llm_boundary_resolver: Callable[..., int | None] | None = None,
+    strict_heading_number_match: bool = False,
 ) -> tuple[int, int]:
+    # 邊界偵測使用三個門控機制，而非單一優先權規則：
+    # 1) 排除/文字門控：跳過目錄/表格/類似標題或類似句子的正文。
+    # 2) 結構門控：優先考慮大綱/樣式/層級/編號訊號。
+    # 3) 章節關係門控：僅接受符合下列條件的候選邊界：
+    # 下一個同級或更高級別的邊界，或明確請求的結束邊界。
     start_idx = None
     start_heading_depth = None
     start_style = None
@@ -1581,6 +1759,16 @@ def find_section_range_children(
     requested_start_depth = (len(start_number_parts) - 1) if start_number_parts else None
     start_num_pattern = _build_heading_number_prefix_regex(start_number)
     found_kind = None  # "exact" | "toc"
+    ordinal_start = None
+    if start_number_parts:
+        ordinal_start = _find_structural_heading_by_ordinal(
+            body_children,
+            target_number_parts=start_number_parts,
+            style_outline=style_outline,
+            style_based=style_based,
+            style_heading_rank=style_heading_rank,
+            ignore_toc=ignore_toc,
+        )
 
     # ---- 找起點 ----
     for i, block in enumerate(body_children):
@@ -1590,7 +1778,21 @@ def find_section_range_children(
 
             txt = normalize_text(get_all_text(p))
 
-            if txt == start_heading_text:
+            if _paragraph_matches_requested_start(
+                p,
+                paragraph_text=txt,
+                requested_heading_text=start_heading_text,
+                requested_number_parts=start_number_parts,
+                ordinal_start_idx=(ordinal_start[0] if ordinal_start is not None else None),
+                block_index=i,
+                body_children=body_children,
+                numbering_xml=numbering_xml,
+                style_outline=style_outline,
+                style_based=style_based,
+                style_numpr=style_numpr,
+                style_heading_rank=style_heading_rank,
+                strict_number_match=strict_heading_number_match,
+            ):
                 cand_heading_depth = get_effective_heading_depth(
                     p,
                     style_outline,
@@ -1637,18 +1839,18 @@ def find_section_range_children(
             break
 
     if start_idx is None:
-        if start_heading_is_number and start_number_parts:
-            ordinal_start = _find_structural_heading_by_ordinal(
-                body_children,
-                target_number_parts=start_number_parts,
-                style_outline=style_outline,
-                style_based=style_based,
-                style_heading_rank=style_heading_rank,
-                ignore_toc=ignore_toc,
-            )
-            if ordinal_start is not None:
+        if ordinal_start is not None:
+            if start_heading_is_number:
                 start_idx, start_heading_depth, start_style, start_ilvl = ordinal_start
                 found_kind = "exact"
+            else:
+                ordinal_block = body_children[ordinal_start[0]]
+                for ordinal_p in iter_paragraphs(ordinal_block):
+                    ordinal_txt = normalize_text(get_all_text(ordinal_p))
+                    if ordinal_txt == start_heading_text:
+                        start_idx, start_heading_depth, start_style, start_ilvl = ordinal_start
+                        found_kind = "exact"
+                        break
         if start_idx is None and fallback_start_idx is not None:
             start_idx = fallback_start_idx
             start_heading_depth = fallback_start_heading_depth
@@ -1668,6 +1870,16 @@ def find_section_range_children(
     has_explicit_end = bool((explicit_end_title or "").strip() or (explicit_end_number or "").strip())
     explicit_end_parts = _parse_number_parts(normalize_text(explicit_end_number or "").replace("．", ".").rstrip("."))
     explicit_end_depth = (len(explicit_end_parts) - 1) if explicit_end_parts else None
+    explicit_end_ordinal = None
+    if explicit_end_parts:
+        explicit_end_ordinal = _find_structural_heading_by_ordinal(
+            body_children,
+            target_number_parts=explicit_end_parts,
+            style_outline=style_outline,
+            style_based=style_based,
+            style_heading_rank=style_heading_rank,
+            ignore_toc=ignore_toc,
+        )
 
     # ---- 找終點 ----
     end_idx = len(body_children)
@@ -1685,9 +1897,17 @@ def find_section_range_children(
                     paragraph_text=txt,
                     heading_number=explicit_end_number,
                     heading_title=explicit_end_title,
+                    block_index=j,
+                    body_children=body_children,
+                    numbering_xml=numbering_xml,
                     style_outline=style_outline,
                     style_based=style_based,
+                    style_numpr=style_numpr,
                     style_heading_rank=style_heading_rank,
+                    ordinal_match_block_index=(
+                        explicit_end_ordinal[0] if explicit_end_ordinal is not None else None
+                    ),
+                    strict_number_match=strict_heading_number_match,
                 ):
                     if include_end_chapter:
                         end_heading_depth = get_effective_heading_depth(
@@ -1732,7 +1952,8 @@ def find_section_range_children(
                         return start_idx, len(body_children)
                     return start_idx, j
 
-            # If explicit end is provided, do not stop at the next same-level heading.
+            # When an explicit end is requested, only that explicit chapter may
+            # terminate the range; generic same-level headings are ignored.
             if has_explicit_end:
                 continue
 
@@ -1769,6 +1990,7 @@ def find_section_range_children(
         reference_style=start_style,
         style_outline=style_outline,
         style_based=style_based,
+        style_numpr=style_numpr,
         style_heading_rank=style_heading_rank,
         numbering_xml=numbering_xml,
         ignore_toc=ignore_toc,
@@ -1785,6 +2007,7 @@ def find_section_range_children(
         reference_ilvl=start_ilvl,
         style_outline=style_outline,
         style_based=style_based,
+        style_numpr=style_numpr,
         style_heading_rank=style_heading_rank,
         numbering_xml=numbering_xml,
         ignore_toc=ignore_toc,
@@ -1800,6 +2023,7 @@ def find_section_range_children(
         reference_style=start_style,
         style_outline=style_outline,
         style_based=style_based,
+        style_numpr=style_numpr,
         style_heading_rank=style_heading_rank,
         numbering_xml=numbering_xml,
         ignore_toc=ignore_toc,
@@ -1843,7 +2067,7 @@ def _xml_excerpt(node: etree._Element, *, max_chars: int = 1000) -> str:
 
 def _looks_like_unstructured_heading_candidate(text: str) -> bool:
     normalized = normalize_text(text)
-    if not _looks_like_heading_boundary_text(normalized, max_words=12):
+    if not _looks_like_heading_boundary_text(normalized, max_words=20):
         return False
     if normalized.endswith((".", "。", ";", "；", ":")):
         return False
@@ -1863,7 +2087,7 @@ def _is_sentence_like_body_paragraph(text: str) -> bool:
     if not normalized:
         return False
     words = normalized.split()
-    if len(words) >= 10:
+    if len(words) >= 14:
         return True
     if len(words) >= 5 and normalized.endswith((".", "。", ";", "；")):
         return True
@@ -1908,6 +2132,7 @@ def _score_rule_based_boundary_candidate(
     reference_ilvl: int | None,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
     style_heading_rank: dict[str, int] | None = None,
     numbering_xml: bytes | None = None,
 ) -> int | None:
@@ -1930,6 +2155,8 @@ def _score_rule_based_boundary_candidate(
         paragraph_text=text,
         body_children=body_children,
         numbering_xml=numbering_xml,
+        style_based=style_based,
+        style_numpr=style_numpr,
     )
     subheading_kind, _ = classify_subheading_candidate_xml(p)
     looks_unstructured = _looks_like_unstructured_heading_candidate(text)
@@ -2019,6 +2246,7 @@ def _find_rule_based_boundary_fallback_index(
     reference_ilvl: int | None,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
     style_heading_rank: dict[str, int] | None = None,
     numbering_xml: bytes | None = None,
     ignore_toc: bool = True,
@@ -2043,6 +2271,7 @@ def _find_rule_based_boundary_fallback_index(
                 reference_ilvl=reference_ilvl,
                 style_outline=style_outline,
                 style_based=style_based,
+                style_numpr=style_numpr,
                 style_heading_rank=style_heading_rank,
                 numbering_xml=numbering_xml,
             )
@@ -2067,6 +2296,7 @@ def _build_llm_boundary_candidates(
     reference_style: str | None,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
     style_heading_rank: dict[str, int] | None = None,
     numbering_xml: bytes | None = None,
     ignore_toc: bool = True,
@@ -2098,7 +2328,15 @@ def _build_llm_boundary_candidates(
             ilvl = get_ilvl(p)
             numbering_prefix = ""
             if numbering_xml and (ilvl is not None or heading_depth is not None):
-                numbering_prefix = normalize_text(_render_numbering_prefix(p, body_children, numbering_xml)).rstrip(".．")
+                numbering_prefix = normalize_text(
+                    _render_numbering_prefix(
+                        p,
+                        body_children,
+                        numbering_xml,
+                        style_based=style_based,
+                        style_numpr=style_numpr,
+                    )
+                ).rstrip(".．")
 
             looks_heading = _looks_like_heading_boundary_text(text)
             looks_number_boundary = _looks_like_number_boundary_candidate(
@@ -2154,6 +2392,7 @@ def _find_llm_boundary_fallback_index(
     reference_style: str | None,
     style_outline: dict[str, int],
     style_based: dict[str, str],
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
     style_heading_rank: dict[str, int] | None = None,
     numbering_xml: bytes | None = None,
     ignore_toc: bool = True,
@@ -2178,6 +2417,7 @@ def _find_llm_boundary_fallback_index(
         reference_style=reference_style,
         style_outline=style_outline,
         style_based=style_based,
+        style_numpr=style_numpr,
         style_heading_rank=style_heading_rank,
         numbering_xml=numbering_xml,
         ignore_toc=ignore_toc,
@@ -2329,6 +2569,7 @@ def extract_section_docx_xml(
     llm_boundary_fallback: bool | None = None,
     llm_boundary_model_id: str | None = None,
     llm_boundary_resolver: Callable[..., int | None] | None = None,
+    strict_heading_number_match: bool = False,
 ):
     # 複製整包 docx（保留 styles/numbering/media/rels 等）
     shutil.copyfile(input_docx, output_docx)
@@ -2343,6 +2584,7 @@ def extract_section_docx_xml(
 
     style_outline, style_based = build_style_outline_map(file_map["word/styles.xml"])
     style_heading_rank = build_style_heading_rank_map(file_map["word/styles.xml"])
+    _, style_numpr = parse_styles_numpr(file_map["word/styles.xml"])
 
     root = etree.fromstring(file_map["word/document.xml"])
     body = root.find("w:body", namespaces=NS)
@@ -2366,6 +2608,7 @@ def extract_section_docx_xml(
         start_number=start_number,
         style_outline=style_outline,
         style_based=style_based,
+        style_numpr=style_numpr,
         style_heading_rank=style_heading_rank,
         explicit_end_title=explicit_end_title,
         explicit_end_number=explicit_end_number,
@@ -2374,6 +2617,7 @@ def extract_section_docx_xml(
         llm_boundary_fallback=llm_boundary_fallback,
         llm_boundary_model_id=llm_boundary_model_id,
         llm_boundary_resolver=llm_boundary_resolver,
+        strict_heading_number_match=strict_heading_number_match,
     )
     kept_section = content_children[start_idx:end_idx]
 

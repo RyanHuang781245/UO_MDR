@@ -357,6 +357,7 @@ def extract_word_chapter(
         subheading_debug=False,
         llm_boundary_fallback=llm_boundary_fallback,
         llm_boundary_model_id=llm_boundary_model_id,
+        strict_heading_number_match=True,
     )
 
     captured_title = _read_first_paragraph_text(out_path) or start_heading

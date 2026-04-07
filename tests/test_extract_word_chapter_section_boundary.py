@@ -1,4 +1,5 @@
 from lxml import etree
+import pytest
 
 from modules.extract_word_chapter import (
     _ensure_numbering_instance,
@@ -207,6 +208,58 @@ def test_explicit_end_ignores_body_text_ending_with_title_until_structured_headi
     assert (start_idx, end_idx) == (1, 6)
 
 
+def test_explicit_end_accepts_long_structured_heading_title() -> None:
+    long_end_title = (
+        "Sterilizing agent and validation approach for extended packaging configuration "
+        "used during transportation and storage"
+    )
+    body_children = [
+        _paragraph("Cleaning and Sterilization"),
+        _styled_paragraph("Cleaning validation", style_id="S111", ilvl=2),
+        _paragraph("body A"),
+        _styled_paragraph(long_end_title, style_id="S111", ilvl=2),
+        _paragraph("body B"),
+        _styled_paragraph("Gamma radiation sterilization validation", style_id="S111", ilvl=2),
+        _paragraph("body C"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Cleaning validation",
+        start_number="6.13.1",
+        style_outline={"S111": 0},
+        style_based={},
+        style_heading_rank={"S111": 2},
+        explicit_end_title=long_end_title,
+        explicit_end_number="6.13.2",
+    )
+
+    assert (start_idx, end_idx) == (1, 5)
+
+
+def test_explicit_end_rejects_wrong_number_even_when_title_matches() -> None:
+    body_children = [
+        _paragraph("Cleaning and Sterilization"),
+        _styled_paragraph("6.13.1 Cleaning validation", style_id="S111", ilvl=2),
+        _paragraph("body A"),
+        _styled_paragraph("Sterilizing agent", style_id="S111", ilvl=2),
+        _paragraph("body B"),
+    ]
+
+    with pytest.raises(RuntimeError, match="找不到指定終點章節"):
+        find_section_range_children(
+            body_children=body_children,
+            start_heading_text="6.13.1 Cleaning validation",
+            start_number="6.13.1",
+            style_outline={"S111": 0},
+            style_based={},
+            style_heading_rank={"S111": 2},
+            explicit_end_title="Sterilizing agent",
+            explicit_end_number="6.13.99",
+            strict_heading_number_match=True,
+        )
+
+
 def test_section_range_ignores_sentence_like_same_style_and_ilvl_body_paragraph() -> None:
     body_children = [
         _paragraph("Cleaning and Sterilization"),
@@ -257,6 +310,97 @@ def test_section_range_falls_back_to_rendered_number_boundary_when_start_heading
     )
 
     assert (start_idx, end_idx) == (1, 3)
+
+
+def test_section_range_strict_match_accepts_rendered_auto_numbered_heading() -> None:
+    body_children = [
+        _heading("Seed numbered heading", style_id="S111"),
+        _heading("Previous subsection", style_id="S111"),
+        _heading("Sterilizing agent", style_id="S111"),
+        _paragraph("body A"),
+        _heading("Gamma radiation sterilization validation", style_id="S111"),
+    ]
+    file_map: dict[str, bytes] = {}
+    num_id = _ensure_numbering_instance(file_map, [6, 13, 1])
+    style_numpr = {"S111": (num_id, 2)}
+    _set_paragraph_numpr(body_children[0], num_id=num_id, ilvl=1)
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Sterilizing agent",
+        start_number="6.13.2",
+        style_outline={"S111": 0},
+        style_based={},
+        style_numpr=style_numpr,
+        style_heading_rank={"S111": 2},
+        numbering_xml=file_map["word/numbering.xml"],
+        strict_heading_number_match=True,
+    )
+
+    assert (start_idx, end_idx) == (2, 4)
+
+
+def test_section_range_title_only_heading_requires_matching_structural_ordinal() -> None:
+    body_children = [
+        _heading("Introduction"),
+        _heading("Scope"),
+        _paragraph("body A"),
+        _heading("Results"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Scope",
+        start_number="2",
+        style_outline={"Heading1": 0},
+        style_based={},
+        strict_heading_number_match=True,
+    )
+
+    assert (start_idx, end_idx) == (1, 3)
+
+
+def test_section_range_title_only_heading_rejects_wrong_structural_ordinal() -> None:
+    body_children = [
+        _heading("Introduction"),
+        _heading("Scope"),
+        _paragraph("body A"),
+        _heading("Results"),
+    ]
+
+    with pytest.raises(RuntimeError, match="找不到章節起點"):
+        find_section_range_children(
+            body_children=body_children,
+            start_heading_text="Scope",
+            start_number="3",
+            style_outline={"Heading1": 0},
+            style_based={},
+            strict_heading_number_match=True,
+        )
+
+
+def test_explicit_end_title_only_heading_uses_structural_ordinal() -> None:
+    body_children = [
+        _heading("Introduction"),
+        _heading("Scope"),
+        _paragraph("body A"),
+        _heading("Results"),
+        _paragraph("body B"),
+        _heading("Appendix"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Scope",
+        start_number="2",
+        style_outline={"Heading1": 0},
+        style_based={},
+        explicit_end_title="Results",
+        explicit_end_number="3",
+        strict_heading_number_match=True,
+    )
+
+    assert (start_idx, end_idx) == (1, 5)
 
 
 def test_section_range_rule_based_fallback_finds_late_unstructured_boundary() -> None:

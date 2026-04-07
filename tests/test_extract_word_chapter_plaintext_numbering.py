@@ -1,4 +1,5 @@
 from lxml import etree
+import pytest
 
 from modules.extract_word_chapter import (
     _materialize_heading_numbering,
@@ -105,6 +106,24 @@ def test_plain_text_numbering_stops_at_same_depth_subheading_across_new_top_leve
     )
 
     assert (start_idx, end_idx) == (0, 2)
+
+
+def test_plain_text_numbering_rejects_wrong_start_number_even_when_title_matches() -> None:
+    body_children = [
+        _paragraph("1.1 Scope"),
+        _paragraph("body A"),
+        _paragraph("1.2 Device description"),
+    ]
+
+    with pytest.raises(RuntimeError, match="找不到章節起點"):
+        find_section_range_children(
+            body_children=body_children,
+            start_heading_text="Scope",
+            start_number="9.9",
+            style_outline={},
+            style_based={},
+            strict_heading_number_match=True,
+        )
 
 
 def test_plain_text_numbering_ignores_numeric_body_value_before_actual_cross_prefix_heading() -> None:

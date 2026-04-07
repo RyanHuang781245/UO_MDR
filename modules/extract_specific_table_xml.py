@@ -12,11 +12,13 @@ from modules.chapter_section_parse import (
 )
 from modules.extract_word_chapter import (
     NS,
+    _toc_contains_heading_request,
     build_style_heading_rank_map,
     build_style_outline_map,
     find_section_range_children,
     get_all_text,
     get_pStyle,
+    parse_styles_numpr,
     normalize_text,
     qn,
     materialize_paragraph_numpr_as_text,
@@ -281,8 +283,17 @@ def extract_specific_table_from_word_xml(
     if "word/styles.xml" not in file_map:
         raise RuntimeError("DOCX missing word/styles.xml")
 
+    toc_entries = None
+    try:
+        from modules.docx_toc import extract_toc_entries_from_parts
+
+        toc_entries = extract_toc_entries_from_parts(file_map)
+    except Exception:
+        toc_entries = None
+
     style_outline, style_based = build_style_outline_map(file_map["word/styles.xml"])
     style_heading_rank = build_style_heading_rank_map(file_map["word/styles.xml"])
+    _, style_numpr = parse_styles_numpr(file_map["word/styles.xml"])
     root = etree.fromstring(file_map["word/document.xml"])
     body = root.find("w:body", namespaces=NS)
     if body is None:
@@ -298,9 +309,16 @@ def extract_specific_table_from_word_xml(
             start_number=chapter_section,
             style_outline=style_outline,
             style_based=style_based,
+            style_numpr=style_numpr,
             style_heading_rank=style_heading_rank,
             ignore_toc=True,
             numbering_xml=file_map.get("word/numbering.xml"),
+            strict_heading_number_match=True,
+            allow_start_number_mismatch_fallback=_toc_contains_heading_request(
+                toc_entries,
+                heading_number=chapter_section,
+                heading_title=start_heading_text,
+            ),
         )
         section_children = content_children[start_idx:end_idx]
     else:

@@ -140,7 +140,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 1rem 1.25rem;
+    padding: 0.5rem 1.25rem;
     min-height: 50px;
   }
   .standard-settings-group__title {
@@ -722,13 +722,13 @@
 <div class="container-fluid px-0">
   <div class="mb-3">
     <h1 class="h3 mb-1 fw-bold">標準清單更新</h1>
-    <!-- <p class="text-muted mb-0 small">在任務內直接選擇 Word 與標準 Excel，預覽候選比對結果、人工改選後再下載新的 Word。</p> -->
+    <p class="text-muted mb-0 small">請先選擇要更新的 Word 標準清單與 Excel 標準總表，下方設置可調整標準比對的優先選用規則、限制處理特定章節內的表格。未調整時，系統會依預設配置直接產生預覽與下載結果</p>
   </div>
   <details class="standard-source-panel mb-3" {% if not has_preview %}open{% endif %}>
     <summary>
       <div class="standard-source-panel__summary">
         <div class="standard-source-panel__files">
-          <div class="fw-bold">更新文件與參照標準</div>
+          <div class="fw-bold">文件上傳與設置</div>
           {% if has_preview %}
             <div class="standard-source-panel__file" title="{{ selected_word }}">
               <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
@@ -737,9 +737,7 @@
             <div class="standard-source-panel__file" title="{{ selected_excel }}">
               <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
               {{ selected_excel }}
-            </div>
-          {% else %}
-            <div class="small text-muted">請先選擇要更新的 Word 與標準總表。</div>
+            </div>  
           {% endif %}
         </div>
         <div class="standard-source-panel__hint">
@@ -759,7 +757,7 @@
           <input type="hidden" name="action" value="preview">
           <div class="standard-form-grid">
             <div>
-              <label class="form-label small fw-bold text-uppercase text-muted">
+              <label class="form-label fw-bold">
                 <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
                 Word 文件
               </label>
@@ -777,7 +775,7 @@
               </select>
             </div>
             <div>
-              <label class="form-label small fw-bold text-uppercase text-muted">
+              <label class="form-label fw-bold">
                 <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
                 Excel 標準總表
               </label>
@@ -795,7 +793,7 @@
                 <div class="standard-settings-group__summary">
                   <div class="standard-settings-group__title">
                     <i class="bi bi-sliders"></i>
-                    更新優先級設定
+                    調整優先級設置
                   </div>
                   <span class="standard-settings-group__toggle" aria-hidden="true"></span>
                 </div>
@@ -854,7 +852,7 @@
                 <div class="standard-settings-group__summary">
                   <div class="standard-settings-group__title">
                     <i class="bi bi-layout-text-sidebar-reverse"></i>
-                    章節與表格範圍
+                    章節與表格設置
                   </div>
                   <span class="standard-settings-group__toggle" aria-hidden="true"></span>
                 </div>
@@ -879,7 +877,7 @@
                     </div>
                     <div class="standard-chapter-scope__fields">
                       <div>
-                        <label class="form-label small fw-bold text-uppercase text-muted" for="targetChapterRef">章節參照</label>
+                        <label class="form-label small fw-bold text-uppercase text-muted" for="targetChapterRef">指定章節</label>
                         <select
                           class="form-select form-control-custom rounded-2"
                           id="targetChapterRef"
@@ -896,9 +894,9 @@
                         {% if chapter_options_error %}
                           <div class="small text-danger mt-2">{{ chapter_options_error }}</div>
                         {% elif chapter_options %}
-                          <div class="small text-muted mt-2">已自動掃描 {{ chapter_options|length }} 個可選章節。</div>
+                          <div class="small text-muted mt-2">已自動掃描 {{ chapter_options|length }} 個可選章節</div>
                         {% else %}
-                          <div class="small text-muted mt-2">請先選擇 Word 文件以載入章節清單。</div>
+                          <div class="small text-muted mt-2">請先選擇 Word 文件以載入章節清單</div>
                         {% endif %}
                       </div>
                       <div>
@@ -911,7 +909,7 @@
                           placeholder="自動掃描找不到時可手動輸入，例如 4.5 Applicable Standards and Guidance Documents"
                           {% if not limit_to_chapter %}disabled{% endif %}
                         >
-                        <div class="small text-muted mt-2">有填手動值時，會優先使用手動輸入，不使用下拉選單。</div>
+                        <div class="small text-muted mt-2">有填手動值時，會優先使用手動輸入，不使用下拉選單</div>
                       </div>
                       <div>
                         <label class="form-label small fw-bold text-uppercase text-muted" for="targetTableIndex">章節內表格索引</label>
@@ -926,7 +924,7 @@
                           placeholder="留白表示處理該章節所有表格；填 1 代表第 1 張"
                           {% if not limit_to_chapter %}disabled{% endif %}
                         >
-                        <div class="small text-muted mt-2">若該章節有多張表，可輸入第 1、2、3... 張表；留白則處理全部。</div>
+                        <div class="small text-muted mt-2">若該章節有多張表，可輸入第 1、2、3... 張表；留白則處理全部</div>
                       </div>
                     </div>
                   </div>

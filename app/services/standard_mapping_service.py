@@ -21,10 +21,15 @@ RED_COLOR = "FF0000"
 BLUE_COLOR = "2563EB"
 DEFAULT_ISO_PRIORITY = ("BS EN ISO", "EN ISO", "ISO")
 DEFAULT_PREFER_LATEST_EN_VARIANTS = True
-DEFAULT_REQUIRED_HEADERS = (
+AVAILABLE_HEADER_OPTIONS = (
     "Standards",
     "Issued Year",
     "EU Harmonised Standards under MDR 2017/745 (YES/NO)",
+    "Title",
+)
+DEFAULT_REQUIRED_HEADERS = (
+    "Standards",
+    "Issued Year",
     "Title",
 )
 
@@ -166,7 +171,7 @@ def normalize_required_headers(required_headers: list[str] | tuple[str, ...] | N
     normalized = []
     seen = set()
     for item in required_headers:
-        for header_name in DEFAULT_REQUIRED_HEADERS:
+        for header_name in AVAILABLE_HEADER_OPTIONS:
             if header_matches_target(item, header_name) and header_name not in seen:
                 normalized.append(header_name)
                 seen.add(header_name)
@@ -697,7 +702,7 @@ def find_header_row_and_map(
         texts = [x["text"] if x else "" for x in expanded]
         header_presence = {
             header_name: any(header_matches_target(t, header_name) for t in texts if t)
-            for header_name in DEFAULT_REQUIRED_HEADERS
+            for header_name in AVAILABLE_HEADER_OPTIONS
         }
         if all(header_presence.get(header_name, False) for header_name in active_required_headers):
             header_map = {}
@@ -707,6 +712,65 @@ def find_header_row_and_map(
                     header_map[cell_text] = item["tc_idx"]
             return row_idx, header_map
     return None, None
+
+
+def inspect_table_headers(tree: etree._ElementTree) -> list[dict]:
+    root = tree.getroot()
+    tables = root.xpath(".//w:tbl", namespaces=NS)
+    checks = []
+    for table_index, tbl in enumerate(tables):
+        parsed_rows = parse_table_rows(tbl)
+        best_match = None
+        for row_idx, row in enumerate(parsed_rows):
+            expanded = expand_row_to_logical_cells(row)
+            texts = [x["text"] if x else "" for x in expanded]
+            detected_headers = [
+                header_name
+                for header_name in AVAILABLE_HEADER_OPTIONS
+                if any(header_matches_target(t, header_name) for t in texts if t)
+            ]
+            if not detected_headers:
+                continue
+            candidate = {
+                "table_index": table_index,
+                "table_label": f"表格 {table_index + 1}",
+                "header_row_index": row_idx,
+                "detected_headers": detected_headers,
+                "is_processable": all(header in detected_headers for header in DEFAULT_REQUIRED_HEADERS),
+                "has_optional_harmonised": "EU Harmonised Standards under MDR 2017/745 (YES/NO)" in detected_headers,
+            }
+            if best_match is None or len(candidate["detected_headers"]) > len(best_match["detected_headers"]):
+                best_match = candidate
+
+        if best_match is None:
+            checks.append({
+                "table_index": table_index,
+                "table_label": f"表格 {table_index + 1}",
+                "header_row_index": None,
+                "detected_headers": [],
+                "is_processable": False,
+                "has_optional_harmonised": False,
+                "status": "ignored",
+                "status_label": "未辨識",
+                "message": "未找到足夠的標頭資訊，這張表不會納入處理。",
+            })
+            continue
+
+        missing_core = [header for header in DEFAULT_REQUIRED_HEADERS if header not in best_match["detected_headers"]]
+        if best_match["is_processable"] and best_match["has_optional_harmonised"]:
+            best_match["status"] = "full"
+            best_match["status_label"] = "完整格式"
+            best_match["message"] = "已找到 Standards、Issued Year、Title 與 EU Harmonised 欄位。"
+        elif best_match["is_processable"]:
+            best_match["status"] = "core_only"
+            best_match["status_label"] = "簡化格式"
+            best_match["message"] = "已找到 Standards、Issued Year、Title；缺少 EU Harmonised 欄位，但仍可處理。"
+        else:
+            best_match["status"] = "partial"
+            best_match["status_label"] = "缺少必要欄位"
+            best_match["message"] = f"缺少必要欄位：{'、'.join(missing_core)}。這張表不會納入處理。"
+        checks.append(best_match)
+    return checks
 
 
 def get_logical_col(header_map: dict, target_name: str) -> int | None:
@@ -813,6 +877,7 @@ def build_preview_tables(
             ("EU Harmonised Standards under MDR 2017/745 (YES/NO)", harmonised_col),
             ("Title", title_col),
         ]
+        display_columns = [(label, tc_idx) for label, tc_idx in fixed_columns if tc_idx is not None]
         table_number += 1
         rows_data = []
 
@@ -851,7 +916,7 @@ def build_preview_tables(
 
             cells = []
             if row_idx == header_row_idx:
-                for label, tc_idx in fixed_columns:
+                for label, tc_idx in display_columns:
                     item = get_item(tc_idx)
                     cells.append({
                         "tag": "th",
@@ -864,13 +929,13 @@ def build_preview_tables(
                 category_item = next((item for item in row if normalize_text(item["text"])), None)
                 cells.append({
                     "tag": "td",
-                    "colspan": 4,
+                    "colspan": len(display_columns) or 1,
                     "content_html": format_cell_runs_as_html(category_item["tc"]) if category_item is not None else "",
                     "reference_key": None,
                     "header_text": "",
                 })
             else:
-                for label, tc_idx in fixed_columns:
+                for label, tc_idx in display_columns:
                     item = get_item(tc_idx)
                     reference_key = None
                     if row_meta and label == "Standards":
@@ -917,6 +982,8 @@ def process_document(
     with tempfile.TemporaryDirectory() as tmpdir:
         unzip_docx(word_path, tmpdir)
         document_xml_path = os.path.join(tmpdir, "word", "document.xml")
+        tree = etree.parse(document_xml_path)
+        table_checks = inspect_table_headers(tree)
         tree, records = parse_word_tables_for_update(document_xml_path, normalized_required_headers)
         report = []
         updated_count = 0
@@ -1021,4 +1088,5 @@ def process_document(
             "iso_priority": list(normalized_iso_priority),
             "prefer_latest_en_variants": prefer_latest_en_variants,
             "required_headers": list(normalized_required_headers),
+            "table_checks": table_checks,
         }

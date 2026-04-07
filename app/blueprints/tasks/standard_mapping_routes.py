@@ -153,6 +153,7 @@ def _render_standard_mapping_page(
         selected_word=selected_word,
         selected_excel=selected_excel,
         preview_tables=(preview_result or {}).get("preview_tables", []),
+        table_checks=(preview_result or {}).get("table_checks", []),
         reference_payload=reference_payload,
         stats=_build_stats((preview_result or {}).get("report", [])) if preview_result else {"updated": 0, "same": 0, "missing": 0, "total": 0},
         interactive_rows=interactive_rows,

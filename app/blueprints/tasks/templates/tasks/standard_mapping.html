@@ -135,25 +135,46 @@
     font-size: 0.8125rem;
     line-height: 1.55;
   }
-  .standard-header-panel {
-    margin-top: 0.875rem;
-    padding-top: 0.875rem;
-    border-top: 1px solid var(--bs-gray-200);
-  }
-  .standard-header-grid {
+  .standard-precheck-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem 1rem;
-    margin-top: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.875rem;
   }
-  .standard-header-option {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.6rem;
-    min-width: 0;
+  .standard-precheck-card {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.875rem;
+    background: #fff;
+    padding: 0.875rem 1rem;
   }
-  .standard-header-option label {
-    line-height: 1.5;
+  .standard-precheck-card--full {
+    border-color: #a7f3d0;
+    background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+  }
+  .standard-precheck-card--core_only {
+    border-color: #bfdbfe;
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+  }
+  .standard-precheck-card--partial,
+  .standard-precheck-card--ignored {
+    border-color: #fecaca;
+    background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+  }
+  .standard-precheck-card__status {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--bs-gray-500);
+    background: rgba(255,255,255,0.75);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+  }
+  .standard-precheck-card__headers {
+    margin-top: 0.55rem;
+    color: var(--bs-gray-500);
+    font-size: 0.8125rem;
+    line-height: 1.55;
   }
   .standard-priority-switch {
     margin-top: 0.875rem;
@@ -263,11 +284,9 @@
   .standard-table tr.is-header th:nth-child(2) { width: 15%; }
   .standard-table tr.is-header th:nth-child(3) { width: 15%; }
   .standard-table tr.is-header th:nth-child(4) { width: 55%; }
-  .standard-table tr.is-header th:nth-child(4),
-  .standard-table tr td:nth-child(1) {
-    text-align: left;
-  }
-  .standard-table tr td:nth-child(4) {
+  .standard-table tr.is-header th:last-child,
+  .standard-table tr td:nth-child(1),
+  .standard-table tr td:last-child {
     text-align: left;
   }
   .preview-cell__inner {
@@ -544,7 +563,6 @@
       flex-direction: column;
     }
     .standard-priority-grid,
-    .standard-header-grid,
     .standard-preview-filters {
       grid-template-columns: 1fr;
     }
@@ -703,7 +721,7 @@
           <div class="standard-priority-panel">
             <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
               <div class="fw-bold">更新優先級</div>
-              <div class="small text-muted">{{ iso_priority | join(' > ') }}</div>
+              <!-- <div class="small text-muted">{{ iso_priority | join(' > ') }}</div> -->
             </div>
             <div class="standard-priority-grid">
               <div>
@@ -744,43 +762,17 @@
                   {% if prefer_latest_en_variants %}checked{% endif %}
                 >
                 <label class="form-check-label fw-semibold" for="preferLatestEnVariants">
-                  同時檢索到 BS EN ISO 和 EN ISO 時，優先選擇年份最新
+                  年份優先規則 (BS EN ISO 和 EN ISO 標準都有時，優先選擇年份最新的標準)
                 </label>
               </div>
             </div>
-            <div class="standard-priority-summary">
+            <!-- <div class="standard-priority-summary">
               更新標準清單預設優先級為 BS EN ISO > EN ISO > ISO
               {% if prefer_latest_en_variants %}目前已啟用年份優先規則。{% else %}目前停用年份優先規則，完全依優先級選用。{% endif %}
-            </div>
-            <div class="standard-header-panel">
-              <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-                <div class="fw-bold">表格辨識欄位</div>
-                <div class="small text-muted">{{ required_headers | join('、') }}</div>
-              </div>
-              <div class="standard-header-grid">
-                {% for header_name in default_required_headers %}
-                  {% set is_core_header = header_name in ['Standards', 'Issued Year'] %}
-                  <div class="standard-header-option">
-                    <input
-                      class="form-check-input mt-1"
-                      type="checkbox"
-                      name="required_headers"
-                      value="{{ header_name }}"
-                      id="requiredHeader{{ loop.index }}"
-                      {% if header_name in required_headers %}checked{% endif %}
-                    >
-                    <label class="form-check-label" for="requiredHeader{{ loop.index }}">
-                      <span class="fw-semibold">{{ header_name }}</span>
-                      {% if is_core_header %}
-                        <span class="text-muted small">（必填）</span>
-                      {% endif %}
-                    </label>
-                  </div>
-                {% endfor %}
-              </div>
-              <div class="standard-priority-summary">
-                勾選這次用來辨識表格的必要欄位。若文件沒有 `EU Harmonised Standards under MDR 2017/745 (YES/NO)`，可取消該欄後重新預覽。
-              </div>
+            </div> -->
+            <div class="standard-priority-summary">
+              系統會先預檢 Word 表格欄位，預設以 <code>Standards</code>、<code>Issued Year</code>、<code>Title</code> 為必要欄位；
+              <code>EU Harmonised Standards under MDR 2017/745 (YES/NO)</code> 為可選欄位。
             </div>
           </div>
           <div class="d-flex justify-content-end">
@@ -794,6 +786,30 @@
     </div>
   </details>
 
+  {% if table_checks %}
+    <div class="main-card mb-3">
+      <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
+        <div class="fw-bold">表格預檢結果</div>
+        <div class="small text-muted">系統會自動辨識可處理的表格格式，完整格式與簡化格式都會納入處理。</div>
+      </div>
+      <div class="p-4">
+        <div class="standard-precheck-grid">
+          {% for table_check in table_checks %}
+            <div class="standard-precheck-card standard-precheck-card--{{ table_check.status }}">
+              <div class="d-flex align-items-center justify-content-between gap-3">
+                <div class="fw-bold">{{ table_check.table_label }}</div>
+                <span class="standard-precheck-card__status">{{ table_check.status_label }}</span>
+              </div>
+              <div class="standard-precheck-card__headers">
+                偵測欄位：{{ table_check.detected_headers | join('、') if table_check.detected_headers else '未辨識到欄位' }}
+              </div>
+              <div class="small text-muted mt-2">{{ table_check.message }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
   {% if preview_tables %}
     <div class="standard-mapping-summary mb-3">
       <div class="standard-summary-card standard-summary-card--updated">
@@ -827,7 +843,7 @@
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
               <i class="bi bi-info-circle"></i>
-              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單；若要調整自動選用規則或表格辨識欄位，請展開上方設定區重新產生預覽</div>
+              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單；若要調整自動選用規則，請展開上方設定區重新產生預覽</div>
             </div>
             <div id="actionBar" class="standard-preview-note" aria-hidden="true">
               <div class="d-flex align-items-center gap-2 flex-wrap">

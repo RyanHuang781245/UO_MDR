@@ -11,6 +11,7 @@ from app.services.standard_mapping_service import (
     DEFAULT_REQUIRED_HEADERS,
     DEFAULT_ISO_PRIORITY,
     DEFAULT_PREFER_LATEST_EN_VARIANTS,
+    inspect_document_sections,
     normalize_iso_priority,
     normalize_required_headers,
     process_document,
@@ -100,6 +101,56 @@ def _parse_prefer_latest_en_variants(values) -> bool:
     return raw_value in {"1", "true", "on", "yes"}
 
 
+def _parse_limit_to_chapter(values) -> bool:
+    if hasattr(values, "getlist"):
+        raw_values = [str(item).strip().lower() for item in values.getlist("limit_to_chapter") if str(item).strip()]
+        if raw_values:
+            return raw_values[-1] in {"1", "true", "on", "yes"}
+        return False
+    raw_value = str(values.get("limit_to_chapter") or "").strip().lower()
+    return raw_value in {"1", "true", "on", "yes"}
+
+
+def _parse_target_chapter_ref(values, *, limit_to_chapter: bool) -> str:
+    manual_target_chapter_ref = str(values.get("manual_target_chapter_ref") or "").strip()
+    if manual_target_chapter_ref:
+        return manual_target_chapter_ref
+    target_chapter_ref = str(values.get("target_chapter_ref") or "").strip()
+    if limit_to_chapter and not target_chapter_ref:
+        raise ValueError("請選擇或輸入指定章節")
+    return target_chapter_ref
+
+
+def _parse_target_table_index(values, *, limit_to_chapter: bool) -> int | None:
+    raw_value = str(values.get("target_table_index") or "").strip()
+    if not limit_to_chapter or not raw_value:
+        return None
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError("表格索引必須是正整數") from exc
+    if value <= 0:
+        raise ValueError("表格索引必須大於 0")
+    return value
+
+
+def _load_chapter_options(files_dir: str, selected_word: str) -> tuple[list[dict], str]:
+    if not selected_word:
+        return [], ""
+    try:
+        word_path = _safe_task_file(files_dir, selected_word, {".docx"})
+    except (ValueError, FileNotFoundError):
+        return [], ""
+    try:
+        options = inspect_document_sections(word_path)
+    except Exception:
+        current_app.logger.exception("Failed to inspect document sections for standard mapping")
+        return [], "章節清單讀取失敗"
+    if not options:
+        return [], "找不到可辨識的章節清單"
+    return options, ""
+
+
 def _parse_required_headers(values) -> tuple[str, ...]:
     raw_headers = []
     if hasattr(values, "getlist"):
@@ -136,9 +187,14 @@ def _render_standard_mapping_page(
     iso_priority: tuple[str, ...] | list[str] | None = None,
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
     required_headers: tuple[str, ...] | list[str] | None = None,
+    limit_to_chapter: bool = False,
+    target_chapter_ref: str = "",
+    target_table_index: int | None = None,
+    manual_target_chapter_ref: str = "",
 ):
     files_dir = _task_files_dir(task_id)
     word_options, excel_options = _list_standard_mapping_files(files_dir)
+    chapter_options, chapter_options_error = _load_chapter_options(files_dir, selected_word)
     reference_payload = (preview_result or {}).get("reference_payload", {})
     active_iso_priority = tuple((preview_result or {}).get("iso_priority") or normalize_iso_priority(iso_priority))
     active_required_headers = tuple((preview_result or {}).get("required_headers") or normalize_required_headers(required_headers))
@@ -165,6 +221,13 @@ def _render_standard_mapping_page(
         prefer_latest_en_variants=(preview_result or {}).get("prefer_latest_en_variants", prefer_latest_en_variants),
         required_headers=active_required_headers,
         default_required_headers=DEFAULT_REQUIRED_HEADERS,
+        limit_to_chapter=bool((preview_result or {}).get("target_chapter_ref") or limit_to_chapter),
+        target_chapter_ref=(preview_result or {}).get("target_chapter_ref", target_chapter_ref),
+        target_table_index=(preview_result or {}).get("target_table_index", target_table_index),
+        manual_target_chapter_ref=manual_target_chapter_ref,
+        scope_table_count=(preview_result or {}).get("scope_table_count", 0),
+        chapter_options=chapter_options,
+        chapter_options_error=chapter_options_error,
     )
 
 
@@ -179,11 +242,19 @@ def task_standard_mapping(task_id):
             iso_priority = _parse_iso_priority(request.values)
             prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.values)
             required_headers = _parse_required_headers(request.values)
+            limit_to_chapter = _parse_limit_to_chapter(request.values)
+            manual_target_chapter_ref = str(request.values.get("manual_target_chapter_ref") or "").strip()
+            target_chapter_ref = _parse_target_chapter_ref(request.values, limit_to_chapter=limit_to_chapter)
+            target_table_index = _parse_target_table_index(request.values, limit_to_chapter=limit_to_chapter)
         except ValueError as exc:
             flash(str(exc), "danger")
             iso_priority = DEFAULT_ISO_PRIORITY
             prefer_latest_en_variants = DEFAULT_PREFER_LATEST_EN_VARIANTS
             required_headers = DEFAULT_REQUIRED_HEADERS
+            limit_to_chapter = False
+            target_chapter_ref = ""
+            target_table_index = None
+            manual_target_chapter_ref = ""
         return _render_standard_mapping_page(
             task_id,
             selected_word=selected_word,
@@ -191,6 +262,10 @@ def task_standard_mapping(task_id):
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
+            limit_to_chapter=limit_to_chapter,
+            target_chapter_ref=target_chapter_ref,
+            target_table_index=target_table_index,
+            manual_target_chapter_ref=manual_target_chapter_ref,
         )
 
     action = (request.form.get("action") or "preview").strip().lower()
@@ -201,6 +276,10 @@ def task_standard_mapping(task_id):
         iso_priority = _parse_iso_priority(request.form)
         prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
         required_headers = _parse_required_headers(request.form)
+        limit_to_chapter = _parse_limit_to_chapter(request.form)
+        manual_target_chapter_ref = str(request.form.get("manual_target_chapter_ref") or "").strip()
+        target_chapter_ref = _parse_target_chapter_ref(request.form, limit_to_chapter=limit_to_chapter)
+        target_table_index = _parse_target_table_index(request.form, limit_to_chapter=limit_to_chapter)
     except ValueError as exc:
         flash(str(exc), "danger")
         return _render_standard_mapping_page(
@@ -210,6 +289,10 @@ def task_standard_mapping(task_id):
             iso_priority=DEFAULT_ISO_PRIORITY,
             prefer_latest_en_variants=DEFAULT_PREFER_LATEST_EN_VARIANTS,
             required_headers=DEFAULT_REQUIRED_HEADERS,
+            limit_to_chapter=False,
+            target_chapter_ref="",
+            target_table_index=None,
+            manual_target_chapter_ref="",
         )
 
     try:
@@ -221,7 +304,11 @@ def task_standard_mapping(task_id):
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
+            target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
+            target_table_index=target_table_index if limit_to_chapter else None,
         )
+        if limit_to_chapter and not result.get("table_checks"):
+            flash("指定章節下找不到可辨識的表格", "warning")
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")
         return _render_standard_mapping_page(
@@ -231,6 +318,10 @@ def task_standard_mapping(task_id):
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
+            limit_to_chapter=limit_to_chapter,
+            target_chapter_ref=target_chapter_ref,
+            target_table_index=target_table_index,
+            manual_target_chapter_ref=manual_target_chapter_ref,
         )
     except Exception as exc:
         current_app.logger.exception("Standard mapping preview failed")
@@ -242,6 +333,10 @@ def task_standard_mapping(task_id):
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
+            limit_to_chapter=limit_to_chapter,
+            target_chapter_ref=target_chapter_ref,
+            target_table_index=target_table_index,
+            manual_target_chapter_ref=manual_target_chapter_ref,
         )
 
     return _render_standard_mapping_page(
@@ -252,6 +347,10 @@ def task_standard_mapping(task_id):
         iso_priority=iso_priority,
         prefer_latest_en_variants=prefer_latest_en_variants,
         required_headers=required_headers,
+        limit_to_chapter=limit_to_chapter,
+        target_chapter_ref=target_chapter_ref,
+        target_table_index=target_table_index,
+        manual_target_chapter_ref=manual_target_chapter_ref,
     )
 
 
@@ -265,6 +364,10 @@ def task_standard_mapping_download(task_id):
         iso_priority = _parse_iso_priority(request.form)
         prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
         required_headers = _parse_required_headers(request.form)
+        limit_to_chapter = _parse_limit_to_chapter(request.form)
+        manual_target_chapter_ref = str(request.form.get("manual_target_chapter_ref") or "").strip()
+        target_chapter_ref = _parse_target_chapter_ref(request.form, limit_to_chapter=limit_to_chapter)
+        target_table_index = _parse_target_table_index(request.form, limit_to_chapter=limit_to_chapter)
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
@@ -283,13 +386,37 @@ def task_standard_mapping_download(task_id):
             iso_priority=iso_priority,
             prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
+            target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
+            target_table_index=target_table_index if limit_to_chapter else None,
         )
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")
-        return redirect(url_for("tasks_bp.task_standard_mapping", task_id=task_id, word_path=selected_word, excel_path=selected_excel))
+        return redirect(
+            url_for(
+                "tasks_bp.task_standard_mapping",
+                task_id=task_id,
+                word_path=selected_word,
+                excel_path=selected_excel,
+                limit_to_chapter=1 if limit_to_chapter else 0,
+                target_chapter_ref=target_chapter_ref,
+                target_table_index=target_table_index or "",
+                manual_target_chapter_ref=manual_target_chapter_ref,
+            )
+        )
     except Exception as exc:
         current_app.logger.exception("Standard mapping download failed")
         flash(f"下載失敗：{exc}", "danger")
-        return redirect(url_for("tasks_bp.task_standard_mapping", task_id=task_id, word_path=selected_word, excel_path=selected_excel))
+        return redirect(
+            url_for(
+                "tasks_bp.task_standard_mapping",
+                task_id=task_id,
+                word_path=selected_word,
+                excel_path=selected_excel,
+                limit_to_chapter=1 if limit_to_chapter else 0,
+                target_chapter_ref=target_chapter_ref,
+                target_table_index=target_table_index or "",
+                manual_target_chapter_ref=manual_target_chapter_ref,
+            )
+        )
 
     return send_file(output_path, as_attachment=True, download_name=output_name)

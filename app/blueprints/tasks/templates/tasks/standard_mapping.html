@@ -118,10 +118,67 @@
     gap: 1rem;
   }
   .standard-priority-panel {
+    display: grid;
+    gap: 1rem;
+  }
+  .standard-settings-group {
     border: 1px solid var(--bs-gray-200);
     border-radius: 0.75rem;
+    background: white;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    overflow: hidden;
+  }
+  .standard-settings-group > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .standard-settings-group > summary::-webkit-details-marker {
+    display: none;
+  }
+  .standard-settings-group__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    min-height: 50px;
+  }
+  .standard-settings-group__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #0f172a;
+  }
+  .standard-settings-group__title i {
+    color: #111827;
+    font-size: 1rem;
+  }
+  .standard-settings-group__toggle {
+    flex-shrink: 0;
+    color: #94a3b8;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: color 0.2s ease;
+  }
+  .standard-settings-group__toggle::before {
+    content: "+";
+  }
+  .standard-settings-group[open] .standard-settings-group__toggle::before {
+    content: "-";
+  }
+  .standard-settings-group[open] .standard-settings-group__toggle {
+    color: var(--bs-blue-600);
+  }
+  .standard-settings-group__body {
+    padding: 0 1.25rem 1.25rem;
+    border-top: 1px solid var(--bs-gray-200);
     background: #f8fafc;
-    padding: 1rem;
+  }
+  .standard-settings-group__body-inner {
+    padding-top: 1rem;
   }
   .standard-priority-grid {
     display: grid;
@@ -180,6 +237,15 @@
     margin-top: 0.875rem;
     padding-top: 0.875rem;
     border-top: 1px solid var(--bs-gray-200);
+  }
+  .standard-chapter-scope {
+    margin-top: 0;
+  }
+  .standard-chapter-scope__fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    margin-top: 0.75rem;
   }
   .standard-preview-bar {
     display: flex;
@@ -698,7 +764,13 @@
                 <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
                 Word 文件
               </label>
-              <select class="form-select form-control-custom rounded-2" name="word_path" required>
+              <select
+                class="form-select form-control-custom rounded-2"
+                id="wordPathSelect"
+                name="word_path"
+                data-refresh-url="{{ url_for('tasks_bp.task_standard_mapping', task_id=task_id) }}"
+                required
+              >
                 <option value="">請選擇 Word 檔案</option>
                 {% for item in word_options %}
                   <option value="{{ item }}" {% if item == selected_word %}selected{% endif %}>{{ item }}</option>
@@ -719,61 +791,169 @@
             </div>
           </div>
           <div class="standard-priority-panel">
-            <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-              <div class="fw-bold">更新優先級</div>
-              <!-- <div class="small text-muted">{{ iso_priority | join(' > ') }}</div> -->
-            </div>
-            <div class="standard-priority-grid">
-              <div>
-                <label class="form-label small fw-bold text-uppercase text-muted">BS EN ISO 優先級</label>
-                <select class="form-select form-control-custom rounded-2" name="priority_bs_en_iso">
-                  {% for position in [1, 2, 3] %}
-                    <option value="{{ position }}" {% if iso_priority_positions['BS EN ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
-                  {% endfor %}
-                </select>
+            <details class="standard-settings-group">
+              <summary>
+                <div class="standard-settings-group__summary">
+                  <div class="standard-settings-group__title">
+                    <i class="bi bi-sliders"></i>
+                    更新優先級設定
+                  </div>
+                  <span class="standard-settings-group__toggle" aria-hidden="true"></span>
+                </div>
+              </summary>
+              <div class="standard-settings-group__body">
+                <div class="standard-settings-group__body-inner">
+                  <div class="standard-priority-grid">
+                    <div>
+                      <label class="form-label small fw-bold text-uppercase text-muted">BS EN ISO 優先級</label>
+                      <select class="form-select form-control-custom rounded-2" name="priority_bs_en_iso">
+                        {% for position in [1, 2, 3] %}
+                          <option value="{{ position }}" {% if iso_priority_positions['BS EN ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div>
+                      <label class="form-label small fw-bold text-uppercase text-muted">EN ISO 優先級</label>
+                      <select class="form-select form-control-custom rounded-2" name="priority_en_iso">
+                        {% for position in [1, 2, 3] %}
+                          <option value="{{ position }}" {% if iso_priority_positions['EN ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div>
+                      <label class="form-label small fw-bold text-uppercase text-muted">ISO 優先級</label>
+                      <select class="form-select form-control-custom rounded-2" name="priority_iso">
+                        {% for position in [1, 2, 3] %}
+                          <option value="{{ position }}" {% if iso_priority_positions['ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                  </div>
+                  <div class="standard-priority-switch">
+                    <div class="form-check form-switch mb-0">
+                      <input type="hidden" name="prefer_latest_en_variants" value="0">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="preferLatestEnVariants"
+                        name="prefer_latest_en_variants"
+                        value="1"
+                        {% if prefer_latest_en_variants %}checked{% endif %}
+                      >
+                      <label class="form-check-label fw-semibold" for="preferLatestEnVariants">
+                        年份優先規則 (BS EN ISO 和 EN ISO 標準都有時，優先選擇年份最新的標準)
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label class="form-label small fw-bold text-uppercase text-muted">EN ISO 優先級</label>
-                <select class="form-select form-control-custom rounded-2" name="priority_en_iso">
-                  {% for position in [1, 2, 3] %}
-                    <option value="{{ position }}" {% if iso_priority_positions['EN ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
-                  {% endfor %}
-                </select>
+            </details>
+
+            <details class="standard-settings-group">
+              <summary>
+                <div class="standard-settings-group__summary">
+                  <div class="standard-settings-group__title">
+                    <i class="bi bi-layout-text-sidebar-reverse"></i>
+                    章節與表格範圍
+                  </div>
+                  <span class="standard-settings-group__toggle" aria-hidden="true"></span>
+                </div>
+              </summary>
+              <div class="standard-settings-group__body">
+                <div class="standard-settings-group__body-inner">
+                  <div class="standard-chapter-scope">
+                    <div class="form-check form-switch mb-0">
+                      <input type="hidden" name="limit_to_chapter" value="0">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="limitToChapter"
+                        name="limit_to_chapter"
+                        value="1"
+                        {% if limit_to_chapter %}checked{% endif %}
+                      >
+                      <label class="form-check-label fw-semibold" for="limitToChapter">
+                        只處理指定章節下的表格
+                      </label>
+                    </div>
+                    <div class="standard-chapter-scope__fields">
+                      <div>
+                        <label class="form-label small fw-bold text-uppercase text-muted" for="targetChapterRef">章節參照</label>
+                        <select
+                          class="form-select form-control-custom rounded-2"
+                          id="targetChapterRef"
+                          name="target_chapter_ref"
+                          {% if not limit_to_chapter %}disabled{% endif %}
+                        >
+                          <option value="">請選擇章節</option>
+                          {% for option in chapter_options %}
+                            <option value="{{ option.value }}" {% if option.value == target_chapter_ref %}selected{% endif %}>
+                              {{ option.label }}
+                            </option>
+                          {% endfor %}
+                        </select>
+                        {% if chapter_options_error %}
+                          <div class="small text-danger mt-2">{{ chapter_options_error }}</div>
+                        {% elif chapter_options %}
+                          <div class="small text-muted mt-2">已自動掃描 {{ chapter_options|length }} 個可選章節。</div>
+                        {% else %}
+                          <div class="small text-muted mt-2">請先選擇 Word 文件以載入章節清單。</div>
+                        {% endif %}
+                      </div>
+                      <div>
+                        <label class="form-label small fw-bold text-uppercase text-muted" for="manualTargetChapterRef">手動輸入章節</label>
+                        <input
+                          class="form-control form-control-custom rounded-2"
+                          id="manualTargetChapterRef"
+                          name="manual_target_chapter_ref"
+                          value="{{ manual_target_chapter_ref }}"
+                          placeholder="自動掃描找不到時可手動輸入，例如 4.5 Applicable Standards and Guidance Documents"
+                          {% if not limit_to_chapter %}disabled{% endif %}
+                        >
+                        <div class="small text-muted mt-2">有填手動值時，會優先使用手動輸入，不使用下拉選單。</div>
+                      </div>
+                      <div>
+                        <label class="form-label small fw-bold text-uppercase text-muted" for="targetTableIndex">章節內表格索引</label>
+                        <input
+                          class="form-control form-control-custom rounded-2"
+                          id="targetTableIndex"
+                          name="target_table_index"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value="{{ target_table_index or '' }}"
+                          placeholder="留白表示處理該章節所有表格；填 1 代表第 1 張"
+                          {% if not limit_to_chapter %}disabled{% endif %}
+                        >
+                        <div class="small text-muted mt-2">若該章節有多張表，可輸入第 1、2、3... 張表；留白則處理全部。</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label class="form-label small fw-bold text-uppercase text-muted">ISO 優先級</label>
-                <select class="form-select form-control-custom rounded-2" name="priority_iso">
-                  {% for position in [1, 2, 3] %}
-                    <option value="{{ position }}" {% if iso_priority_positions['ISO'] == position %}selected{% endif %}>第 {{ position }} 優先</option>
-                  {% endfor %}
-                </select>
+            </details>
+
+            <details class="standard-settings-group">
+              <summary>
+                <div class="standard-settings-group__summary">
+                  <div class="standard-settings-group__title">
+                    <i class="bi bi-table"></i>
+                    表格辨識規則
+                  </div>
+                  <span class="standard-settings-group__toggle" aria-hidden="true"></span>
+                </div>
+              </summary>
+              <div class="standard-settings-group__body">
+                <div class="standard-settings-group__body-inner">
+                  <div class="standard-priority-summary mt-0">
+                    系統會先預檢 Word 表格欄位，預設以 <code>Standards</code>、<code>Issued Year</code>、<code>Title</code> 為必要欄位；
+                    <code>EU Harmonised Standards under MDR 2017/745 (YES/NO)</code> 為可選欄位。
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="standard-priority-switch">
-              <div class="form-check form-switch mb-0">
-                <input type="hidden" name="prefer_latest_en_variants" value="0">
-                <input
-                  class="form-check-input"
-                  type="checkbox"
-                  role="switch"
-                  id="preferLatestEnVariants"
-                  name="prefer_latest_en_variants"
-                  value="1"
-                  {% if prefer_latest_en_variants %}checked{% endif %}
-                >
-                <label class="form-check-label fw-semibold" for="preferLatestEnVariants">
-                  年份優先規則 (BS EN ISO 和 EN ISO 標準都有時，優先選擇年份最新的標準)
-                </label>
-              </div>
-            </div>
-            <!-- <div class="standard-priority-summary">
-              更新標準清單預設優先級為 BS EN ISO > EN ISO > ISO
-              {% if prefer_latest_en_variants %}目前已啟用年份優先規則。{% else %}目前停用年份優先規則，完全依優先級選用。{% endif %}
-            </div> -->
-            <div class="standard-priority-summary">
-              系統會先預檢 Word 表格欄位，預設以 <code>Standards</code>、<code>Issued Year</code>、<code>Title</code> 為必要欄位；
-              <code>EU Harmonised Standards under MDR 2017/745 (YES/NO)</code> 為可選欄位。
-            </div>
+            </details>
           </div>
           <div class="d-flex justify-content-end">
             <button class="btn btn-primary fw-bold px-3" type="submit">
@@ -838,7 +1018,7 @@
       <div class="standard-preview-bar">
         <div class="standard-preview-bar__main">
           <div class="standard-preview-bar__title mb-2">
-            目前規則：{{ iso_priority | join(' > ') }}{% if prefer_latest_en_variants %}；年份優先{% endif %}
+            目前規則：{{ iso_priority | join(' > ') }}{% if prefer_latest_en_variants %}；年份優先{% endif %}{% if target_chapter_ref %}；限定章節 {{ target_chapter_ref }}{% if target_table_index %} 第 {{ target_table_index }} 張表{% endif %}{% endif %}
           </div>
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
@@ -890,6 +1070,10 @@
       <input type="hidden" name="priority_en_iso" value="{{ iso_priority_positions['EN ISO'] }}">
       <input type="hidden" name="priority_iso" value="{{ iso_priority_positions['ISO'] }}">
       <input type="hidden" name="prefer_latest_en_variants" value="{{ 1 if prefer_latest_en_variants else 0 }}">
+      <input type="hidden" name="limit_to_chapter" value="{{ 1 if limit_to_chapter else 0 }}">
+      <input type="hidden" name="target_chapter_ref" value="{{ target_chapter_ref }}">
+      <input type="hidden" name="manual_target_chapter_ref" value="{{ manual_target_chapter_ref }}">
+      <input type="hidden" name="target_table_index" value="{{ target_table_index or '' }}">
       {% for header_name in required_headers %}
         <input type="hidden" name="required_headers" value="{{ header_name }}">
       {% endfor %}
@@ -944,6 +1128,54 @@
     <div id="referenceTooltipContent"></div>
   </div>
 </div>
+
+<script>
+  const wordPathSelect = document.getElementById("wordPathSelect");
+  if (wordPathSelect) {
+    wordPathSelect.addEventListener("change", () => {
+      const nextWordPath = (wordPathSelect.value || "").trim();
+      const refreshUrl = wordPathSelect.dataset.refreshUrl || window.location.pathname;
+      const params = new URLSearchParams();
+      if (nextWordPath) params.set("word_path", nextWordPath);
+      const excelSelect = document.querySelector('select[name="excel_path"]');
+      const excelPath = (excelSelect?.value || "").trim();
+      if (excelPath) params.set("excel_path", excelPath);
+      const priorityBs = document.querySelector('select[name="priority_bs_en_iso"]');
+      const priorityEn = document.querySelector('select[name="priority_en_iso"]');
+      const priorityIso = document.querySelector('select[name="priority_iso"]');
+      if (priorityBs?.value) params.set("priority_bs_en_iso", priorityBs.value);
+      if (priorityEn?.value) params.set("priority_en_iso", priorityEn.value);
+      if (priorityIso?.value) params.set("priority_iso", priorityIso.value);
+      const latestSwitch = document.getElementById("preferLatestEnVariants");
+      if (latestSwitch?.checked) params.set("prefer_latest_en_variants", "1");
+      const chapterToggle = document.getElementById("limitToChapter");
+      if (chapterToggle?.checked) params.set("limit_to_chapter", "1");
+      const manualChapterInput = document.getElementById("manualTargetChapterRef");
+      const manualChapterRef = (manualChapterInput?.value || "").trim();
+      if (manualChapterRef) params.set("manual_target_chapter_ref", manualChapterRef);
+      window.location.href = params.toString() ? `${refreshUrl}?${params.toString()}` : refreshUrl;
+    });
+  }
+
+  const limitToChapterToggle = document.getElementById("limitToChapter");
+  const targetChapterRefInput = document.getElementById("targetChapterRef");
+  const manualTargetChapterRefInput = document.getElementById("manualTargetChapterRef");
+  const targetTableIndexInput = document.getElementById("targetTableIndex");
+  if (limitToChapterToggle && targetChapterRefInput && manualTargetChapterRefInput && targetTableIndexInput) {
+    const syncChapterScopeState = () => {
+      targetChapterRefInput.disabled = !limitToChapterToggle.checked;
+      manualTargetChapterRefInput.disabled = !limitToChapterToggle.checked;
+      targetTableIndexInput.disabled = !limitToChapterToggle.checked;
+      if (!limitToChapterToggle.checked) {
+        targetChapterRefInput.value = "";
+        manualTargetChapterRefInput.value = "";
+        targetTableIndexInput.value = "";
+      }
+    };
+    syncChapterScopeState();
+    limitToChapterToggle.addEventListener("change", syncChapterScopeState);
+  }
+</script>
 
 {% if preview_tables %}
 <script>

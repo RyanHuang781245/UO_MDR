@@ -10,6 +10,17 @@ from difflib import SequenceMatcher
 
 from lxml import etree
 from openpyxl import load_workbook
+from modules.chapter_section_parse import parse_chapter_section_expression
+from modules.docx_toc import extract_toc_entries_from_parts
+from modules.extract_word_chapter import (
+    build_style_heading_rank_map,
+    build_style_outline_map,
+    find_section_range_children,
+    get_effective_heading_depth,
+    is_toc_paragraph,
+    iter_paragraphs,
+    parse_styles_numpr,
+)
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": W_NS}
@@ -681,6 +692,191 @@ def parse_table_rows(tbl: etree._Element) -> list[list[dict]]:
     return parsed_rows
 
 
+def _clean_heading_title(text: str) -> str:
+    return normalize_text(re.sub(r"^[\.\-:：\s]+", "", text or ""))
+
+
+def _build_section_option(number: str, title: str, *, level: int | None = None, source: str = "") -> dict | None:
+    clean_number = normalize_text(number).rstrip(".")
+    clean_title = _clean_heading_title(title)
+    value = normalize_text(f"{clean_number} {clean_title}".strip() or clean_title or clean_number)
+    if not value:
+        return None
+    return {
+        "value": value,
+        "label": value,
+        "number": clean_number,
+        "title": clean_title,
+        "level": level,
+        "source": source,
+    }
+
+
+def inspect_document_sections(word_path: str) -> list[dict]:
+    with zipfile.ZipFile(word_path, "r") as zin:
+        file_map = {name: zin.read(name) for name in zin.namelist()}
+
+    options: list[dict] = []
+    seen: set[str] = set()
+
+    try:
+        toc_entries = extract_toc_entries_from_parts(file_map)
+    except Exception:
+        toc_entries = []
+
+    for entry in toc_entries:
+        option = _build_section_option(entry.number, entry.title, level=entry.level, source="toc")
+        if option and option["value"] not in seen:
+            options.append(option)
+            seen.add(option["value"])
+    if options:
+        return options
+
+    document_xml = file_map.get("word/document.xml")
+    styles_xml = file_map.get("word/styles.xml")
+    if not document_xml or not styles_xml:
+        return []
+
+    root = etree.fromstring(document_xml)
+    body = root.find("w:body", namespaces=NS)
+    if body is None:
+        return []
+
+    style_outline, style_based = build_style_outline_map(styles_xml)
+    style_heading_rank = build_style_heading_rank_map(styles_xml)
+    body_children = list(body)
+    content_children = body_children[:-1] if body_children and body_children[-1].tag == qn("w:sectPr") else body_children
+
+    for block in content_children:
+        for p in iter_paragraphs(block):
+            if is_toc_paragraph(p):
+                continue
+            text = normalize_text(get_all_text(p))
+            if not text:
+                continue
+            heading_depth = get_effective_heading_depth(
+                p,
+                style_outline,
+                style_based,
+                style_heading_rank,
+            )
+            if heading_depth is None:
+                continue
+            number = ""
+            title = text
+            match = re.match(r"^(\d+(?:[\.．]\d+)*)(?:[\.．]?\s*)(.*)$", text)
+            if match:
+                number = match.group(1).replace("．", ".")
+                title = match.group(2)
+            option = _build_section_option(number, title, level=heading_depth + 1, source="heading")
+            if option and option["value"] not in seen:
+                options.append(option)
+                seen.add(option["value"])
+    return options
+
+
+def resolve_target_table_indexes(
+    document_tree: etree._ElementTree,
+    *,
+    document_xml_path: str,
+    target_chapter_ref: str = "",
+    target_table_index: int | None = None,
+) -> set[int] | None:
+    chapter_ref = normalize_text(target_chapter_ref)
+    if not chapter_ref:
+        return None
+
+    chapter_section, explicit_end_number, parsed_title = parse_chapter_section_expression(chapter_ref)
+    chapter_title = parsed_title.strip()
+    if not chapter_section and not chapter_title and chapter_ref:
+        chapter_title = chapter_ref
+    start_heading_text = chapter_title or chapter_section
+    if not chapter_section and not chapter_title:
+        raise ValueError("指定章節格式不正確")
+
+    word_dir = os.path.dirname(document_xml_path)
+    styles_xml_path = os.path.join(word_dir, "styles.xml")
+    numbering_xml_path = os.path.join(word_dir, "numbering.xml")
+    if not os.path.isfile(styles_xml_path):
+        raise ValueError("Word 缺少 styles.xml，無法辨識章節範圍")
+
+    styles_xml = open(styles_xml_path, "rb").read()
+    numbering_xml = open(numbering_xml_path, "rb").read() if os.path.isfile(numbering_xml_path) else None
+
+    style_outline, style_based = build_style_outline_map(styles_xml)
+    style_heading_rank = build_style_heading_rank_map(styles_xml)
+    _, style_numpr = parse_styles_numpr(styles_xml)
+
+    root = document_tree.getroot()
+    body = root.find("w:body", namespaces=NS)
+    if body is None:
+        raise ValueError("Word 內容格式不正確")
+
+    body_children = list(body)
+    content_children = body_children[:-1] if body_children and body_children[-1].tag == qn("w:sectPr") else body_children
+    attempts = [
+        {
+            "start_heading_text": start_heading_text,
+            "start_number": chapter_section,
+            "strict_heading_number_match": True,
+        },
+        {
+            "start_heading_text": start_heading_text,
+            "start_number": chapter_section,
+            "strict_heading_number_match": False,
+        },
+    ]
+    if chapter_title:
+        attempts.append({
+            "start_heading_text": chapter_title,
+            "start_number": "",
+            "strict_heading_number_match": False,
+        })
+
+    last_error: RuntimeError | None = None
+    start_idx = end_idx = None
+    for attempt in attempts:
+        try:
+            start_idx, end_idx = find_section_range_children(
+                content_children,
+                start_heading_text=attempt["start_heading_text"],
+                start_number=attempt["start_number"],
+                style_outline=style_outline,
+                style_based=style_based,
+                style_numpr=style_numpr,
+                style_heading_rank=style_heading_rank,
+                explicit_end_number=explicit_end_number or None,
+                ignore_toc=True,
+                numbering_xml=numbering_xml,
+                strict_heading_number_match=attempt["strict_heading_number_match"],
+            )
+            break
+        except RuntimeError as exc:
+            last_error = exc
+            continue
+
+    if start_idx is None or end_idx is None:
+        raise ValueError(f"找不到指定章節：{chapter_ref}") from last_error
+
+    scoped_tables = []
+    for block in content_children[start_idx:end_idx]:
+        if block.tag == qn("w:tbl"):
+            scoped_tables.append(block)
+        else:
+            scoped_tables.extend(block.xpath(".//w:tbl", namespaces=NS))
+
+    if target_table_index is not None:
+        if target_table_index <= 0:
+            raise ValueError("表格索引必須大於 0")
+        if target_table_index > len(scoped_tables):
+            raise ValueError(f"指定章節只有 {len(scoped_tables)} 張表，找不到第 {target_table_index} 張")
+        scoped_tables = [scoped_tables[target_table_index - 1]]
+
+    all_tables = root.xpath(".//w:tbl", namespaces=NS)
+    table_index_map = {id(tbl): idx for idx, tbl in enumerate(all_tables)}
+    return {table_index_map[id(tbl)] for tbl in scoped_tables if id(tbl) in table_index_map}
+
+
 def expand_row_to_logical_cells(parsed_row: list[dict]) -> list[dict | None]:
     if not parsed_row:
         return []
@@ -714,11 +910,16 @@ def find_header_row_and_map(
     return None, None
 
 
-def inspect_table_headers(tree: etree._ElementTree) -> list[dict]:
+def inspect_table_headers(
+    tree: etree._ElementTree,
+    allowed_table_indexes: set[int] | None = None,
+) -> list[dict]:
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
     checks = []
     for table_index, tbl in enumerate(tables):
+        if allowed_table_indexes is not None and table_index not in allowed_table_indexes:
+            continue
         parsed_rows = parse_table_rows(tbl)
         best_match = None
         for row_idx, row in enumerate(parsed_rows):
@@ -783,6 +984,7 @@ def get_logical_col(header_map: dict, target_name: str) -> int | None:
 def parse_word_tables_for_update(
     document_xml_path: str,
     required_headers: list[str] | tuple[str, ...] | None = None,
+    allowed_table_indexes: set[int] | None = None,
 ) -> tuple[etree._ElementTree, list[dict]]:
     tree = etree.parse(document_xml_path)
     root = tree.getroot()
@@ -790,6 +992,8 @@ def parse_word_tables_for_update(
     all_records = []
     active_required_headers = normalize_required_headers(required_headers)
     for table_index, tbl in enumerate(tables):
+        if allowed_table_indexes is not None and table_index not in allowed_table_indexes:
+            continue
         parsed_rows = parse_table_rows(tbl)
         header_row_idx, header_map = find_header_row_and_map(parsed_rows, active_required_headers)
         if header_row_idx is None:
@@ -849,6 +1053,7 @@ def build_preview_tables(
     tree: etree._ElementTree,
     row_reference_map: dict,
     required_headers: list[str] | tuple[str, ...] | None = None,
+    allowed_table_indexes: set[int] | None = None,
 ) -> tuple[list[dict], dict]:
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
@@ -858,6 +1063,8 @@ def build_preview_tables(
     active_required_headers = normalize_required_headers(required_headers)
 
     for table_index, tbl in enumerate(tables):
+        if allowed_table_indexes is not None and table_index not in allowed_table_indexes:
+            continue
         parsed_rows = parse_table_rows(tbl)
         header_row_idx, header_map = find_header_row_and_map(parsed_rows, active_required_headers)
         if header_row_idx is None:
@@ -974,6 +1181,8 @@ def process_document(
     iso_priority: list[str] | tuple[str, ...] | None = None,
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
     required_headers: list[str] | tuple[str, ...] | None = None,
+    target_chapter_ref: str = "",
+    target_table_index: int | None = None,
 ) -> dict:
     override_map = override_map or {}
     normalized_iso_priority = normalize_iso_priority(iso_priority)
@@ -983,8 +1192,18 @@ def process_document(
         unzip_docx(word_path, tmpdir)
         document_xml_path = os.path.join(tmpdir, "word", "document.xml")
         tree = etree.parse(document_xml_path)
-        table_checks = inspect_table_headers(tree)
-        tree, records = parse_word_tables_for_update(document_xml_path, normalized_required_headers)
+        allowed_table_indexes = resolve_target_table_indexes(
+            tree,
+            document_xml_path=document_xml_path,
+            target_chapter_ref=target_chapter_ref,
+            target_table_index=target_table_index,
+        )
+        table_checks = inspect_table_headers(tree, allowed_table_indexes=allowed_table_indexes)
+        tree, records = parse_word_tables_for_update(
+            document_xml_path,
+            normalized_required_headers,
+            allowed_table_indexes=allowed_table_indexes,
+        )
         report = []
         updated_count = 0
         row_reference_map = {}
@@ -1077,7 +1296,12 @@ def process_document(
             })
 
         tree.write(document_xml_path, xml_declaration=True, encoding="UTF-8", standalone="yes")
-        preview_tables, reference_payload = build_preview_tables(tree, row_reference_map, normalized_required_headers)
+        preview_tables, reference_payload = build_preview_tables(
+            tree,
+            row_reference_map,
+            normalized_required_headers,
+            allowed_table_indexes=allowed_table_indexes,
+        )
         if output_path:
             zip_to_docx(tmpdir, output_path)
         return {
@@ -1089,4 +1313,7 @@ def process_document(
             "prefer_latest_en_variants": prefer_latest_en_variants,
             "required_headers": list(normalized_required_headers),
             "table_checks": table_checks,
+            "target_chapter_ref": normalize_text(target_chapter_ref),
+            "target_table_index": target_table_index,
+            "scope_table_count": len(allowed_table_indexes or []),
         }

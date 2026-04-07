@@ -340,6 +340,38 @@ def test_section_range_strict_match_accepts_rendered_auto_numbered_heading() -> 
     assert (start_idx, end_idx) == (2, 4)
 
 
+def test_section_range_strict_match_falls_back_to_unique_structural_title_with_mismatched_numbering() -> None:
+    body_children = [
+        _heading("Scope of the Clinical Evaluation", style_id="S1"),
+        _heading("Device Description (Including Compatible Devices)", style_id="S2"),
+        _heading("Device Under Evaluation", style_id="S3"),
+        _paragraph("body A"),
+        _heading("Compatible Device and Accessories", style_id="S3"),
+        _paragraph("body B"),
+        _heading("Device development and market history", style_id="S2"),
+    ]
+    file_map: dict[str, bytes] = {}
+    num_id = _ensure_numbering_instance(file_map, [1, 1, 1])
+    _set_paragraph_numpr(body_children[0], num_id=num_id, ilvl=0)
+    _set_paragraph_numpr(body_children[1], num_id=num_id, ilvl=1)
+    _set_paragraph_numpr(body_children[2], num_id=num_id, ilvl=2)
+    _set_paragraph_numpr(body_children[4], num_id=num_id, ilvl=2)
+    _set_paragraph_numpr(body_children[6], num_id=num_id, ilvl=1)
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Device Under Evaluation",
+        start_number="3.2.1",
+        style_outline={"S1": 0, "S2": 1, "S3": 2},
+        style_based={},
+        numbering_xml=file_map["word/numbering.xml"],
+        strict_heading_number_match=True,
+        allow_start_number_mismatch_fallback=True,
+    )
+
+    assert (start_idx, end_idx) == (2, 4)
+
+
 def test_section_range_title_only_heading_requires_matching_structural_ordinal() -> None:
     body_children = [
         _heading("Introduction"),
@@ -401,6 +433,72 @@ def test_explicit_end_title_only_heading_uses_structural_ordinal() -> None:
     )
 
     assert (start_idx, end_idx) == (1, 5)
+
+
+def test_explicit_end_strict_match_falls_back_to_unique_structural_title_with_mismatched_numbering() -> None:
+    body_children = [
+        _heading("Scope of the Clinical Evaluation", style_id="S1"),
+        _heading("Device Description (Including Compatible Devices)", style_id="S2"),
+        _heading("Device Under Evaluation", style_id="S3"),
+        _paragraph("body A"),
+        _heading("Compatible Device and Accessories", style_id="S3"),
+        _paragraph("body B"),
+        _heading("Device development and market history", style_id="S2"),
+    ]
+    file_map: dict[str, bytes] = {}
+    num_id = _ensure_numbering_instance(file_map, [1, 1, 1])
+    _set_paragraph_numpr(body_children[0], num_id=num_id, ilvl=0)
+    _set_paragraph_numpr(body_children[1], num_id=num_id, ilvl=1)
+    _set_paragraph_numpr(body_children[2], num_id=num_id, ilvl=2)
+    _set_paragraph_numpr(body_children[4], num_id=num_id, ilvl=2)
+    _set_paragraph_numpr(body_children[6], num_id=num_id, ilvl=1)
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Device Under Evaluation",
+        start_number="3.2.1",
+        style_outline={"S1": 0, "S2": 1, "S3": 2},
+        style_based={},
+        numbering_xml=file_map["word/numbering.xml"],
+        explicit_end_title="Compatible Device and Accessories",
+        explicit_end_number="3.2.2",
+        include_end_chapter=False,
+        strict_heading_number_match=True,
+        allow_start_number_mismatch_fallback=True,
+        allow_explicit_end_number_mismatch_fallback=True,
+    )
+
+    assert (start_idx, end_idx) == (2, 4)
+
+
+def test_section_range_strict_match_rejects_wrong_number_without_toc_backed_mismatch_fallback() -> None:
+    body_children = [
+        _heading("Scope of the Clinical Evaluation", style_id="S1"),
+        _heading("Device Description (Including Compatible Devices)", style_id="S2"),
+        _heading("Device Under Evaluation", style_id="S3"),
+        _paragraph("body A"),
+        _heading("Compatible Device and Accessories", style_id="S3"),
+        _paragraph("body B"),
+        _heading("Device development and market history", style_id="S2"),
+    ]
+    file_map: dict[str, bytes] = {}
+    num_id = _ensure_numbering_instance(file_map, [1, 1, 1])
+    _set_paragraph_numpr(body_children[0], num_id=num_id, ilvl=0)
+    _set_paragraph_numpr(body_children[1], num_id=num_id, ilvl=1)
+    _set_paragraph_numpr(body_children[2], num_id=num_id, ilvl=2)
+    _set_paragraph_numpr(body_children[4], num_id=num_id, ilvl=2)
+    _set_paragraph_numpr(body_children[6], num_id=num_id, ilvl=1)
+
+    with pytest.raises(RuntimeError, match="找不到章節起點"):
+        find_section_range_children(
+            body_children=body_children,
+            start_heading_text="Device Under Evaluation",
+            start_number="9.9.9",
+            style_outline={"S1": 0, "S2": 1, "S3": 2},
+            style_based={},
+            numbering_xml=file_map["word/numbering.xml"],
+            strict_heading_number_match=True,
+        )
 
 
 def test_section_range_rule_based_fallback_finds_late_unstructured_boundary() -> None:

@@ -19,6 +19,14 @@ def qn(tag: str) -> str:
 def normalize_text(t: str) -> str:
     return re.sub(r"\s+", " ", (t or "").strip())
 
+
+def _normalize_heading_number(value: str) -> str:
+    return normalize_text(value or "").replace("．", ".").rstrip(".")
+
+
+def _normalize_heading_title(value: str) -> str:
+    return normalize_text(re.sub(r"^[\W_]+", "", value or ""))
+
 _SUBTITLE_TOGGLE_TOKENS = {
     "收合",
     "展開",
@@ -1594,6 +1602,99 @@ def _extract_boundary_number_parts(
     return _parse_number_parts(rendered_prefix.replace("．", "."))
 
 
+def _find_unique_structural_title_number_mismatch(
+    body_children: list[etree._Element],
+    *,
+    heading_text: str,
+    requested_number_parts: list[int],
+    style_outline: dict[str, int],
+    style_based: dict[str, str],
+    numbering_xml: bytes | None,
+    style_numpr: dict[str, tuple[int, int | None]] | None = None,
+    style_heading_rank: dict[str, int] | None = None,
+    ignore_toc: bool = True,
+    start_block_index: int = 0,
+    requested_depth: int | None = None,
+) -> tuple[int, int | None, str | None, int | None] | None:
+    target_text = normalize_text(heading_text)
+    if not target_text or not requested_number_parts:
+        return None
+
+    candidates: list[tuple[int, int | None, str | None, int | None, list[int]]] = []
+    for i in range(max(0, start_block_index), len(body_children)):
+        block = body_children[i]
+        for p in iter_paragraphs(block):
+            if ignore_toc and is_toc_paragraph(p):
+                continue
+
+            txt = normalize_text(get_all_text(p))
+            if txt != target_text:
+                continue
+
+            heading_depth = get_effective_heading_depth(
+                p,
+                style_outline,
+                style_based,
+                style_heading_rank,
+            )
+            ilvl = get_ilvl(p)
+            if heading_depth is None and ilvl is None:
+                continue
+
+            candidate_parts = _extract_boundary_number_parts(
+                p,
+                paragraph_text=txt,
+                body_children=body_children,
+                numbering_xml=numbering_xml,
+                style_based=style_based,
+                style_numpr=style_numpr,
+            )
+            if not candidate_parts or candidate_parts == requested_number_parts:
+                continue
+
+            candidates.append((i, heading_depth, get_pStyle(p), ilvl, candidate_parts))
+
+    if not candidates:
+        return None
+
+    if requested_depth is not None:
+        depth_matched = [
+            item
+            for item in candidates
+            if (item[1] if item[1] is not None else item[3]) == requested_depth
+        ]
+        if depth_matched:
+            candidates = depth_matched
+
+    if len(candidates) != 1:
+        return None
+
+    idx, heading_depth, style_id, ilvl, _ = candidates[0]
+    return idx, heading_depth, style_id, ilvl
+
+
+def _toc_contains_heading_request(
+    toc_entries: list[Any] | None,
+    *,
+    heading_number: str,
+    heading_title: str,
+) -> bool:
+    if not toc_entries:
+        return False
+
+    target_number = _normalize_heading_number(heading_number)
+    target_title = _normalize_heading_title(heading_title)
+    if not target_number or not target_title:
+        return False
+
+    for entry in toc_entries:
+        entry_number = _normalize_heading_number(getattr(entry, "number", ""))
+        entry_title = _normalize_heading_title(getattr(entry, "title", ""))
+        if entry_number == target_number and entry_title == target_title:
+            return True
+    return False
+
+
 def _looks_like_number_boundary_candidate(
     p: etree._Element,
     *,
@@ -1739,6 +1840,8 @@ def find_section_range_children(
     llm_boundary_model_id: str | None = None,
     llm_boundary_resolver: Callable[..., int | None] | None = None,
     strict_heading_number_match: bool = False,
+    allow_start_number_mismatch_fallback: bool = False,
+    allow_explicit_end_number_mismatch_fallback: bool = False,
 ) -> tuple[int, int]:
     # 邊界偵測使用三個門控機制，而非單一優先權規則：
     # 1) 排除/文字門控：跳過目錄/表格/類似標題或類似句子的正文。
@@ -1858,6 +1961,22 @@ def find_section_range_children(
             start_ilvl = fallback_start_ilvl
             start_number_parts = fallback_start_number_parts or start_number_parts
             found_kind = "exact"
+        if start_idx is None and strict_heading_number_match and allow_start_number_mismatch_fallback:
+            mismatch_start = _find_unique_structural_title_number_mismatch(
+                body_children,
+                heading_text=start_heading_text,
+                requested_number_parts=start_number_parts,
+                style_outline=style_outline,
+                style_based=style_based,
+                numbering_xml=numbering_xml,
+                style_numpr=style_numpr,
+                style_heading_rank=style_heading_rank,
+                ignore_toc=ignore_toc,
+                requested_depth=requested_start_depth,
+            )
+            if mismatch_start is not None:
+                start_idx, start_heading_depth, start_style, start_ilvl = mismatch_start
+                found_kind = "exact"
         if start_idx is None:
             raise RuntimeError(f"找不到章節起點：{start_number} / {start_heading_text}")
 
@@ -1977,6 +2096,57 @@ def find_section_range_children(
                 paragraph_text=txt,
             ):
                 return start_idx, j
+
+    if has_explicit_end and strict_heading_number_match and allow_explicit_end_number_mismatch_fallback:
+        mismatch_end = _find_unique_structural_title_number_mismatch(
+            body_children,
+            heading_text=explicit_end_title or "",
+            requested_number_parts=explicit_end_parts,
+            style_outline=style_outline,
+            style_based=style_based,
+            numbering_xml=numbering_xml,
+            style_numpr=style_numpr,
+            style_heading_rank=style_heading_rank,
+            ignore_toc=ignore_toc,
+            start_block_index=start_idx + 1,
+            requested_depth=explicit_end_depth,
+        )
+        if mismatch_end is not None:
+            j, end_heading_depth, end_style, end_ilvl = mismatch_end
+            if include_end_chapter:
+                if explicit_end_depth is not None:
+                    end_heading_depth = (
+                        explicit_end_depth
+                        if end_heading_depth is None
+                        else max(end_heading_depth, explicit_end_depth)
+                    )
+                for k in range(j + 1, len(body_children)):
+                    next_block = body_children[k]
+                    for next_p in iter_paragraphs(next_block):
+                        if ignore_toc and is_toc_paragraph(next_p):
+                            continue
+                        next_txt = normalize_text(get_all_text(next_p))
+                        if _matches_structural_boundary(
+                            next_p,
+                            reference_heading_depth=end_heading_depth,
+                            reference_style=end_style,
+                            reference_ilvl=end_ilvl,
+                            paragraph_text=next_txt,
+                            style_outline=style_outline,
+                            style_based=style_based,
+                            style_heading_rank=style_heading_rank,
+                        ):
+                            return start_idx, k
+                        if _matches_plain_text_boundary(
+                            next_p,
+                            reference_number_parts=explicit_end_parts,
+                            reference_style=end_style,
+                            reference_ilvl=end_ilvl,
+                            paragraph_text=next_txt,
+                        ):
+                            return start_idx, k
+                return start_idx, len(body_children)
+            return start_idx, j
 
     if has_explicit_end:
         raise RuntimeError(
@@ -2582,6 +2752,14 @@ def extract_section_docx_xml(
     if "word/styles.xml" not in file_map:
         raise RuntimeError("DOCX 中找不到 word/styles.xml（需要用它回推 outlineLvl）")
 
+    toc_entries = None
+    try:
+        from modules.docx_toc import extract_toc_entries_from_parts
+
+        toc_entries = extract_toc_entries_from_parts(file_map)
+    except Exception:
+        toc_entries = None
+
     style_outline, style_based = build_style_outline_map(file_map["word/styles.xml"])
     style_heading_rank = build_style_heading_rank_map(file_map["word/styles.xml"])
     _, style_numpr = parse_styles_numpr(file_map["word/styles.xml"])
@@ -2618,6 +2796,16 @@ def extract_section_docx_xml(
         llm_boundary_model_id=llm_boundary_model_id,
         llm_boundary_resolver=llm_boundary_resolver,
         strict_heading_number_match=strict_heading_number_match,
+        allow_start_number_mismatch_fallback=_toc_contains_heading_request(
+            toc_entries,
+            heading_number=start_number,
+            heading_title=start_heading_text,
+        ),
+        allow_explicit_end_number_mismatch_fallback=_toc_contains_heading_request(
+            toc_entries,
+            heading_number=explicit_end_number or "",
+            heading_title=explicit_end_title or "",
+        ),
     )
     kept_section = content_children[start_idx:end_idx]
 

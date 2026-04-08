@@ -1831,6 +1831,7 @@ const stepFileState = {
   accept: "file:docx",
   mode: "file",
   ext: "docx",
+  browserMode: "file",
   currentRel: "",
   selectedRel: null,
   dirs: [],
@@ -1838,6 +1839,21 @@ const stepFileState = {
   folderAction: "create",
   folderActionPath: "",
 };
+
+function resolveStepFileBrowserMode(input, parsed){
+  const stepCard = input?.closest('[data-sid]');
+  const stepType = stepCard?.querySelector('input[name^="step_"][name$="_type"]')?.value || "";
+  const inputName = String(input?.getAttribute("name") || "");
+  if (parsed.mode !== "dir") return parsed.mode;
+  if (["copy_files", "copy_directory"].includes(stepType) && inputName.endsWith("_source_dir")) {
+    return "dir_pick";
+  }
+  return "dir_manage";
+}
+
+function canManageStepFileFolders(){
+  return stepFileState.browserMode === "dir_manage";
+}
 
 function setStepFileStatus(text){
   if (stepFileStatusEl) stepFileStatusEl.textContent = text || "";
@@ -1851,8 +1867,8 @@ function updateStepFileCurrentPath(){
 function updateStepFileModeUI(){
   if (!stepFileSelectCurrentBtn) return;
   stepFileSelectCurrentBtn.classList.toggle("d-none", stepFileState.mode === "file");
-  stepFileCreateFolderBtn?.classList.toggle("d-none", stepFileState.mode !== "dir");
-  if (stepFileState.mode !== "dir"){
+  stepFileCreateFolderBtn?.classList.toggle("d-none", stepFileState.mode !== "dir" || !canManageStepFileFolders());
+  if (stepFileState.mode !== "dir" || !canManageStepFileFolders()){
     toggleStepFileCreateFolder(false);
   }
 }
@@ -2005,7 +2021,7 @@ function renderStepFileEntries(){
       });
       actionGroup.appendChild(chooseBtn);
 
-      if (stepFileState.mode === "dir"){
+      if (stepFileState.mode === "dir" && canManageStepFileFolders()){
         const renameBtn = document.createElement("button");
         renameBtn.type = "button";
         renameBtn.className = "btn btn-sm btn-outline-secondary";
@@ -2097,7 +2113,7 @@ async function loadStepFileEntries(rel = ""){
 }
 
 async function createStepFolder(){
-  if (IS_VERSION_PREVIEW || stepFileState.mode !== "dir") return;
+  if (IS_VERSION_PREVIEW || stepFileState.mode !== "dir" || !canManageStepFileFolders()) return;
   const name = String(stepFileCreateFolderInput?.value || "").trim();
   if (!name){
     setStepFileStatus("請輸入資料夾名稱");
@@ -2164,6 +2180,7 @@ function openStepFileBrowser(input, accept){
   stepFileState.accept = parsed.raw;
   stepFileState.mode = parsed.mode;
   stepFileState.ext = parsed.ext;
+  stepFileState.browserMode = resolveStepFileBrowserMode(input, parsed);
   stepFileState.dirs = [];
   stepFileState.files = [];
   updateStepFileModeUI();

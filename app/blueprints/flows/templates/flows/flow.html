@@ -84,50 +84,52 @@
                     </div>
 
                     <!-- 操作工具列 -->
-                    <div class="flow-toolbar px-4 py-3 bg-light bg-opacity-50 border-bottom d-flex flex-column flex-lg-row justify-content-between gap-3">
-                        <div class="d-flex flex-wrap gap-2">
-                            <div class="dropdown">
-                                <button class="btn btn-white border bg-white shadow-sm dropdown-toggle d-inline-flex align-items-center gap-1" id="addStepDropdownBtn" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" {% if is_version_preview %}disabled{% endif %}>
-                                    <i class="bi bi-plus-lg text-primary"></i>
-                                    新增步驟
+                    <div class="flow-toolbar px-4 py-3 bg-light bg-opacity-50 border-bottom">
+                        <div class="flow-toolbar-main">
+                            <div class="flow-toolbar-group flow-toolbar-group-start">
+                                <div class="dropdown">
+                                    <button class="btn btn-white border bg-white shadow-sm dropdown-toggle d-inline-flex align-items-center gap-1" id="addStepDropdownBtn" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" {% if is_version_preview %}disabled{% endif %}>
+                                        <i class="bi bi-plus-lg text-primary"></i>
+                                        新增步驟
+                                    </button>
+                                    <ul class="dropdown-menu shadow-sm border-0" id="addStepDropdownMenu">
+                                        {% for key, meta in steps.items() %}
+                                        <li><a class="dropdown-item py-2" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="openTemplateModalBtn" data-bs-toggle="modal" data-bs-target="#templateModal" {% if is_version_preview %}disabled{% endif %}>
+                                    <i class="bi bi-search text-primary"></i>
+                                    模板解析
                                 </button>
-                                <ul class="dropdown-menu shadow-sm border-0" id="addStepDropdownMenu">
-                                    {% for key, meta in steps.items() %}
-                                    <li><a class="dropdown-item py-2" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
-                                    {% endfor %}
-                                </ul>
+                                <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
+                                    <i class="bi bi-folder text-primary"></i>
+                                    檔案結構
+                                </button>
+                                <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
+                                    <i class="bi bi-arrows-collapse text-primary"></i>
+                                    全部收合
+                                </button>
+                                <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded bg-white shadow-sm">
+                                    <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="toggleRuleVisibilitySwitch">
+                                    <label class="form-check-label small text-muted mb-0" for="toggleRuleVisibilitySwitch">顯示擷取規則</label>
+                                </div>
                             </div>
-                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="openTemplateModalBtn" data-bs-toggle="modal" data-bs-target="#templateModal" {% if is_version_preview %}disabled{% endif %}>
-                                <i class="bi bi-search text-primary"></i>
-                                模板解析
-                            </button>
-                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
-                                <i class="bi bi-folder text-primary"></i>
-                                檔案結構
-                            </button>
-                            <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
-                                <i class="bi bi-arrows-collapse text-primary"></i>
-                                全部收合
-                            </button>
-                            <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded bg-white shadow-sm">
-                                <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="toggleRuleVisibilitySwitch">
-                                <label class="form-check-label small text-muted mb-0" for="toggleRuleVisibilitySwitch">顯示擷取規則</label>
+                            <div class="flow-toolbar-group flow-toolbar-group-end">
+                                <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" id="saveFlowBtn" type="submit" name="action" value="save" {% if is_version_preview %}disabled{% endif %}>
+                                    <i class="bi bi-save"></i>
+                                    保存流程
+                                </button>
+                                <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn" {% if is_version_preview %}disabled{% endif %}>
+                                    <i class="bi bi-files"></i>
+                                    另存流程
+                                </button>
+                                <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" id="runFlowBtn" type="submit" name="action" value="run" {% if is_version_preview %}disabled{% endif %}>
+                                    <i class="bi bi-play-fill"></i>
+                                    執行流程
+                                </button>
+                                <button class="d-none" type="submit" name="action" value="save_as" id="saveAsSubmitTrigger">另存流程</button>
                             </div>
-                        </div>
-                        <div class="d-flex flex-wrap gap-2">
-                            <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" id="saveFlowBtn" type="submit" name="action" value="save" {% if is_version_preview %}disabled{% endif %}>
-                                <i class="bi bi-save"></i>
-                                保存流程
-                            </button>
-                            <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn" {% if is_version_preview %}disabled{% endif %}>
-                                <i class="bi bi-files"></i>
-                                另存流程
-                            </button>
-                            <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" id="runFlowBtn" type="submit" name="action" value="run" {% if is_version_preview %}disabled{% endif %}>
-                                <i class="bi bi-play-fill"></i>
-                                執行流程
-                            </button>
-                            <button class="d-none" type="submit" name="action" value="save_as" id="saveAsSubmitTrigger">另存流程</button>
                         </div>
                     </div>
                     
@@ -633,6 +635,41 @@
 #builder-pane .main-card {
   min-height: 460px;
 }
+.flow-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+.flow-toolbar-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.875rem 1rem;
+}
+.flow-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.flow-toolbar-group-start {
+  align-items: center;
+}
+.flow-toolbar-group-end {
+  justify-content: flex-end;
+  align-items: center;
+}
+.flow-toolbar-group .btn,
+.flow-toolbar-group .dropdown {
+  flex: 0 0 auto;
+}
+.flow-toolbar-group .btn {
+  white-space: nowrap;
+}
+.flow-toolbar-meta {
+  display: flex;
+  align-items: center;
+}
 .flow-toolbar .dropdown-menu {
   --flow-toolbar-dropdown-max-height: min(60vh, 420px);
   z-index: 1080;
@@ -643,6 +680,7 @@
 .flow-toolbar-switch {
   min-height: 38px;
   padding-left: 0.75rem !important;
+  width: fit-content;
 }
 .flow-toolbar-switch .form-check-input {
   margin-left: 0 !important;
@@ -652,6 +690,19 @@
   display: inline-flex;
   align-items: center;
   line-height: 1.2;
+}
+@media (max-width: 1199.98px) {
+  .flow-toolbar-main {
+    grid-template-columns: 1fr;
+  }
+  .flow-toolbar-group-end {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 767.98px) {
+  .flow-toolbar-group {
+    gap: 0.625rem;
+  }
 }
 .flow-version-name-truncate {
   display: block;

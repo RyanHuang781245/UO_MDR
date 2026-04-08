@@ -91,7 +91,7 @@
                                     <i class="bi bi-plus-lg text-primary"></i>
                                     新增步驟
                                 </button>
-                                <ul class="dropdown-menu shadow-sm border-0">
+                                <ul class="dropdown-menu shadow-sm border-0" id="addStepDropdownMenu">
                                     {% for key, meta in steps.items() %}
                                     <li><a class="dropdown-item py-2" href="#" onclick="addStep('{{ key|e }}'); return false;">{{ meta.label }}</a></li>
                                     {% endfor %}
@@ -634,9 +634,11 @@
   min-height: 460px;
 }
 .flow-toolbar .dropdown-menu {
+  --flow-toolbar-dropdown-max-height: min(60vh, 420px);
   z-index: 1080;
-  max-height: min(60vh, 420px);
+  max-height: var(--flow-toolbar-dropdown-max-height);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .flow-toolbar-switch {
   min-height: 38px;
@@ -1552,6 +1554,8 @@ const versionNameInput = document.getElementById('versionNameInput');
 const restorePreviewVersionBtn = document.getElementById('restorePreviewVersionBtn');
 const undoLastRestoreBtn = document.getElementById('undoLastRestoreBtn');
 const addStepDropdownBtn = document.getElementById('addStepDropdownBtn');
+const addStepDropdownMenu = document.getElementById('addStepDropdownMenu');
+const addStepDropdown = addStepDropdownBtn?.closest('.dropdown') || null;
 const openTemplateModalBtn = document.getElementById('openTemplateModalBtn');
 const saveFlowBtn = document.getElementById('saveFlowBtn');
 const runFlowBtn = document.getElementById('runFlowBtn');
@@ -2993,6 +2997,27 @@ function buildSaveAsNameSuggestion() {
   return suggested.slice(0, 50);
 }
 
+function syncAddStepDropdownViewport() {
+  if (!addStepDropdownBtn || !addStepDropdownMenu) return;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  if (!viewportHeight) {
+    addStepDropdownMenu.style.removeProperty('--flow-toolbar-dropdown-max-height');
+    return;
+  }
+
+  const safePadding = 16;
+  const minMenuHeight = 180;
+  const maxMenuHeight = 420;
+  const buttonRect = addStepDropdownBtn.getBoundingClientRect();
+  const availableBelow = Math.max(viewportHeight - buttonRect.bottom - safePadding, 0);
+  const availableAbove = Math.max(buttonRect.top - safePadding, 0);
+  const preferredSpace = availableBelow < 260 && availableAbove > availableBelow ? availableAbove : availableBelow;
+  const minimumUsableHeight = Math.min(minMenuHeight, Math.max(availableBelow, availableAbove));
+  const resolvedHeight = Math.min(Math.max(preferredSpace, minimumUsableHeight), maxMenuHeight);
+
+  addStepDropdownMenu.style.setProperty('--flow-toolbar-dropdown-max-height', `${resolvedHeight}px`);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const currentUrl = new URL(window.location.href);
   if (currentUrl.searchParams.get('show_restore_notice') === '1') {
@@ -3001,15 +3026,48 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (addStepDropdownBtn && typeof bootstrap !== 'undefined' && bootstrap.Dropdown) {
     bootstrap.Dropdown.getOrCreateInstance(addStepDropdownBtn, {
-      boundary: document.body,
+      boundary: 'viewport',
       popperConfig(defaultBsPopperConfig) {
+        const modifiers = Array.isArray(defaultBsPopperConfig?.modifiers)
+          ? defaultBsPopperConfig.modifiers.filter((modifier) => !['flip', 'preventOverflow'].includes(modifier?.name))
+          : [];
         return {
           ...defaultBsPopperConfig,
           strategy: 'fixed',
+          modifiers: [
+            ...modifiers,
+            {
+              name: 'flip',
+              options: {
+                fallbackPlacements: ['top-start', 'bottom-start'],
+              },
+            },
+            {
+              name: 'preventOverflow',
+              options: {
+                boundary: 'viewport',
+                rootBoundary: 'viewport',
+                padding: 16,
+              },
+            },
+          ],
         };
       },
     });
   }
+  syncAddStepDropdownViewport();
+  if (addStepDropdown) {
+    addStepDropdown.addEventListener('show.bs.dropdown', () => {
+      syncAddStepDropdownViewport();
+    });
+    addStepDropdown.addEventListener('shown.bs.dropdown', () => {
+      bootstrap.Dropdown.getInstance(addStepDropdownBtn)?.update();
+    });
+    addStepDropdown.addEventListener('hidden.bs.dropdown', () => {
+      addStepDropdownMenu?.style.removeProperty('--flow-toolbar-dropdown-max-height');
+    });
+  }
+  window.addEventListener('resize', syncAddStepDropdownViewport);
 });
 
 document.addEventListener('DOMContentLoaded', () => {

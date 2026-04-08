@@ -760,6 +760,9 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                         keywords,
                         recursive=recursive_search,
                     )
+                    if not copied:
+                        log[-1]["copied_files"] = []
+                        raise RuntimeError("未檢索到與關鍵字相符的檔案")
                     if target_name:
                         if len(copied) == 1:
                             copied = [_rename_single_copied_path(copied[0], target_name)]
@@ -782,6 +785,9 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                         copied_registry=copied_dir_registry,
                         registry_entry_factory=lambda src_path: {"log_index": len(log) - 1, "source": os.path.abspath(src_path)},
                     )
+                    if not copied_dirs:
+                        log[-1]["copied_dirs"] = []
+                        raise RuntimeError("未檢索到與關鍵字相符的資料夾")
                     if target_name:
                         if len(copied_dirs) == 1:
                             renamed = _rename_single_copied_path(copied_dirs[0], target_name)

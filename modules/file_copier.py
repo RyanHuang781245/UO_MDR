@@ -4,7 +4,12 @@ import shutil
 from typing import Any, Dict, Iterable, List
 
 
-def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[str]:
+def copy_files(
+    source: str,
+    destination: str,
+    keywords: Iterable[str],
+    recursive: bool = True,
+) -> List[str]:
     """Copy files whose names contain all provided keywords.
 
     Keywords are matched case-insensitively. A file is copied only when its
@@ -53,6 +58,8 @@ def copy_files(source: str, destination: str, keywords: Iterable[str]) -> List[s
                     continue
                 shutil.copy2(src_path, dest_path)
                 copied_files.append(dest_path)
+        if not recursive:
+            break
     return copied_files
 
 
@@ -218,6 +225,7 @@ def copy_directories(
     source: str,
     destination: str,
     keywords: Iterable[str],
+    recursive: bool = True,
     copied_registry: Dict[str, Dict[str, Any]] | None = None,
     registry_entry_factory=None,
 ) -> List[str]:
@@ -265,6 +273,8 @@ def copy_directories(
                 copied_registry,
                 entry,
             )
+        if not recursive:
+            break
 
     registry = copied_registry if copied_registry is not None else {}
     copied_dirs: List[str] = []

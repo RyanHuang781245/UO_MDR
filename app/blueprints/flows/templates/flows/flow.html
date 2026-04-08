@@ -1003,7 +1003,8 @@ const flowFileTreeStatus = document.getElementById("flowFileTreeStatus");
 const BOOL_DEFAULTS = {
   include_caption: "true",
   use_chapter_title: "false",
-  hide_chapter_title: "false"
+  hide_chapter_title: "false",
+  recursive_search: "true"
 };
 const RULE_VISIBILITY_STORAGE_KEY = `flow_rule_visibility_${TASK_ID}`;
 let showExtractionRules = false;
@@ -1314,6 +1315,9 @@ const FIELD_META = {
   target_name: {
     label: "複製後名稱",
     placeholder: "留白保留原名稱"
+  },
+  recursive_search: {
+    label: "遞迴搜尋子資料夾"
   },
 };
 
@@ -1890,9 +1894,11 @@ function syncCopyTargetNameState(card, changedField = ""){
   const sourceInput = card.querySelector('select[name^="step_"][name$="_source_dir"], input[name^="step_"][name$="_source_dir"]');
   const keywordInput = card.querySelector('input[name^="step_"][name$="_keywords"]');
   const targetNameInput = card.querySelector('input[name^="step_"][name$="_target_name"]');
+  const recursiveSearchToggle = card.querySelector('input[type="checkbox"][data-target^="step_"][data-target$="_recursive_search"]');
   if (!keywordInput || !targetNameInput) return;
   const keywordField = card.querySelector('[data-copy-sync-field="keywords"]');
   const targetNameField = card.querySelector('[data-copy-sync-field="target_name"]');
+  const recursiveField = card.querySelector('[data-copy-sync-field="recursive_search"]');
   const clearInputValue = (input) => {
     if (!input || !input.value) return;
     input.value = "";
@@ -1923,6 +1929,7 @@ function syncCopyTargetNameState(card, changedField = ""){
   if (isCopyFiles) {
     keywordField?.classList.toggle("d-none", !sourceIsDir);
     targetNameField?.classList.toggle("d-none", !sourceIsFile);
+    recursiveField?.classList.toggle("d-none", !sourceIsDir);
     keywordInput.disabled = !sourceIsDir || hasTargetName;
     keywordInput.title = sourceIsFile
       ? "已選擇單一檔案時，不適用關鍵字檢索"
@@ -1931,12 +1938,20 @@ function syncCopyTargetNameState(card, changedField = ""){
     targetNameInput.title = sourceIsDir
       ? "已選擇資料夾時，請改用關鍵字檢索"
       : (hasKeywords ? "已輸入關鍵字時，不可再輸入複製後名稱" : "");
+    if (recursiveSearchToggle) {
+      recursiveSearchToggle.disabled = !sourceIsDir;
+      recursiveSearchToggle.title = sourceIsFile ? "已選擇單一檔案時，不適用子資料夾搜尋" : "";
+    }
     return;
   }
   keywordInput.disabled = hasTargetName;
   keywordInput.title = hasTargetName ? "已輸入複製後名稱時，不可再輸入關鍵字" : "";
   targetNameInput.disabled = hasKeywords;
   targetNameInput.title = hasKeywords ? "已輸入關鍵字時，不可再輸入複製後名稱" : "";
+  if (recursiveSearchToggle) {
+    recursiveSearchToggle.disabled = !hasKeywords;
+    recursiveSearchToggle.title = hasKeywords ? "" : "未輸入關鍵字時，會直接複製指定資料夾，此設定不適用";
+  }
 }
 
 function isAllowedStepFileEntry(path){
@@ -2696,6 +2711,28 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           return `<div class="col-md-6${hidden}"${dataAttr}><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
                  <div class="form-text">${helpText}</div></div>`;
+        }
+        if (k === "recursive_search" && (typeKey === "copy_files" || typeKey === "copy_directory")) {
+          const checked = val !== "false" ? "checked" : "";
+          const hiddenVal = val !== "false" ? "true" : "false";
+          const inputId = `step_${sid}_${k}_chk`;
+          const sourceKind = getCopyFilesSourceKind(preset["source_dir"]);
+          const hasKeywords = String(preset["keywords"] ?? "").trim() !== "";
+          const hidden = typeKey === "copy_files" && sourceKind !== "dir" ? " d-none" : "";
+          const disabled = typeKey === "copy_files"
+            ? (sourceKind === "dir" ? "" : "disabled")
+            : (hasKeywords ? "" : "disabled");
+          const helpText = typeKey === "copy_files"
+            ? "開啟時會連同子資料夾一起搜尋；關閉時只搜尋目前資料夾。"
+            : "有輸入關鍵字時，開啟可往子資料夾繼續找；關閉則只搜尋目前層級。";
+          return `<div class="col-12${hidden}" data-copy-sync-field="recursive_search">
+                 <div class="form-check form-switch">
+                   <input type="hidden" name="step_${sid}_${k}" value="${hiddenVal}">
+                   <input class="form-check-input bool-toggle" type="checkbox" id="${inputId}" data-target="step_${sid}_${k}" ${checked} ${disabled}>
+                   <label class="form-check-label" for="${inputId}">${label}</label>
+                   <div class="form-text">${helpText}</div>
+                 </div>
+               </div>`;
         }
         return `<div class="col-md-6"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;

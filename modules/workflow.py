@@ -283,22 +283,24 @@ SUPPORTED_STEPS = {
     },
     "copy_files": {
         "label": "複製檔案",
-        "inputs": ["source_dir", "dest_dir", "keywords", "target_name"],
+        "inputs": ["source_dir", "dest_dir", "keywords", "target_name", "recursive_search"],
         "accepts": {
             "source_dir": "file:path",
             "dest_dir": "file:dir",
             "keywords": "text",
             "target_name": "text",
+            "recursive_search": "bool",
         }
     },
     "copy_directory": {
         "label": "複製資料夾",
-        "inputs": ["source_dir", "dest_dir", "keywords", "target_name"],
+        "inputs": ["source_dir", "dest_dir", "keywords", "target_name", "recursive_search"],
         "accepts": {
             "source_dir": "file:dir",
             "dest_dir": "file:dir",
             "keywords": "text",
             "target_name": "text",
+            "recursive_search": "bool",
         }
     },
     # "renumber_figures_tables": {
@@ -740,6 +742,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                 keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
                 target_name = (params.get("target_name", "") or "").strip()
                 source_path = params.get("source_dir", "")
+                recursive_search = boolish(params.get("recursive_search", "true"))
                 if os.path.isfile(source_path):
                     copied = [
                         copy_file(
@@ -755,6 +758,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                         source_path,
                         params.get("dest_dir", ""),
                         keywords,
+                        recursive=recursive_search,
                     )
                     if target_name:
                         if len(copied) == 1:
@@ -768,13 +772,15 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
             elif stype == "copy_directory":
                 keywords = [k.strip() for k in params.get("keywords", "").split(",") if k.strip()]
                 target_name = (params.get("target_name", "") or "").strip()
+                recursive_search = boolish(params.get("recursive_search", "true"))
                 if keywords:
                     copied_dirs = copy_directories(
                         params.get("source_dir", ""),
                         params.get("dest_dir", ""),
                         keywords,
-                        copied_dir_registry,
-                        lambda src_path: {"log_index": len(log) - 1, "source": os.path.abspath(src_path)},
+                        recursive=recursive_search,
+                        copied_registry=copied_dir_registry,
+                        registry_entry_factory=lambda src_path: {"log_index": len(log) - 1, "source": os.path.abspath(src_path)},
                     )
                     if target_name:
                         if len(copied_dirs) == 1:

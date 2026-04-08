@@ -1881,41 +1881,62 @@ function getCopyFilesSourceKind(value){
   return isAvailableDirPath(raw) ? "dir" : "file";
 }
 
-function syncCopyTargetNameState(card){
+function syncCopyTargetNameState(card, changedField = ""){
   if (!card) return;
+  const stepType = card.querySelector('input[name^="step_"][name$="_type"]')?.value || "";
+  const isCopyFiles = stepType === "copy_files";
+  const isCopyDirectory = stepType === "copy_directory";
+  if (!isCopyFiles && !isCopyDirectory) return;
   const sourceInput = card.querySelector('select[name^="step_"][name$="_source_dir"], input[name^="step_"][name$="_source_dir"]');
   const keywordInput = card.querySelector('input[name^="step_"][name$="_keywords"]');
   const targetNameInput = card.querySelector('input[name^="step_"][name$="_target_name"]');
   if (!keywordInput || !targetNameInput) return;
-  const keywordField = card.querySelector('[data-copy-files-field="keywords"]');
-  const targetNameField = card.querySelector('[data-copy-files-field="target_name"]');
+  const keywordField = card.querySelector('[data-copy-sync-field="keywords"]');
+  const targetNameField = card.querySelector('[data-copy-sync-field="target_name"]');
+  const clearInputValue = (input) => {
+    if (!input || !input.value) return;
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
   const sourceKind = getCopyFilesSourceKind(sourceInput?.value);
   const sourceIsFile = sourceKind === "file";
   const sourceIsDir = sourceKind === "dir";
-  if (sourceIsFile && keywordInput.value){
-    keywordInput.value = "";
-    keywordInput.dispatchEvent(new Event("input", { bubbles: true }));
-    keywordInput.dispatchEvent(new Event("change", { bubbles: true }));
+  if (isCopyFiles && sourceIsFile && keywordInput.value){
+    clearInputValue(keywordInput);
+    return;
   }
-  if (sourceIsDir && targetNameInput.value){
-    targetNameInput.value = "";
-    targetNameInput.dispatchEvent(new Event("input", { bubbles: true }));
-    targetNameInput.dispatchEvent(new Event("change", { bubbles: true }));
+  if (isCopyFiles && sourceIsDir && targetNameInput.value){
+    clearInputValue(targetNameInput);
+    return;
   }
-  keywordField?.classList.toggle("d-none", !sourceIsDir);
-  targetNameField?.classList.toggle("d-none", !sourceIsFile);
-  keywordInput.disabled = !sourceIsDir;
-  keywordInput.title = sourceIsFile ? "已選擇單一檔案時，不適用關鍵字檢索" : "";
-  const hasKeywords = !!String(keywordInput.value || "").trim();
-  if (sourceIsDir && hasKeywords && targetNameInput.value){
-    targetNameInput.value = "";
-    targetNameInput.dispatchEvent(new Event("input", { bubbles: true }));
-    targetNameInput.dispatchEvent(new Event("change", { bubbles: true }));
+  let hasKeywords = !!String(keywordInput.value || "").trim();
+  let hasTargetName = !!String(targetNameInput.value || "").trim();
+  if (hasKeywords && hasTargetName){
+    if (changedField === "target_name") {
+      clearInputValue(keywordInput);
+    } else {
+      clearInputValue(targetNameInput);
+    }
+    return;
   }
-  targetNameInput.disabled = !sourceIsFile || hasKeywords;
-  targetNameInput.title = sourceIsDir
-    ? "已選擇資料夾時，請改用關鍵字檢索"
-    : (hasKeywords ? "關鍵字有值時，複製後名稱不適用" : "");
+  if (isCopyFiles) {
+    keywordField?.classList.toggle("d-none", !sourceIsDir);
+    targetNameField?.classList.toggle("d-none", !sourceIsFile);
+    keywordInput.disabled = !sourceIsDir || hasTargetName;
+    keywordInput.title = sourceIsFile
+      ? "已選擇單一檔案時，不適用關鍵字檢索"
+      : (hasTargetName ? "已輸入複製後名稱時，不可再輸入關鍵字" : "");
+    targetNameInput.disabled = !sourceIsFile || hasKeywords;
+    targetNameInput.title = sourceIsDir
+      ? "已選擇資料夾時，請改用關鍵字檢索"
+      : (hasKeywords ? "已輸入關鍵字時，不可再輸入複製後名稱" : "");
+    return;
+  }
+  keywordInput.disabled = hasTargetName;
+  keywordInput.title = hasTargetName ? "已輸入複製後名稱時，不可再輸入關鍵字" : "";
+  targetNameInput.disabled = hasKeywords;
+  targetNameInput.title = hasKeywords ? "已輸入關鍵字時，不可再輸入複製後名稱" : "";
 }
 
 function isAllowedStepFileEntry(path){
@@ -2648,21 +2669,30 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           return `<div class="col-md-5"><label class="form-label">${label}</label>
                    <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
         }
-        if (k === "keywords" && typeKey === "copy_files") {
-          const hidden = copyFilesSourceKind === "dir" ? "" : " d-none";
-          return `<div class="col-md-6${hidden}" data-copy-files-field="keywords"><label class="form-label">${label}</label>
-                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${copyFilesSourceKind === "dir" ? "" : "disabled"}>
-                 <div class="form-text">選擇來源資料夾時可使用關鍵字檢索複製。</div></div>`;
+        if (k === "keywords" && (typeKey === "copy_files" || typeKey === "copy_directory")) {
+          const targetNameVal = String(preset["target_name"] ?? "").trim();
+          const hidden = typeKey === "copy_files" && copyFilesSourceKind !== "dir" ? " d-none" : "";
+          const disabled = typeKey === "copy_files"
+            ? (copyFilesSourceKind === "dir" && !targetNameVal ? "" : "disabled")
+            : (targetNameVal ? "disabled" : "");
+          const helpText = typeKey === "copy_files"
+            ? "選擇來源資料夾時可使用關鍵字檢索複製。"
+            : "輸入關鍵字後，複製後名稱將不可再輸入。";
+          return `<div class="col-md-6${hidden}" data-copy-sync-field="keywords"><label class="form-label">${label}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
+                 <div class="form-text">${helpText}</div></div>`;
         }
         if (k === "target_name") {
           const keywordsVal = String(preset["keywords"] ?? "").trim();
           const showTargetName = typeKey !== "copy_files" || copyFilesSourceKind === "file";
-          const disabled = !showTargetName || keywordsVal ? "disabled" : "";
+          const disabled = typeKey === "copy_files"
+            ? ((!showTargetName || keywordsVal) ? "disabled" : "")
+            : (keywordsVal ? "disabled" : "");
           const helpText = typeKey === "copy_files"
-            ? "選擇單一檔案時可指定複製後名稱。"
-            : (keywordsVal ? "已填關鍵字時不可設定複製後名稱" : "未填關鍵字時可指定複製後名稱");
+            ? (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱。" : "選擇單一檔案時可指定複製後名稱。")
+            : (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱。" : "輸入複製後名稱後，關鍵字將不可再輸入。");
           const hidden = typeKey === "copy_files" && !showTargetName ? " d-none" : "";
-          const dataAttr = typeKey === "copy_files" ? ' data-copy-files-field="target_name"' : "";
+          const dataAttr = ' data-copy-sync-field="target_name"';
           return `<div class="col-md-6${hidden}"${dataAttr}><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
                  <div class="form-text">${helpText}</div></div>`;
@@ -2975,13 +3005,18 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
   card.addEventListener("change", updateSummary);
   const keywordInput = card.querySelector(`[name="step_${sid}_keywords"]`);
   if (keywordInput){
-    keywordInput.addEventListener("input", () => syncCopyTargetNameState(card));
-    keywordInput.addEventListener("change", () => syncCopyTargetNameState(card));
+    keywordInput.addEventListener("input", () => syncCopyTargetNameState(card, "keywords"));
+    keywordInput.addEventListener("change", () => syncCopyTargetNameState(card, "keywords"));
+  }
+  const targetNameInput = card.querySelector(`[name="step_${sid}_target_name"]`);
+  if (targetNameInput){
+    targetNameInput.addEventListener("input", () => syncCopyTargetNameState(card, "target_name"));
+    targetNameInput.addEventListener("change", () => syncCopyTargetNameState(card, "target_name"));
   }
   const sourceInput = card.querySelector(`[name="step_${sid}_source_dir"]`);
   if (sourceInput){
-    sourceInput.addEventListener("input", () => syncCopyTargetNameState(card));
-    sourceInput.addEventListener("change", () => syncCopyTargetNameState(card));
+    sourceInput.addEventListener("input", () => syncCopyTargetNameState(card, "source_dir"));
+    sourceInput.addEventListener("change", () => syncCopyTargetNameState(card, "source_dir"));
   }
   if (IS_VERSION_PREVIEW) applyReadonlyToStepCard(card);
 }

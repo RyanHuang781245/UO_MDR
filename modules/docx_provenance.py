@@ -12,7 +12,7 @@ _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _NS = {"w": _W_NS}
 _PROVENANCE_PREFIX = "prov_src_"
 _PROVENANCE_CACHE_VERSION = 1
-PROVENANCE_PREVIEW_LABEL_PREFIX = "來源: "
+PROVENANCE_PREVIEW_LABEL_PREFIX = "Source: "
 _PREVIEW_LABEL_TEXT_COLOR = "C00000"
 _PREVIEW_HIGHLIGHT_PALETTE = [
     {"highlight": "yellow", "fill": "FEF3C7", "text": "92400E"},

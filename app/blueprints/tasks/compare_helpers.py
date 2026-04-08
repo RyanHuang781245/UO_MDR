@@ -35,6 +35,15 @@ _LIBREOFFICE_CANDIDATES = (
 _PROVENANCE_PREVIEW_DOCX_CACHE_VERSION = 5
 _PAGE_SOURCE_MAP_CACHE_VERSION = 14
 _HTML_PREVIEW_CACHE_VERSION = 2
+_LIBREOFFICE_REQUIRED_PATHS = (
+    "/usr/local/sbin",
+    "/usr/local/bin",
+    "/usr/sbin",
+    "/usr/bin",
+    "/sbin",
+    "/bin",
+    "/snap/bin",
+)
 
 
 def _configured_libreoffice_binary() -> str | None:
@@ -55,6 +64,22 @@ def _find_libreoffice_binary() -> str | None:
         if resolved and os.path.isfile(resolved):
             return resolved
     return None
+
+
+def _build_libreoffice_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if os.name == "nt":
+        return env
+
+    current_path = env.get("PATH", "")
+    path_parts = [part for part in current_path.split(os.pathsep) if part]
+    seen = set(path_parts)
+    for required in _LIBREOFFICE_REQUIRED_PATHS:
+        if required not in seen:
+            path_parts.append(required)
+            seen.add(required)
+    env["PATH"] = os.pathsep.join(path_parts)
+    return env
 
 
 def _build_preview_pdf_name(source_path: str) -> str:
@@ -96,6 +121,7 @@ def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[st
                     source_path,
                 ],
                 capture_output=True,
+                env=_build_libreoffice_env(),
                 text=True,
                 timeout=180,
                 check=False,
@@ -164,6 +190,7 @@ def _ensure_html_preview(source_path: str, job_dir: str, subdir: str, base_name:
                     source_path,
                 ],
                 capture_output=True,
+                env=_build_libreoffice_env(),
                 text=True,
                 timeout=180,
             )

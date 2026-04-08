@@ -38,10 +38,22 @@ AVAILABLE_HEADER_OPTIONS = (
     "EU Harmonised Standards under MDR 2017/745 (YES/NO)",
     "Title",
 )
+HEADER_FIELD_IDS = {
+    "Standards": "standards",
+    "Issued Year": "issued_year",
+    "EU Harmonised Standards under MDR 2017/745 (YES/NO)": "eu_harmonised",
+    "Title": "title",
+}
+HEADER_FIELD_IDS_REVERSE = {value: key for key, value in HEADER_FIELD_IDS.items()}
 DEFAULT_REQUIRED_HEADERS = (
     "Standards",
     "Issued Year",
+    "EU Harmonised Standards under MDR 2017/745 (YES/NO)",
     "Title",
+)
+MINIMUM_REQUIRED_HEADERS = (
+    "Standards",
+    "Issued Year",
 )
 
 HEADER_ALIASES = {
@@ -106,6 +118,20 @@ def normalize_key_for_search(text: str) -> str:
 def compact_key_for_search(text: str) -> str:
     normalized = normalize_key_for_search(text)
     return re.sub(r"[^A-Z0-9]+", "", normalized)
+
+
+def text_matches_manual_header(cell_text: str, target_text: str) -> bool:
+    normalized_cell = normalize_key_for_search(cell_text)
+    normalized_target = normalize_key_for_search(target_text)
+    if normalized_cell and normalized_target and normalized_cell == normalized_target:
+        return True
+
+    compact_cell = compact_key_for_search(cell_text)
+    compact_target = compact_key_for_search(target_text)
+    if compact_cell and compact_target and compact_cell == compact_target:
+        return True
+
+    return False
 
 
 def header_matches_target(header_text: str, target_name: str) -> bool:
@@ -190,6 +216,44 @@ def normalize_required_headers(required_headers: list[str] | tuple[str, ...] | N
     if not normalized:
         return DEFAULT_REQUIRED_HEADERS
     return tuple(normalized)
+
+
+def normalize_manual_header_mappings(
+    manual_header_mappings: dict[int | str, dict[str, str]] | None,
+) -> dict[int, dict[str, str]]:
+    normalized: dict[int, dict[str, str]] = {}
+    if not manual_header_mappings:
+        return normalized
+
+    for raw_table_index, raw_mapping in manual_header_mappings.items():
+        try:
+            table_index = int(raw_table_index)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(raw_mapping, dict):
+            continue
+
+        mapping: dict[str, str] = {}
+        for raw_key, raw_value in raw_mapping.items():
+            key_text = normalize_text(raw_key)
+            value_text = normalize_text(raw_value)
+            if not value_text:
+                continue
+
+            target_name = HEADER_FIELD_IDS_REVERSE.get(key_text)
+            if target_name is None:
+                for header_name in AVAILABLE_HEADER_OPTIONS:
+                    if header_matches_target(key_text, header_name):
+                        target_name = header_name
+                        break
+            if target_name is None:
+                continue
+            mapping[target_name] = value_text
+
+        if mapping:
+            normalized[table_index] = mapping
+
+    return normalized
 
 
 def extract_iso_family_core(std_no: str) -> str:
@@ -888,60 +952,138 @@ def expand_row_to_logical_cells(parsed_row: list[dict]) -> list[dict | None]:
     return expanded
 
 
+def get_row_header_options(parsed_row: list[dict]) -> list[str]:
+    options: list[str] = []
+    seen: set[str] = set()
+    for item in parsed_row:
+        text = normalize_text(item["text"])
+        if not text or text in seen:
+            continue
+        options.append(text)
+        seen.add(text)
+    return options
+
+
+def build_header_map_from_row(row: list[dict], header_matcher) -> dict[str, int]:
+    header_map: dict[str, int] = {}
+    for header_name in AVAILABLE_HEADER_OPTIONS:
+        for item in row:
+            cell_text = normalize_text(item["text"])
+            if cell_text and header_matcher(cell_text, header_name):
+                header_map[header_name] = item["tc_idx"]
+                break
+    return header_map
+
+
+def find_manual_header_row_and_map(
+    parsed_rows: list[list[dict]],
+    manual_header_mapping: dict[str, str] | None = None,
+) -> tuple[int, dict[str, int], list[str]] | tuple[None, None, list[str]]:
+    if not manual_header_mapping:
+        return None, None, []
+
+    normalized_mapping = {
+        header_name: normalize_text(actual_text)
+        for header_name, actual_text in manual_header_mapping.items()
+        if header_name in AVAILABLE_HEADER_OPTIONS and normalize_text(actual_text)
+    }
+    if not normalized_mapping:
+        return None, None, []
+
+    missing_required = [header_name for header_name in MINIMUM_REQUIRED_HEADERS if header_name not in normalized_mapping]
+    if missing_required:
+        return None, None, missing_required
+
+    if not parsed_rows:
+        return None, None, list(normalized_mapping.keys())
+
+    row = parsed_rows[0]
+    header_map: dict[str, int] = {}
+    for item in row:
+        cell_text = normalize_text(item["text"])
+        if not cell_text:
+            continue
+        for target_name, actual_text in normalized_mapping.items():
+            if text_matches_manual_header(cell_text, actual_text):
+                header_map[target_name] = item["tc_idx"]
+    if all(header_name in header_map for header_name in MINIMUM_REQUIRED_HEADERS):
+        return 0, header_map, []
+
+    return None, None, list(normalized_mapping.keys())
+
+
 def find_header_row_and_map(
     parsed_rows: list[list[dict]],
     required_headers: list[str] | tuple[str, ...] | None = None,
+    manual_header_mapping: dict[str, str] | None = None,
 ) -> tuple[int, dict] | tuple[None, None]:
+    manual_row_idx, manual_header_map, _ = find_manual_header_row_and_map(parsed_rows, manual_header_mapping)
+    if manual_row_idx is not None and manual_header_map is not None:
+        return manual_row_idx, manual_header_map
+
+    if not parsed_rows:
+        return None, None
+
     active_required_headers = normalize_required_headers(required_headers)
-    for row_idx, row in enumerate(parsed_rows):
-        expanded = expand_row_to_logical_cells(row)
-        texts = [x["text"] if x else "" for x in expanded]
-        header_presence = {
-            header_name: any(header_matches_target(t, header_name) for t in texts if t)
-            for header_name in AVAILABLE_HEADER_OPTIONS
-        }
-        if all(header_presence.get(header_name, False) for header_name in active_required_headers):
-            header_map = {}
-            for item in row:
-                cell_text = normalize_text(item["text"])
-                if cell_text and cell_text not in header_map:
-                    header_map[cell_text] = item["tc_idx"]
-            return row_idx, header_map
+    row = parsed_rows[0]
+    expanded = expand_row_to_logical_cells(row)
+    texts = [x["text"] if x else "" for x in expanded]
+    header_presence = {
+        header_name: any(header_matches_target(t, header_name) for t in texts if t)
+        for header_name in AVAILABLE_HEADER_OPTIONS
+    }
+    if all(header_presence.get(header_name, False) for header_name in active_required_headers):
+        return 0, build_header_map_from_row(row, header_matches_target)
     return None, None
 
 
 def inspect_table_headers(
     tree: etree._ElementTree,
     allowed_table_indexes: set[int] | None = None,
+    manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> list[dict]:
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
     checks = []
+    active_manual_mappings = normalize_manual_header_mappings(manual_header_mappings)
     for table_index, tbl in enumerate(tables):
         if allowed_table_indexes is not None and table_index not in allowed_table_indexes:
             continue
         parsed_rows = parse_table_rows(tbl)
         best_match = None
-        for row_idx, row in enumerate(parsed_rows):
-            expanded = expand_row_to_logical_cells(row)
+        header_options = get_row_header_options(parsed_rows[0]) if parsed_rows else []
+        if parsed_rows:
+            expanded = expand_row_to_logical_cells(parsed_rows[0])
             texts = [x["text"] if x else "" for x in expanded]
             detected_headers = [
                 header_name
                 for header_name in AVAILABLE_HEADER_OPTIONS
                 if any(header_matches_target(t, header_name) for t in texts if t)
             ]
-            if not detected_headers:
-                continue
-            candidate = {
-                "table_index": table_index,
-                "table_label": f"表格 {table_index + 1}",
-                "header_row_index": row_idx,
-                "detected_headers": detected_headers,
-                "is_processable": all(header in detected_headers for header in DEFAULT_REQUIRED_HEADERS),
-                "has_optional_harmonised": "EU Harmonised Standards under MDR 2017/745 (YES/NO)" in detected_headers,
-            }
-            if best_match is None or len(candidate["detected_headers"]) > len(best_match["detected_headers"]):
-                best_match = candidate
+            if detected_headers:
+                best_match = {
+                    "table_index": table_index,
+                    "table_label": f"表格 {table_index + 1}",
+                    "header_row_index": 0,
+                    "detected_headers": detected_headers,
+                    "is_processable": all(header in detected_headers for header in DEFAULT_REQUIRED_HEADERS),
+                    "has_optional_harmonised": "EU Harmonised Standards under MDR 2017/745 (YES/NO)" in detected_headers,
+                    "has_title": "Title" in detected_headers,
+                    "matched_default_count": sum(1 for header in DEFAULT_REQUIRED_HEADERS if header in detected_headers),
+                }
+
+        manual_mapping = active_manual_mappings.get(table_index, {})
+        manual_mapping_summary = {
+            header_name: manual_mapping.get(header_name, "")
+            for header_name in AVAILABLE_HEADER_OPTIONS
+        }
+        manual_row_idx, manual_header_map, manual_issues = find_manual_header_row_and_map(parsed_rows, manual_mapping)
+        manual_mapping_ready = manual_row_idx is not None and manual_header_map is not None
+        manual_missing_headers = [
+            header_name
+            for header_name in MINIMUM_REQUIRED_HEADERS
+            if not manual_mapping.get(header_name)
+        ]
 
         if best_match is None:
             checks.append({
@@ -949,53 +1091,77 @@ def inspect_table_headers(
                 "table_label": f"表格 {table_index + 1}",
                 "header_row_index": None,
                 "detected_headers": [],
-                "is_processable": False,
+                "is_processable": manual_mapping_ready,
+                "is_full_match": False,
                 "has_optional_harmonised": False,
-                "status": "ignored",
-                "status_label": "未辨識",
-                "message": "未找到足夠的標頭資訊，這張表不會納入處理。",
+                "status": "manual" if manual_mapping_ready else "ignored",
+                "status_label": "手動對應" if manual_mapping_ready else "未辨識",
+                "message": (
+                    "已套用手動欄位對應，這張表會依手動設定納入處理。"
+                    if manual_mapping_ready
+                    else "未找到符合預設格式的標頭資訊。若這是要更新的表格，請先完成手動對應欄位設定。"
+                ),
+                "header_options": header_options,
+                "needs_manual_mapping": True,
+                "manual_mapping": manual_mapping_summary,
+                "manual_mapping_ready": manual_mapping_ready,
+                "manual_missing_headers": manual_missing_headers,
+                "manual_mapping_issues": manual_issues,
             })
             continue
 
-        missing_core = [header for header in DEFAULT_REQUIRED_HEADERS if header not in best_match["detected_headers"]]
-        if best_match["is_processable"] and best_match["has_optional_harmonised"]:
+        missing_default = [header for header in DEFAULT_REQUIRED_HEADERS if header not in best_match["detected_headers"]]
+        is_full_match = all(header in best_match["detected_headers"] for header in DEFAULT_REQUIRED_HEADERS)
+
+        if is_full_match:
             best_match["status"] = "full"
             best_match["status_label"] = "完整格式"
-            best_match["message"] = "已找到 Standards、Issued Year、Title 與 EU Harmonised 欄位。"
-        elif best_match["is_processable"]:
-            best_match["status"] = "core_only"
-            best_match["status_label"] = "簡化格式"
-            best_match["message"] = "已找到 Standards、Issued Year、Title；缺少 EU Harmonised 欄位，但仍可處理。"
+            best_match["message"] = "已找到 Standards、Issued Year、EU Harmonised 與 Title 欄位。"
+        elif manual_mapping_ready:
+            best_match["status"] = "manual"
+            best_match["status_label"] = "手動對應"
+            best_match["message"] = "此表格不符合預設四欄格式，但已完成手動對應，可進行更新。"
         else:
             best_match["status"] = "partial"
-            best_match["status_label"] = "缺少必要欄位"
-            best_match["message"] = f"缺少必要欄位：{'、'.join(missing_core)}。這張表不會納入處理。"
+            best_match["status_label"] = "需手動對應"
+            best_match["message"] = f"與預設四欄格式不一致，缺少或無法辨識：{'、'.join(missing_default)}。請先完成手動對應欄位設定。"
+        best_match["header_options"] = header_options
+        best_match["is_processable"] = is_full_match or manual_mapping_ready
+        best_match["is_full_match"] = is_full_match
+        best_match["needs_manual_mapping"] = (not is_full_match) or bool(manual_mapping)
+        best_match["manual_mapping"] = manual_mapping_summary
+        best_match["manual_mapping_ready"] = manual_mapping_ready
+        best_match["manual_missing_headers"] = manual_missing_headers
+        best_match["manual_mapping_issues"] = manual_issues
         checks.append(best_match)
     return checks
 
 
 def get_logical_col(header_map: dict, target_name: str) -> int | None:
-    for header_name, logical_col in header_map.items():
-        if header_matches_target(header_name, target_name):
-            return logical_col
-    return None
+    return header_map.get(target_name)
 
 
 def parse_word_tables_for_update(
     document_xml_path: str,
     required_headers: list[str] | tuple[str, ...] | None = None,
     allowed_table_indexes: set[int] | None = None,
+    manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> tuple[etree._ElementTree, list[dict]]:
     tree = etree.parse(document_xml_path)
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
     all_records = []
     active_required_headers = normalize_required_headers(required_headers)
+    active_manual_mappings = normalize_manual_header_mappings(manual_header_mappings)
     for table_index, tbl in enumerate(tables):
         if allowed_table_indexes is not None and table_index not in allowed_table_indexes:
             continue
         parsed_rows = parse_table_rows(tbl)
-        header_row_idx, header_map = find_header_row_and_map(parsed_rows, active_required_headers)
+        header_row_idx, header_map = find_header_row_and_map(
+            parsed_rows,
+            active_required_headers,
+            active_manual_mappings.get(table_index),
+        )
         if header_row_idx is None:
             continue
         standards_col = get_logical_col(header_map, "Standards")
@@ -1054,6 +1220,7 @@ def build_preview_tables(
     row_reference_map: dict,
     required_headers: list[str] | tuple[str, ...] | None = None,
     allowed_table_indexes: set[int] | None = None,
+    manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> tuple[list[dict], dict]:
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
@@ -1061,12 +1228,17 @@ def build_preview_tables(
     reference_payload: dict[str, dict] = {}
     table_number = 0
     active_required_headers = normalize_required_headers(required_headers)
+    active_manual_mappings = normalize_manual_header_mappings(manual_header_mappings)
 
     for table_index, tbl in enumerate(tables):
         if allowed_table_indexes is not None and table_index not in allowed_table_indexes:
             continue
         parsed_rows = parse_table_rows(tbl)
-        header_row_idx, header_map = find_header_row_and_map(parsed_rows, active_required_headers)
+        header_row_idx, header_map = find_header_row_and_map(
+            parsed_rows,
+            active_required_headers,
+            active_manual_mappings.get(table_index),
+        )
         if header_row_idx is None:
             continue
         standards_col = get_logical_col(header_map, "Standards")
@@ -1173,6 +1345,42 @@ def build_preview_tables(
     return preview_tables, reference_payload
 
 
+def inspect_document_tables(
+    word_path: str,
+    *,
+    target_chapter_ref: str = "",
+    target_table_index: int | None = None,
+    manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
+) -> dict:
+    normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        unzip_docx(word_path, tmpdir)
+        document_xml_path = os.path.join(tmpdir, "word", "document.xml")
+        tree = etree.parse(document_xml_path)
+        allowed_table_indexes = resolve_target_table_indexes(
+            tree,
+            document_xml_path=document_xml_path,
+            target_chapter_ref=target_chapter_ref,
+            target_table_index=target_table_index,
+        )
+        table_checks = inspect_table_headers(
+            tree,
+            allowed_table_indexes=allowed_table_indexes,
+            manual_header_mappings=normalized_manual_header_mappings,
+        )
+        return {
+            "table_checks": table_checks,
+            "target_chapter_ref": normalize_text(target_chapter_ref),
+            "target_table_index": target_table_index,
+            "scope_table_count": len(allowed_table_indexes or []),
+            "inspection_only": True,
+            "manual_header_mappings": {
+                str(table_index): mapping
+                for table_index, mapping in normalized_manual_header_mappings.items()
+            },
+        }
+
+
 def process_document(
     word_path: str,
     excel_path: str,
@@ -1183,10 +1391,12 @@ def process_document(
     required_headers: list[str] | tuple[str, ...] | None = None,
     target_chapter_ref: str = "",
     target_table_index: int | None = None,
+    manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> dict:
     override_map = override_map or {}
     normalized_iso_priority = normalize_iso_priority(iso_priority)
     normalized_required_headers = normalize_required_headers(required_headers)
+    normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
     excel_index = load_excel_index(excel_path)
     with tempfile.TemporaryDirectory() as tmpdir:
         unzip_docx(word_path, tmpdir)
@@ -1198,11 +1408,16 @@ def process_document(
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
         )
-        table_checks = inspect_table_headers(tree, allowed_table_indexes=allowed_table_indexes)
+        table_checks = inspect_table_headers(
+            tree,
+            allowed_table_indexes=allowed_table_indexes,
+            manual_header_mappings=normalized_manual_header_mappings,
+        )
         tree, records = parse_word_tables_for_update(
             document_xml_path,
             normalized_required_headers,
             allowed_table_indexes=allowed_table_indexes,
+            manual_header_mappings=normalized_manual_header_mappings,
         )
         report = []
         updated_count = 0
@@ -1301,6 +1516,7 @@ def process_document(
             row_reference_map,
             normalized_required_headers,
             allowed_table_indexes=allowed_table_indexes,
+            manual_header_mappings=normalized_manual_header_mappings,
         )
         if output_path:
             zip_to_docx(tmpdir, output_path)
@@ -1312,8 +1528,13 @@ def process_document(
             "iso_priority": list(normalized_iso_priority),
             "prefer_latest_en_variants": prefer_latest_en_variants,
             "required_headers": list(normalized_required_headers),
+            "manual_header_mappings": {
+                str(table_index): mapping
+                for table_index, mapping in normalized_manual_header_mappings.items()
+            },
             "table_checks": table_checks,
             "target_chapter_ref": normalize_text(target_chapter_ref),
             "target_table_index": target_table_index,
             "scope_table_count": len(allowed_table_indexes or []),
+            "inspection_only": False,
         }

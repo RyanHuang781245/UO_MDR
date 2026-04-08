@@ -11,8 +11,11 @@ from app.services.standard_mapping_service import (
     DEFAULT_REQUIRED_HEADERS,
     DEFAULT_ISO_PRIORITY,
     DEFAULT_PREFER_LATEST_EN_VARIANTS,
+    HEADER_FIELD_IDS,
+    inspect_document_tables,
     inspect_document_sections,
     normalize_iso_priority,
+    normalize_manual_header_mappings,
     normalize_required_headers,
     process_document,
 )
@@ -21,6 +24,12 @@ from .blueprint import tasks_bp
 from .mapping_routes import _safe_uploaded_filename
 
 _ALLOWED_EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm"}
+_MANUAL_HEADER_FIELD_ORDER = [
+    ("Standards", HEADER_FIELD_IDS["Standards"]),
+    ("Issued Year", HEADER_FIELD_IDS["Issued Year"]),
+    ("EU Harmonised Standards under MDR 2017/745 (YES/NO)", HEADER_FIELD_IDS["EU Harmonised Standards under MDR 2017/745 (YES/NO)"]),
+    ("Title", HEADER_FIELD_IDS["Title"]),
+]
 
 
 def _task_files_dir(task_id: str) -> str:
@@ -164,6 +173,28 @@ def _parse_required_headers(values) -> tuple[str, ...]:
     return required_headers
 
 
+def _parse_manual_header_mappings(values) -> dict[int, dict[str, str]]:
+    parsed: dict[int, dict[str, str]] = {}
+    keys = values.keys() if hasattr(values, "keys") else []
+    prefix = "manual_header_map__"
+    for key in keys:
+        if not str(key).startswith(prefix):
+            continue
+        parts = str(key).split("__", 2)
+        if len(parts) != 3:
+            continue
+        _, raw_table_index, field_id = parts
+        try:
+            table_index = int(raw_table_index)
+        except ValueError:
+            continue
+        value = str(values.get(key) or "").strip()
+        if not value:
+            continue
+        parsed.setdefault(table_index, {})[field_id] = value
+    return normalize_manual_header_mappings(parsed)
+
+
 def _build_stats(report: list[dict]) -> dict[str, int]:
     stats = {"updated": 0, "same": 0, "missing": 0}
     for item in report:
@@ -176,6 +207,13 @@ def _build_stats(report: list[dict]) -> dict[str, int]:
             stats["missing"] += 1
     stats["total"] = len(report)
     return stats
+
+
+def _has_unresolved_manual_mapping(table_checks: list[dict] | None) -> bool:
+    for item in table_checks or []:
+        if item.get("needs_manual_mapping") and not item.get("manual_mapping_ready") and not item.get("is_full_match"):
+            return True
+    return False
 
 
 def _render_standard_mapping_page(
@@ -191,6 +229,7 @@ def _render_standard_mapping_page(
     target_chapter_ref: str = "",
     target_table_index: int | None = None,
     manual_target_chapter_ref: str = "",
+    manual_header_mappings: dict[int, dict[str, str]] | None = None,
 ):
     files_dir = _task_files_dir(task_id)
     word_options, excel_options = _list_standard_mapping_files(files_dir)
@@ -198,8 +237,12 @@ def _render_standard_mapping_page(
     reference_payload = (preview_result or {}).get("reference_payload", {})
     active_iso_priority = tuple((preview_result or {}).get("iso_priority") or normalize_iso_priority(iso_priority))
     active_required_headers = tuple((preview_result or {}).get("required_headers") or normalize_required_headers(required_headers))
+    active_manual_header_mappings = normalize_manual_header_mappings(
+        (preview_result or {}).get("manual_header_mappings") or manual_header_mappings
+    )
     iso_priority_positions = {label: index + 1 for index, label in enumerate(active_iso_priority)}
     interactive_rows = len({item.get("row_key", "") for item in reference_payload.values() if item.get("row_key")})
+    table_checks = (preview_result or {}).get("table_checks", [])
     return render_template(
         "tasks/standard_mapping.html",
         task_id=task_id,
@@ -209,7 +252,7 @@ def _render_standard_mapping_page(
         selected_word=selected_word,
         selected_excel=selected_excel,
         preview_tables=(preview_result or {}).get("preview_tables", []),
-        table_checks=(preview_result or {}).get("table_checks", []),
+        table_checks=table_checks,
         reference_payload=reference_payload,
         stats=_build_stats((preview_result or {}).get("report", [])) if preview_result else {"updated": 0, "same": 0, "missing": 0, "total": 0},
         interactive_rows=interactive_rows,
@@ -228,6 +271,9 @@ def _render_standard_mapping_page(
         scope_table_count=(preview_result or {}).get("scope_table_count", 0),
         chapter_options=chapter_options,
         chapter_options_error=chapter_options_error,
+        manual_header_mappings=active_manual_header_mappings,
+        manual_header_field_order=_MANUAL_HEADER_FIELD_ORDER,
+        has_unresolved_manual_mapping=_has_unresolved_manual_mapping(table_checks),
     )
 
 
@@ -242,6 +288,7 @@ def task_standard_mapping(task_id):
             iso_priority = _parse_iso_priority(request.values)
             prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.values)
             required_headers = _parse_required_headers(request.values)
+            manual_header_mappings = _parse_manual_header_mappings(request.values)
             limit_to_chapter = _parse_limit_to_chapter(request.values)
             manual_target_chapter_ref = str(request.values.get("manual_target_chapter_ref") or "").strip()
             target_chapter_ref = _parse_target_chapter_ref(request.values, limit_to_chapter=limit_to_chapter)
@@ -255,6 +302,7 @@ def task_standard_mapping(task_id):
             target_chapter_ref = ""
             target_table_index = None
             manual_target_chapter_ref = ""
+            manual_header_mappings = {}
         return _render_standard_mapping_page(
             task_id,
             selected_word=selected_word,
@@ -266,16 +314,18 @@ def task_standard_mapping(task_id):
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
             manual_target_chapter_ref=manual_target_chapter_ref,
+            manual_header_mappings=manual_header_mappings,
         )
 
     action = (request.form.get("action") or "preview").strip().lower()
-    if action != "preview":
+    if action not in {"preview", "inspect_headers"}:
         return redirect(url_for("tasks_bp.task_standard_mapping", task_id=task_id))
 
     try:
         iso_priority = _parse_iso_priority(request.form)
         prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
         required_headers = _parse_required_headers(request.form)
+        manual_header_mappings = _parse_manual_header_mappings(request.form)
         limit_to_chapter = _parse_limit_to_chapter(request.form)
         manual_target_chapter_ref = str(request.form.get("manual_target_chapter_ref") or "").strip()
         target_chapter_ref = _parse_target_chapter_ref(request.form, limit_to_chapter=limit_to_chapter)
@@ -293,20 +343,53 @@ def task_standard_mapping(task_id):
             target_chapter_ref="",
             target_table_index=None,
             manual_target_chapter_ref="",
+            manual_header_mappings={},
         )
 
     try:
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
-        excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
-        result = process_document(
-            word_path,
-            excel_path,
-            iso_priority=iso_priority,
-            prefer_latest_en_variants=prefer_latest_en_variants,
-            required_headers=required_headers,
-            target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
-            target_table_index=target_table_index if limit_to_chapter else None,
-        )
+        if action == "inspect_headers":
+            result = inspect_document_tables(
+                word_path,
+                target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
+                target_table_index=target_table_index if limit_to_chapter else None,
+                manual_header_mappings=manual_header_mappings,
+            )
+            flash("欄位檢查完成，已列出目前偵測到的表格標頭。", "info")
+        else:
+            inspection_result = inspect_document_tables(
+                word_path,
+                target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
+                target_table_index=target_table_index if limit_to_chapter else None,
+                manual_header_mappings=manual_header_mappings,
+            )
+            if _has_unresolved_manual_mapping(inspection_result.get("table_checks")):
+                flash("尚有表格未符合預設四欄格式，請先完成手動對應欄位設定後再更新標準清單。", "warning")
+                return _render_standard_mapping_page(
+                    task_id,
+                    preview_result=inspection_result,
+                    selected_word=selected_word,
+                    selected_excel=selected_excel,
+                    iso_priority=iso_priority,
+                    prefer_latest_en_variants=prefer_latest_en_variants,
+                    required_headers=required_headers,
+                    limit_to_chapter=limit_to_chapter,
+                    target_chapter_ref=target_chapter_ref,
+                    target_table_index=target_table_index,
+                    manual_target_chapter_ref=manual_target_chapter_ref,
+                    manual_header_mappings=manual_header_mappings,
+                )
+            excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
+            result = process_document(
+                word_path,
+                excel_path,
+                iso_priority=iso_priority,
+                prefer_latest_en_variants=prefer_latest_en_variants,
+                required_headers=required_headers,
+                target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
+                target_table_index=target_table_index if limit_to_chapter else None,
+                manual_header_mappings=manual_header_mappings,
+            )
         if limit_to_chapter and not result.get("table_checks"):
             flash("指定章節下找不到可辨識的表格", "warning")
     except (ValueError, FileNotFoundError) as exc:
@@ -322,6 +405,7 @@ def task_standard_mapping(task_id):
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
             manual_target_chapter_ref=manual_target_chapter_ref,
+            manual_header_mappings=manual_header_mappings,
         )
     except Exception as exc:
         current_app.logger.exception("Standard mapping preview failed")
@@ -337,6 +421,7 @@ def task_standard_mapping(task_id):
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
             manual_target_chapter_ref=manual_target_chapter_ref,
+            manual_header_mappings=manual_header_mappings,
         )
 
     return _render_standard_mapping_page(
@@ -351,6 +436,7 @@ def task_standard_mapping(task_id):
         target_chapter_ref=target_chapter_ref,
         target_table_index=target_table_index,
         manual_target_chapter_ref=manual_target_chapter_ref,
+        manual_header_mappings=manual_header_mappings,
     )
 
 
@@ -364,6 +450,7 @@ def task_standard_mapping_download(task_id):
         iso_priority = _parse_iso_priority(request.form)
         prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
         required_headers = _parse_required_headers(request.form)
+        manual_header_mappings = _parse_manual_header_mappings(request.form)
         limit_to_chapter = _parse_limit_to_chapter(request.form)
         manual_target_chapter_ref = str(request.form.get("manual_target_chapter_ref") or "").strip()
         target_chapter_ref = _parse_target_chapter_ref(request.form, limit_to_chapter=limit_to_chapter)
@@ -371,6 +458,28 @@ def task_standard_mapping_download(task_id):
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
+        inspection_result = inspect_document_tables(
+            word_path,
+            target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
+            target_table_index=target_table_index if limit_to_chapter else None,
+            manual_header_mappings=manual_header_mappings,
+        )
+        if _has_unresolved_manual_mapping(inspection_result.get("table_checks")):
+            flash("尚有表格未符合預設四欄格式，請先完成手動對應欄位設定後再下載結果。", "warning")
+            return _render_standard_mapping_page(
+                task_id,
+                preview_result=inspection_result,
+                selected_word=selected_word,
+                selected_excel=selected_excel,
+                iso_priority=iso_priority,
+                prefer_latest_en_variants=prefer_latest_en_variants,
+                required_headers=required_headers,
+                limit_to_chapter=limit_to_chapter,
+                target_chapter_ref=target_chapter_ref,
+                target_table_index=target_table_index,
+                manual_target_chapter_ref=manual_target_chapter_ref,
+                manual_header_mappings=manual_header_mappings,
+            )
 
         output_dir = os.path.join(current_app.config["OUTPUT_FOLDER"], task_id, "standard_mapping")
         os.makedirs(output_dir, exist_ok=True)
@@ -388,6 +497,7 @@ def task_standard_mapping_download(task_id):
             required_headers=required_headers,
             target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
             target_table_index=target_table_index if limit_to_chapter else None,
+            manual_header_mappings=manual_header_mappings,
         )
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")

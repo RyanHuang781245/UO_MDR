@@ -210,6 +210,10 @@
     border-color: #bfdbfe;
     background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
   }
+  .standard-precheck-card--manual {
+    border-color: #fde68a;
+    background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+  }
   .standard-precheck-card--partial,
   .standard-precheck-card--ignored {
     border-color: #fecaca;
@@ -231,6 +235,182 @@
     color: var(--bs-gray-500);
     font-size: 0.8125rem;
     line-height: 1.55;
+  }
+  /* --- 還原回原始三欄式佈局與樣式 --- */
+  .standard-manual-mapping-grid {
+    display: grid;
+    gap: 1.25rem;
+  }
+  .standard-manual-mapping-card {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.875rem;
+    background: white;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+  .standard-manual-mapping-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--bs-gray-100);
+  }
+  .standard-manual-mapping-board {
+    display: grid;
+    grid-template-columns: 260px 300px 260px;
+    gap: 0;
+    justify-content: center;
+    align-items: stretch;
+    position: relative;
+    margin: 0 auto;
+  }
+  .standard-manual-mapping-column {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    z-index: 2;
+  }
+  .standard-manual-mapping-column__title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-gray-500);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .standard-manual-mapping-column__title::before {
+    content: "";
+    display: block;
+    width: 4px;
+    height: 12px;
+    background: var(--bs-blue-600);
+    border-radius: 2px;
+  }
+  .standard-manual-mapping-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .standard-manual-mapping-node {
+    width: 100%;
+    min-height: 60px;
+    border-radius: 0.625rem;
+    border: 1.5px solid var(--bs-gray-200);
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.3;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background: white;
+    color: #334155;
+    cursor: pointer;
+    position: relative;
+  }
+  .standard-manual-mapping-node:hover {
+    border-color: var(--bs-blue-600);
+    background: var(--bs-blue-50);
+    color: var(--bs-blue-600);
+  }
+  .standard-manual-mapping-node.is-active {
+    background: var(--bs-blue-600);
+    color: white;
+    border-color: var(--bs-blue-600);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    z-index: 10;
+    transform: scale(1.02);
+  }
+  .standard-manual-mapping-node.is-mapped,
+  .standard-manual-mapping-node.is-assigned {
+    border-color: var(--bs-blue-600);
+    background: #f0f7ff;
+    color: var(--bs-blue-600);
+  }
+  .standard-manual-mapping-node[data-role="target"] {
+    background: #f1f5f9;
+  }
+  .standard-manual-mapping-node[data-role="target"]:hover {
+    background: var(--bs-blue-50);
+  }
+  .standard-manual-mapping-canvas {
+    position: relative;
+    z-index: 1;
+    overflow: visible;
+  }
+  .standard-manual-mapping-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .standard-manual-mapping-svg path {
+    fill: none;
+    stroke: var(--bs-blue-600);
+    stroke-width: 2;
+    stroke-linecap: round;
+    opacity: 0.35;
+    transition: opacity 0.2s ease;
+  }
+  .standard-manual-mapping-svg path.is-active {
+    opacity: 1;
+    stroke-width: 3;
+  }
+  .standard-manual-mapping-actions {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .standard-manual-mapping-summary {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 0.75rem;
+    display: grid;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--bs-gray-600);
+    border: 1px solid var(--bs-gray-100);
+  }
+  .standard-manual-mapping-summary strong {
+    color: #1e293b;
+  }
+  .standard-manual-mapping-summary {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 0.75rem;
+    display: grid;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--bs-gray-600);
+    border: 1px solid var(--bs-gray-100);
+  }
+  .standard-manual-mapping-summary strong {
+    color: #1e293b;
+  }
+  .standard-manual-mapping-empty {
+    border: 2px dashed var(--bs-gray-200);
+    border-radius: 0.875rem;
+    background: #f8fafc;
+    padding: 2.5rem 1.5rem;
+    color: var(--bs-gray-500);
+    text-align: center;
+    font-size: 0.9375rem;
   }
   .standard-priority-switch {
     margin-top: 0.875rem;
@@ -631,6 +811,17 @@
     .standard-preview-filters {
       grid-template-columns: 1fr;
     }
+    .standard-manual-mapping-board {
+      grid-template-columns: 1fr;
+      gap: 0.625rem;
+    }
+    .standard-manual-mapping-canvas {
+      min-height: 120px;
+    }
+    .standard-manual-mapping-actions {
+      position: static;
+      margin-top: 0.75rem;
+    }
   }
   @media (max-width: 767.98px) {
     .standard-mapping-summary {
@@ -753,8 +944,7 @@
           {% if not excel_options %}找不到可用的 Excel 標準總表。請先把檔案放進此任務的 `files` 目錄。{% endif %}
         </div>
       {% else %}
-        <form method="post" action="{{ url_for('tasks_bp.task_standard_mapping', task_id=task_id) }}" class="vstack gap-3">
-          <input type="hidden" name="action" value="preview">
+        <form id="standardMappingConfigForm" method="post" action="{{ url_for('tasks_bp.task_standard_mapping', task_id=task_id) }}" class="vstack gap-3">
           <div class="standard-form-grid">
             <div>
               <label class="form-label fw-bold">
@@ -779,7 +969,7 @@
                 <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
                 Excel 標準總表
               </label>
-              <select class="form-select form-control-custom rounded-2" name="excel_path" required>
+              <select class="form-select form-control-custom rounded-2" name="excel_path" id="excelPathSelect">
                 <option value="">請選擇 Excel 檔案</option>
                 {% for item in excel_options %}
                   <option value="{{ item }}" {% if item == selected_excel %}selected{% endif %}>{{ item }}</option>
@@ -945,15 +1135,136 @@
               <div class="standard-settings-group__body">
                 <div class="standard-settings-group__body-inner">
                   <div class="standard-priority-summary mt-0">
-                    系統會先預檢 Word 表格欄位，預設以 <code>Standards</code>、<code>Issued Year</code>、<code>Title</code> 為必要欄位；
-                    <code>EU Harmonised Standards under MDR 2017/745 (YES/NO)</code> 為可選欄位。
+                    系統會先預檢四個目標欄位：<code>Standards</code>、<code>Issued Year</code>、
+                    <code>EU Harmonised Standards under MDR 2017/745 (YES/NO)</code>、<code>Title</code>。
+                    只有完全符合這四個欄位的表格可以直接更新；若欄位多一欄、少一欄，或名稱差異過大，必須先完成手動對應欄位設定後才能更新。
                   </div>
                 </div>
               </div>
             </details>
+
+            <details class="standard-settings-group" id="manualHeaderMappingSettings" {% if table_checks %}open{% endif %}>
+              <summary>
+                <div class="standard-settings-group__summary">
+                  <div class="standard-settings-group__title">
+                    <i class="bi bi-diagram-3"></i>
+                    手動對應欄位設定
+                  </div>
+                  <span class="standard-settings-group__toggle" aria-hidden="true"></span>
+                </div>
+              </summary>
+              <div class="standard-settings-group__body">
+                <div class="standard-settings-group__body-inner">
+                  {% set manual_mapping_targets = table_checks %}
+                  {% if manual_mapping_targets %}
+                    <div class="standard-manual-mapping-grid">
+                      {% for table_check in manual_mapping_targets %}
+                            <div class="standard-manual-mapping-card">
+                              <div class="standard-manual-mapping-card__header">
+                                <div>
+                                  <div class="fw-bold">{{ table_check.table_label }}</div>
+                                  <!-- <div class="small text-muted mt-1">掃描標頭：{{ table_check.header_options | join('、') if table_check.header_options else '未辨識到可供對應的欄位' }}</div> -->
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                  <button type="button" class="btn btn-xs btn-outline-secondary rounded-pill px-3 bg-white" style="font-size: 0.7rem;" data-clear-board>清除本表對應</button>
+                                  <span class="standard-precheck-card__status">{{ table_check.status_label }}</span>
+                                </div>
+                              </div>
+                              {% if table_check.header_options %}
+                                <div class="standard-manual-mapping-board" data-manual-board data-table-index="{{ table_check.table_index }}">
+                                  <!-- SVG 現在覆蓋整個 Board 區域，確保座標 1:1 -->
+                                  <svg class="standard-manual-mapping-svg" data-manual-map-svg aria-hidden="true">
+                                    <defs>
+                                      <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                                        <polygon points="0 0, 10 3.5, 0 7" fill="var(--bs-blue-600)" opacity="0.2" />
+                                      </marker>
+                                      <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                                        <polygon points="0 0, 10 3.5, 0 7" fill="var(--bs-blue-600)" />
+                                      </marker>
+                                    </defs>
+                                  </svg>
+
+                                  <div class="standard-manual-mapping-column">
+                                    <div class="standard-manual-mapping-column__title">標準欄位</div>
+                                    <div class="standard-manual-mapping-list">
+                                      {% for label, field_id in manual_header_field_order %}
+                                        {% set mapped_value = table_check.manual_mapping.get(label) %}
+                                        <button
+                                          type="button"
+                                          class="standard-manual-mapping-node{% if mapped_value %} is-mapped{% endif %}{% if label == 'EU Harmonised Standards under MDR 2017/745 (YES/NO)' %} is-optional{% endif %}"
+                                          data-role="source"
+                                          data-table-index="{{ table_check.table_index }}"
+                                          data-field-id="{{ field_id }}"
+                                          data-current-target="{{ mapped_value }}"
+                                        >
+                                          {% if label == 'EU Harmonised Standards under MDR 2017/745 (YES/NO)' %}
+                                            <div>
+                                              <!-- <small class="d-block opacity-75" style="font-size: 0.7rem;">EU Harmonised</small> -->
+                                              EU Harmonised Standards under MDR 2017/745 (YES/NO)
+                                            </div>
+                                          {% else %}
+                                            {{ label }}
+                                          {% endif %}
+                                        </button>
+                                        <input
+                                          type="hidden"
+                                          name="manual_header_map__{{ table_check.table_index }}__{{ field_id }}"
+                                          value="{{ mapped_value }}"
+                                          data-manual-map-input
+                                          data-table-index="{{ table_check.table_index }}"
+                                          data-field-id="{{ field_id }}"
+                                        >
+                                      {% endfor %}
+                                    </div>
+                                  </div>
+                                  
+                                  <!-- 中間純間距欄位 -->
+                                  <div class="standard-manual-mapping-spacer"></div>
+
+                                  <div class="standard-manual-mapping-column">
+                                    <div class="standard-manual-mapping-column__title">{{ table_check.table_label }} 掃描標頭</div>
+                                    <div class="standard-manual-mapping-list">
+                                      {% for option in table_check.header_options %}
+                                        <button
+                                          type="button"
+                                          class="standard-manual-mapping-node{% if option in table_check.manual_mapping.values() %} is-assigned{% endif %}"
+                                          data-role="target"
+                                          data-table-index="{{ table_check.table_index }}"
+                                          data-header-value="{{ option }}"
+                                        >
+                                          {{ option }}
+                                        </button>
+                                      {% endfor %}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div class="standard-manual-mapping-summary">
+                                  <!-- <div><strong>偵測結果：</strong>{{ table_check.detected_headers | join('、') if table_check.detected_headers else '目前尚未自動辨識到標準欄位' }}</div> -->
+                                  <div class="mt-1"><strong>操作說明：</strong>按住左側欄位向右拖曳至目標標頭，或點選左側再點選右側即可建立連線。</div>
+                                </div>
+                              {% else %}
+                            <div class="standard-manual-mapping-empty">
+                              這張表目前找不到足夠的表頭文字可供手動對應，請先確認 Word 表頭內容是否存在。
+                            </div>
+                          {% endif %}
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="standard-manual-mapping-empty">
+                      目前還沒有掃描結果。先按「欄位檢查」或「更新標準清單」，這裡就會顯示每張表掃描到的標頭與可調整的手動對應欄位。
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </details>
           </div>
-          <div class="d-flex justify-content-end">
-            <button class="btn btn-primary fw-bold px-3" type="submit">
+          <div class="d-flex justify-content-end gap-2 flex-wrap">
+            <button class="btn btn-outline-primary fw-bold px-3" type="submit" name="action" value="inspect_headers">
+              <i class="bi bi-search"></i>
+              欄位檢查
+            </button>
+            <button class="btn btn-primary fw-bold px-3" type="submit" name="action" value="preview" {% if has_unresolved_manual_mapping %}disabled title="請先完成手動對應欄位設定"{% endif %}>
               <i class="bi bi-arrow-repeat"></i>
               更新標準清單
             </button>
@@ -967,7 +1278,7 @@
     <div class="main-card mb-3">
       <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
         <div class="fw-bold">表格預檢結果</div>
-        <div class="small text-muted">系統會自動辨識可處理的表格格式，完整格式與簡化格式都會納入處理。</div>
+        <div class="small text-muted">完整符合預設四欄格式的表格可直接更新；其餘格式需先完成手動對應欄位設定。</div>
       </div>
       <div class="p-4">
         <div class="standard-precheck-grid">
@@ -981,6 +1292,21 @@
                 偵測欄位：{{ table_check.detected_headers | join('、') if table_check.detected_headers else '未辨識到欄位' }}
               </div>
               <div class="small text-muted mt-2">{{ table_check.message }}</div>
+              {% if table_check.needs_manual_mapping %}
+                <div class="standard-manual-mapping-summary">
+                  <div><strong>手動對應欄位：</strong>請至下方設定區指定 {{ table_check.table_label }} 的欄位對應。</div>
+                  {% for label, field_id in manual_header_field_order %}
+                    {% if table_check.manual_mapping.get(label) %}
+                      <div><strong>{{ label }}</strong>：{{ table_check.manual_mapping.get(label) }}</div>
+                    {% endif %}
+                  {% endfor %}
+                  <div>
+                    <a class="link-primary text-decoration-none fw-semibold" href="#manualHeaderMappingSettings" data-open-settings="manualHeaderMappingSettings">
+                      前往設定手動對應
+                    </a>
+                  </div>
+                </div>
+              {% endif %}
             </div>
           {% endfor %}
         </div>
@@ -1073,6 +1399,13 @@
       <input type="hidden" name="target_table_index" value="{{ target_table_index or '' }}">
       {% for header_name in required_headers %}
         <input type="hidden" name="required_headers" value="{{ header_name }}">
+      {% endfor %}
+      {% for table_index, mapping in manual_header_mappings.items() %}
+        {% for label, field_id in manual_header_field_order %}
+          {% if mapping.get(label) %}
+            <input type="hidden" name="manual_header_map__{{ table_index }}__{{ field_id }}" value="{{ mapping.get(label) }}">
+          {% endif %}
+        {% endfor %}
       {% endfor %}
       <input id="overridesJsonInput" type="hidden" name="overrides_json" value="{}">
     </form>
@@ -1172,6 +1505,206 @@
     syncChapterScopeState();
     limitToChapterToggle.addEventListener("change", syncChapterScopeState);
   }
+
+  document.querySelectorAll("[data-open-settings]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const targetId = link.getAttribute("data-open-settings");
+      const target = targetId ? document.getElementById(targetId) : null;
+      if (!target) return;
+      event.preventDefault();
+      target.open = true;
+      requestAnimationFrame(() => {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  });
+
+  const manualBoards = Array.from(document.querySelectorAll("[data-manual-board]"));
+
+  const syncManualBoard = (board) => {
+    const svg = board.querySelector("[data-manual-map-svg]");
+    if (!svg) return;
+
+    const sourceButtons = Array.from(board.querySelectorAll('[data-role="source"]'));
+    const targetButtons = Array.from(board.querySelectorAll('[data-role="target"]'));
+    const activeFieldId = board.dataset.activeFieldId || "";
+    const boardRect = board.getBoundingClientRect();
+
+    svg.setAttribute("viewBox", `0 0 ${Math.max(boardRect.width, 1)} ${Math.max(boardRect.height, 1)}`);
+    svg.innerHTML = "";
+
+    const assignments = new Map();
+    sourceButtons.forEach((button) => {
+      const fieldId = button.dataset.fieldId || "";
+      const input = board.querySelector(`[data-manual-map-input][data-field-id="${fieldId}"]`);
+      const value = input?.value || "";
+      button.dataset.currentTarget = value;
+      button.classList.toggle("is-active", activeFieldId === fieldId);
+      button.classList.toggle("is-mapped", Boolean(value));
+      assignments.set(fieldId, value);
+    });
+
+    targetButtons.forEach((button) => {
+      const targetValue = button.dataset.headerValue || "";
+      const isAssigned = Array.from(assignments.values()).includes(targetValue);
+      const activeTarget = activeFieldId && assignments.get(activeFieldId) === targetValue;
+      button.classList.toggle("is-assigned", isAssigned);
+      button.classList.toggle("is-active", Boolean(activeTarget));
+    });
+
+    sourceButtons.forEach((button) => {
+      const fieldId = button.dataset.fieldId || "";
+      const targetValue = button.dataset.currentTarget || "";
+      if (!targetValue) return;
+      const targetButton = targetButtons.find((item) => item.dataset.headerValue === targetValue);
+      if (!targetButton) return;
+
+      const sourceRect = button.getBoundingClientRect();
+      const targetRect = targetButton.getBoundingClientRect();
+      const startX = sourceRect.right - boardRect.left;
+      const startY = sourceRect.top - boardRect.top + (sourceRect.height / 2);
+      const endX = targetRect.left - boardRect.left;
+      const endY = targetRect.top - boardRect.top + (targetRect.height / 2);
+      const delta = Math.max((endX - startX) * 0.45, 36);
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", `M ${startX} ${startY} C ${startX + delta} ${startY}, ${endX - delta} ${endY}, ${endX} ${endY}`);
+      
+      if (activeFieldId === fieldId) {
+        path.classList.add("is-active");
+        path.setAttribute("marker-end", "url(#arrowhead-active)");
+      } else {
+        path.setAttribute("marker-end", "url(#arrowhead)");
+      }
+      svg.appendChild(path);
+    });
+  };
+
+  manualBoards.forEach((board) => {
+    const card = board.closest(".standard-manual-mapping-card");
+    const sourceButtons = Array.from(board.querySelectorAll('[data-role="source"]'));
+    const targetButtons = Array.from(board.querySelectorAll('[data-role="target"]'));
+    const clearButton = card?.querySelector("[data-clear-board]");
+    const svg = board.querySelector("[data-manual-map-svg]");
+    
+    let isDragging = false;
+    let dragSourceFieldId = null;
+    let tempPath = null;
+
+    sourceButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const fieldId = button.dataset.fieldId || "";
+        board.dataset.activeFieldId = board.dataset.activeFieldId === fieldId ? "" : fieldId;
+        syncManualBoard(board);
+      });
+
+      button.addEventListener("pointerdown", (e) => {
+        const fieldId = button.dataset.fieldId || "";
+        isDragging = true;
+        dragSourceFieldId = fieldId;
+        board.dataset.activeFieldId = fieldId;
+        
+        tempPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        tempPath.setAttribute("class", "is-active");
+        tempPath.setAttribute("marker-end", "url(#arrowhead-active)");
+        tempPath.style.strokeDasharray = "5,5";
+        svg.appendChild(tempPath);
+        
+        button.setPointerCapture(e.pointerId);
+        syncManualBoard(board);
+      });
+
+      button.addEventListener("pointermove", (e) => {
+        if (!isDragging || !tempPath) return;
+
+        const boardRect = board.getBoundingClientRect();
+        const sourceRect = button.getBoundingClientRect();
+        
+        const startX = sourceRect.right - boardRect.left;
+        const startY = sourceRect.top - boardRect.top + (sourceRect.height / 2);
+        
+        const endX = e.clientX - boardRect.left;
+        const endY = e.clientY - boardRect.top;
+        
+        const delta = Math.max((endX - startX) * 0.45, 36);
+        tempPath.setAttribute("d", `M ${startX} ${startY} C ${startX + delta} ${startY}, ${endX - delta} ${endY}, ${endX} ${endY}`);
+        
+        // 檢查游標下的目標節點，加入懸停效果
+        const elementUnder = document.elementFromPoint(e.clientX, e.clientY);
+        const targetNode = elementUnder?.closest('[data-role="target"]');
+        
+        targetButtons.forEach(btn => btn.classList.remove("is-hovered"));
+        if (targetNode) targetNode.classList.add("is-hovered");
+      });
+
+      button.addEventListener("pointerup", (e) => {
+        if (!isDragging) return;
+        
+        const elementUnder = document.elementFromPoint(e.clientX, e.clientY);
+        const targetNode = elementUnder?.closest('[data-role="target"]');
+        
+        if (targetNode) {
+          const targetValue = targetNode.dataset.headerValue || "";
+          const activeInput = board.querySelector(`[data-manual-map-input][data-field-id="${dragSourceFieldId}"]`);
+          
+          if (activeInput) {
+            // 清除其他欄位若已對應到同一個標頭
+            board.querySelectorAll("[data-manual-map-input]").forEach((input) => {
+              if (input !== activeInput && input.value === targetValue) {
+                input.value = "";
+              }
+            });
+            activeInput.value = targetValue;
+          }
+        }
+        
+        isDragging = false;
+        dragSourceFieldId = null;
+        if (tempPath) {
+          tempPath.remove();
+          tempPath = null;
+        }
+        board.dataset.activeFieldId = "";
+        targetButtons.forEach(btn => btn.classList.remove("is-hovered"));
+        button.releasePointerCapture(e.pointerId);
+        syncManualBoard(board);
+      });
+    });
+
+    targetButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const activeFieldId = board.dataset.activeFieldId || "";
+        if (!activeFieldId) return;
+
+        const targetValue = button.dataset.headerValue || "";
+        const activeInput = board.querySelector(`[data-manual-map-input][data-field-id="${activeFieldId}"]`);
+        if (!activeInput) return;
+
+        board.querySelectorAll("[data-manual-map-input]").forEach((input) => {
+          if (input !== activeInput && input.value === targetValue) {
+            input.value = "";
+          }
+        });
+
+        activeInput.value = activeInput.value === targetValue ? "" : targetValue;
+        board.dataset.activeFieldId = "";
+        syncManualBoard(board);
+      });
+    });
+
+    clearButton?.addEventListener("click", () => {
+      board.dataset.activeFieldId = "";
+      board.querySelectorAll("[data-manual-map-input]").forEach((input) => {
+        input.value = "";
+      });
+      syncManualBoard(board);
+    });
+
+    syncManualBoard(board);
+  });
+
+  window.addEventListener("resize", () => {
+    manualBoards.forEach((board) => syncManualBoard(board));
+  });
 </script>
 
 {% if preview_tables %}

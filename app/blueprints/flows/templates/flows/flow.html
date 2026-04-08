@@ -41,7 +41,7 @@
                                 正在檢視流程 <code class="text-primary fw-bold">{{ loaded_name }}</code> 的版本 <code class="text-primary fw-bold">{{ preview_version.name }}</code>
                                 <div>建立時間 : <span class="font-monospace">{{ preview_version.created_at_display }}</span></div>
                             </div>
-                            <!-- <div class="small text-muted mt-1">此模式僅供檢視，不能新增、刪除、修改或保存流程。</div> -->
+                            <!-- <div class="small text-muted mt-1">此模式僅供檢視，不能新增、刪除、修改或保存流程</div> -->
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <button class="btn btn-primary fw-bold" type="button" id="restorePreviewVersionBtn" data-restore-url="{{ preview_version.restore_url }}" data-version-name="{{ preview_version.name }}">
@@ -175,7 +175,7 @@
                                     <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ f.created }}</td>
                                     <td>
                                         <div class="d-flex justify-content-center gap-1">
-                                            <form action="{{ url_for('flow_execution_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製步驟，執行前請確認 NAS 與任務資料夾內容一致。')"{% endif %}>
+                                            <form action="{{ url_for('flow_execution_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製步驟，執行前請確認 NAS 與任務資料夾內容一致')"{% endif %}>
                                                 <input type="hidden" name="apply_formatting" value="false">
                                                 <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
                                                 <button class="btn-action-icon text-success" type="submit" title="快速執行">
@@ -297,7 +297,7 @@
                 <input type="file" class="form-control form-control-custom" id="templateUploadInput" accept=".docx">
                 <button class="btn btn-primary fw-bold" type="button" id="uploadTemplateBtn">上傳解析</button>
             </div>
-            <div class="form-text small">上傳後會存入任務的 files 目錄。</div>
+            <div class="form-text small">上傳後會存入任務的 files 目錄</div>
           </div>
         </div>
         <div id="templatePreview" class="border rounded-3 p-0 overflow-hidden bg-white shadow-sm">
@@ -524,7 +524,7 @@
           </div>
         </div>
         <!-- <div class="small text-muted mb-3">
-          每個流程最多保留 {{ flow_version_limit }} 個版本，超過後會自動刪除最舊版本。
+          每個流程最多保留 {{ flow_version_limit }} 個版本，超過後會自動刪除最舊版本
         </div> -->
         <div class="table-responsive border rounded-3 overflow-hidden bg-white shadow-sm">
           <table class="table mb-0 align-middle flow-versions-table">
@@ -1205,7 +1205,7 @@ async function loadFlowFileTreeRoot(){
   setFlowFileTreeStatus("載入檔案結構中...");
   try{
     const counts = await populateFlowFileTree("", flowFileTreeRoot, 0);
-    setFlowFileTreeStatus(`根目錄共載入 ${counts.dirCount} 個資料夾、${counts.fileCount} 個檔案。`);
+    setFlowFileTreeStatus(`根目錄共載入 ${counts.dirCount} 個資料夾、${counts.fileCount} 個檔案`);
   }catch(err){
     flowFileTreeRoot.replaceChildren(createFlowFileTreePlaceholder("檔案結構載入失敗"));
     setFlowFileTreeStatus(err.message || "檔案結構載入失敗", "danger");
@@ -1317,7 +1317,7 @@ const FIELD_META = {
     placeholder: "留白保留原名稱"
   },
   recursive_search: {
-    label: "遞迴搜尋子資料夾"
+    label: "搜尋所有子資料夾"
   },
 };
 
@@ -2485,7 +2485,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                 子標題
               </div>
               <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
-              <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
+              <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
             </div>
           </div>
 
@@ -2675,7 +2675,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                           子標題
                         </div>
                         <input class="form-control subtitle-input" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}">
-                        <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取。</div>
+                        <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
                       </div>
                     </div>
                   </div>`;
@@ -2691,8 +2691,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             ? (copyFilesSourceKind === "dir" && !targetNameVal ? "" : "disabled")
             : (targetNameVal ? "disabled" : "");
           const helpText = typeKey === "copy_files"
-            ? "選擇來源資料夾時可使用關鍵字檢索複製。"
-            : "輸入關鍵字後，複製後名稱將不可再輸入。";
+            ? "選擇來源資料夾時可使用關鍵字檢索複製"
+            : "輸入關鍵字後，複製後名稱將不可再輸入";
           return `<div class="col-md-6${hidden}" data-copy-sync-field="keywords"><label class="form-label">${label}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
                  <div class="form-text">${helpText}</div></div>`;
@@ -2704,8 +2704,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             ? ((!showTargetName || keywordsVal) ? "disabled" : "")
             : (keywordsVal ? "disabled" : "");
           const helpText = typeKey === "copy_files"
-            ? (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱。" : "選擇單一檔案時可指定複製後名稱。")
-            : (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱。" : "輸入複製後名稱後，關鍵字將不可再輸入。");
+            ? (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱" : "選擇單一檔案時可指定複製後名稱")
+            : (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱" : "輸入複製後名稱後，關鍵字將不可再輸入");
           const hidden = typeKey === "copy_files" && !showTargetName ? " d-none" : "";
           const dataAttr = ' data-copy-sync-field="target_name"';
           return `<div class="col-md-6${hidden}"${dataAttr}><label class="form-label">${label}</label>
@@ -2723,8 +2723,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             ? (sourceKind === "dir" ? "" : "disabled")
             : (hasKeywords ? "" : "disabled");
           const helpText = typeKey === "copy_files"
-            ? "開啟時會連同子資料夾一起搜尋；關閉時只搜尋目前資料夾。"
-            : "有輸入關鍵字時，開啟可往子資料夾繼續找；關閉則只搜尋目前層級。";
+            ? "開啟時會連同子資料夾一起搜尋；關閉時只搜尋目前資料夾"
+            : "有輸入關鍵字時，開啟可往子資料夾繼續找；關閉則只搜尋目前層級";
           return `<div class="col-12${hidden}" data-copy-sync-field="recursive_search">
                  <div class="form-check form-switch">
                    <input type="hidden" name="step_${sid}_${k}" value="${hiddenVal}">
@@ -2768,10 +2768,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（1.）</option>
                      <option value="1" ${val==="1"?"selected": ""}>Level 1（1.1.）</option>
                      <option value="2" ${val==="2"?"selected": ""}>Level 2（1.1.1.）</option>`;
-          help = "建議僅用到 Level 2；更深層需先擴充樣式。";
+          help = "建議僅用到 Level 2；更深層需先擴充樣式";
         } else if (typeKey === "insert_roman_heading") {
           options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（I.）</option>`;
-          help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式。";
+          help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式";
         } else {
           options = `<option value="0" ${val==="0"?"selected": ""}>0</option>`;
         }
@@ -3456,7 +3456,7 @@ function renderFlowVersionsRows(flowName, versions){
       const restoreUrl = btn.getAttribute('data-restore-url') || '';
       const versionName = btn.getAttribute('data-version-name') || '';
       if (!restoreUrl) return;
-      if (!confirm(`確定要回復流程「${flowName}」到版本「${versionName}」？目前內容會先自動備份。`)) {
+      if (!confirm(`確定要回復流程「${flowName}」到版本「${versionName}」？目前內容會先自動備份`)) {
         return;
       }
       if (flowVersionsStatus) flowVersionsStatus.textContent = '回復中...';
@@ -3502,7 +3502,7 @@ function renderFlowVersionsRows(flowName, versions){
       const deleteUrl = btn.getAttribute('data-delete-url') || '';
       const versionName = btn.getAttribute('data-version-name') || '';
       if (!deleteUrl) return;
-      if (!confirm(`確定要刪除流程「${flowName}」的版本「${versionName}」？此動作無法復原。`)) {
+      if (!confirm(`確定要刪除流程「${flowName}」的版本「${versionName}」？此動作無法復原`)) {
         return;
       }
       if (flowVersionsStatus) flowVersionsStatus.textContent = '刪除中...';
@@ -3632,12 +3632,12 @@ function bindRestoreFlowButton(button, confirmMessageBuilder, options = {}){
 }
 bindRestoreFlowButton(
   restorePreviewVersionBtn,
-  (flowName, versionName) => `確定要回復流程「${flowName}」到版本「${versionName}」？目前內容會先自動備份。`,
+  (flowName, versionName) => `確定要回復流程「${flowName}」到版本「${versionName}」？目前內容會先自動備份`,
   { showRestoreNotice: true },
 );
 bindRestoreFlowButton(
   undoLastRestoreBtn,
-  (flowName) => `確定要撤銷流程「${flowName}」的上次回復？目前內容會先自動備份。`,
+  (flowName) => `確定要撤銷流程「${flowName}」的上次回復？目前內容會先自動備份`,
   { showRestoreNotice: false },
 );
 

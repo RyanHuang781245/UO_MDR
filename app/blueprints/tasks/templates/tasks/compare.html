@@ -367,7 +367,7 @@ function openSourcePdf(source) {
 function extractSourceLabel(rawText) {
   const normalized = String(rawText || '').replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
-  const match = normalized.match(/^來源\s*:\s*(.+)$/);
+  const match = normalized.match(/^(?:來源|Source)\s*:\s*(.+)$/i);
   return match ? match[1].trim() : '';
 }
 
@@ -534,7 +534,7 @@ function getHtmlCurrentSources() {
   const frameDocument = htmlViewerContent?.contentDocument;
   if (!frameWindow || !frameDocument) return [];
 
-  const labelNodes = Array.from(frameDocument.querySelectorAll('p'))
+  const labelNodes = Array.from(frameDocument.querySelectorAll('p, div, table, ul, ol'))
     .filter((node) => Boolean(extractSourceLabel(node.textContent)));
   if (!labelNodes.length) {
     return [];

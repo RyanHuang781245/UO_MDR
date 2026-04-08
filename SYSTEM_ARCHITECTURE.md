@@ -53,3 +53,8 @@ Create the first user (interactive):
 ### Testing toggle
 Auth can be disabled for local testing/CI by setting:
 - `AUTH_ENABLED=0`
+
+### Document preview tooling
+Comparison preview generation uses a local LibreOffice CLI process for DOCX->PDF/HTML conversion.
+- Optional: `LIBREOFFICE_BIN=/usr/bin/soffice`
+- If unset, the app falls back to `PATH` lookup (`soffice`, `libreoffice`) plus common Linux/Windows install paths.

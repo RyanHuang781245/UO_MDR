@@ -9,7 +9,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from flask import current_app
+from flask import current_app, has_app_context
 from werkzeug.utils import secure_filename
 
 from modules.docx_provenance import (
@@ -23,6 +23,12 @@ from modules.docx_provenance import (
 _LIBREOFFICE_CANDIDATES = (
     "soffice",
     "libreoffice",
+    "/usr/bin/soffice",
+    "/usr/bin/libreoffice",
+    "/usr/local/bin/soffice",
+    "/usr/local/bin/libreoffice",
+    "/snap/bin/soffice",
+    "/snap/bin/libreoffice",
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
 )
@@ -31,8 +37,20 @@ _PAGE_SOURCE_MAP_CACHE_VERSION = 14
 _HTML_PREVIEW_CACHE_VERSION = 2
 
 
+def _configured_libreoffice_binary() -> str | None:
+    if has_app_context():
+        configured = (current_app.config.get("LIBREOFFICE_BIN") or "").strip()
+        if configured:
+            return configured
+
+    configured = (os.environ.get("LIBREOFFICE_BIN") or "").strip()
+    return configured or None
+
+
 def _find_libreoffice_binary() -> str | None:
-    for candidate in _LIBREOFFICE_CANDIDATES:
+    configured = _configured_libreoffice_binary()
+    candidates = ((configured,) + _LIBREOFFICE_CANDIDATES) if configured else _LIBREOFFICE_CANDIDATES
+    for candidate in candidates:
         resolved = shutil.which(candidate) if not os.path.isabs(candidate) else candidate
         if resolved and os.path.isfile(resolved):
             return resolved

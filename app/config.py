@@ -21,6 +21,7 @@ class BaseConfig:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
     OUTPUT_FOLDER = str(BASE_DIR / "output")
     TASK_FOLDER = str(BASE_DIR / "task_store")
+    LIBREOFFICE_BIN = (os.environ.get("LIBREOFFICE_BIN") or "").strip()
     ALLOWED_SOURCE_ROOTS = []
     APP_ENV = os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or "development"
 

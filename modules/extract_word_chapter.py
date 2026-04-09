@@ -120,12 +120,11 @@ def parse_styles_numpr(styles_xml: bytes | None) -> tuple[dict[str, str], dict[s
         ilvl_node = numPr.find("w:ilvl", namespaces=NS)
         num_id_raw = (num_id_node.get(qn("w:val")) or "").strip() if num_id_node is not None else ""
         ilvl_raw = (ilvl_node.get(qn("w:val")) or "").strip() if ilvl_node is not None else ""
-        if not num_id_raw.isdigit():
+        num_id = int(num_id_raw) if num_id_raw.isdigit() else None
+        ilvl = int(ilvl_raw) if ilvl_raw.isdigit() else None
+        if num_id is None and ilvl is None:
             continue
-        style_numpr[sid] = (
-            int(num_id_raw),
-            int(ilvl_raw) if ilvl_raw.isdigit() else None,
-        )
+        style_numpr[sid] = (num_id, ilvl)
     return style_based, style_numpr
 
 
@@ -137,13 +136,20 @@ def resolve_style_numpr(
     if not style_id or not style_numpr:
         return None, None
     cur = style_id
+    resolved_num_id: int | None = None
+    resolved_ilvl: int | None = None
     for _ in range(30):
-        if cur in style_numpr:
-            return style_numpr[cur]
+        num_id, ilvl = style_numpr.get(cur, (None, None))
+        if resolved_num_id is None and num_id is not None:
+            resolved_num_id = num_id
+        if resolved_ilvl is None and ilvl is not None:
+            resolved_ilvl = ilvl
+        if resolved_num_id is not None and resolved_ilvl is not None:
+            return resolved_num_id, resolved_ilvl
         cur = style_based.get(cur)
         if not cur:
             break
-    return None, None
+    return resolved_num_id, resolved_ilvl
 
 def _parse_number_parts(number_text: str) -> list[int]:
     parts: list[int] = []

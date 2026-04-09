@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
 
-from flask import abort, current_app, render_template, request, send_file, send_from_directory
+from flask import abort, current_app, render_template, request, send_file, send_from_directory, session
 from werkzeug.utils import secure_filename
 
 from app.services.task_service import load_task_context as _load_task_context
@@ -50,6 +51,7 @@ _WINDOWS_RESERVED_FILE_NAMES = {
     "LPT8",
     "LPT9",
 }
+_MAPPING_SESSION_KEY = "mapping_client_id"
 
 
 def _paginate_saved_mapping_schemes(schemes_all: list[dict], page: int, per_page: int = 10) -> tuple[list[dict], dict]:
@@ -89,6 +91,37 @@ def _safe_uploaded_filename(filename: str, default_stem: str = "upload") -> str:
         stem = f"_{stem}"
     return f"{stem}{ext}" if ext else stem
 
+
+def _get_mapping_client_id() -> str:
+    client_id = str(session.get(_MAPPING_SESSION_KEY) or "").strip()
+    if not re.fullmatch(r"[0-9a-f]{32}", client_id):
+        client_id = uuid.uuid4().hex
+        session[_MAPPING_SESSION_KEY] = client_id
+        session.modified = True
+    return client_id
+
+
+def _get_mapping_owner_key() -> str:
+    work_id, _actor_label = _get_actor_info()
+    owner_key = secure_filename((work_id or "").strip())
+    return owner_key or "anonymous"
+
+
+def _mapping_workspace_dir(task_dir: str) -> str:
+    workspace_dir = os.path.join(
+        task_dir,
+        "_mapping_sessions",
+        _get_mapping_owner_key(),
+        _get_mapping_client_id(),
+    )
+    os.makedirs(workspace_dir, exist_ok=True)
+    return workspace_dir
+
+
+def _reset_mapping_workspace(workspace_dir: str) -> None:
+    shutil.rmtree(workspace_dir, ignore_errors=True)
+    os.makedirs(workspace_dir, exist_ok=True)
+
 @tasks_bp.route("/tasks/<task_id>/mapping", methods=["GET", "POST"], endpoint="task_mapping")
 def task_mapping(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -103,8 +136,9 @@ def task_mapping(task_id):
     log_file_name = None
     zip_file_name = None
     step_runs = []
-    last_mapping_marker = os.path.join(tdir, "mapping_last.txt")
-    validation_state_path = os.path.join(tdir, "mapping_validation_state.json")
+    workspace_dir = _mapping_workspace_dir(tdir)
+    last_mapping_marker = os.path.join(workspace_dir, "mapping_last.txt")
+    validation_state_path = os.path.join(workspace_dir, "mapping_validation_state.json")
     last_mapping_file = None
     validation_state = {
         "mapping_file": "",
@@ -123,26 +157,13 @@ def task_mapping(task_id):
 
     # 如果是頁面跳轉/重新整理 (GET)，則清掉之前的暫存紀錄與檔案
     if request.method == "GET":
-        if os.path.isfile(last_mapping_marker):
-            try:
-                cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
-                cached_path = os.path.join(tdir, cached_name)
-                if cached_name and os.path.isfile(cached_path):
-                    os.remove(cached_path)
-                os.remove(last_mapping_marker)
-            except Exception:
-                pass
-        try:
-            if os.path.isfile(validation_state_path):
-                os.remove(validation_state_path)
-        except Exception:
-            pass
+        _reset_mapping_workspace(workspace_dir)
     else:
         # POST 請求時才讀取暫存紀錄
         if os.path.isfile(last_mapping_marker):
             try:
                 cached_name = Path(last_mapping_marker).read_text(encoding="utf-8").strip()
-                cached_path = os.path.join(tdir, cached_name)
+                cached_path = os.path.join(workspace_dir, cached_name)
                 if cached_name and os.path.isfile(cached_path):
                     last_mapping_file = cached_name
             except Exception:
@@ -350,7 +371,7 @@ def task_mapping(task_id):
             elif not validation_state.get("extract_ok"):
                 messages.append("請先通過檢查擷取參數，再儲存方案。")
             else:
-                mapping_path = os.path.join(tdir, last_mapping_file)
+                mapping_path = os.path.join(workspace_dir, last_mapping_file)
                 scheme_name = (request.form.get("scheme_name") or "").strip()
                 try:
                     work_id, actor_label = _get_actor_info()
@@ -398,16 +419,17 @@ def task_mapping(task_id):
                 if not last_mapping_file:
                     messages.append("找不到上次檢查的檔案，請重新上傳。")
                 else:
-                    mapping_path = os.path.join(tdir, last_mapping_file)
+                    mapping_path = os.path.join(workspace_dir, last_mapping_file)
             else:
                 f = request.files.get("mapping_file")
                 if f and f.filename:
+                    _reset_mapping_workspace(workspace_dir)
                     display_name = os.path.basename((f.filename or "").replace("\\", "/")).strip()
                     filename = _safe_uploaded_filename(
                         f.filename,
                         default_stem=f"mapping_{uuid.uuid4().hex[:8]}",
                     )
-                    mapping_path = os.path.join(tdir, filename)
+                    mapping_path = os.path.join(workspace_dir, filename)
                     f.save(mapping_path)
                     uploaded_new_mapping = True
                     current_mapping_display_name = display_name or filename
@@ -424,7 +446,7 @@ def task_mapping(task_id):
                     except Exception:
                         pass
                 elif last_mapping_file:
-                    mapping_path = os.path.join(tdir, last_mapping_file)
+                    mapping_path = os.path.join(workspace_dir, last_mapping_file)
                     current_mapping_display_name = current_mapping_display_name or last_mapping_file
                 else:
                     messages.append("請選擇檔案")

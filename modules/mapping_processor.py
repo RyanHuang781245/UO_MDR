@@ -459,7 +459,7 @@ def process_mapping_excel(
                                     hidden_titles[out_name].append(trimmed)
                         logs.append(f"Extract {input_name} (chapter {chapter})")
             else:
-                dest = os.path.join(task_files_dir, out_name or "output")
+                dest = os.path.join(output_dir, out_name or "output")
                 if title:
                     dest = os.path.join(dest, title)
 
@@ -479,7 +479,7 @@ def process_mapping_excel(
                     copied = copy_files(search_root, dest, keywords)
                     kw_display = ", ".join(keywords)
                     logs.append(
-                        f"Copied {len(copied)} files to {os.path.relpath(dest, task_files_dir)}"
+                        f"Copied {len(copied)} files to {os.path.relpath(dest, output_dir)}"
                         f" (keywords {kw_display})"
                     )
                 except Exception as e:

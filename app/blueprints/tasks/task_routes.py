@@ -19,65 +19,13 @@ from app.services.task_service import (
     delete_task_record,
     enforce_max_copy_size,
     ensure_windows_long_path,
-    list_dirs,
     list_tasks,
     load_task_context as _load_task_context,
     record_task_in_db,
     task_name_exists,
 )
 from app.services.user_context_service import get_actor_info as _get_actor_info
-from modules.file_copier import copy_files
 from .blueprint import tasks_bp
-
-
-@tasks_bp.route("/tasks/<task_id>/copy-files", methods=["GET", "POST"], endpoint="task_copy_files")
-def task_copy_files(task_id):
-    base = os.path.join(current_app.config["TASK_FOLDER"], task_id, "files")
-    if not os.path.isdir(base):
-        abort(404)
-
-    def _safe_path(rel: str) -> str:
-        norm = os.path.normpath(rel)
-        if not rel or os.path.isabs(norm) or norm.startswith(".."):
-            raise ValueError("資料夾名稱不合法")
-        return os.path.join(base, norm)
-
-    message = ""
-    if request.method == "POST":
-        action = request.form.get("action")
-        if action == "create_dir":
-            new_rel = request.form.get("new_dir", "").strip()
-            try:
-                os.makedirs(_safe_path(new_rel), exist_ok=True)
-                message = f"已建立資料夾 {os.path.normpath(new_rel)}"
-            except ValueError:
-                message = "資料夾名稱不合法"
-        else:
-            source_rel = request.form.get("source_dir", "").strip()
-            dest_rel = request.form.get("dest_dir", "").strip()
-            keywords_raw = request.form.get("keywords", "")
-            keywords = [k.strip() for k in keywords_raw.split(",") if k.strip()]
-            if not source_rel or not dest_rel or not keywords:
-                message = "請完整輸入資料"
-            else:
-                try:
-                    src = _safe_path(source_rel)
-                    dest = _safe_path(dest_rel)
-                    copied = copy_files(src, dest, keywords)
-                    message = f"已複製 {len(copied)} 個檔案"
-                except ValueError:
-                    message = "資料夾名稱不合法"
-                except Exception as e:
-                    message = str(e)
-    dirs = list_dirs(base)
-    dirs.insert(0, ".")
-    return render_template(
-        "tasks/copy_files.html",
-        dirs=dirs,
-        message=message,
-        task_id=task_id,
-        task=_load_task_context(task_id),
-    )
 
 
 @tasks_bp.get("/", endpoint="tasks")

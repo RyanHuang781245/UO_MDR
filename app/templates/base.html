@@ -621,10 +621,6 @@
                     <i class="bi bi-folder-symlink me-2"></i>
                     標準更新
                   </a>
-                  <a class="nav-link {{ 'active' if request.endpoint == 'tasks_bp.task_copy_files' else '' }}" href="{{ url_for('tasks_bp.task_copy_files', task_id=task.id) }}">
-                    <i class="bi bi-folder-symlink me-2"></i>
-                    複製檔案
-                  </a>
                   {% endif %}
                 </li>
               </ul>

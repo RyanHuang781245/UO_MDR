@@ -171,6 +171,7 @@ def test_global_batch_run_executes_saved_mapping_scheme(app, client, monkeypatch
     )
     scheme_ids = sorted(p.name for p in (task_dir / "mappings").iterdir() if p.is_dir())
     executed_scheme_ids: list[str] = []
+    notification_calls: list[dict] = []
 
     def fake_execute_saved_mapping_scheme(task_id_arg, scheme_id_arg, *args, **kwargs):
         executed_scheme_ids.append(scheme_id_arg)
@@ -189,6 +190,14 @@ def test_global_batch_run_executes_saved_mapping_scheme(app, client, monkeypatch
     monkeypatch.setattr(
         "app.blueprints.flows.global_batch_routes.execute_saved_mapping_scheme",
         fake_execute_saved_mapping_scheme,
+    )
+    monkeypatch.setattr(
+        "app.blueprints.flows.global_batch_routes._get_actor_info",
+        lambda: ("A123", "Tester"),
+    )
+    monkeypatch.setattr(
+        "app.blueprints.flows.global_batch_routes.send_batch_notification",
+        lambda **kwargs: notification_calls.append(kwargs),
     )
 
     class ImmediateThread:
@@ -225,6 +234,12 @@ def test_global_batch_run_executes_saved_mapping_scheme(app, client, monkeypatch
     assert len(payload["status"]["results"][0]["mapping_runs"]) == 2
     assert sorted(executed_scheme_ids) == scheme_ids
     assert payload["status"]["results"][0]["ok"] is True
+    assert len(notification_calls) == 1
+    assert notification_calls[0]["task_id"] == task_id
+    assert notification_calls[0]["batch_id"] == batch_id
+    assert notification_calls[0]["status"] == "completed"
+    assert notification_calls[0]["actor_work_id"] == "A123"
+    assert len(notification_calls[0]["results"]) == 2
 
 
 def test_can_download_saved_mapping_scheme_source_file(app, client) -> None:

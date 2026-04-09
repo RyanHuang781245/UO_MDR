@@ -80,14 +80,20 @@ def _load_task_name(task_id: str) -> str:
 def _format_results(results: list[dict]) -> list[str]:
     lines = []
     for item in results or []:
-        flow = (item.get("flow") or "").strip() or "未命名流程"
-        ok = bool(item.get("ok"))
+        flow = (item.get("flow") or "").strip()
+        scheme_name = (item.get("scheme_name") or "").strip()
+        mapping_name = (item.get("mapping_display_name") or item.get("mapping_file") or "").strip()
+        label = flow or scheme_name or mapping_name or "未命名項目"
+        ok = bool(item.get("ok")) if "ok" in item else (item.get("status") or "").strip().lower() == "completed"
         status = "成功" if ok else "失敗"
-        job_id = item.get("job_id") if ok else ""
+        job_id = (item.get("job_id") or "").strip()
+        run_id = (item.get("run_id") or "").strip()
         error = (item.get("error") or "").strip()
-        parts = [f"- {flow}: {status}"]
+        parts = [f"- {label}: {status}"]
         if job_id:
             parts.append(f"(job: {job_id})")
+        if run_id:
+            parts.append(f"(run: {run_id})")
         if error:
             parts.append(f"- {error}")
         lines.append(" ".join(parts))
@@ -135,7 +141,7 @@ def send_batch_notification(
         lines.append(f"錯誤：{error}")
     if results:
         lines.append("")
-        lines.append("流程結果：")
+        lines.append("執行結果：")
         lines.extend(_format_results(results))
 
     body = "\n".join(lines).strip() + "\n"

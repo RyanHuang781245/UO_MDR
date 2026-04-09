@@ -16,6 +16,7 @@ from app.blueprints.tasks.mapping_scheme_helpers import (
 )
 from app.services.global_batch_items import encode_batch_item, normalize_batch_items
 from app.services.audit_service import record_audit
+from app.services.notification_service import send_batch_notification
 from app.services.task_service import load_task_context as _load_task_context
 from app.services.user_context_service import get_actor_info as _get_actor_info
 from .global_batch_blueprint import global_batch_bp
@@ -318,6 +319,17 @@ def _run_tasks_batch(app, batch_items: list[dict], batch_id: str, actor: dict) -
                             if not run_result.get("ok"):
                                 task_errors.append(run_result.get("error") or "Mapping execution failed")
                         task_ok = all(run.get("ok") for run in mapping_results)
+                        failed_mapping_count = sum(1 for run in mapping_results if not run.get("ok"))
+                        send_batch_notification(
+                            task_id=tid,
+                            batch_id=batch_id,
+                            status="failed" if failed_mapping_count else "completed",
+                            results=mapping_results,
+                            actor_work_id=actor.get("work_id", ""),
+                            actor_label=actor.get("label", ""),
+                            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            error=(f"{failed_mapping_count} mapping scheme(s) failed" if failed_mapping_count else None),
+                        )
                 elif not os.path.isdir(flow_dir):
                     task_ok = False
                     task_errors.append("Flow directory not found")

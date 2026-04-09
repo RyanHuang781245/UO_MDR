@@ -84,7 +84,7 @@ def _format_results(results: list[dict]) -> list[str]:
         scheme_name = (item.get("scheme_name") or "").strip()
         mapping_name = (item.get("mapping_display_name") or item.get("mapping_file") or "").strip()
         label = flow or scheme_name or mapping_name or "未命名項目"
-        ok = bool(item.get("ok")) if "ok" in item else (item.get("status") or "").strip().lower() == "completed"
+        ok = _is_success_result(item)
         status = "成功" if ok else "失敗"
         job_id = (item.get("job_id") or "").strip()
         run_id = (item.get("run_id") or "").strip()
@@ -98,6 +98,12 @@ def _format_results(results: list[dict]) -> list[str]:
             parts.append(f"- {error}")
         lines.append(" ".join(parts))
     return lines
+
+
+def _is_success_result(item: dict) -> bool:
+    if "ok" in item:
+        return bool(item.get("ok"))
+    return (item.get("status") or "").strip().lower() == "completed"
 
 
 def send_batch_notification(
@@ -123,8 +129,8 @@ def send_batch_notification(
 
     task_name = _load_task_name(task_id)
     status_label = "完成" if status == "completed" else "失敗"
-    ok_count = sum(1 for item in results or [] if item.get("ok"))
-    fail_count = sum(1 for item in results or [] if not item.get("ok"))
+    ok_count = sum(1 for item in results or [] if _is_success_result(item))
+    fail_count = sum(1 for item in results or [] if not _is_success_result(item))
 
     subject = f"[法規文件轉換系統] 批次執行{status_label} - {task_name} ({batch_id})"
 

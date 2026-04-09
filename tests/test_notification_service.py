@@ -67,3 +67,49 @@ def test_send_batch_notification_formats_mapping_results(app, monkeypatch) -> No
     assert "(run: run-1)" in sent["body"]
     assert "附錄圖片擷取.xlsx" in sent["body"]
     assert "Mapping execution failed" in sent["body"]
+
+
+def test_send_batch_notification_counts_flow_results_from_status(app, monkeypatch) -> None:
+    task_id = "flow-notify-task"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "meta.json").write_text(
+        json.dumps({"name": "Flow 通知測試任務"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    setting = SystemSetting.query.order_by(SystemSetting.id).first()
+    assert setting is not None
+    setting.email_batch_notify_enabled = True
+    if not User.query.filter_by(work_id="B456").first():
+        db.session.add(User(work_id="B456", display_name="Flow Tester", email="flow@example.com", active=True))
+    db.session.commit()
+
+    sent: dict[str, object] = {}
+
+    def fake_send_email(to_addrs, subject, body):
+        sent["to_addrs"] = list(to_addrs)
+        sent["subject"] = subject
+        sent["body"] = body
+        return True
+
+    monkeypatch.setattr("app.services.notification_service._send_email", fake_send_email)
+
+    send_batch_notification(
+        task_id=task_id,
+        batch_id="batch-002",
+        status="failed",
+        results=[
+            {"flow": "flow", "job_id": "job-1", "status": "completed"},
+            {"flow": "flow2", "job_id": "job-2", "status": "completed"},
+        ],
+        actor_work_id="B456",
+        actor_label="Flow Tester",
+        completed_at="2026-04-09 10:30:00",
+        error="1 flow(s) failed",
+    )
+
+    assert sent["to_addrs"] == ["flow@example.com"]
+    assert "成功：2，失敗：0" in sent["body"]
+    assert "- flow: 成功 (job: job-1)" in sent["body"]
+    assert "- flow2: 成功 (job: job-2)" in sent["body"]

@@ -584,7 +584,7 @@
       {% block enable_sidebar %}true{% endblock %}
     {% endset %}
     {% set show_sidebar = sidebar_setting|trim == 'true' %}
-    <div class="{{ 'container-fluid' if show_sidebar else 'container' }}">
+    <div class="{{ 'container-fluid px-0' if show_sidebar else 'container' }}">
       <div class="row g-0">
         {% if show_sidebar %}
         <nav id="sidebarMenu" class="col-12 col-md-auto bg-body-tertiary border-end sidebar-width" style="min-height: calc(100vh - 56px);">

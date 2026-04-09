@@ -4,6 +4,7 @@ output/
 task_store/
 word_all_images/
 images/
+test_file/
 test.ipynb
 test.py
 uv.lock

@@ -43,7 +43,7 @@
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
             <h5 class="fw-bold mb-0">檔案結構</h5>
         </div>
-        <div class="px-4 pt-3 pb-1 bg-white">
+        <div class="px-4 pt-2 pb-2 bg-white">
             {% if task.nas_path %}
             <div class="d-flex align-items-center gap-2">
                 <button class="btn btn-sm btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1 fw-medium" type="button" id="nasDiffBtn" data-diff-url="{{ url_for('tasks_bp.task_nas_diff', task_id=task.id) }}">

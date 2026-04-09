@@ -84,11 +84,11 @@
                     </div>
 
                     <!-- 操作工具列 -->
-                    <div class="flow-toolbar px-4 py-3 bg-light bg-opacity-50 border-bottom">
+                    <div class="flow-toolbar flow-toolbar-surface px-4 py-3 border-bottom">
                         <div class="flow-toolbar-main">
                             <div class="flow-toolbar-group flow-toolbar-group-start">
                                 <div class="dropdown">
-                                    <button class="btn btn-white border bg-white shadow-sm dropdown-toggle d-inline-flex align-items-center gap-1" id="addStepDropdownBtn" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" {% if is_version_preview %}disabled{% endif %}>
+                                    <button class="btn btn-white flow-toolbar-btn dropdown-toggle d-inline-flex align-items-center gap-1" id="addStepDropdownBtn" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" {% if is_version_preview %}disabled{% endif %}>
                                         <i class="bi bi-plus-lg text-primary"></i>
                                         新增步驟
                                     </button>
@@ -98,19 +98,19 @@
                                         {% endfor %}
                                     </ul>
                                 </div>
-                                <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="openTemplateModalBtn" data-bs-toggle="modal" data-bs-target="#templateModal" {% if is_version_preview %}disabled{% endif %}>
+                                <button class="btn btn-white flow-toolbar-btn d-inline-flex align-items-center gap-1" type="button" id="openTemplateModalBtn" data-bs-toggle="modal" data-bs-target="#templateModal" {% if is_version_preview %}disabled{% endif %}>
                                     <i class="bi bi-search text-primary"></i>
                                     模板解析
                                 </button>
-                                <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
+                                <button class="btn btn-white flow-toolbar-btn d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="modal" data-bs-target="#filesModal">
                                     <i class="bi bi-folder text-primary"></i>
                                     檔案結構
                                 </button>
-                                <button class="btn btn-white border bg-white shadow-sm d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
+                                <button class="btn btn-white flow-toolbar-btn d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
                                     <i class="bi bi-arrows-collapse text-primary"></i>
                                     全部收合
                                 </button>
-                                <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded bg-white shadow-sm">
+                                <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded">
                                     <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="toggleRuleVisibilitySwitch">
                                     <label class="form-check-label small text-muted mb-0" for="toggleRuleVisibilitySwitch">顯示擷取規則</label>
                                 </div>
@@ -133,7 +133,7 @@
                         </div>
                     </div>
                     
-                    <div class="px-4 py-2 bg-white border-bottom small text-muted">
+                    <div class="flow-current-template-bar px-4 py-2 border-bottom small text-muted">
                         <i class="bi bi-file-earmark-text me-1"></i> 目前解析模板：<code class="text-primary fw-bold" id="currentTemplateLabel">{{ template_file or "未選擇" }}</code>
                     </div>
 
@@ -147,7 +147,7 @@
         <!-- 已保存流程列表 -->
         <div class="tab-pane fade {% if request.args.get('fpage') %}show active{% endif %}" id="saved-pane" role="tabpanel" aria-labelledby="saved-tab">
             <div class="main-card">
-                <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+                <div class="flow-section-header px-4 py-3 border-bottom d-flex justify-content-between align-items-center">
                     <h5 class="fw-bold mb-0">已保存流程</h5>
                     <div class="text-muted small">共 <span>{{ flow_pagination.total_count }}</span> 筆流程 (第 {{ flow_pagination.page }} / {{ flow_pagination.total_pages }} 頁)</div>
                 </div>
@@ -159,7 +159,7 @@
                                 <col class="saved-flows-col-created">
                                 <col class="saved-flows-col-actions">
                             </colgroup>
-                            <thead style="background-color: #f8fafc;">
+                            <thead>
                                 <tr>
                                     <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">流程名稱</th>
                                     <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
@@ -219,7 +219,7 @@
                         </table>
                     </div>
                     <!-- Pagination Footer for Saved Flows -->
-                    <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+                    <div class="flow-section-header px-4 py-3 d-flex justify-content-center align-items-center border-top">
                         <nav>
                             <ul class="pagination pagination-sm mb-0 gap-1">
                                 <li class="page-item {% if not flow_pagination.has_prev %}disabled{% endif %}">
@@ -300,7 +300,7 @@
             <div class="form-text small">上傳後會存入任務的 files 目錄</div>
           </div>
         </div>
-        <div id="templatePreview" class="border rounded-3 p-0 overflow-hidden bg-white shadow-sm">
+        <div id="templatePreview" class="flow-surface-panel border rounded-3 p-0 overflow-hidden">
           <div class="p-5 text-center text-muted">尚未載入模板</div>
         </div>
       </div>
@@ -316,7 +316,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-4">
-        <div class="file-tree-container border rounded-3 p-3 bg-white" id="flowFileTreePanel" data-api-url="{{ url_for('flow_file_bp.api_flow_list_task_files', task_id=task.id) }}">
+        <div class="file-tree-container flow-surface-panel border rounded-3 p-3" id="flowFileTreePanel" data-api-url="{{ url_for('flow_file_bp.api_flow_list_task_files', task_id=task.id) }}">
           <div class="small text-muted mb-3" id="flowFileTreeStatus">開啟視窗後載入檔案結構</div>
           <ul class="file-tree file-tree-root" id="flowFileTreeRoot"></ul>
         </div>
@@ -333,12 +333,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-4">
-        <div class="border rounded-3 p-3 bg-white shadow-sm">
+        <div class="flow-surface-panel border rounded-3 p-3">
           <div class="d-flex align-items-center gap-2 mb-3">
-            <button class="btn btn-sm btn-white border bg-white shadow-sm flex-shrink-0 d-flex align-items-center justify-content-center" type="button" id="stepFileGoUpBtn" title="上一層" style="width: 32px; height: 32px;">
+            <button class="btn btn-sm btn-white flex-shrink-0 d-flex align-items-center justify-content-center" type="button" id="stepFileGoUpBtn" title="上一層" style="width: 32px; height: 32px;">
               <i class="bi bi-arrow-left"></i>
             </button>
-            <button class="btn btn-sm btn-white border bg-white shadow-sm d-none flex-shrink-0" type="button" id="stepFileSelectCurrentBtn">選擇目前目錄</button>
+            <button class="btn btn-sm btn-white d-none flex-shrink-0" type="button" id="stepFileSelectCurrentBtn">選擇目前目錄</button>
             <div class="flex-grow-1 min-width-0 overflow-hidden small text-muted">
               <div class="d-flex align-items-center gap-1">
                 <span class="flex-shrink-0">位置：</span>
@@ -351,7 +351,7 @@
           <div class="list-group list-group-flush border rounded-3 mb-3 overflow-y-auto custom-scrollbar" id="stepFileEntryList" style="min-height: 200px; max-height: 300px;"></div>
 
           <div class="d-none mb-3" id="stepFileCreateFolderPanel">
-            <div class="border rounded-3 p-3 bg-light">
+            <div class="flow-surface-muted border rounded-3 p-3">
               <label class="form-label small fw-bold text-uppercase text-muted" id="stepFileFolderPanelLabel">新增資料夾</label>
               <div class="d-flex flex-column flex-sm-row align-items-sm-start gap-2">
                 <input class="form-control" type="text" id="stepFileCreateFolderInput" placeholder="請輸入新資料夾名稱" maxlength="120">
@@ -526,7 +526,7 @@
         <!-- <div class="small text-muted mb-3">
           每個流程最多保留 {{ flow_version_limit }} 個版本，超過後會自動刪除最舊版本
         </div> -->
-        <div class="table-responsive border rounded-3 overflow-hidden bg-white shadow-sm">
+        <div class="flow-surface-panel table-responsive border rounded-3 overflow-hidden">
           <table class="table mb-0 align-middle flow-versions-table">
             <colgroup>
               <col>
@@ -534,7 +534,7 @@
               <col class="flow-versions-col-created-by">
               <col class="flow-versions-col-actions">
             </colgroup>
-            <thead style="background-color: #f8fafc;">
+            <thead>
               <tr>
                 <th class="ps-4 small fw-bold text-uppercase text-muted py-3">版本名稱</th>
                 <th class="small fw-bold text-uppercase text-muted py-3">建立時間</th>
@@ -608,9 +608,9 @@
   max-width: 360px;
   padding: 12px 14px;
   border-radius: 10px;
-  border: 1px solid #e6e6e2;
-  background: #ffffff;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--app-border);
+  background: var(--app-card-bg);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
   opacity: 1;
   transform: translateY(0);
   transition: opacity 0.25s ease, transform 0.25s ease;
@@ -624,8 +624,82 @@
   margin-bottom: 4px;
 }
 .run-status-body {
-  color: #555;
+  color: var(--bs-gray-500);
   font-size: 0.9rem;
+}
+.flow-toolbar-surface,
+.flow-section-header,
+.flow-current-template-bar {
+  background-color: var(--app-bg);
+  border-color: var(--app-border) !important;
+}
+.flow-surface-panel {
+  background-color: var(--app-card-bg);
+  border-color: var(--app-border) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.flow-surface-muted {
+  background-color: var(--app-bg);
+  border-color: var(--app-border) !important;
+}
+.btn.btn-white {
+  background-color: var(--app-card-bg);
+  border-color: var(--app-border);
+  color: var(--app-text);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.btn.btn-white:hover,
+.btn.btn-white:focus,
+.btn.btn-white:active {
+  background-color: var(--bs-blue-50);
+  border-color: var(--bs-blue-100);
+  color: var(--bs-blue-600);
+}
+.btn.btn-white:disabled,
+.btn.btn-white.disabled {
+  background-color: var(--app-card-bg);
+  border-color: var(--app-border);
+  color: var(--bs-gray-500);
+}
+.flow-toolbar .dropdown-menu,
+.modal .dropdown-menu {
+  background-color: var(--app-card-bg);
+  border: 1px solid var(--app-border) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+}
+.flow-toolbar .dropdown-item,
+.modal .dropdown-item {
+  color: var(--app-text);
+}
+.flow-toolbar .dropdown-item:hover,
+.flow-toolbar .dropdown-item:focus,
+.modal .dropdown-item:hover,
+.modal .dropdown-item:focus {
+  background-color: var(--bs-blue-50);
+  color: var(--bs-blue-600);
+}
+.flow-toolbar-switch {
+  min-height: 38px;
+  padding-left: 0.75rem !important;
+  width: fit-content;
+  border: 1px solid var(--app-border);
+  background-color: var(--app-card-bg) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.modal .modal-content {
+  background-color: var(--app-card-bg);
+  color: var(--app-text);
+  border: 1px solid var(--app-border);
+}
+.modal .modal-header,
+.modal .modal-footer {
+  border-color: var(--app-border);
+}
+.modal .btn-close {
+  filter: var(--flow-btn-close-filter, none);
+}
+[data-bs-theme="dark"] .modal .btn-close {
+  --flow-btn-close-filter: invert(1) grayscale(1) brightness(200%);
 }
 #builder-pane,
 #builder-pane .main-card,
@@ -676,11 +750,6 @@
   max-height: var(--flow-toolbar-dropdown-max-height);
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-.flow-toolbar-switch {
-  min-height: 38px;
-  padding-left: 0.75rem !important;
-  width: fit-content;
 }
 .flow-toolbar-switch .form-check-input {
   margin-left: 0 !important;
@@ -771,17 +840,18 @@
   position: relative;
   overflow: visible;
   min-width: 0;
-  border: 1px solid var(--bs-gray-200);
-  border-left: 4px solid var(--bs-gray-300);
+  background-color: var(--app-card-bg);
+  border: 1px solid var(--app-border);
+  border-left: 4px solid rgba(148, 163, 184, 0.35);
   border-radius: 0.75rem;
   transition: all 0.2s ease;
   margin-bottom: 0.5rem;
 }
 #steps > .card:hover {
-  border-color: var(--bs-blue-200);
-  border-left-color: var(--bs-blue-400);
+  border-color: var(--bs-blue-100);
+  border-left-color: var(--bs-blue-600);
   transform: translateX(2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
 }
 #steps > .card.is-active {
   border-color: var(--bs-blue-600);
@@ -903,8 +973,8 @@
     border-color: #f59e0b;
   }
   100% { 
-    background-color: #fafbfc; 
-    border-color: var(--bs-gray-200);
+    background-color: var(--app-card-bg); 
+    border-color: var(--app-border);
     box-shadow: none;
     transform: scale(1);
   }
@@ -915,23 +985,46 @@
 }
 #steps > .card .card-body {
   padding: 1.5rem;
-  background-color: #fafbfc;
+  background-color: var(--app-bg);
   transition: background-color 0.3s ease;
 }
 /* Nested cards inside a step */
-#steps .card-body .card {
-  border: 1px solid var(--bs-gray-200);
+#steps .card-body .card,
+#steps .card-body .card.bg-light {
+  border: 1px solid var(--app-border);
   border-left-width: 1px !important;
-  border-left-color: var(--bs-gray-200) !important;
+  border-left-color: var(--app-border) !important;
   border-radius: 0.5rem;
   margin-bottom: 1rem;
-  background-color: white;
+  background-color: var(--app-card-bg) !important;
   transform: none !important;
   box-shadow: none !important;
 }
 #steps .card-body .card-body {
   padding: 1rem;
-  background-color: white;
+  background-color: var(--app-card-bg) !important;
+}
+#templatePreview .flow-section-header {
+  background-color: var(--app-bg);
+}
+#templatePreview .flow-template-count-badge {
+  background-color: var(--app-card-bg);
+  border: 1px solid var(--app-border);
+  color: var(--app-text);
+}
+#templatePreview .flow-template-preview-text {
+  color: var(--app-text);
+}
+#templatePreview thead {
+  background-color: var(--app-table-thead-bg) !important;
+}
+#stepFileCurrentPath,
+#currentTemplateLabel {
+  color: var(--bs-blue-600) !important;
+}
+#stepFileEntryList {
+  background-color: var(--app-card-bg);
+  border-color: var(--app-border) !important;
 }
 
 
@@ -1579,18 +1672,18 @@ function renderTemplatePreview(){
     return `<tr>
       <td class="ps-4 font-monospace small text-primary fw-bold">${p.index}</td>
       <td class="font-monospace small text-muted">${escapeHtml(p.display || "")}</td>
-      <td class="pe-4 small text-dark">${escapeHtml(p.text || "")}</td>
+      <td class="pe-4 small flow-template-preview-text">${escapeHtml(p.text || "")}</td>
     </tr>`;
   }).join("") || '<tr><td colspan="3" class="text-center py-4 text-muted">尚未解析到段落內容</td></tr>';
 
   templatePreview.innerHTML = `
-    <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+    <div class="flow-section-header px-4 py-3 border-bottom d-flex justify-content-between align-items-center">
       <div class="small fw-bold text-uppercase text-muted">解析結果：<span class="text-primary font-monospace">${escapeHtml(templateFile)}</span></div>
-      <div class="badge bg-white border text-muted fw-normal">共 ${templateParagraphs.length} 個段落</div>
+      <div class="badge flow-template-count-badge fw-normal">共 ${templateParagraphs.length} 個段落</div>
     </div>
     <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
       <table class="table table-hover align-middle mb-0">
-        <thead style="background-color: #f8fafc; position: sticky; top: 0; z-index: 10;">
+        <thead style="position: sticky; top: 0; z-index: 10;">
           <tr>
             <th class="ps-4 small fw-bold text-uppercase text-muted py-2" style="width: 100px;">Index</th>
             <th class="small fw-bold text-uppercase text-muted py-2" style="width: 180px;">Display</th>

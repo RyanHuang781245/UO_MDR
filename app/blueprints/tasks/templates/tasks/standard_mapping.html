@@ -908,6 +908,82 @@
       max-height: calc(100vh - 360px);
     }
   }
+  [data-bs-theme="dark"] .standard-summary-card,
+  [data-bs-theme="dark"] .standard-source-panel,
+  [data-bs-theme="dark"] .standard-settings-group,
+  [data-bs-theme="dark"] .standard-precheck-card,
+  [data-bs-theme="dark"] .standard-manual-mapping-card,
+  [data-bs-theme="dark"] .standard-manual-mapping-node,
+  [data-bs-theme="dark"] .preview-cell__toggle,
+  [data-bs-theme="dark"] .reference-tooltip-card,
+  [data-bs-theme="dark"] .reference-candidate,
+  [data-bs-theme="dark"] .standard-table tr[data-row-key] {
+    background: var(--app-card-bg) !important;
+    border-color: var(--app-border) !important;
+    color: var(--app-text);
+  }
+  [data-bs-theme="dark"] .standard-source-panel__summary,
+  [data-bs-theme="dark"] .standard-settings-group__body,
+  [data-bs-theme="dark"] .standard-manual-mapping-column,
+  [data-bs-theme="dark"] .standard-manual-mapping-summary,
+  [data-bs-theme="dark"] .standard-manual-mapping-empty,
+  [data-bs-theme="dark"] .standard-preview-note,
+  [data-bs-theme="dark"] .standard-preview-empty,
+  [data-bs-theme="dark"] .reference-tooltip-grid,
+  [data-bs-theme="dark"] .reference-tooltip-section,
+  [data-bs-theme="dark"] .standard-table tr.is-header th,
+  [data-bs-theme="dark"] .standard-table tr.is-category td {
+    background: var(--app-bg) !important;
+    border-color: var(--app-border) !important;
+  }
+  [data-bs-theme="dark"] .standard-summary-card--updated,
+  [data-bs-theme="dark"] .standard-precheck-card--core_only {
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.18) 0%, rgba(30, 41, 59, 0.96) 100%) !important;
+    border-color: rgba(59, 130, 246, 0.45) !important;
+  }
+  [data-bs-theme="dark"] .standard-summary-card--same,
+  [data-bs-theme="dark"] .standard-precheck-card--full {
+    background: linear-gradient(180deg, rgba(52, 211, 153, 0.16) 0%, rgba(30, 41, 59, 0.96) 100%) !important;
+    border-color: rgba(52, 211, 153, 0.4) !important;
+  }
+  [data-bs-theme="dark"] .standard-summary-card--missing,
+  [data-bs-theme="dark"] .standard-precheck-card--partial,
+  [data-bs-theme="dark"] .standard-precheck-card--ignored {
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.16) 0%, rgba(30, 41, 59, 0.96) 100%) !important;
+    border-color: rgba(239, 68, 68, 0.4) !important;
+  }
+  [data-bs-theme="dark"] .standard-summary-card--override,
+  [data-bs-theme="dark"] .standard-precheck-card--manual {
+    background: linear-gradient(180deg, rgba(245, 158, 11, 0.18) 0%, rgba(30, 41, 59, 0.96) 100%) !important;
+    border-color: rgba(245, 158, 11, 0.4) !important;
+  }
+  [data-bs-theme="dark"] .standard-source-panel__file,
+  [data-bs-theme="dark"] .standard-settings-group__title,
+  [data-bs-theme="dark"] .standard-manual-mapping-summary strong,
+  [data-bs-theme="dark"] .standard-preview-bar__title,
+  [data-bs-theme="dark"] .reference-tooltip-source,
+  [data-bs-theme="dark"] .reference-candidate__title,
+  [data-bs-theme="dark"] .reference-tooltip-value {
+    color: var(--app-text) !important;
+  }
+  [data-bs-theme="dark"] .standard-manual-mapping-node {
+    color: var(--app-text);
+  }
+  [data-bs-theme="dark"] .standard-manual-mapping-node.is-mapped,
+  [data-bs-theme="dark"] .standard-manual-mapping-node.is-assigned,
+  [data-bs-theme="dark"] .standard-manual-mapping-node[data-role="target"] {
+    background: var(--app-bg) !important;
+  }
+  [data-bs-theme="dark"] .reference-tooltip-header,
+  [data-bs-theme="dark"] .reference-tooltip-grid {
+    border-color: var(--app-border);
+  }
+  [data-bs-theme="dark"] .reference-tooltip-card {
+    box-shadow: 0 20px 40px rgba(2, 6, 23, 0.45);
+  }
+  [data-bs-theme="dark"] .preview-cell__inner.is-truncated.is-collapsed .preview-cell__content::after {
+    background: linear-gradient(180deg, rgba(30, 41, 59, 0) 0%, rgba(30, 41, 59, 0.96) 100%);
+  }
 </style>
 
 <div class="container-fluid px-0">
@@ -983,7 +1059,7 @@
                 <div class="standard-settings-group__summary">
                   <div class="standard-settings-group__title">
                     <i class="bi bi-sliders"></i>
-                    調整優先級設置
+                    調整優先級
                   </div>
                   <span class="standard-settings-group__toggle" aria-hidden="true"></span>
                 </div>
@@ -1042,7 +1118,7 @@
                 <div class="standard-settings-group__summary">
                   <div class="standard-settings-group__title">
                     <i class="bi bi-layout-text-sidebar-reverse"></i>
-                    章節與表格設置
+                    章節與表格
                   </div>
                   <span class="standard-settings-group__toggle" aria-hidden="true"></span>
                 </div>
@@ -1148,7 +1224,7 @@
                 <div class="standard-settings-group__summary">
                   <div class="standard-settings-group__title">
                     <i class="bi bi-diagram-3"></i>
-                    手動對應欄位設定
+                    手動對應欄位
                   </div>
                   <span class="standard-settings-group__toggle" aria-hidden="true"></span>
                 </div>

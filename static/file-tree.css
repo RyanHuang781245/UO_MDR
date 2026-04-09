@@ -68,6 +68,10 @@
   word-break: break-word;
 }
 
+.file-tree-item.file > .file-tree-row .file-tree-label {
+  color: var(--app-text, #212529);
+}
+
 .file-tree-item.dir > .file-tree-row .file-tree-label {
   color: var(--bs-blue-600, #0d6efd);
   font-weight: 600;
@@ -75,4 +79,13 @@
 
 .file-tree-item.dir > .file-tree-row:hover .file-tree-label {
   text-decoration: underline;
+}
+
+[data-bs-theme="dark"] .file-tree-item.file > .file-tree-row .file-tree-label,
+[data-bs-theme="dark"] .file-tree-label {
+  color: rgba(226, 232, 240, 0.92);
+}
+
+[data-bs-theme="dark"] .file-tree-label.text-muted {
+  color: rgba(148, 163, 184, 0.92) !important;
 }

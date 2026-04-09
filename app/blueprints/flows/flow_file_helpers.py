@@ -8,12 +8,12 @@ def _normalize_task_file_rel_path(raw_path: str) -> str:
     if cleaned in {"", ".", "/"}:
         return ""
     if cleaned.startswith("/") or os.path.isabs(cleaned):
-        raise ValueError("Invalid task file path")
+        raise ValueError("無效的檔案路徑")
     normalized = os.path.normpath(cleaned).replace("\\", "/")
     if normalized in {"", "."}:
         return ""
     if normalized == ".." or normalized.startswith("../"):
-        raise ValueError("Invalid task file path")
+        raise ValueError("無效的檔案路徑")
     return normalized
 
 
@@ -23,14 +23,14 @@ def _resolve_task_file_path(files_dir: str, rel_path: str, expect_dir: bool | No
     candidate = os.path.abspath(os.path.join(base_abs, rel))
     try:
         if os.path.commonpath([base_abs, candidate]) != base_abs:
-            raise ValueError("Invalid task file path")
+            raise ValueError("無效的檔案路徑")
     except ValueError as exc:
-        raise ValueError("Invalid task file path") from exc
+        raise ValueError("無效的檔案路徑") from exc
 
     if expect_dir is True and not os.path.isdir(candidate):
-        raise FileNotFoundError("Task directory not found")
+        raise FileNotFoundError("未找到路徑")
     if expect_dir is False and not os.path.isfile(candidate):
-        raise FileNotFoundError("Task file not found")
+        raise FileNotFoundError("未找到檔案")
     return candidate
 
 

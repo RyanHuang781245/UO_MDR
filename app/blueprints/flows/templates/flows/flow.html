@@ -1143,6 +1143,11 @@ function _setRuleVisibility(visible){
 
 function setFlowFileTreeStatus(message, tone = "muted"){
   if (!flowFileTreeStatus) return;
+  if (!message){
+    flowFileTreeStatus.textContent = "";
+    flowFileTreeStatus.className = `small mb-3 text-${tone} d-none`;
+    return;
+  }
   flowFileTreeStatus.className = `small mb-3 text-${tone}`;
   flowFileTreeStatus.textContent = message;
 }
@@ -1297,8 +1302,8 @@ async function loadFlowFileTreeRoot(){
 
   setFlowFileTreeStatus("載入檔案結構中...");
   try{
-    const counts = await populateFlowFileTree("", flowFileTreeRoot, 0);
-    setFlowFileTreeStatus(`根目錄共載入 ${counts.dirCount} 個資料夾、${counts.fileCount} 個檔案`);
+    await populateFlowFileTree("", flowFileTreeRoot, 0);
+    setFlowFileTreeStatus("");
   }catch(err){
     flowFileTreeRoot.replaceChildren(createFlowFileTreePlaceholder("檔案結構載入失敗"));
     setFlowFileTreeStatus(err.message || "檔案結構載入失敗", "danger");

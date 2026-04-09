@@ -98,6 +98,11 @@ function copyToClipboard(text, btn) {
 
 function setFileTreeStatus(message, tone = 'muted'){
   if(!fileTreeStatus) return;
+  if(!message){
+    fileTreeStatus.textContent = '';
+    fileTreeStatus.className = `small mb-3 text-${tone} d-none`;
+    return;
+  }
   fileTreeStatus.className = `small mb-3 text-${tone}`;
   fileTreeStatus.textContent = message;
 }
@@ -259,8 +264,8 @@ async function loadRootDirectory(){
 
   setFileTreeStatus('載入檔案結構中...');
   try{
-    const counts = await populateDirectory('', fileTreeRoot, 0);
-    setFileTreeStatus(`根目錄共載入 ${counts.dirCount} 個資料夾、${counts.fileCount} 個檔案。`);
+    await populateDirectory('', fileTreeRoot, 0);
+    setFileTreeStatus('');
   }catch(err){
     fileTreeRoot.replaceChildren(createTreePlaceholder('檔案結構載入失敗'));
     setFileTreeStatus(err.message || '檔案結構載入失敗', 'danger');

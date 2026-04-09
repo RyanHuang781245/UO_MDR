@@ -375,3 +375,90 @@ def _list_mapping_runs(task_id: str) -> list[dict]:
         )
     results.sort(key=lambda r: r["started_at"], reverse=True)
     return results
+
+
+def list_run_results(
+    task_id: str,
+    active_tab: str,
+    page: int = 1,
+    per_page: int = 10,
+    q: str = "",
+    status: str = "",
+    start_date: str = "",
+    end_date: str = "",
+) -> dict:
+    active_tab = "mapping" if active_tab == "mapping" else "flows"
+    q = (q or "").strip()
+    status = (status or "").strip().lower()
+    start_date = (start_date or "").strip()
+    end_date = (end_date or "").strip()
+
+    def _date_prefix(text: str) -> str:
+        text = (text or "").strip()
+        return text[:10] if len(text) >= 10 else ""
+
+    def _match_date(value: str) -> bool:
+        date_text = _date_prefix(value)
+        if start_date and (not date_text or date_text < start_date):
+            return False
+        if end_date and (not date_text or date_text > end_date):
+            return False
+        return True
+
+    flow_runs_all = _list_flow_runs(task_id)
+    mapping_runs_all = _list_mapping_runs(task_id)
+    runs_all = flow_runs_all if active_tab == "flows" else mapping_runs_all
+
+    if q:
+        q_lower = q.lower()
+        if active_tab == "flows":
+            runs_all = [
+                run
+                for run in runs_all
+                if q_lower in (run.get("flow_name") or "").lower()
+                or q_lower in (run.get("started_at") or "").lower()
+                or q_lower in (run.get("job_id") or "").lower()
+            ]
+        else:
+            runs_all = [
+                run
+                for run in runs_all
+                if q_lower in (run.get("mapping_file") or "").lower()
+                or q_lower in (run.get("started_at") or "").lower()
+                or q_lower in (run.get("run_id") or "").lower()
+            ]
+
+    if status:
+        runs_all = [run for run in runs_all if (run.get("status") or "").lower() == status]
+
+    if start_date or end_date:
+        runs_all = [run for run in runs_all if _match_date(run.get("started_at") or "")]
+
+    total_count = len(runs_all)
+    total_pages = max((total_count + per_page - 1) // per_page, 1)
+    page = min(max(page, 1), total_pages)
+    start = (page - 1) * per_page
+    runs = runs_all[start : start + per_page]
+
+    return {
+        "runs": runs,
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+        },
+        "filters": {
+            "q": q,
+            "status": status,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+        "tab_counts": {
+            "flows": len(flow_runs_all),
+            "mapping": len(mapping_runs_all),
+        },
+        "running": [run for run in flow_runs_all if run["status"] in ("running", "queued")],
+    }

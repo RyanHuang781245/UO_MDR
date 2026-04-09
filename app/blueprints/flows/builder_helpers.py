@@ -31,7 +31,7 @@ from app.utils import normalize_docx_output_filename, parse_bool
 
 from .flow_file_helpers import _normalize_task_file_rel_path, _resolve_task_file_path
 from .flow_route_helpers import _serialize_restore_backup
-from .run_helpers import _load_saved_flows
+from .run_helpers import _load_saved_flows, list_run_results
 
 
 def _paginate_saved_flows(flows_all: list[dict], page: int, per_page: int = 10) -> tuple[list[dict], dict]:
@@ -89,6 +89,30 @@ def build_flow_builder_context(task_id: str, args) -> dict:
 
     flow_page = args.get("fpage", 1, type=int)
     flows, flow_pagination = _paginate_saved_flows(flows_all, flow_page)
+    flow_results_page = args.get("rpage", 1, type=int)
+    flow_results_q = (args.get("rq") or "").strip()
+    flow_results_status = (args.get("rstatus") or "").strip().lower()
+    flow_results_start_date = (args.get("rstart_date") or "").strip()
+    flow_results_end_date = (args.get("rend_date") or "").strip()
+    flow_results = list_run_results(
+        task_id,
+        "flows",
+        page=flow_results_page,
+        q=flow_results_q,
+        status=flow_results_status,
+        start_date=flow_results_start_date,
+        end_date=flow_results_end_date,
+    )
+    active_flow_tab = (args.get("flow_tab") or "").strip().lower()
+    if active_flow_tab not in {"builder", "saved", "results"}:
+        if args.get("fpage"):
+            active_flow_tab = "saved"
+        elif any((args.get("rq"), args.get("rstatus"), args.get("rstart_date"), args.get("rend_date"))):
+            active_flow_tab = "results"
+        elif args.get("rpage", type=int) and args.get("rpage", 1, type=int) > 1:
+            active_flow_tab = "results"
+        else:
+            active_flow_tab = "builder"
 
     preset = None
     template_file = None
@@ -179,4 +203,8 @@ def build_flow_builder_context(task_id: str, args) -> dict:
         "document_format_presets": DOCUMENT_FORMAT_PRESETS,
         "line_spacing_choices": LINE_SPACING_CHOICES,
         "flow_pagination": flow_pagination,
+        "active_flow_tab": active_flow_tab,
+        "flow_results_runs": flow_results["runs"],
+        "flow_results_pagination": flow_results["pagination"],
+        "flow_results_filters": flow_results["filters"],
     }

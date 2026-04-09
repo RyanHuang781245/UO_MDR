@@ -1,0 +1,468 @@
+<style>
+  .results-table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .results-filter-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .results-filter-bar .search-wrapper {
+    min-width: 0;
+  }
+
+  .results-filter-controls {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 320px);
+    gap: 0.75rem;
+    justify-content: end;
+  }
+
+  .results-status-filter {
+    width: 180px;
+  }
+
+  .results-date-range {
+    width: 320px;
+    max-width: 100%;
+  }
+
+  .results-date-range .input-group-text {
+    background: var(--app-card-bg);
+    color: var(--bs-gray-500);
+  }
+
+  .results-table tbody td {
+    vertical-align: middle;
+  }
+
+  .results-action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 991.98px) {
+    .results-filter-bar,
+    .results-filter-controls {
+      grid-template-columns: 1fr;
+    }
+
+    .results-status-filter,
+    .results-date-range {
+      width: 100%;
+    }
+
+    .results-action-buttons {
+      width: 100%;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .results-table {
+      min-width: 780px;
+    }
+  }
+</style>
+
+{% set kind_label = '流程' if results_active_tab == 'flows' else 'Mapping' %}
+{% set results_page = results_pagination.page %}
+{% set results_total_pages = results_pagination.total_pages %}
+
+<div class="main-card">
+  <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+    <h5 class="fw-bold mb-0">{{ results_title }}</h5>
+    <div class="text-muted small">共 <span>{{ results_pagination.total_count }}</span> 筆{{ kind_label }}（第 {{ results_page }} / {{ results_total_pages }} 頁）</div>
+  </div>
+
+  {% if not results_runs %}
+  <div class="p-5 text-center text-muted">
+    <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+    {{ results_empty_message }}
+  </div>
+  {% else %}
+  <div class="toolbar-container" id="{{ results_id_prefix }}ToolbarContainer">
+    <div id="{{ results_id_prefix }}FilterBar" class="filter-bar results-filter-bar" aria-hidden="false">
+      <div class="search-wrapper">
+        <i class="bi bi-search"></i>
+        <input
+          type="text"
+          id="{{ results_id_prefix }}SearchInput"
+          value="{{ results_filters.q }}"
+          class="form-control form-control-custom rounded-2"
+          placeholder="{{ '搜尋流程名稱 / Job ID' if results_active_tab == 'flows' else '搜尋 Mapping 檔名 / Run ID' }}"
+        >
+      </div>
+      <div class="results-filter-controls">
+        <select id="{{ results_id_prefix }}StatusFilter" class="form-select form-control-custom rounded-2 results-status-filter">
+          <option value="" {% if not results_filters.status %}selected{% endif %}>全部狀態</option>
+          <option value="completed" {% if results_filters.status == 'completed' %}selected{% endif %}>完成</option>
+          <option value="failed" {% if results_filters.status == 'failed' %}selected{% endif %}>失敗</option>
+          {% if results_active_tab == 'flows' %}
+          <option value="running" {% if results_filters.status == 'running' %}selected{% endif %}>執行中</option>
+          <option value="queued" {% if results_filters.status == 'queued' %}selected{% endif %}>排隊中</option>
+          {% endif %}
+        </select>
+        <div class="input-group results-date-range">
+          <span class="input-group-text border-end-0"><i class="bi bi-calendar3"></i></span>
+          <input type="date" id="{{ results_id_prefix }}DateStart" value="{{ results_filters.start_date }}" class="form-control form-control-custom border-start-0 text-center">
+          <span class="input-group-text border-start-0 border-end-0">~</span>
+          <input type="date" id="{{ results_id_prefix }}DateEnd" value="{{ results_filters.end_date }}" class="form-control form-control-custom border-start-0 text-center">
+        </div>
+      </div>
+    </div>
+
+    <div id="{{ results_id_prefix }}ActionBar" class="action-bar" aria-hidden="true">
+      <div class="d-flex align-items-center gap-3">
+        <button class="btn btn-link p-1 text-primary" id="{{ results_id_prefix }}ClearSelectionBtn" type="button"><i class="bi bi-x-lg"></i></button>
+        <span class="fw-semibold text-primary small" id="{{ results_id_prefix }}SelectionText">已選取 0 筆</span>
+      </div>
+      <div class="results-action-buttons">
+        {% if results_active_tab == 'flows' %}
+        <button class="btn btn-toolbar-secondary btn-sm px-3" id="{{ results_id_prefix }}DownloadDocxBtn" type="button"><i class="bi bi-download"></i> 下載文件</button>
+        <button class="btn btn-toolbar-secondary btn-sm px-3" id="{{ results_id_prefix }}DownloadLogBtn" type="button"><i class="bi bi-file-earmark-text"></i> 下載 Log</button>
+        <button class="btn btn-danger btn-sm px-3" id="{{ results_id_prefix }}DeleteBtn" type="button"><i class="bi bi-trash3"></i> 刪除</button>
+        {% else %}
+        <button class="btn btn-toolbar-secondary btn-sm px-3" id="{{ results_id_prefix }}DownloadZipBtn" type="button"><i class="bi bi-download"></i> 下載 ZIP</button>
+        <button class="btn btn-toolbar-secondary btn-sm px-3" id="{{ results_id_prefix }}DownloadLogBtn" type="button"><i class="bi bi-file-earmark-text"></i> 下載 Log</button>
+        <button class="btn btn-danger btn-sm px-3" id="{{ results_id_prefix }}DeleteBtn" type="button"><i class="bi bi-trash3"></i> 刪除</button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table results-table mb-0">
+      <thead>
+        {% if results_active_tab == 'flows' %}
+        <tr>
+          <th style="width: 56px" class="text-center"><input type="checkbox" class="form-check-input" id="{{ results_id_prefix }}MasterCheckbox"></th>
+          <th style="width: 36%" class="text-start">流程</th>
+          <th style="width: 30%">執行時間</th>
+          <th style="width: 14%">狀態</th>
+          <th style="width: 20%">操作</th>
+        </tr>
+        {% else %}
+        <tr>
+          <th style="width: 56px" class="text-center"><input type="checkbox" class="form-check-input" id="{{ results_id_prefix }}MasterCheckbox"></th>
+          <th style="width: 28%" class="text-start">Mapping</th>
+          <th style="width: 18%">Run ID</th>
+          <th style="width: 18%">執行時間</th>
+          <th style="width: 12%">狀態</th>
+          <th style="width: 10%">輸出</th>
+          <th style="width: 14%">操作</th>
+        </tr>
+        {% endif %}
+      </thead>
+      <tbody id="{{ results_id_prefix }}TableBody">
+        {% if results_active_tab == 'flows' %}
+        {% for run in results_runs %}
+        <tr data-job-id="{{ run.job_id }}">
+          <td class="text-center"><input type="checkbox" class="form-check-input {{ results_id_prefix }}-run-select" value="{{ run.job_id }}"></td>
+          <td class="text-start">
+            {% if run.flow_name and run.flow_name != '未命名流程' %}
+            <a href="{{ url_for('flow_builder_bp.flow_builder', task_id=results_task_id, flow=run.flow_name) }}" class="text-decoration-none fw-bold text-primary">{{ run.flow_name }}</a>
+            {% else %}
+            <span class="text-muted">未命名流程</span>
+            {% endif %}
+          </td>
+          <td class="text-muted font-monospace">{{ run.started_at }}</td>
+          <td>
+            {% if run.status == 'completed' %}
+            <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>
+            {% elif run.status == 'failed' %}
+            <span class="status-badge status-badge-failed"><i class="bi bi-x-circle-fill"></i> 失敗</span>
+            {% elif run.status == 'running' %}
+            <span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>
+            {% elif run.status == 'queued' %}
+            <span class="status-badge status-badge-queued"><i class="bi bi-hourglass-split"></i> 排隊中</span>
+            {% else %}
+            <span class="status-badge status-badge-queued"><i class="bi bi-question-circle"></i> 未知</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex justify-content-center gap-1">
+              {% if run.has_result %}
+              <a href="{{ url_for('tasks_bp.task_result', task_id=results_task_id, job_id=run.job_id) }}" class="btn-action-icon" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></a>
+              <a href="{{ url_for('tasks_bp.task_download', task_id=results_task_id, job_id=run.job_id, kind='docx') }}" class="btn-action-icon" title="下載"><i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載</span></a>
+              {% endif %}
+              {% if run.has_log %}
+              <a href="{{ url_for('tasks_bp.task_download', task_id=results_task_id, job_id=run.job_id, kind='log') }}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        {% for run in results_runs %}
+        <tr data-run-id="{{ run.run_id }}">
+          <td class="text-center"><input type="checkbox" class="form-check-input {{ results_id_prefix }}-run-select" value="{{ run.run_id }}"></td>
+          <td class="text-start">
+            <div class="fw-bold text-primary">{{ run.mapping_file }}</div>
+            {% if run.scheme_name %}
+            <div class="small text-muted">方案：{{ run.scheme_name }}</div>
+            {% endif %}
+            <div class="small text-muted">引用檢查 {{ '通過' if run.reference_ok else '未通過' }} / 擷取參數 {{ '通過' if run.extract_ok else '未通過' }}</div>
+          </td>
+          <td class="text-muted font-monospace">{{ run.run_id }}</td>
+          <td class="text-muted font-monospace">{{ run.started_at }}</td>
+          <td>
+            {% if run.status == 'completed' %}
+            <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>
+            {% elif run.status == 'failed' %}
+            <span class="status-badge status-badge-failed"><i class="bi bi-x-circle-fill"></i> 失敗</span>
+            {% else %}
+            <span class="status-badge status-badge-queued"><i class="bi bi-question-circle"></i> 未知</span>
+            {% endif %}
+          </td>
+          <td class="font-monospace">{{ run.output_count }}</td>
+          <td>
+            <div class="d-flex justify-content-center gap-1">
+              {% if run.has_zip %}
+              <a href="{{ url_for('tasks_bp.task_download_output_query', task_id=results_task_id, filename=run.zip_file) }}" class="btn-action-icon" title="下載 ZIP"><i class="bi bi-file-earmark-zip"></i><span class="d-none d-lg-inline small fw-semibold">ZIP</span></a>
+              {% endif %}
+              {% if run.has_log %}
+              <a href="{{ url_for('tasks_bp.task_download_output_query', task_id=results_task_id, filename=run.log_file) }}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+    <nav>
+      <ul class="pagination pagination-sm mb-0 gap-1">
+        <li class="page-item {% if not results_pagination.has_prev %}disabled{% endif %}">
+          <button class="page-link" type="button" data-results-page="{{ results_id_prefix }}" data-page="{{ results_page - 1 }}" {% if not results_pagination.has_prev %}disabled{% endif %} title="上一頁"><i class="bi bi-chevron-left"></i></button>
+        </li>
+        {% for page_num in range(1, results_total_pages + 1) %}
+          {% if page_num >= results_page - 2 and page_num <= results_page + 2 %}
+          <li class="page-item {% if page_num == results_page %}active{% endif %}">
+            <button class="page-link rounded-2" type="button" data-results-page="{{ results_id_prefix }}" data-page="{{ page_num }}">{{ page_num }}</button>
+          </li>
+          {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not results_pagination.has_next %}disabled{% endif %}">
+          <button class="page-link rounded-2" type="button" data-results-page="{{ results_id_prefix }}" data-page="{{ results_page + 1 }}" {% if not results_pagination.has_next %}disabled{% endif %} title="下一頁"><i class="bi bi-chevron-right"></i></button>
+        </li>
+      </ul>
+    </nav>
+  </div>
+</div>
+
+<script>
+(() => {
+  const prefix = {{ results_id_prefix|tojson }};
+  const activeTab = {{ results_active_tab|tojson }};
+  const baseUrl = {{ results_base_url|tojson }};
+  const extraParams = {{ results_extra_params|tojson }};
+  const pageParam = {{ results_page_param|tojson }};
+  const qParam = {{ results_q_param|tojson }};
+  const statusParam = {{ results_status_param|tojson }};
+  const startDateParam = {{ results_start_date_param|tojson }};
+  const endDateParam = {{ results_end_date_param|tojson }};
+
+  function byId(suffix) {
+    return document.getElementById(`${prefix}${suffix}`);
+  }
+
+  function runCheckboxes() {
+    return Array.from(document.querySelectorAll(`.${prefix}-run-select`));
+  }
+
+  function buildUrl(overrides = {}) {
+    const currentParams = new URLSearchParams(window.location.search);
+    [pageParam, qParam, statusParam, startDateParam, endDateParam].forEach((name) => {
+      if (name) {
+        currentParams.delete(name);
+      }
+    });
+
+    const url = new URL(baseUrl, window.location.origin);
+    Object.entries(extraParams || {}).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== "") {
+        currentParams.set(key, value);
+      }
+    });
+
+    const qValue = overrides.q ?? byId("SearchInput")?.value?.trim() ?? "";
+    const statusValue = overrides.status ?? byId("StatusFilter")?.value ?? "";
+    const startDateValue = overrides.startDate ?? byId("DateStart")?.value ?? "";
+    const endDateValue = overrides.endDate ?? byId("DateEnd")?.value ?? "";
+    const pageValue = overrides.page ?? {{ results_pagination.page|tojson }};
+
+    if (qValue) currentParams.set(qParam, qValue);
+    if (statusValue) currentParams.set(statusParam, statusValue);
+    if (startDateValue) currentParams.set(startDateParam, startDateValue);
+    if (endDateValue) currentParams.set(endDateParam, endDateValue);
+    if (pageValue && Number(pageValue) > 1) {
+      currentParams.set(pageParam, String(pageValue));
+    }
+
+    url.search = currentParams.toString();
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function navigate(overrides = {}) {
+    window.location.href = buildUrl(overrides);
+  }
+
+  function submitPostForm(action, fields) {
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = action;
+    Object.entries(fields).forEach(([name, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    });
+    const nextInput = document.createElement("input");
+    nextInput.type = "hidden";
+    nextInput.name = "next";
+    nextInput.value = buildUrl();
+    form.appendChild(nextInput);
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  function getSelectedRunIds() {
+    return runCheckboxes().filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+  }
+
+  function updateRunUi() {
+    const selected = getSelectedRunIds();
+    const count = selected.length;
+    const total = runCheckboxes().length;
+    const hasSelection = count > 0;
+    const toolbarContainer = byId("ToolbarContainer");
+    const filterBar = byId("FilterBar");
+    const actionBar = byId("ActionBar");
+    const selectionText = byId("SelectionText");
+    const masterCheckbox = byId("MasterCheckbox");
+
+    toolbarContainer?.classList.toggle("is-selection-mode", hasSelection);
+    filterBar?.setAttribute("aria-hidden", hasSelection ? "true" : "false");
+    actionBar?.setAttribute("aria-hidden", hasSelection ? "false" : "true");
+
+    if (selectionText) {
+      selectionText.textContent = `已選取 ${count} 筆`;
+    }
+
+    runCheckboxes().forEach((checkbox) => {
+      checkbox.closest("tr")?.classList.toggle("row-selected", checkbox.checked);
+    });
+
+    if (masterCheckbox) {
+      masterCheckbox.checked = count === total && total > 0;
+      masterCheckbox.indeterminate = count > 0 && count < total;
+    }
+  }
+
+  byId("MasterCheckbox")?.addEventListener("change", (event) => {
+    runCheckboxes().forEach((checkbox) => {
+      checkbox.checked = event.target.checked;
+    });
+    updateRunUi();
+  });
+
+  byId("TableBody")?.addEventListener("change", (event) => {
+    if (event.target.classList.contains(`${prefix}-run-select`)) {
+      updateRunUi();
+    }
+  });
+
+  byId("ClearSelectionBtn")?.addEventListener("click", () => {
+    runCheckboxes().forEach((checkbox) => {
+      checkbox.checked = false;
+    });
+    updateRunUi();
+  });
+
+  if (activeTab === "flows") {
+    byId("DeleteBtn")?.addEventListener("click", () => {
+      const selected = getSelectedRunIds();
+      if (!selected.length || !confirm(`確定要刪除 ${selected.length} 筆執行結果嗎？`)) {
+        return;
+      }
+      submitPostForm("{{ url_for('flow_results_bp.delete_flow_runs_bulk', task_id=results_task_id) }}", { job_ids: selected.join(",") });
+    });
+
+    byId("DownloadDocxBtn")?.addEventListener("click", () => {
+      const selected = getSelectedRunIds();
+      if (!selected.length) {
+        return;
+      }
+      submitPostForm("{{ url_for('flow_results_bp.download_flow_runs_bulk', task_id=results_task_id) }}", { job_ids: selected.join(","), kind: "docx" });
+    });
+
+    byId("DownloadLogBtn")?.addEventListener("click", () => {
+      const selected = getSelectedRunIds();
+      if (!selected.length) {
+        return;
+      }
+      submitPostForm("{{ url_for('flow_results_bp.download_flow_runs_bulk', task_id=results_task_id) }}", { job_ids: selected.join(","), kind: "log" });
+    });
+  } else {
+    byId("DeleteBtn")?.addEventListener("click", () => {
+      const selected = getSelectedRunIds();
+      if (!selected.length || !confirm(`確定要刪除 ${selected.length} 筆 Mapping 執行結果嗎？`)) {
+        return;
+      }
+      submitPostForm("{{ url_for('mapping_run_bp.delete_mapping_runs_bulk', task_id=results_task_id) }}", { run_ids: selected.join(",") });
+    });
+
+    byId("DownloadZipBtn")?.addEventListener("click", () => {
+      const selected = getSelectedRunIds();
+      if (!selected.length) {
+        return;
+      }
+      submitPostForm("{{ url_for('mapping_run_bp.download_mapping_runs_bulk', task_id=results_task_id) }}", { run_ids: selected.join(","), kind: "zip" });
+    });
+
+    byId("DownloadLogBtn")?.addEventListener("click", () => {
+      const selected = getSelectedRunIds();
+      if (!selected.length) {
+        return;
+      }
+      submitPostForm("{{ url_for('mapping_run_bp.download_mapping_runs_bulk', task_id=results_task_id) }}", { run_ids: selected.join(","), kind: "log" });
+    });
+  }
+
+  let filterTimer = null;
+  const applyFilter = () => navigate({ page: 1 });
+
+  byId("SearchInput")?.addEventListener("input", () => {
+    if (filterTimer) {
+      clearTimeout(filterTimer);
+    }
+    filterTimer = setTimeout(applyFilter, 350);
+  });
+
+  [byId("StatusFilter"), byId("DateStart"), byId("DateEnd")].forEach((element) => {
+    element?.addEventListener("change", applyFilter);
+  });
+
+  document.querySelectorAll(`[data-results-page="${prefix}"]`).forEach((button) => {
+    button.addEventListener("click", () => {
+      const page = Number(button.dataset.page || "1");
+      if (!Number.isFinite(page) || page < 1) {
+        return;
+      }
+      navigate({ page });
+    });
+  });
+
+  updateRunUi();
+})();
+</script>

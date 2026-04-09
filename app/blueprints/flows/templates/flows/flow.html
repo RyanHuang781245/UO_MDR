@@ -9,22 +9,27 @@
     </div>
 
     <ul class="nav nav-tabs nav-tabs-custom mb-4" id="flowTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link {% if not request.args.get('fpage') %}active{% endif %}" id="builder-tab" data-bs-toggle="tab" data-bs-target="#builder-pane" type="button" role="tab" aria-controls="builder-pane" aria-selected="{% if not request.args.get('fpage') %}true{% else %}false{% endif %}">
-                <i class="bi bi-plus-square me-2"></i>定義流程
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link {% if request.args.get('fpage') %}active{% endif %}" id="saved-tab" data-bs-toggle="tab" data-bs-target="#saved-pane" type="button" role="tab" aria-controls="saved-pane" aria-selected="{% if request.args.get('fpage') %}true{% else %}false{% endif %}">
-                <i class="bi bi-folder-check me-2"></i>已保存流程
-            </button>
-        </li>
+      <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_flow_tab == 'builder' %}active{% endif %}" id="builder-tab" data-bs-toggle="tab" data-bs-target="#builder-pane" data-flow-tab="builder" type="button" role="tab" aria-controls="builder-pane" aria-selected="{{ 'true' if active_flow_tab == 'builder' else 'false' }}">
+              <i class="bi bi-plus-square me-2"></i>定義流程
+          </button>
+      </li>
+      <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_flow_tab == 'saved' %}active{% endif %}" id="saved-tab" data-bs-toggle="tab" data-bs-target="#saved-pane" data-flow-tab="saved" type="button" role="tab" aria-controls="saved-pane" aria-selected="{{ 'true' if active_flow_tab == 'saved' else 'false' }}">
+              <i class="bi bi-folder-check me-2"></i>已保存流程
+          </button>
+      </li>
+      <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_flow_tab == 'results' %}active{% endif %}" id="results-tab" data-bs-toggle="tab" data-bs-target="#results-pane" data-flow-tab="results" type="button" role="tab" aria-controls="results-pane" aria-selected="{{ 'true' if active_flow_tab == 'results' else 'false' }}">
+              <i class="bi bi-clock-history me-2"></i>流程執行結果
+          </button>
+      </li>
     </ul>
 
 
     <div class="tab-content" id="flowTabsContent">
         <!-- 流程編輯區 -->
-        <div class="tab-pane fade {% if not request.args.get('fpage') %}show active{% endif %}" id="builder-pane" role="tabpanel" aria-labelledby="builder-tab">
+        <div class="tab-pane fade {% if active_flow_tab == 'builder' %}show active{% endif %}" id="builder-pane" role="tabpanel" aria-labelledby="builder-tab">
             <div class="main-card mb-4" style="overflow: visible;">
                 <form id="flow_form" action="{{ url_for('flow_execution_bp.run_flow', task_id=task.id) }}" method="post">
                     <input type="hidden" name="ordered_ids" id="ordered_ids" value="">
@@ -145,7 +150,7 @@
         </div>
 
         <!-- 已保存流程列表 -->
-        <div class="tab-pane fade {% if request.args.get('fpage') %}show active{% endif %}" id="saved-pane" role="tabpanel" aria-labelledby="saved-tab">
+        <div class="tab-pane fade {% if active_flow_tab == 'saved' %}show active{% endif %}" id="saved-pane" role="tabpanel" aria-labelledby="saved-tab">
             <div class="main-card">
                 <div class="flow-section-header px-4 py-3 border-bottom d-flex justify-content-between align-items-center">
                     <h5 class="fw-bold mb-0">已保存流程</h5>
@@ -240,6 +245,25 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div class="tab-pane fade {% if active_flow_tab == 'results' %}show active{% endif %}" id="results-pane" role="tabpanel" aria-labelledby="results-tab">
+            {% set results_id_prefix = 'flowRuns' %}
+            {% set results_title = '流程執行結果' %}
+            {% set results_empty_message = '目前沒有流程執行結果。' %}
+            {% set results_active_tab = 'flows' %}
+            {% set results_runs = flow_results_runs %}
+            {% set results_pagination = flow_results_pagination %}
+            {% set results_filters = flow_results_filters %}
+            {% set results_base_url = url_for('flow_builder_bp.flow_builder', task_id=task.id) %}
+            {% set results_extra_params = {'flow_tab': 'results'} %}
+            {% set results_page_param = 'rpage' %}
+            {% set results_q_param = 'rq' %}
+            {% set results_status_param = 'rstatus' %}
+            {% set results_start_date_param = 'rstart_date' %}
+            {% set results_end_date_param = 'rend_date' %}
+            {% set results_task_id = task.id %}
+            {% include "partials/run_results_panel.html" %}
         </div>
     </div>
 </div>
@@ -3316,6 +3340,15 @@ document.addEventListener('DOMContentLoaded', () => {
     currentUrl.searchParams.delete('show_restore_notice');
     window.history.replaceState({}, document.title, currentUrl.toString());
   }
+  document.querySelectorAll('#flowTabs [data-bs-toggle="tab"]').forEach((btn) => {
+    btn.addEventListener('shown.bs.tab', (event) => {
+      const tabName = event.target.getAttribute('data-flow-tab') || '';
+      if (!tabName) return;
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('flow_tab', tabName);
+      window.history.replaceState({}, document.title, nextUrl.toString());
+    });
+  });
   if (addStepDropdownBtn && typeof bootstrap !== 'undefined' && bootstrap.Dropdown) {
     bootstrap.Dropdown.getOrCreateInstance(addStepDropdownBtn, {
       boundary: 'viewport',

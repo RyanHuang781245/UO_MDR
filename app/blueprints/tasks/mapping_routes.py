@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 
 from app.services.task_service import load_task_context as _load_task_context
 from app.services.user_context_service import get_actor_info as _get_actor_info
+from app.blueprints.flows.run_helpers import list_run_results
 from .blueprint import tasks_bp
 from .mapping_scheme_helpers import (
     delete_mapping_scheme,
@@ -154,6 +155,28 @@ def task_mapping(task_id):
         mapping_page = int(request.values.get("mpage", "1"))
     except (TypeError, ValueError):
         mapping_page = 1
+    mapping_results_page = max(request.values.get("mrpage", 1, type=int), 1)
+    mapping_results_q = (request.values.get("mq") or "").strip()
+    mapping_results_status = (request.values.get("mstatus") or "").strip().lower()
+    mapping_results_start_date = (request.values.get("mstart_date") or "").strip()
+    mapping_results_end_date = (request.values.get("mend_date") or "").strip()
+    active_mapping_tab = (request.values.get("mapping_tab") or "").strip().lower()
+    if active_mapping_tab not in {"create", "saved", "results"}:
+        if request.values.get("mpage"):
+            active_mapping_tab = "saved"
+        elif any(
+            (
+                request.values.get("mq"),
+                request.values.get("mstatus"),
+                request.values.get("mstart_date"),
+                request.values.get("mend_date"),
+            )
+        ):
+            active_mapping_tab = "results"
+        elif mapping_results_page > 1:
+            active_mapping_tab = "results"
+        else:
+            active_mapping_tab = "create"
 
     # 如果是頁面跳轉/重新整理 (GET)，則清掉之前的暫存紀錄與檔案
     if request.method == "GET":
@@ -350,6 +373,7 @@ def task_mapping(task_id):
                     log_file = run_result.get("log_relpath") or None
                     zip_file = run_result.get("zip_relpath") or None
                     current_mapping_display_name = active_scheme.get("display_name") or active_scheme.get("mapping_display_name") or ""
+                    active_mapping_tab = "results"
                 except Exception as e:
                     messages = [str(e)]
         elif action == "schedule_scheme":
@@ -728,6 +752,15 @@ def task_mapping(task_id):
     for scheme in saved_schemes_all:
         scheme["is_scheduled"] = bool(scheduled_scheme_id and scheme.get("id") == scheduled_scheme_id)
     saved_schemes, saved_schemes_pagination = _paginate_saved_mapping_schemes(saved_schemes_all, mapping_page)
+    mapping_results = list_run_results(
+        task_id,
+        "mapping",
+        page=mapping_results_page,
+        q=mapping_results_q,
+        status=mapping_results_status,
+        start_date=mapping_results_start_date,
+        end_date=mapping_results_end_date,
+    )
     return render_template(
         "tasks/mapping.html",
         task_id=task_id,
@@ -747,6 +780,10 @@ def task_mapping(task_id):
         current_mapping_display_name=current_mapping_display_name or last_mapping_file,
         saved_schemes=saved_schemes,
         saved_schemes_pagination=saved_schemes_pagination,
+        active_mapping_tab=active_mapping_tab,
+        mapping_results_runs=mapping_results["runs"],
+        mapping_results_pagination=mapping_results["pagination"],
+        mapping_results_filters=mapping_results["filters"],
         scheduled_scheme=scheduled_scheme,
         show_processing_status=current_action in {"check", "check_extract"},
         show_generated_results=current_action == "run_cached",

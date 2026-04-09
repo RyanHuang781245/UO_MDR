@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
-{% set saved_tab_active = request.values.get('mpage') %}
 <div class="container-fluid px-0">
     <div class="mb-3">
         <h1 class="h3 mb-1 fw-bold">Mapping</h1>
@@ -9,19 +8,24 @@
 
     <ul class="nav nav-tabs nav-tabs-custom mb-4" id="mappingTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link {% if not saved_tab_active %}active{% endif %}" id="create-scheme-tab" data-bs-toggle="tab" data-bs-target="#create-scheme-pane" type="button" role="tab" aria-controls="create-scheme-pane" aria-selected="{{ 'false' if saved_tab_active else 'true' }}">
+            <button class="nav-link {% if active_mapping_tab == 'create' %}active{% endif %}" id="create-scheme-tab" data-bs-toggle="tab" data-bs-target="#create-scheme-pane" data-mapping-tab="create" type="button" role="tab" aria-controls="create-scheme-pane" aria-selected="{{ 'true' if active_mapping_tab == 'create' else 'false' }}">
                 <i class="bi bi-plus-square me-2"></i>建立 Mapping
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link {% if saved_tab_active %}active{% endif %}" id="saved-schemes-tab" data-bs-toggle="tab" data-bs-target="#saved-schemes-pane" type="button" role="tab" aria-controls="saved-schemes-pane" aria-selected="{{ 'true' if saved_tab_active else 'false' }}">
+            <button class="nav-link {% if active_mapping_tab == 'saved' %}active{% endif %}" id="saved-schemes-tab" data-bs-toggle="tab" data-bs-target="#saved-schemes-pane" data-mapping-tab="saved" type="button" role="tab" aria-controls="saved-schemes-pane" aria-selected="{{ 'true' if active_mapping_tab == 'saved' else 'false' }}">
                 <i class="bi bi-folder-check me-2"></i>已保存 Mapping
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_mapping_tab == 'results' %}active{% endif %}" id="mapping-results-tab" data-bs-toggle="tab" data-bs-target="#mapping-results-pane" data-mapping-tab="results" type="button" role="tab" aria-controls="mapping-results-pane" aria-selected="{{ 'true' if active_mapping_tab == 'results' else 'false' }}">
+                <i class="bi bi-clock-history me-2"></i>Mapping 執行結果
             </button>
         </li>
     </ul>
 
     <div class="tab-content">
-    <div class="tab-pane fade {% if not saved_tab_active %}show active{% endif %}" id="create-scheme-pane" role="tabpanel" aria-labelledby="create-scheme-tab" tabindex="0">
+    <div class="tab-pane fade {% if active_mapping_tab == 'create' %}show active{% endif %}" id="create-scheme-pane" role="tabpanel" aria-labelledby="create-scheme-tab" tabindex="0">
     <div class="main-card mb-4">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
@@ -136,7 +140,7 @@
         </div>
     </div>
 
-    <div class="tab-pane fade {% if saved_tab_active %}show active{% endif %}" id="saved-schemes-pane" role="tabpanel" aria-labelledby="saved-schemes-tab" tabindex="0">
+    <div class="tab-pane fade {% if active_mapping_tab == 'saved' %}show active{% endif %}" id="saved-schemes-pane" role="tabpanel" aria-labelledby="saved-schemes-tab" tabindex="0">
     <div class="main-card mb-4">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
             <h5 class="fw-bold mb-0">已保存 Mapping</h5>
@@ -242,6 +246,24 @@
         {% endif %}
     </div>
     </div>
+    <div class="tab-pane fade {% if active_mapping_tab == 'results' %}show active{% endif %}" id="mapping-results-pane" role="tabpanel" aria-labelledby="mapping-results-tab" tabindex="0">
+    {% set results_id_prefix = 'mappingRuns' %}
+    {% set results_title = 'Mapping 執行結果' %}
+    {% set results_empty_message = '目前沒有 Mapping 執行結果。' %}
+    {% set results_active_tab = 'mapping' %}
+    {% set results_runs = mapping_results_runs %}
+    {% set results_pagination = mapping_results_pagination %}
+    {% set results_filters = mapping_results_filters %}
+    {% set results_base_url = url_for('tasks_bp.task_mapping', task_id=task_id) %}
+    {% set results_extra_params = {'mapping_tab': 'results'} %}
+    {% set results_page_param = 'mrpage' %}
+    {% set results_q_param = 'mq' %}
+    {% set results_status_param = 'mstatus' %}
+    {% set results_start_date_param = 'mstart_date' %}
+    {% set results_end_date_param = 'mend_date' %}
+    {% set results_task_id = task_id %}
+    {% include "partials/run_results_panel.html" %}
+    </div>
     </div>
 
     <div class="modal fade" id="renameSchemeModal" tabindex="-1" aria-hidden="true">
@@ -320,7 +342,7 @@
     </div>
     {% endif %}
 
-    {% if not saved_tab_active and show_generated_results and (outputs or log_file or zip_file) %}
+    {% if active_mapping_tab == 'create' and show_generated_results and (outputs or log_file or zip_file) %}
     <div class="main-card mb-4" id="mappingGeneratedResultSection">
         <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light bg-opacity-50">
             <h5 class="fw-bold mb-0">生成結果</h5>
@@ -627,17 +649,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const renameSchemeCount = document.getElementById('renameSchemeCount');
 
     function syncStatusSectionVisibility() {
-        const savedTabBtn = document.getElementById('saved-schemes-tab');
-        const savedActive = savedTabBtn?.classList.contains('active');
+        const createTabBtn = document.getElementById('create-scheme-tab');
+        const createActive = createTabBtn?.classList.contains('active');
         if (mappingStatusSection) {
-            mappingStatusSection.style.display = savedActive ? 'none' : '';
+            mappingStatusSection.style.display = createActive ? '' : 'none';
         }
         if (mappingGeneratedResultSection) {
-            mappingGeneratedResultSection.style.display = savedActive ? 'none' : '';
+            mappingGeneratedResultSection.style.display = createActive ? '' : 'none';
         }
     }
 
     function initTabFromHash() {
+        if (new URL(window.location.href).searchParams.get('mapping_tab')) {
+            return;
+        }
         const hash = window.location.hash;
         if (hash === '#saved-schemes-pane') {
             const btn = document.getElementById('saved-schemes-tab');
@@ -650,7 +675,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initTabFromHash();
     syncStatusSectionVisibility();
 
-    if (mappingNextStepModalEl?.dataset.autoShow === 'true' && typeof bootstrap !== 'undefined' && {{ 'true' if not saved_tab_active else 'false' }}) {
+    if (mappingNextStepModalEl?.dataset.autoShow === 'true' && typeof bootstrap !== 'undefined' && {{ 'true' if active_mapping_tab == 'create' else 'false' }}) {
         const nextStepModal = new bootstrap.Modal(mappingNextStepModalEl);
         nextStepModal.show();
         if (nextStepSchemeName) {
@@ -663,9 +688,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.querySelectorAll('#mappingTabs [data-bs-toggle="tab"]').forEach((btn) => {
         btn.addEventListener('shown.bs.tab', (event) => {
+            const tabName = event.target.getAttribute('data-mapping-tab') || '';
             const target = event.target.getAttribute('data-bs-target');
-            if (target) {
-                window.history.replaceState(null, null, target);
+            if (tabName) {
+                const nextUrl = new URL(window.location.href);
+                nextUrl.searchParams.set('mapping_tab', tabName);
+                nextUrl.hash = target || '';
+                window.history.replaceState(null, null, nextUrl.toString());
             }
             syncStatusSectionVisibility();
         });

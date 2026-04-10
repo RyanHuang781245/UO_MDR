@@ -26,7 +26,7 @@
     </ul>
 
     <div class="tab-content">
-    <div class="tab-pane fade {% if active_mapping_tab == 'create' %}show active{% endif %}" id="create-scheme-pane" role="tabpanel" aria-labelledby="create-scheme-tab" tabindex="0">
+    <div class="tab-pane fade {% if active_mapping_tab == 'create' %}show active{% endif %}" id="create-scheme-pane" role="tabpanel" aria-labelledby="create-scheme-tab">
     <div class="main-card mb-4">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
@@ -152,7 +152,7 @@
         </div>
     </div>
 
-    <div class="tab-pane fade {% if active_mapping_tab == 'saved' %}show active{% endif %}" id="saved-schemes-pane" role="tabpanel" aria-labelledby="saved-schemes-tab" tabindex="0">
+    <div class="tab-pane fade {% if active_mapping_tab == 'saved' %}show active{% endif %}" id="saved-schemes-pane" role="tabpanel" aria-labelledby="saved-schemes-tab">
     <div class="main-card mb-4">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
             <h5 class="fw-bold mb-0">已保存 Mapping</h5>
@@ -258,7 +258,7 @@
         {% endif %}
     </div>
     </div>
-    <div class="tab-pane fade {% if active_mapping_tab == 'results' %}show active{% endif %}" id="mapping-results-pane" role="tabpanel" aria-labelledby="mapping-results-tab" tabindex="0">
+    <div class="tab-pane fade {% if active_mapping_tab == 'results' %}show active{% endif %}" id="mapping-results-pane" role="tabpanel" aria-labelledby="mapping-results-tab">
     {% set results_id_prefix = 'mappingRuns' %}
     {% set results_title = 'Mapping 執行結果' %}
     {% set results_empty_message = '目前沒有 Mapping 執行結果。' %}

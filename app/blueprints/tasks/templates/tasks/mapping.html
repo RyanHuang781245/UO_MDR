@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div id="mappingRunStatusContainer" class="run-status-container"></div>
 <div class="container-fluid px-0">
     <div class="mb-3">
         <h1 class="h3 mb-1 fw-bold">Mapping</h1>
@@ -51,6 +52,7 @@
 
         <div class="px-4 py-4">
             <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="mapping_tab" value="create">
                 {% if last_mapping_file %}
                 <div class="mb-3 d-flex align-items-center gap-2">
                     <span class="small fw-bold text-uppercase text-muted">當前使用檔案：</span>
@@ -61,18 +63,28 @@
                 {% endif %}     
                 <div class="row g-3">
                     <div class="col-lg-8">
-                        <input class="form-control form-control-custom rounded-2" type="file" name="mapping_file" accept=".xlsx" {% if not last_mapping_file %}required{% endif %}>
+                        <input class="form-control form-control-custom rounded-2" type="file" name="mapping_file" accept=".xlsx" {% if not last_mapping_file %}required{% endif %} {% if current_job_in_progress %}disabled{% endif %}>
                     </div>
                     <div class="col-sm-6 col-lg-2 d-grid align-items-end">
-                        <button class="btn btn-outline-primary fw-bold px-2" name="action" value="check" type="submit">
+                        <button class="btn btn-outline-primary fw-bold px-2" name="action" value="check" type="submit" {% if current_job_in_progress %}disabled{% endif %}>
+                            {% if current_job_in_progress and current_action == 'check' %}
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            處理中
+                            {% else %}
                             <i class="bi bi-search me-1"></i>
                             檢查引用文件
+                            {% endif %}
                         </button>
                     </div>
                     <div class="col-sm-6 col-lg-2 d-grid align-items-end">
-                        <button class="btn btn-primary fw-bold px-2" name="action" value="check_extract" type="submit" {% if not allow_check_extract %}disabled title="請先通過檢查引用文件"{% endif %}>
+                        <button class="btn btn-primary fw-bold px-2" name="action" value="check_extract" type="submit" {% if current_job_in_progress or not allow_check_extract %}disabled{% endif %} {% if not current_job_in_progress and not allow_check_extract %}title="請先通過檢查引用文件"{% endif %}>
+                            {% if current_job_in_progress and current_action == 'check_extract' %}
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            處理中
+                            {% else %}
                             <i class="bi bi-sliders me-1"></i>
                             檢查擷取條件
+                            {% endif %}
                         </button>
                     </div>
                 </div>
@@ -310,6 +322,7 @@
                     <div class="small text-muted mb-2">排程會執行已保存 Mapping 清單中所有 Mapping 項目</div>
                     <form method="post" id="mappingNextStepSaveForm">
                         <input type="hidden" name="action" value="save_scheme">
+                        <input type="hidden" name="mapping_tab" value="create">
                         <div class="mb-1">
                             <!-- <label for="nextStepSchemeName" class="form-label small fw-bold text-uppercase text-muted">儲存名稱</label> -->
                             <label for="nextStepSchemeName" class="d-flex align-items-center form-label gap-2 mb-2 text-muted fw-bold"><i class="bi bi-folder"></i>
@@ -325,6 +338,7 @@
                         {% if allow_direct_run %}
                         <form method="post" {% if has_warning and warning_confirm %}onsubmit="return confirm({{ warning_confirm|tojson }});"{% endif %}>
                             <input type="hidden" name="action" value="run_cached">
+                            <input type="hidden" name="mapping_tab" value="create">
                             <button class="btn btn-success fw-bold" type="submit">
                                 <i class="bi bi-play-fill me-1"></i>
                                 生成
@@ -434,7 +448,7 @@
     </div>
     {% endif %}
 
-    {% if show_processing_status and ((messages or outputs or step_runs) or (allow_direct_run or log_file)) %}
+    {% if show_processing_status and (current_job_in_progress or ((messages or outputs or step_runs) or (allow_direct_run or log_file))) %}
     <div class="main-card" id="mappingStatusSection">
         <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between bg-light bg-opacity-50">
             <div class="d-flex align-items-center gap-3">
@@ -443,7 +457,12 @@
                     處理步驟
                 </h5>
                 <div class="d-flex align-items-center gap-2" id="status-badge-container">
-                    {% if step_runs %}
+                    {% if current_job_in_progress %}
+                    <span class="status-badge status-badge-running">
+                        <i class="bi bi-arrow-repeat spin"></i>
+                        {{ '引用文件檢查中' if current_action == 'check' else '擷取條件檢查中' if current_action == 'check_extract' else '處理中' }}
+                    </span>
+                    {% elif step_runs %}
                     <span class="status-badge status-badge-completed">
                         <i class="bi bi-check-circle-fill"></i> {{ step_ok_count }} 成功
                     </span>
@@ -459,11 +478,41 @@
                     {% endif %}
                 </div>
             </div>
-            <div></div>
+            <div class="d-flex align-items-center gap-2">
+                {% if current_action == 'check_extract' and auto_saved_scheme_name and allow_direct_run and not current_job_in_progress and not has_error %}
+                <form method="post" class="mb-0" {% if has_warning and warning_confirm %}onsubmit="return confirm({{ warning_confirm|tojson }});"{% endif %}>
+                    <input type="hidden" name="action" value="run_cached">
+                    <input type="hidden" name="mapping_tab" value="create">
+                    <button class="btn btn-success fw-bold d-inline-flex align-items-center gap-2" type="submit">
+                        <i class="bi bi-play-fill"></i>
+                        生成
+                    </button>
+                </form>
+                <a class="btn btn-outline-primary fw-bold d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_mapping', task_id=task_id, mapping_tab='saved') }}#saved-schemes-pane">
+                    <i class="bi bi-folder-check"></i>
+                    前往已保存 Mapping
+                </a>
+                {% endif %}
+            </div>
         </div>
 
         <div class="px-4 py-4">
-            {% if step_runs %}
+            {% if current_job_in_progress %}
+            <div class="border rounded-3 px-4 py-4 bg-light bg-opacity-50">
+                <div class="d-flex align-items-center gap-3 mb-2">
+                    <span class="status-badge status-badge-running">
+                        <i class="bi bi-arrow-repeat spin"></i>
+                        {{ '引用文件檢查中' if current_action == 'check' else '擷取條件檢查中' if current_action == 'check_extract' else '處理中' }}
+                    </span>
+                    <span class="small text-muted">完成後會自動顯示處理步驟，右上角提示也可隨時跳回結果。</span>
+                </div>
+                {% if current_mapping_display_name %}
+                <div class="small text-muted">
+                    目前檔案：<span class="font-monospace">{{ current_mapping_display_name }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% elif step_runs %}
             <div class="list-group list-group-flush border rounded-3 overflow-hidden">
                 {% for step in step_runs %}
                 <div class="list-group-item py-3">
@@ -576,6 +625,68 @@
 .saved-mapping-col-actions {
     width: 370px;
 }
+.run-status-container {
+    position: fixed;
+    top: 88px;
+    right: 24px;
+    z-index: 1050;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.run-status-toast {
+    min-width: 240px;
+    max-width: 360px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--app-border);
+    background: var(--app-card-bg);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.run-status-toast.is-hiding {
+    opacity: 0;
+    transform: translateY(-6px);
+}
+.run-status-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+.run-status-title {
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.run-status-body {
+    color: var(--bs-gray-500, #64748b);
+    font-size: 0.9rem;
+}
+.run-status-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+.run-status-link {
+    color: var(--bs-blue-600, #2563eb);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+.run-status-link:hover {
+    text-decoration: underline;
+}
+.run-status-close {
+    border: 0;
+    background: transparent;
+    color: var(--bs-gray-500, #64748b);
+    padding: 0;
+    line-height: 1;
+}
 .mapping-name-truncate {
     display: inline-block;
     max-width: 100%;
@@ -614,6 +725,17 @@
 [data-bs-theme="dark"] .hover-shadow:hover {
     box-shadow: 0 4px 12px rgba(2, 6, 23, 0.35);
 }
+@media (max-width: 767.98px) {
+    .run-status-container {
+        top: 72px;
+        left: 12px;
+        right: 12px;
+    }
+    .run-status-toast {
+        min-width: 0;
+        max-width: none;
+    }
+}
 </style>
 <script>
 let renameSchemeModalInstance = null;
@@ -641,12 +763,217 @@ function openRenameSchemeModal(button) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    const TASK_ID = {{ task_id|tojson }};
+    const SERVER_ACTIVE_MAPPING_TAB = {{ active_mapping_tab|tojson }};
+    const MAPPING_JOB_ID = {{ mapping_job_id|tojson }};
+    const CURRENT_MAPPING_JOB_STATUS = {{ current_mapping_job_status|tojson }};
+    const CURRENT_MAPPING_ACTION = {{ current_action|tojson }};
+    const MAPPING_ACTIVE_OPS_URL = "{{ url_for('tasks_bp.task_mapping_op_active', task_id=task_id) }}";
+    const mappingRunStatusContainer = document.getElementById('mappingRunStatusContainer');
+    const mappingRunStatusStorageKey = `mappingRunStatus:${TASK_ID}`;
     const mappingStatusSection = document.getElementById('mappingStatusSection');
     const mappingGeneratedResultSection = document.getElementById('mappingGeneratedResultSection');
     const mappingNextStepModalEl = document.getElementById('mappingNextStepModal');
     const nextStepSchemeName = document.getElementById('nextStepSchemeName');
     const renameSchemeInput = document.getElementById('renameSchemeInput');
     const renameSchemeCount = document.getElementById('renameSchemeCount');
+    const mappingTabButtons = Array.from(document.querySelectorAll('#mappingTabs [data-bs-toggle="tab"]'));
+    let mappingSubmitLocked = false;
+
+    function setMappingSubmitLocked(locked) {
+        mappingSubmitLocked = !!locked;
+        mappingTabButtons.forEach((button) => {
+            button.disabled = mappingSubmitLocked;
+            button.classList.toggle('disabled', mappingSubmitLocked);
+            button.setAttribute('aria-disabled', mappingSubmitLocked ? 'true' : 'false');
+        });
+    }
+
+    function isCreateTabActive() {
+        return document.getElementById('create-scheme-tab')?.classList.contains('active');
+    }
+
+    function currentJobNeedsAutoReload() {
+        return MAPPING_JOB_ID
+            && (CURRENT_MAPPING_JOB_STATUS === 'queued' || CURRENT_MAPPING_JOB_STATUS === 'running')
+            && isCreateTabActive();
+    }
+
+    function mappingActionLabel(action) {
+        if (action === 'check') return '引用檢查';
+        if (action === 'check_extract') return '擷取條件檢查';
+        if (action === 'run_cached') return 'Mapping 生成';
+        return 'Mapping 處理';
+    }
+
+    function loadMappingJobs() {
+        try {
+            const raw = localStorage.getItem(mappingRunStatusStorageKey);
+            const data = JSON.parse(raw || '[]');
+            return Array.isArray(data) ? data.filter(Boolean) : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function saveMappingJobs(list) {
+        try {
+            localStorage.setItem(mappingRunStatusStorageKey, JSON.stringify(list));
+        } catch (error) {
+            // ignore
+        }
+    }
+
+    function ensureMappingJob(jobId) {
+        if (!jobId) return;
+        const list = loadMappingJobs();
+        if (!list.includes(jobId)) {
+            list.push(jobId);
+            saveMappingJobs(list);
+        }
+    }
+
+    function removeMappingJob(jobId) {
+        const list = loadMappingJobs().filter((id) => id !== jobId);
+        saveMappingJobs(list);
+        const node = mappingRunStatusContainer?.querySelector(`[data-job-id="${jobId}"]`);
+        if (node) node.remove();
+    }
+
+    function removeMappingJobWithFade(jobId) {
+        const node = mappingRunStatusContainer?.querySelector(`[data-job-id="${jobId}"]`);
+        if (!node) {
+            removeMappingJob(jobId);
+            return;
+        }
+        if (node.dataset.hiding === '1') return;
+        node.dataset.hiding = '1';
+        node.classList.add('is-hiding');
+        setTimeout(() => removeMappingJob(jobId), 260);
+    }
+
+    function renderMappingToasts() {
+        if (!mappingRunStatusContainer) return;
+        const list = loadMappingJobs();
+        mappingRunStatusContainer.innerHTML = '';
+        list.forEach((jobId) => {
+            const toast = document.createElement('div');
+            toast.className = 'run-status-toast';
+            toast.dataset.jobId = jobId;
+            toast.dataset.statusUrl = `{{ url_for('tasks_bp.task_mapping_op_status', task_id=task_id, op_id='__JOB__') }}`.replace('__JOB__', jobId);
+            toast.innerHTML = `
+                <div class="run-status-header">
+                    <div>
+                        <div class="run-status-title">Mapping 處理中</div>
+                        <div class="run-status-body">正在執行：<span class="run-status-name">（讀取中）</span></div>
+                    </div>
+                    <button class="run-status-close" type="button" aria-label="Close">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="run-status-actions d-none">
+                    <a class="run-status-link" href="#">查看結果</a>
+                </div>
+            `;
+            const closeBtn = toast.querySelector('.run-status-close');
+            closeBtn?.addEventListener('click', () => removeMappingJobWithFade(jobId));
+            mappingRunStatusContainer.appendChild(toast);
+        });
+    }
+
+    async function refreshMappingStatus() {
+        if (!mappingRunStatusContainer) return;
+        const toasts = Array.from(mappingRunStatusContainer.querySelectorAll('.run-status-toast'));
+        for (const toast of toasts) {
+            const url = toast.dataset.statusUrl;
+            if (!url) continue;
+            try {
+                const resp = await fetch(url, { cache: 'no-store' });
+                const data = await resp.json();
+                if (!resp.ok || !data.ok) {
+                    removeMappingJob(toast.dataset.jobId);
+                    continue;
+                }
+                const status = data.status || 'unknown';
+                const action = data.action || '';
+                const actionLabel = mappingActionLabel(action);
+                const mappingName = data.mapping_display_name || '（未命名）';
+                const titleEl = toast.querySelector('.run-status-title');
+                const bodyEl = toast.querySelector('.run-status-body');
+                const nameEl = toast.querySelector('.run-status-name');
+                const actionsEl = toast.querySelector('.run-status-actions');
+                const linkEl = toast.querySelector('.run-status-link');
+                if (nameEl) nameEl.textContent = mappingName;
+                if (actionsEl) actionsEl.classList.add('d-none');
+                if (linkEl) {
+                    linkEl.setAttribute('href', data.resume_url || '#');
+                    linkEl.textContent = '查看結果';
+                }
+                if (status === 'completed') {
+                    if (titleEl) titleEl.textContent = `${actionLabel}已完成`;
+                    if (bodyEl) bodyEl.textContent = `已完成：${mappingName}`;
+                    if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
+                    if (toast.dataset.jobId === MAPPING_JOB_ID && currentJobNeedsAutoReload() && !toast.dataset.reloading) {
+                        toast.dataset.reloading = '1';
+                        setTimeout(() => {
+                            window.location.replace(data.resume_url || window.location.href);
+                        }, 300);
+                        continue;
+                    }
+                    if (!toast.dataset.autoCloseAt) {
+                        toast.dataset.autoCloseAt = String(Date.now() + 10000);
+                        setTimeout(() => removeMappingJobWithFade(toast.dataset.jobId), 10000);
+                    }
+                    continue;
+                }
+                if (status === 'failed') {
+                    if (titleEl) titleEl.textContent = `${actionLabel}失敗`;
+                    if (bodyEl) bodyEl.textContent = data.error ? `失敗：${data.error}` : `失敗：${mappingName}`;
+                    if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
+                    if (toast.dataset.jobId === MAPPING_JOB_ID && currentJobNeedsAutoReload() && !toast.dataset.reloading) {
+                        toast.dataset.reloading = '1';
+                        setTimeout(() => {
+                            window.location.replace(data.resume_url || window.location.href);
+                        }, 300);
+                        continue;
+                    }
+                    if (!toast.dataset.autoCloseAt) {
+                        toast.dataset.autoCloseAt = String(Date.now() + 15000);
+                        setTimeout(() => removeMappingJobWithFade(toast.dataset.jobId), 15000);
+                    }
+                    continue;
+                }
+                if (titleEl) titleEl.textContent = status === 'queued' ? `${actionLabel}排隊中` : `${actionLabel}執行中`;
+                if (bodyEl) bodyEl.textContent = `${status === 'queued' ? '排隊中' : '正在執行'}：${mappingName}`;
+            } catch (error) {
+                // ignore
+            }
+        }
+    }
+
+    async function syncActiveMappingOps() {
+        try {
+            const resp = await fetch(MAPPING_ACTIVE_OPS_URL, { cache: 'no-store' });
+            const data = await resp.json();
+            if (!resp.ok || !data.ok) return;
+            const serverRuns = Array.isArray(data.runs) ? data.runs : [];
+            const existingJobs = loadMappingJobs();
+            const nextJobs = [...existingJobs];
+            let changed = false;
+            serverRuns.forEach((run) => {
+                if (run.job_id && !nextJobs.includes(run.job_id)) {
+                    nextJobs.push(run.job_id);
+                    changed = true;
+                }
+            });
+            if (changed) {
+                saveMappingJobs(nextJobs);
+                renderMappingToasts();
+            }
+        } catch (error) {
+            // ignore
+        }
+    }
 
     function syncStatusSectionVisibility() {
         const createTabBtn = document.getElementById('create-scheme-tab');
@@ -674,6 +1001,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     initTabFromHash();
     syncStatusSectionVisibility();
+    if (MAPPING_JOB_ID && (CURRENT_MAPPING_JOB_STATUS === 'completed' || CURRENT_MAPPING_JOB_STATUS === 'failed')) {
+        removeMappingJob(MAPPING_JOB_ID);
+    }
+    if (MAPPING_JOB_ID && CURRENT_MAPPING_JOB_STATUS !== 'completed' && CURRENT_MAPPING_JOB_STATUS !== 'failed') {
+        ensureMappingJob(MAPPING_JOB_ID);
+    }
+    renderMappingToasts();
+    if (mappingRunStatusContainer) {
+        refreshMappingStatus();
+        setInterval(refreshMappingStatus, 3000);
+        syncActiveMappingOps();
+        setInterval(syncActiveMappingOps, 10000);
+    }
 
     if (mappingNextStepModalEl?.dataset.autoShow === 'true' && typeof bootstrap !== 'undefined' && {{ 'true' if active_mapping_tab == 'create' else 'false' }}) {
         const nextStepModal = new bootstrap.Modal(mappingNextStepModalEl);
@@ -686,16 +1026,38 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    document.querySelectorAll('#mappingTabs [data-bs-toggle="tab"]').forEach((btn) => {
-        btn.addEventListener('shown.bs.tab', (event) => {
+    document.addEventListener('submit', (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if ((form.method || '').toLowerCase() !== 'post') return;
+        if (!form.closest('.container-fluid')) return;
+        if (event.defaultPrevented) return;
+        setMappingSubmitLocked(true);
+    });
+
+    mappingTabButtons.forEach((btn) => {
+        btn.addEventListener('show.bs.tab', (event) => {
+            if (mappingSubmitLocked) {
+                event.preventDefault();
+                return;
+            }
             const tabName = event.target.getAttribute('data-mapping-tab') || '';
             const target = event.target.getAttribute('data-bs-target');
             if (tabName) {
                 const nextUrl = new URL(window.location.href);
                 nextUrl.searchParams.set('mapping_tab', tabName);
+                nextUrl.searchParams.delete('resume_mapping');
                 nextUrl.hash = target || '';
+                if (tabName !== SERVER_ACTIVE_MAPPING_TAB) {
+                    event.preventDefault();
+                    window.location.assign(nextUrl.toString());
+                    return;
+                }
                 window.history.replaceState(null, null, nextUrl.toString());
             }
+        });
+
+        btn.addEventListener('shown.bs.tab', (event) => {
             syncStatusSectionVisibility();
         });
     });

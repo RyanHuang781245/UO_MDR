@@ -8,6 +8,8 @@ from datetime import datetime
 
 from flask import current_app
 
+from app.services.mapping_metadata_service import sync_run_payload, sync_scheme_payload, delete_mapping_scheme_record
+
 
 def _task_dir(task_id: str) -> str:
     return os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -37,6 +39,8 @@ def write_mapping_run_meta(run_dir: str, payload: dict) -> None:
         meta_path = os.path.join(run_dir, "meta.json")
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
+        task_id = os.path.basename(os.path.dirname(os.path.dirname(run_dir)))
+        sync_run_payload(task_id, payload)
     except Exception:
         current_app.logger.exception("Failed to write mapping run meta")
 
@@ -61,12 +65,13 @@ def task_files_last_updated(task_id: str) -> float:
     return latest
 
 
-def _enrich_scheme(task_id: str, payload: dict) -> dict:
+def _enrich_scheme(task_id: str, payload: dict, current_files_updated_at: float | None = None) -> dict:
     scheme = dict(payload or {})
     scheme_id = str(scheme.get("id") or "").strip()
     scheme_dir = mapping_scheme_dir(task_id, scheme_id) if scheme_id else ""
     source_file = str(scheme.get("source_file") or "source.xlsx").strip() or "source.xlsx"
-    current_files_updated_at = task_files_last_updated(task_id)
+    if current_files_updated_at is None:
+        current_files_updated_at = task_files_last_updated(task_id)
     saved_files_updated_at = float(scheme.get("task_files_updated_at") or 0.0)
     needs_review = saved_files_updated_at > 0 and current_files_updated_at > (saved_files_updated_at + 1e-6)
     reference_ok = bool(scheme.get("reference_ok"))
@@ -99,7 +104,7 @@ def _enrich_scheme(task_id: str, payload: dict) -> dict:
     return scheme
 
 
-def load_mapping_scheme(task_id: str, scheme_id: str) -> dict | None:
+def load_mapping_scheme(task_id: str, scheme_id: str, current_files_updated_at: float | None = None) -> dict | None:
     meta_path = mapping_scheme_meta_path(task_id, scheme_id)
     if not os.path.isfile(meta_path):
         return None
@@ -108,7 +113,7 @@ def load_mapping_scheme(task_id: str, scheme_id: str) -> dict | None:
             payload = json.load(f)
         if not isinstance(payload, dict):
             return None
-        return _enrich_scheme(task_id, payload)
+        return _enrich_scheme(task_id, payload, current_files_updated_at=current_files_updated_at)
     except Exception:
         current_app.logger.exception("Failed to load mapping scheme")
         return None
@@ -116,12 +121,13 @@ def load_mapping_scheme(task_id: str, scheme_id: str) -> dict | None:
 
 def list_mapping_schemes(task_id: str) -> list[dict]:
     base_dir = mapping_schemes_dir(task_id)
+    current_files_updated_at = task_files_last_updated(task_id)
     results: list[dict] = []
     for name in os.listdir(base_dir):
         scheme_dir = os.path.join(base_dir, name)
         if not os.path.isdir(scheme_dir):
             continue
-        scheme = load_mapping_scheme(task_id, name)
+        scheme = load_mapping_scheme(task_id, name, current_files_updated_at=current_files_updated_at)
         if scheme:
             results.append(scheme)
     results.sort(
@@ -171,7 +177,9 @@ def save_mapping_scheme(
     with open(mapping_scheme_meta_path(task_id, scheme_id), "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
-    return _enrich_scheme(task_id, payload)
+    enriched = _enrich_scheme(task_id, payload)
+    sync_scheme_payload(task_id, enriched)
+    return enriched
 
 
 def set_scheduled_mapping_scheme(task_id: str, scheme_id: str) -> None:
@@ -224,6 +232,7 @@ def delete_mapping_scheme(task_id: str, scheme_id: str) -> bool:
             current_app.logger.exception("Failed to clear mapping schedule while deleting scheme")
 
     shutil.rmtree(scheme_dir, ignore_errors=True)
+    delete_mapping_scheme_record(scheme_id)
     return not os.path.exists(scheme_dir)
 
 
@@ -251,6 +260,7 @@ def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
     updated_scheme = load_mapping_scheme(task_id, scheme_id)
     if not updated_scheme:
         raise RuntimeError("Failed to reload mapping scheme after rename")
+    sync_scheme_payload(task_id, updated_scheme)
     return updated_scheme
 
 

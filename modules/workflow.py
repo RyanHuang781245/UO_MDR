@@ -5,7 +5,7 @@ import zipfile
 import re
 import shutil
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable
 from docx import Document as DocxDocument
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -28,6 +28,7 @@ from .template_manager import (
 )
 from .docx_provenance import apply_final_provenance, build_provenance_descriptor
 from modules.extract_pdf_img import extract_pdf_pages_to_docx
+from app.services.execution_service import JobCanceledError
 
 
 def _resolve_fragment_path(workdir: str, user_path: str | None, idx: int) -> str:
@@ -350,7 +351,12 @@ def _rename_single_copied_path(path: str, target_name: str) -> str:
 
 
 
-def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def run_workflow(
+    steps: List[Dict[str, Any]],
+    workdir: str,
+    template: Dict[str, Any] | None = None,
+    cancel_check: Callable[[], None] | None = None,
+) -> Dict[str, Any]:
     def _hash_file(path: str) -> str:
         sha = hashlib.sha256()
         with open(path, "rb") as f:
@@ -501,7 +507,12 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
             return
         fragments.append(path)
 
+    def _check_canceled() -> None:
+        if cancel_check:
+            cancel_check()
+
     for idx, step in enumerate(steps, start=1):
+        _check_canceled()
         stype = step.get("type")
         params = step.get("params", {})
         log.append({"step": idx, "type": stype, "params": params})
@@ -821,13 +832,17 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
 
             if "status" not in log[-1]:
                 log[-1]["status"] = "ok"
+            _check_canceled()
 
+        except JobCanceledError:
+            raise
         except Exception as e:
             log[-1]["status"] = "error"
             log[-1]["error"] = str(e)
 
     # Post-check: ensure extract steps actually produced content.
     for entry in log:
+        _check_canceled()
         if not isinstance(entry, dict):
             continue
         if "step" not in entry:
@@ -862,6 +877,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
 
     if template_cfg.get("path") and template_mappings:
         try:
+            _check_canceled()
             parsed = template_paragraphs or parse_template_paragraphs(template_cfg["path"])
             template_result_path = os.path.join(workdir, "template_result.docx")
             ordered_template_mappings = order_template_mappings(template_mappings)
@@ -891,6 +907,8 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
             )
             fragments.insert(0, template_result_path)
             template_merge_succeeded = True
+        except JobCanceledError:
+            raise
         except Exception as e:
             log.append(
                 {
@@ -908,6 +926,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
                     fragments.append(cdoc)
 
     if not fragments:
+        _check_canceled()
         os.makedirs(workdir, exist_ok=True)
         empty_path = os.path.join(workdir, "result.docx")
         DocxDocument().save(empty_path)
@@ -921,6 +940,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
             log[log_index]["copied_dir"] = final_path
 
     out_docx = os.path.join(workdir, "result.docx")
+    _check_canceled()
     merge_word_docs(fragments, out_docx)
     final_template_source_ids = [
         str(item.get("source_id") or "")
@@ -944,6 +964,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
         and str((entry.get("provenance") or {}).get("source_id") or "")
     }
     if provenance_by_source_id and final_source_sequence:
+        _check_canceled()
         applied_ranges = apply_final_provenance(
             out_docx,
             [provenance_by_source_id[source_id] for source_id in final_source_sequence if source_id in provenance_by_source_id],
@@ -968,6 +989,7 @@ def run_workflow(steps: List[Dict[str, Any]], workdir: str, template: Dict[str, 
             provenance["result_block_end"] = applied.get("result_block_end")
 
     out_log = os.path.join(workdir, "log.json")
+    _check_canceled()
     with open(out_log, "w", encoding="utf-8") as f:
         import json
         json.dump(log, f, ensure_ascii=False, indent=2)

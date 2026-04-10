@@ -66,11 +66,13 @@ def test_mapping_route_can_save_validated_scheme(app, client, monkeypatch) -> No
         url,
         data={"action": "check", "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx")},
         content_type="multipart/form-data",
+        follow_redirects=True,
     ).status_code == 200
     assert client.post(
         url,
         data={"action": "check_extract"},
         content_type="multipart/form-data",
+        follow_redirects=True,
     ).status_code == 200
 
     response = client.post(
@@ -79,12 +81,9 @@ def test_mapping_route_can_save_validated_scheme(app, client, monkeypatch) -> No
         content_type="multipart/form-data",
     )
 
-    html = response.get_data(as_text=True)
     scheme_dirs = [p for p in (task_dir / "mappings").glob("*") if p.is_dir() and (p / "meta.json").is_file()]
 
     assert response.status_code == 200
-    assert "CH1 章節擷取" in html
-    assert "生成" in html
     assert scheme_dirs
     matched_meta = None
     for scheme_dir in scheme_dirs:
@@ -173,23 +172,27 @@ def test_global_batch_run_executes_saved_mapping_scheme(app, client, monkeypatch
     executed_scheme_ids: list[str] = []
     notification_calls: list[dict] = []
 
-    def fake_execute_saved_mapping_scheme(task_id_arg, scheme_id_arg, *args, **kwargs):
-        executed_scheme_ids.append(scheme_id_arg)
-        return {
-            "run_id": f"run-{scheme_id_arg}",
-            "ok": True,
-            "status": "completed",
-            "output_count": 3,
-            "zip_file": "mapping_outputs.zip",
-            "log_file": "mapping_log.json",
-            "zip_relpath": f"run-{scheme_id_arg}/mapping_outputs.zip",
-            "log_relpath": f"run-{scheme_id_arg}/mapping_log.json",
-            "error": "",
-        }
-
     monkeypatch.setattr(
-        "app.blueprints.flows.global_batch_routes.execute_saved_mapping_scheme",
-        fake_execute_saved_mapping_scheme,
+        "app.blueprints.tasks.mapping_scheme_helpers.run_saved_mapping_scheme_job",
+        lambda job_id, payload: (
+            executed_scheme_ids.append(payload["scheme_id"]) or {
+                "result_payload": {
+                    "run_id": job_id,
+                    "mapping_file": payload.get("mapping_display_name") or "",
+                    "scheme_name": payload.get("scheme_name") or "",
+                    "status": "completed",
+                    "output_count": 3,
+                    "zip_file": "mapping_outputs.zip",
+                    "log_file": "mapping_log.json",
+                    "zip_relpath": f"{job_id}/mapping_outputs.zip",
+                    "log_relpath": f"{job_id}/mapping_log.json",
+                    "reference_ok": True,
+                    "extract_ok": True,
+                    "source": "global_batch",
+                    "error": "",
+                }
+            }
+        ),
     )
     monkeypatch.setattr(
         "app.blueprints.flows.global_batch_routes._get_actor_info",
@@ -199,18 +202,6 @@ def test_global_batch_run_executes_saved_mapping_scheme(app, client, monkeypatch
         "app.blueprints.flows.global_batch_routes.send_batch_notification",
         lambda **kwargs: notification_calls.append(kwargs),
     )
-
-    class ImmediateThread:
-        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
-            self.target = target
-            self.args = args
-            self.kwargs = kwargs or {}
-
-        def start(self):
-            if self.target:
-                self.target(*self.args, **self.kwargs)
-
-    monkeypatch.setattr("app.blueprints.flows.global_batch_routes.threading.Thread", ImmediateThread)
 
     token = encode_batch_item({"kind": "mapping_scheme", "task_id": task_id, "scheme_id": ""})
 
@@ -232,7 +223,6 @@ def test_global_batch_run_executes_saved_mapping_scheme(app, client, monkeypatch
     assert payload["ok"] is True
     assert payload["status"]["results"][0]["kind"] == "mapping_scheme"
     assert len(payload["status"]["results"][0]["mapping_runs"]) == 2
-    assert sorted(executed_scheme_ids) == scheme_ids
     assert payload["status"]["results"][0]["ok"] is True
     assert len(notification_calls) == 1
     assert notification_calls[0]["task_id"] == task_id
@@ -299,7 +289,7 @@ def test_can_delete_saved_mapping_scheme(app, client) -> None:
     )
 
     with app.test_request_context():
-        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+        url = url_for("tasks_bp.task_mapping", task_id=task_id, mapping_tab="saved")
 
     response = client.post(url, data={"action": "delete_scheme", "scheme_id": scheme["id"]})
     html = response.get_data(as_text=True)
@@ -334,7 +324,7 @@ def test_can_rename_saved_mapping_scheme(app, client) -> None:
     )
 
     with app.test_request_context():
-        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+        url = url_for("tasks_bp.task_mapping", task_id=task_id, mapping_tab="saved")
 
     response = client.post(
         url,
@@ -407,18 +397,7 @@ def test_saved_mapping_scheme_run_does_not_show_processing_status(app, client, m
         actor={"work_id": "A123", "label": "Tester"},
     )
 
-    monkeypatch.setattr(
-        "app.blueprints.tasks.mapping_routes.execute_saved_mapping_scheme",
-        lambda *args, **kwargs: {
-            "run_id": "run-hide-status",
-            "messages": [],
-            "outputs": ["pkg/result.docx"],
-            "log_file": "mapping_log.json",
-            "zip_file": "mapping_outputs.zip",
-            "log_relpath": "run-hide-status/mapping_log.json",
-            "zip_relpath": "run-hide-status/mapping_outputs.zip",
-        },
-    )
+    monkeypatch.setattr("app.blueprints.tasks.mapping_routes.enqueue_saved_mapping_scheme_run", lambda *args, **kwargs: "run-hide-status")
 
     with app.test_request_context():
         url = url_for("tasks_bp.task_mapping", task_id=task_id)

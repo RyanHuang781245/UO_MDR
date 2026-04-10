@@ -102,7 +102,12 @@
           <option value="" {% if not results_filters.status %}selected{% endif %}>全部狀態</option>
           <option value="completed" {% if results_filters.status == 'completed' %}selected{% endif %}>完成</option>
           <option value="failed" {% if results_filters.status == 'failed' %}selected{% endif %}>失敗</option>
+          <option value="canceled" {% if results_filters.status == 'canceled' %}selected{% endif %}>已取消</option>
+          <option value="timeout" {% if results_filters.status == 'timeout' %}selected{% endif %}>逾時</option>
           {% if results_active_tab == 'flows' %}
+          <option value="running" {% if results_filters.status == 'running' %}selected{% endif %}>執行中</option>
+          <option value="queued" {% if results_filters.status == 'queued' %}selected{% endif %}>排隊中</option>
+          {% else %}
           <option value="running" {% if results_filters.status == 'running' %}selected{% endif %}>執行中</option>
           <option value="queued" {% if results_filters.status == 'queued' %}selected{% endif %}>排隊中</option>
           {% endif %}
@@ -176,6 +181,10 @@
             <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>
             {% elif run.status == 'failed' %}
             <span class="status-badge status-badge-failed"><i class="bi bi-x-circle-fill"></i> 失敗</span>
+            {% elif run.status == 'canceled' %}
+            <span class="status-badge status-badge-queued"><i class="bi bi-slash-circle"></i> 已取消</span>
+            {% elif run.status == 'timeout' %}
+            <span class="status-badge status-badge-failed"><i class="bi bi-clock-history"></i> 逾時</span>
             {% elif run.status == 'running' %}
             <span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>
             {% elif run.status == 'queued' %}
@@ -192,6 +201,15 @@
               {% endif %}
               {% if run.has_log %}
               <a href="{{ url_for('tasks_bp.task_download', task_id=results_task_id, job_id=run.job_id, kind='log') }}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>
+              {% endif %}
+              {% if run.status in ['queued', 'running'] %}
+              <form method="post" action="{{ url_for('flow_results_bp.cancel_flow_run', task_id=results_task_id, job_id=run.job_id) }}" class="d-inline">
+                <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
+              </form>
+              {% elif run.status in ['failed', 'canceled', 'timeout'] %}
+              <form method="post" action="{{ url_for('flow_results_bp.retry_flow_run', task_id=results_task_id, job_id=run.job_id) }}" class="d-inline">
+                <button type="submit" class="btn-action-icon" title="重試"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-lg-inline small fw-semibold">重試</span></button>
+              </form>
               {% endif %}
             </div>
           </td>
@@ -215,6 +233,14 @@
             <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>
             {% elif run.status == 'failed' %}
             <span class="status-badge status-badge-failed"><i class="bi bi-x-circle-fill"></i> 失敗</span>
+            {% elif run.status == 'canceled' %}
+            <span class="status-badge status-badge-queued"><i class="bi bi-slash-circle"></i> 已取消</span>
+            {% elif run.status == 'timeout' %}
+            <span class="status-badge status-badge-failed"><i class="bi bi-clock-history"></i> 逾時</span>
+            {% elif run.status == 'running' %}
+            <span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>
+            {% elif run.status == 'queued' %}
+            <span class="status-badge status-badge-queued"><i class="bi bi-hourglass-split"></i> 排隊中</span>
             {% else %}
             <span class="status-badge status-badge-queued"><i class="bi bi-question-circle"></i> 未知</span>
             {% endif %}
@@ -227,6 +253,15 @@
               {% endif %}
               {% if run.has_log %}
               <a href="{{ url_for('tasks_bp.task_download_output_query', task_id=results_task_id, filename=run.log_file) }}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>
+              {% endif %}
+              {% if run.status in ['queued', 'running'] %}
+              <form method="post" action="{{ url_for('mapping_run_bp.cancel_mapping_run', task_id=results_task_id, run_id=run.run_id) }}" class="d-inline">
+                <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
+              </form>
+              {% elif run.status in ['failed', 'canceled', 'timeout'] %}
+              <form method="post" action="{{ url_for('mapping_run_bp.retry_mapping_run', task_id=results_task_id, run_id=run.run_id) }}" class="d-inline">
+                <button type="submit" class="btn-action-icon" title="重試"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-lg-inline small fw-semibold">重試</span></button>
+              </form>
               {% endif %}
             </div>
           </td>

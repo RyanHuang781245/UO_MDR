@@ -5,6 +5,7 @@ UO_MDR is a Flask-based document processing workstation that hosts task-specific
 
 ## Runtime topology
 - **Web layer (Flask, `app.py`)**: Handles task lifecycle (create, rename, delete), file management, workflow execution, translation, and document comparison endpoints. Views render HTML templates for task dashboards, workflow editors, and result viewers.
+- **Execution layer (`app/services/execution_service.py`)**: Persists background jobs in the database, exposes a worker loop/CLI, coordinates task-level write locks, and records artifacts/events for flow, mapping, and global batch runs.
 - **Task storage (`task_store/`)**: Each task directory contains a `files/` subfolder for uploads, optional `meta.json` descriptors, and per-job subfolders that store workflow outputs, comparison HTML, and versioned copies of edited files. The `output/` directory mirrors downloadable artifacts keyed by task ID.
 - **Workflow engine (`modules/workflow.py`)**: Exposes a registry of supported workflow steps and executes them in order, producing a combined Word document plus a structured log for downstream UI display. Steps include PDF/Word extraction, heading insertion, content insertion, file copying, and figure/table renumbering.
 - **Document processing utilities**: Specialized modules provide focused capabilities:
@@ -17,10 +18,16 @@ UO_MDR is a Flask-based document processing workstation that hosts task-specific
 
 ## Request flow highlights
 1. **Task creation**: Users upload a ZIP archive; the server extracts it under `task_store/<id>/files/` and records metadata so the task appears on the landing page. Subsequent uploads or renames update the same folder.
-2. **Workflow execution**: Task-specific flow definitions (stored as JSON under `task_store/<id>/flows/`) are run via `/tasks/<task_id>/flows/run`. The engine streams document edits into a single Word file and writes a `log.json` detailing step parameters, statuses, and captured titles. Results are surfaced under `output/<task_id>/` for download and comparison.
-3. **File utilities**: The copy-files route lets users create directories and copy matched files within a task workspace, while the mapping route processes uploaded Excel mappings against task files and emits packaged outputs.
+2. **Workflow execution**: Task-specific flow definitions (stored as JSON under `task_store/<id>/flows/`) are enqueued as database-backed jobs via `/tasks/<task_id>/flows/run`. A separate worker process claims queued jobs, executes the workflow, writes `result.docx` and `log.json`, then updates both DB job state and task-local `meta.json` status files for UI compatibility.
+3. **File utilities**: The copy-files route lets users create directories and copy matched files within a task workspace, while the mapping route enqueues background mapping jobs that update workspace UI state, validation state, and packaged outputs from the worker process.
 4. **Translation**: Uploaded or workflow-generated DOCX/PDF/TXT files can be translated through AWS Bedrock models, with chunked requests and retry logic ensuring robustness against transient failures.
 5. **Comparison and versioning**: When workflows generate comparison HTML, users can clean the content, hide captured titles, and save labeled versions. Saved versions live under the task’s job folder with downloadable ZIP bundles for traceability.
+
+## Background worker operations
+- Queue-backed execution defaults to worker mode (`JOB_EXECUTOR_MODE=worker`), with test mode using inline execution for deterministic tests.
+- Start a worker with `flask --app app.py jobs-worker`.
+- Recover stale claimed/running jobs with `flask --app app.py jobs-requeue-stale`.
+- Task-scoped write locks prevent conflicting flow and mapping jobs from mutating the same task simultaneously.
 
 ## Key interactions
 - Routes in `app.py` orchestrate filesystem operations, marshal parameters into workflow steps, and persist artifacts so subsequent endpoints (download, view, compare) can serve them directly from disk.

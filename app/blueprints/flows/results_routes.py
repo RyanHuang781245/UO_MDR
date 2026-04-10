@@ -8,6 +8,11 @@ from urllib.parse import urlparse
 
 from flask import abort, current_app, flash, redirect, request, send_file, url_for
 
+from app.extensions import db
+from app.models.execution import JobRecord
+from app.models.mapping_metadata import MappingRunRecord
+from app.services.execution_service import cancel_job, delete_job_record, retry_job
+from app.services.user_context_service import get_actor_info as _get_actor_info
 from .flow_results_blueprint import flow_results_bp
 from .mapping_run_blueprint import mapping_run_bp
 from .run_helpers import (
@@ -61,14 +66,38 @@ def _default_results_redirect(task_id: str, active_tab: str = "flows"):
 def delete_flow_run(task_id, job_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
-    if not os.path.isdir(job_dir):
+    record = db.session.get(JobRecord, job_id)
+    if not os.path.isdir(job_dir) and not record:
         abort(404)
     try:
-        shutil.rmtree(job_dir)
+        if os.path.isdir(job_dir):
+            shutil.rmtree(job_dir)
+        delete_job_record(job_id)
         flash("已刪除執行紀錄。", "success")
     except Exception:
         current_app.logger.exception("Failed to delete flow run")
         flash("刪除失敗，請稍後再試。", "danger")
+    return _redirect_with_fallback("flow_builder_bp.flow_builder", task_id=task_id, flow_tab="results")
+
+
+@flow_results_bp.post("/runs/<job_id>/cancel", endpoint="cancel_flow_run")
+def cancel_flow_run(task_id, job_id):
+    record = db.session.get(JobRecord, job_id)
+    if not record or record.task_id != task_id:
+        abort(404)
+    ok, message = cancel_job(job_id)
+    flash(message, "success" if ok else "warning")
+    return _redirect_with_fallback("flow_builder_bp.flow_builder", task_id=task_id, flow_tab="results")
+
+
+@flow_results_bp.post("/runs/<job_id>/retry", endpoint="retry_flow_run")
+def retry_flow_run(task_id, job_id):
+    record = db.session.get(JobRecord, job_id)
+    if not record or record.task_id != task_id:
+        abort(404)
+    work_id, label = _get_actor_info()
+    ok, message, new_job_id = retry_job(job_id, actor={"work_id": work_id, "label": label})
+    flash(message if not new_job_id else f"{message}：{new_job_id}", "success" if ok else "warning")
     return _redirect_with_fallback("flow_builder_bp.flow_builder", task_id=task_id, flow_tab="results")
 
 
@@ -84,10 +113,12 @@ def delete_flow_runs_bulk(task_id):
     deleted = 0
     for job_id in job_ids:
         job_dir = os.path.join(jobs_dir, job_id)
-        if not os.path.isdir(job_dir):
+        if not os.path.isdir(job_dir) and not db.session.get(JobRecord, job_id):
             continue
         try:
-            shutil.rmtree(job_dir)
+            if os.path.isdir(job_dir):
+                shutil.rmtree(job_dir)
+            delete_job_record(job_id)
             deleted += 1
         except Exception:
             current_app.logger.exception("Failed to delete flow run")
@@ -135,14 +166,42 @@ def download_flow_runs_bulk(task_id):
 def delete_mapping_run(task_id, run_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     run_dir = os.path.join(tdir, "mapping_job", run_id)
-    if not os.path.isdir(run_dir):
+    record = db.session.get(JobRecord, run_id)
+    if not os.path.isdir(run_dir) and not record:
         abort(404)
     try:
-        shutil.rmtree(run_dir)
+        if os.path.isdir(run_dir):
+            shutil.rmtree(run_dir)
+        delete_job_record(run_id)
+        mapping_record = db.session.get(MappingRunRecord, run_id)
+        if mapping_record:
+            db.session.delete(mapping_record)
+            db.session.commit()
         flash("已刪除 Mapping 執行紀錄。", "success")
     except Exception:
         current_app.logger.exception("Failed to delete mapping run")
         flash("刪除失敗，請稍後再試。", "danger")
+    return _redirect_with_fallback("tasks_bp.task_mapping", task_id=task_id, mapping_tab="results")
+
+
+@mapping_run_bp.post("/<run_id>/cancel", endpoint="cancel_mapping_run")
+def cancel_mapping_run(task_id, run_id):
+    record = db.session.get(JobRecord, run_id)
+    if not record or record.task_id != task_id:
+        abort(404)
+    ok, message = cancel_job(run_id)
+    flash(message, "success" if ok else "warning")
+    return _redirect_with_fallback("tasks_bp.task_mapping", task_id=task_id, mapping_tab="results")
+
+
+@mapping_run_bp.post("/<run_id>/retry", endpoint="retry_mapping_run")
+def retry_mapping_run(task_id, run_id):
+    record = db.session.get(JobRecord, run_id)
+    if not record or record.task_id != task_id:
+        abort(404)
+    work_id, label = _get_actor_info()
+    ok, message, new_job_id = retry_job(run_id, actor={"work_id": work_id, "label": label})
+    flash(message if not new_job_id else f"{message}：{new_job_id}", "success" if ok else "warning")
     return _redirect_with_fallback("tasks_bp.task_mapping", task_id=task_id, mapping_tab="results")
 
 
@@ -158,10 +217,16 @@ def delete_mapping_runs_bulk(task_id):
     deleted = 0
     for run_id in run_ids:
         run_dir = os.path.join(mapping_dir, run_id)
-        if not os.path.isdir(run_dir):
+        if not os.path.isdir(run_dir) and not db.session.get(JobRecord, run_id):
             continue
         try:
-            shutil.rmtree(run_dir)
+            if os.path.isdir(run_dir):
+                shutil.rmtree(run_dir)
+            delete_job_record(run_id)
+            mapping_record = db.session.get(MappingRunRecord, run_id)
+            if mapping_record:
+                db.session.delete(mapping_record)
+                db.session.commit()
             deleted += 1
         except Exception:
             current_app.logger.exception("Failed to delete mapping run")
@@ -222,15 +287,16 @@ def flow_results(task_id):
 
 @flow_results_bp.get("/runs/<job_id>/status", endpoint="flow_run_status")
 def flow_run_status(task_id, job_id):
+    record = db.session.get(JobRecord, job_id)
+    if not record or record.task_id != task_id:
+        return {"ok": False, "error": "Run not found"}, 404
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(tdir, "jobs", job_id)
-    if not os.path.isdir(job_dir):
-        return {"ok": False, "error": "Run not found"}, 404
-    meta = _read_job_meta(job_dir)
-    status = meta.get("status") or "unknown"
-    if _job_has_error(job_dir):
+    meta = _read_job_meta(job_dir) if os.path.isdir(job_dir) else {}
+    status = str(record.status or meta.get("status") or "unknown").strip().lower()
+    if os.path.isdir(job_dir) and _job_has_error(job_dir):
         status = "failed"
-    flow_name = meta.get("flow_name") or ""
+    flow_name = str(record.target_name or meta.get("flow_name") or "").strip()
     return {"ok": True, "status": status, "flow_name": flow_name}
 
 

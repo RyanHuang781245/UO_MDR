@@ -24,6 +24,11 @@ class BaseConfig:
     LIBREOFFICE_BIN = (os.environ.get("LIBREOFFICE_BIN") or "").strip()
     ALLOWED_SOURCE_ROOTS = []
     APP_ENV = os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or "development"
+    JOB_EXECUTOR_MODE = (os.environ.get("JOB_EXECUTOR_MODE") or "worker").strip().lower() or "worker"
+    JOB_POLL_INTERVAL_SECONDS = float(os.environ.get("JOB_POLL_INTERVAL_SECONDS") or 2)
+    JOB_HEARTBEAT_INTERVAL_SECONDS = float(os.environ.get("JOB_HEARTBEAT_INTERVAL_SECONDS") or 10)
+    JOB_LOCK_TTL_SECONDS = int(os.environ.get("JOB_LOCK_TTL_SECONDS") or 14400)
+    JOB_STALE_AFTER_SECONDS = int(os.environ.get("JOB_STALE_AFTER_SECONDS") or 21600)
 
     AUTH_ENABLED = parse_bool(os.environ.get("AUTH_ENABLED"), True)
     SESSION_COOKIE_HTTPONLY = True
@@ -55,6 +60,7 @@ class TestingConfig(BaseConfig):
     TESTING = True
     AUTH_ENABLED = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    JOB_EXECUTOR_MODE = "inline"
 
 
 class DevelopmentConfig(BaseConfig):

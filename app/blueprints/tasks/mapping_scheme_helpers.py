@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import shutil
@@ -8,6 +9,12 @@ from datetime import datetime
 
 from flask import current_app
 
+from app.services.execution_service import (
+    JobCanceledError,
+    MAPPING_SCHEME_RUN_JOB,
+    enqueue_job,
+    ensure_job_not_canceled,
+)
 from app.services.mapping_metadata_service import sync_run_payload, sync_scheme_payload, delete_mapping_scheme_record
 
 
@@ -270,6 +277,7 @@ def execute_saved_mapping_scheme(
     actor: dict | None = None,
     source: str = "manual",
     global_batch_id: str = "",
+    run_id: str = "",
 ) -> dict:
     actor = actor or {}
     scheme = load_mapping_scheme(task_id, scheme_id)
@@ -287,16 +295,59 @@ def execute_saved_mapping_scheme(
     task_dir = _task_dir(task_id)
     files_dir = os.path.join(task_dir, "files")
     out_dir = os.path.join(task_dir, "mapping_job")
-    run_id = uuid.uuid4().hex[:8]
+    run_id = (run_id or "").strip() or uuid.uuid4().hex[:8]
     run_dir = os.path.join(out_dir, run_id)
-    result = process_mapping_excel(
-        scheme["source_path"],
-        files_dir,
-        run_dir,
-        log_dir=run_dir,
-        validate_only=False,
-        validate_extract_only=False,
-    )
+
+    def _check_canceled() -> None:
+        if run_id:
+            ensure_job_not_canceled(run_id)
+
+    process_kwargs = {
+        "log_dir": run_dir,
+        "validate_only": False,
+        "validate_extract_only": False,
+    }
+    try:
+        if "cancel_check" in inspect.signature(process_mapping_excel).parameters:
+            process_kwargs["cancel_check"] = _check_canceled
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        result = process_mapping_excel(
+            scheme["source_path"],
+            files_dir,
+            run_dir,
+            **process_kwargs,
+        )
+    except JobCanceledError:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        write_mapping_run_meta(
+            run_dir,
+            {
+                "record_type": "mapping_run",
+                "run_id": run_id,
+                "mapping_file": scheme.get("mapping_file") or "",
+                "mapping_display_name": scheme.get("mapping_display_name") or scheme.get("name") or "",
+                "scheme_id": scheme.get("id") or "",
+                "scheme_name": scheme.get("name") or "",
+                "status": "canceled",
+                "started_at": now,
+                "completed_at": now,
+                "reference_ok": bool(scheme.get("reference_ok")),
+                "extract_ok": bool(scheme.get("extract_ok")),
+                "outputs": [],
+                "output_count": 0,
+                "zip_file": "",
+                "log_file": "",
+                "error": "Canceled during execution",
+                "actor_work_id": actor.get("work_id", ""),
+                "actor_label": actor.get("label", ""),
+                "source": source,
+                "global_batch_id": global_batch_id,
+            },
+        )
+        raise
 
     messages = result.get("logs") or []
     outputs = result.get("outputs") or []
@@ -355,4 +406,102 @@ def execute_saved_mapping_scheme(
         "zip_relpath": f"{run_id}/{zip_file_name}" if zip_file_name else "",
         "log_relpath": f"{run_id}/{log_file_name}" if log_file_name else "",
         "messages": messages,
+    }
+
+
+def enqueue_saved_mapping_scheme_run(
+    task_id: str,
+    scheme_id: str,
+    actor: dict | None = None,
+    source: str = "manual",
+    global_batch_id: str = "",
+    parent_job_id: str = "",
+    job_id: str | None = None,
+) -> str:
+    actor = actor or {}
+    scheme = load_mapping_scheme(task_id, scheme_id)
+    if not scheme:
+        raise FileNotFoundError("Mapping scheme not found")
+    if not scheme.get("source_exists"):
+        raise FileNotFoundError("Mapping scheme source file not found")
+    if scheme.get("needs_review"):
+        raise RuntimeError("Mapping scheme requires revalidation")
+    if not scheme.get("reference_ok") or not scheme.get("extract_ok"):
+        raise RuntimeError("Mapping scheme is not validated")
+
+    return enqueue_job(
+        MAPPING_SCHEME_RUN_JOB,
+        {
+            "task_id": task_id,
+            "scheme_id": scheme_id,
+            "source": source,
+            "global_batch_id": global_batch_id,
+            "actor": actor,
+            "mapping_display_name": scheme.get("display_name") or scheme.get("mapping_display_name") or "",
+            "scheme_name": scheme.get("name") or "",
+            "reference_ok": bool(scheme.get("reference_ok")),
+            "extract_ok": bool(scheme.get("extract_ok")),
+        },
+        task_id=task_id,
+        target_name=scheme.get("display_name") or scheme.get("mapping_display_name") or scheme_id,
+        actor=actor,
+        queue_name="heavy",
+        parent_job_id=parent_job_id,
+        job_id=job_id,
+        artifact_root=os.path.join(task_id, "mapping_job").replace("\\", "/"),
+    )
+
+
+def run_saved_mapping_scheme_job(job_id: str, payload: dict) -> dict:
+    task_id = str(payload.get("task_id") or "").strip()
+    scheme_id = str(payload.get("scheme_id") or "").strip()
+    source = str(payload.get("source") or "manual").strip() or "manual"
+    global_batch_id = str(payload.get("global_batch_id") or "").strip()
+    actor = dict(payload.get("actor") or {})
+    if not task_id or not scheme_id:
+        raise RuntimeError("Invalid mapping scheme job payload")
+
+    run_result = execute_saved_mapping_scheme(
+        task_id,
+        scheme_id,
+        actor=actor,
+        source=source,
+        global_batch_id=global_batch_id,
+        run_id=job_id,
+    )
+
+    artifacts = []
+    for artifact_type, filename in (("log_json", run_result.get("log_file") or ""), ("result_zip", run_result.get("zip_file") or "")):
+        filename = str(filename).strip()
+        if not filename:
+            continue
+        path = os.path.join(_task_dir(task_id), "mapping_job", job_id, filename)
+        if os.path.isfile(path):
+            artifacts.append(
+                {
+                    "artifact_type": artifact_type,
+                    "rel_path": os.path.join(task_id, "mapping_job", job_id, filename).replace("\\", "/"),
+                    "size_bytes": os.path.getsize(path),
+                }
+            )
+
+    return {
+        "artifact_root": os.path.join(task_id, "mapping_job", job_id).replace("\\", "/"),
+        "artifacts": artifacts,
+        "result_payload": {
+            "run_id": run_result.get("run_id") or job_id,
+            "mapping_file": payload.get("mapping_display_name") or payload.get("scheme_name") or "",
+            "scheme_name": payload.get("scheme_name") or "",
+            "status": run_result.get("status") or ("completed" if run_result.get("ok") else "failed"),
+            "output_count": int(run_result.get("output_count") or 0),
+            "zip_file": run_result.get("zip_file") or "",
+            "log_file": run_result.get("log_file") or "",
+            "zip_relpath": run_result.get("zip_relpath") or "",
+            "log_relpath": run_result.get("log_relpath") or "",
+            "reference_ok": bool(payload.get("reference_ok")),
+            "extract_ok": bool(payload.get("extract_ok")),
+            "source": source,
+            "error": run_result.get("error") or "",
+            "messages": list(run_result.get("messages") or []),
+        },
     }

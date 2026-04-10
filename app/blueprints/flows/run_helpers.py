@@ -6,7 +6,9 @@ import uuid
 from datetime import datetime
 
 from flask import current_app
+from sqlalchemy import or_
 
+from app.extensions import db
 from app.jobs.store import (
     job_has_error as _job_has_error,
     load_batch_status as _load_batch_status,
@@ -15,6 +17,8 @@ from app.jobs.store import (
     write_batch_status as _write_batch_status,
     write_job_meta as _write_job_meta,
 )
+from app.models.execution import JobRecord
+from app.services.execution_service import FLOW_SINGLE_JOB, MAPPING_OPERATION_JOB, MAPPING_SCHEME_RUN_JOB, get_job_payload, get_job_result_payload
 from app.services.audit_service import record_audit
 from app.services.flow_service import (
     DEFAULT_APPLY_FORMATTING,
@@ -272,50 +276,35 @@ def _load_saved_flows(flow_dir: str) -> list[dict]:
 
 def _list_flow_runs(task_id: str) -> list[dict]:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    jobs_dir = os.path.join(tdir, "jobs")
-    if not os.path.isdir(jobs_dir):
-        return []
     results = []
-    for name in os.listdir(jobs_dir):
-        job_dir = os.path.join(jobs_dir, name)
-        if name == "batch" or not os.path.isdir(job_dir):
-            continue
-        meta = _read_job_meta(job_dir)
-        if meta.get("mode") == "batch":
-            continue
-        source = (meta.get("source") or "manual").strip().lower()
+    rows = (
+        JobRecord.query.filter_by(task_id=task_id, job_type=FLOW_SINGLE_JOB)
+        .order_by(JobRecord.created_at.desc(), JobRecord.job_id.desc())
+        .all()
+    )
+    for row in rows:
+        payload = get_job_payload(row)
+        job_dir = os.path.join(tdir, "jobs", row.job_id)
+        meta = _read_job_meta(job_dir) if os.path.isdir(job_dir) else {}
+        flow_name = str(row.target_name or payload.get("flow_name") or meta.get("flow_name") or "").strip() or "未命名流程"
+        source = str(payload.get("source") or meta.get("source") or "manual").strip().lower()
         if source not in {"manual", "global_batch"}:
             source = "manual"
-        flow_name = (meta.get("flow_name") or "").strip() or "未命名流程"
-        started_at = meta.get("started_at")
-        if not started_at:
-            started_at = datetime.fromtimestamp(os.path.getmtime(job_dir)).strftime("%Y-%m-%d %H:%M:%S")
+        started_at_dt = row.started_at or row.created_at
+        started_at = started_at_dt.strftime("%Y-%m-%d %H:%M:%S") if started_at_dt else ""
         result_path = os.path.join(job_dir, "result.docx")
         log_path = os.path.join(job_dir, "log.json")
-        completed = os.path.exists(result_path)
-        status = meta.get("status")
-        log_error = _job_has_error(job_dir)
-        if log_error:
-            status = "failed"
-            if meta.get("status") != "failed":
-                _update_job_meta(
-                    job_dir,
-                    status="failed",
-                    error=meta.get("error") or "Workflow step failed",
-                    completed_at=meta.get("completed_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                )
-        if not status:
-            status = "completed" if completed else "pending"
+        status = str(row.status or meta.get("status") or "unknown").strip().lower()
         results.append(
             {
-                "job_id": name,
+                "job_id": row.job_id,
                 "flow_name": flow_name,
                 "started_at": started_at,
                 "status": status,
                 "source": source,
-                "has_result": completed,
+                "has_result": os.path.exists(result_path),
                 "has_log": os.path.exists(log_path),
-                "error": meta.get("error") or "",
+                "error": str(row.error_summary or meta.get("error") or "").strip(),
             }
         )
     results.sort(key=lambda r: r["started_at"], reverse=True)
@@ -337,40 +326,54 @@ def _read_mapping_run_meta(run_dir: str) -> dict:
 def _list_mapping_runs(task_id: str) -> list[dict]:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     mapping_dir = os.path.join(tdir, "mapping_job")
-    if not os.path.isdir(mapping_dir):
-        return []
-
     results = []
-    for name in os.listdir(mapping_dir):
-        run_dir = os.path.join(mapping_dir, name)
-        if not os.path.isdir(run_dir):
+    rows = (
+        JobRecord.query.filter(
+            JobRecord.task_id == task_id,
+            or_(
+                JobRecord.job_type == MAPPING_SCHEME_RUN_JOB,
+                JobRecord.job_type == MAPPING_OPERATION_JOB,
+            ),
+        )
+        .order_by(JobRecord.created_at.desc(), JobRecord.job_id.desc())
+        .all()
+    )
+    for row in rows:
+        payload = get_job_payload(row)
+        if row.job_type == MAPPING_OPERATION_JOB and str(payload.get("action") or "").strip() != "run_cached":
             continue
-        meta = _read_mapping_run_meta(run_dir)
-        if meta.get("record_type") != "mapping_run":
-            continue
-        started_at = meta.get("started_at")
-        if not started_at:
-            started_at = datetime.fromtimestamp(os.path.getmtime(run_dir)).strftime("%Y-%m-%d %H:%M:%S")
-        zip_name = (meta.get("zip_file") or "").strip()
-        log_name = (meta.get("log_file") or "").strip()
-        zip_rel = f"{name}/{zip_name}" if zip_name else ""
-        log_rel = f"{name}/{log_name}" if log_name else ""
+        result_payload = get_job_result_payload(row)
+        run_id = row.job_id
+        run_dir = os.path.join(mapping_dir, run_id)
+        meta = _read_mapping_run_meta(run_dir) if os.path.isdir(run_dir) else {}
+        mapping_file = (
+            str(result_payload.get("mapping_file") or row.target_name or meta.get("mapping_display_name") or meta.get("mapping_file") or "").strip()
+            or "未命名 Mapping"
+        )
+        scheme_name = str(result_payload.get("scheme_name") or meta.get("scheme_name") or payload.get("scheme_name") or "").strip()
+        started_at_dt = row.started_at or row.created_at
+        started_at = started_at_dt.strftime("%Y-%m-%d %H:%M:%S") if started_at_dt else ""
+        zip_name = str(result_payload.get("zip_file") or meta.get("zip_file") or "").strip()
+        log_name = str(result_payload.get("log_file") or meta.get("log_file") or "").strip()
+        zip_rel = f"{run_id}/{zip_name}" if zip_name else ""
+        log_rel = f"{run_id}/{log_name}" if log_name else ""
+        output_count = int(result_payload.get("output_count") or meta.get("output_count") or len(meta.get("outputs") or []))
         results.append(
             {
-                "run_id": name,
-                "mapping_file": (meta.get("mapping_display_name") or meta.get("mapping_file") or "").strip() or "未命名 Mapping",
-                "scheme_name": (meta.get("scheme_name") or "").strip(),
+                "run_id": run_id,
+                "mapping_file": mapping_file,
+                "scheme_name": scheme_name,
                 "started_at": started_at,
-                "status": (meta.get("status") or "unknown").strip().lower(),
-                "output_count": int(meta.get("output_count") or len(meta.get("outputs") or [])),
+                "status": str(row.status or meta.get("status") or "unknown").strip().lower(),
+                "output_count": output_count,
                 "has_zip": bool(zip_name and os.path.isfile(os.path.join(mapping_dir, zip_rel))),
                 "has_log": bool(log_name and os.path.isfile(os.path.join(mapping_dir, log_rel))),
                 "zip_file": zip_rel,
                 "log_file": log_rel,
-                "reference_ok": bool(meta.get("reference_ok")),
-                "extract_ok": bool(meta.get("extract_ok")),
-                "source": (meta.get("source") or "").strip() or "manual",
-                "error": (meta.get("error") or "").strip(),
+                "reference_ok": bool(result_payload.get("reference_ok", meta.get("reference_ok"))),
+                "extract_ok": bool(result_payload.get("extract_ok", meta.get("extract_ok"))),
+                "source": str(result_payload.get("source") or meta.get("source") or payload.get("source") or "manual").strip() or "manual",
+                "error": str(row.error_summary or result_payload.get("error") or meta.get("error") or "").strip(),
             }
         )
     results.sort(key=lambda r: r["started_at"], reverse=True)

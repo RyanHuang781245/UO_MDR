@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 import uuid
 from datetime import datetime
@@ -8,7 +9,7 @@ from flask import current_app
 
 from app.blueprints.flows.flow_route_helpers import _touch_task_last_edit
 from app.jobs.store import update_job_meta, write_job_meta
-from app.jobs.thread_queue import start_daemon_job
+from app.services.execution_service import FLOW_SINGLE_JOB, JobCanceledError, enqueue_job, ensure_job_not_canceled
 from app.services.audit_service import record_audit
 from app.services.flow_service import (
     DEFAULT_DOCUMENT_FORMAT_KEY,
@@ -22,78 +23,126 @@ from app.services.flow_service import (
 )
 
 
-def run_single_flow_job(
-    app,
-    task_id: str,
-    runtime_steps: list[dict],
-    template_cfg: dict | None,
-    document_format: str,
-    line_spacing: float,
-    apply_formatting: bool,
-    job_id: str,
-    actor: dict,
-    flow_name: str | None = None,
-) -> None:
-    with app.app_context():
-        task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-        job_dir = os.path.join(task_dir, "jobs", job_id)
+def run_single_flow_job(job_id: str, payload: dict) -> dict:
+    task_id = str(payload.get("task_id") or "").strip()
+    runtime_steps = list(payload.get("runtime_steps") or [])
+    template_cfg = payload.get("template_cfg")
+    document_format = str(payload.get("document_format") or DEFAULT_DOCUMENT_FORMAT_KEY)
+    line_spacing = float(payload.get("line_spacing") or 1.5)
+    apply_formatting = bool(payload.get("apply_formatting"))
+    actor = payload.get("actor") or {}
+    flow_name = str(payload.get("flow_name") or "").strip() or None
+    if not task_id:
+        raise RuntimeError("Missing task_id for flow job")
+
+    task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(task_dir, "jobs", job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    def _check_canceled() -> None:
+        ensure_job_not_canceled(job_id)
+
+    def _run_workflow_with_cancel() -> dict:
+        kwargs = {"workdir": job_dir, "template": template_cfg}
         try:
-            update_job_meta(job_dir, status="running", started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
-            result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
-            log_entries = workflow_result.get("log_json", []) or []
-            has_step_error = any(entry.get("status") == "error" for entry in log_entries)
-            titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-            if apply_formatting and document_format != "none":
-                preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
-                apply_basic_style(
-                    result_path,
-                    western_font=preset.get("western_font") or "",
-                    east_asian_font=preset.get("east_asian_font") or "",
-                    font_size=int(preset.get("font_size") or 12),
-                    line_spacing=line_spacing,
-                    space_before=int(preset.get("space_before") or 6),
-                    space_after=int(preset.get("space_after") or 6),
-                )
-            if not SKIP_DOCX_CLEANUP:
-                remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-                hide_paragraphs_with_text(result_path, titles_to_hide)
-            _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
-            if has_step_error:
-                update_job_meta(
-                    job_dir,
-                    status="failed",
-                    error="Workflow step failed",
-                    completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                )
-                record_audit(
-                    action="flow_run_single_failed",
-                    actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
-                    detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "failed"},
-                    task_id=task_id,
-                )
-            else:
-                update_job_meta(job_dir, status="completed", completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                record_audit(
-                    action="flow_run_single_completed",
-                    actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
-                    detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "completed"},
-                    task_id=task_id,
-                )
-        except Exception as exc:
-            current_app.logger.exception("Single flow execution failed")
+            if "cancel_check" in inspect.signature(run_workflow).parameters:
+                kwargs["cancel_check"] = _check_canceled
+        except (TypeError, ValueError):
+            pass
+        return run_workflow(runtime_steps, **kwargs)
+
+    try:
+        update_job_meta(job_dir, status="running", started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        _check_canceled()
+        workflow_result = _run_workflow_with_cancel()
+        result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
+        log_entries = workflow_result.get("log_json", []) or []
+        has_step_error = any(entry.get("status") == "error" for entry in log_entries)
+        titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
+        if apply_formatting and document_format != "none":
+            _check_canceled()
+            preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
+            apply_basic_style(
+                result_path,
+                western_font=preset.get("western_font") or "",
+                east_asian_font=preset.get("east_asian_font") or "",
+                font_size=int(preset.get("font_size") or 12),
+                line_spacing=line_spacing,
+                space_before=int(preset.get("space_before") or 6),
+                space_after=int(preset.get("space_after") or 6),
+            )
+        if not SKIP_DOCX_CLEANUP:
+            _check_canceled()
+            remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
+            hide_paragraphs_with_text(result_path, titles_to_hide)
+        _check_canceled()
+        _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
+        if has_step_error:
             update_job_meta(
                 job_dir,
                 status="failed",
-                error=str(exc),
+                error="Workflow step failed",
                 completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             record_audit(
                 action="flow_run_single_failed",
                 actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
-                detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "failed", "error": str(exc)},
+                detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "failed"},
                 task_id=task_id,
             )
+            raise RuntimeError("Workflow step failed")
+
+        update_job_meta(job_dir, status="completed", completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        record_audit(
+            action="flow_run_single_completed",
+            actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+            detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "completed"},
+            task_id=task_id,
+        )
+        artifacts = []
+        for artifact_type, filename in (("meta_json", "meta.json"), ("log_json", "log.json"), ("result_docx", "result.docx")):
+            path = os.path.join(job_dir, filename)
+            if os.path.isfile(path):
+                artifacts.append(
+                    {
+                        "artifact_type": artifact_type,
+                        "rel_path": os.path.join(task_id, "jobs", job_id, filename).replace("\\", "/"),
+                        "size_bytes": os.path.getsize(path),
+                    }
+                )
+        return {
+            "artifact_root": os.path.join(task_id, "jobs", job_id).replace("\\", "/"),
+            "artifacts": artifacts,
+        }
+    except JobCanceledError as exc:
+        update_job_meta(
+            job_dir,
+            status="canceled",
+            error=str(exc),
+            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        record_audit(
+            action="flow_run_single_canceled",
+            actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+            detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "canceled", "error": str(exc)},
+            task_id=task_id,
+        )
+        raise
+    except Exception as exc:
+        current_app.logger.exception("Single flow execution failed")
+        update_job_meta(
+            job_dir,
+            status="failed",
+            error=str(exc),
+            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        record_audit(
+            action="flow_run_single_failed",
+            actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+            detail={"task_id": task_id, "flow": flow_name, "job_id": job_id, "status": "failed", "error": str(exc)},
+            task_id=task_id,
+        )
+        raise
 
 
 def enqueue_single_flow_job(
@@ -123,19 +172,27 @@ def enqueue_single_flow_job(
             "output_filename": output_filename,
         },
     )
-    app = current_app._get_current_object()
-    start_daemon_job(
-        run_single_flow_job,
-        app,
-        task_id,
-        runtime_steps,
-        template_cfg,
-        document_format,
-        line_spacing,
-        apply_formatting,
-        job_id,
-        actor,
-        flow_name,
+    payload = {
+        "task_id": task_id,
+        "runtime_steps": runtime_steps,
+        "template_cfg": template_cfg,
+        "document_format": document_format,
+        "line_spacing": line_spacing,
+        "apply_formatting": apply_formatting,
+        "actor": actor,
+        "flow_name": flow_name,
+        "output_filename": output_filename,
+        "source": source,
+    }
+    job_id = enqueue_job(
+        FLOW_SINGLE_JOB,
+        payload,
+        task_id=task_id,
+        target_name=flow_name or "未命名流程",
+        actor=actor,
+        queue_name="heavy",
+        job_id=job_id,
+        artifact_root=os.path.join(task_id, "jobs").replace("\\", "/"),
     )
     record_audit(
         action="flow_run_single",

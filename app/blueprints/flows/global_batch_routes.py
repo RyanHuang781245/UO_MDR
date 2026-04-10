@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import threading
 import uuid
 import zipfile
 from datetime import datetime
@@ -11,8 +10,20 @@ from datetime import datetime
 from flask import current_app, flash, redirect, render_template, request, send_file, url_for
 
 from app.blueprints.tasks.mapping_scheme_helpers import (
-    execute_saved_mapping_scheme,
+    enqueue_saved_mapping_scheme_run,
     list_mapping_schemes,
+)
+from app.extensions import db
+from app.models.execution import JobRecord
+from app.services.execution_service import (
+    GLOBAL_BATCH_ITEM_JOB,
+    GLOBAL_BATCH_JOB,
+    acquire_task_lock,
+    enqueue_job,
+    get_job_result_payload,
+    job_executor_mode,
+    release_task_lock,
+    run_job_by_id,
 )
 from app.services.global_batch_items import encode_batch_item, normalize_batch_items
 from app.services.audit_service import record_audit
@@ -210,239 +221,297 @@ def _list_global_batch_statuses(limit: int = 100) -> list[dict]:
     return items[: max(limit, 0)]
 
 
-def _run_tasks_batch(app, batch_items: list[dict], batch_id: str, actor: dict) -> None:
-    with app.app_context():
-        status = _load_global_batch_status(batch_id) or {}
-        status.update(
-            {
-                "status": "running",
-                "current_index": 0,
-                "current_task_id": "",
-                "current_task_name": "",
-            }
-        )
-        _write_global_batch_status(batch_id, status)
+def _run_global_batch_item_job(job_id: str, payload: dict) -> dict:
+    item = dict(payload.get("item") or {})
+    actor = dict(payload.get("actor") or {})
+    batch_id = str(payload.get("batch_id") or "").strip()
+    kind = (item.get("kind") or "task").strip().lower() or "task"
+    tid = (item.get("task_id") or "").strip()
+    task_meta = _load_task_context(tid) or {}
+    task_name = (task_meta.get("name") or tid).strip() or tid
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], tid)
+    flow_dir = os.path.join(tdir, "flows")
 
-        results = []
-        any_failed = False
-        terminal_error = ""
-        try:
-            for i, item in enumerate(batch_items, start=1):
-                kind = (item.get("kind") or "task").strip().lower() or "task"
-                tid = (item.get("task_id") or "").strip()
-                task_meta = _load_task_context(tid) or {}
-                task_name = (task_meta.get("name") or tid).strip() or tid
-                status["current_task_id"] = tid
-                status["current_index"] = i
-                status["current_task_name"] = _batch_item_label(item)
-                _write_global_batch_status(batch_id, status)
+    task_ok = True
+    task_errors = []
+    flow_results: list[dict] = []
+    mapping_results: list[dict] = []
+    task_batch_id = ""
 
-                tdir = os.path.join(current_app.config["TASK_FOLDER"], tid)
-                flow_dir = os.path.join(tdir, "flows")
-                task_ok = True
-                task_errors = []
-                flow_results: list[dict] = []
-                mapping_results: list[dict] = []
-                task_batch_id = ""
+    if not task_meta:
+        task_ok = False
+        task_errors.append("Task not found")
+    elif kind == "mapping_scheme":
+        schemes = list_mapping_schemes(tid)
+        if not schemes:
+            task_ok = False
+            task_errors.append("No saved mapping scheme found")
+        else:
+            for scheme in schemes:
+                scheme_id = (scheme.get("id") or "").strip()
+                scheme_name = (scheme.get("display_name") or scheme_id).strip() or scheme_id
+                if not scheme.get("is_runnable"):
+                    error_message = scheme.get("status_label") or "Mapping scheme is not runnable"
+                    mapping_results.append(
+                        {
+                            "scheme_id": scheme_id,
+                            "scheme_name": scheme_name,
+                            "ok": False,
+                            "run_id": "",
+                            "output_count": 0,
+                            "zip_file": "",
+                            "log_file": "",
+                            "zip_relpath": "",
+                            "log_relpath": "",
+                            "error": error_message,
+                        }
+                    )
+                    task_errors.append(f"{scheme_name}: {error_message}")
+                    continue
 
-                if not task_meta:
+                try:
+                    child_job_id = enqueue_saved_mapping_scheme_run(
+                        tid,
+                        scheme_id,
+                        actor=actor,
+                        source="global_batch",
+                        global_batch_id=batch_id,
+                        parent_job_id=job_id,
+                    )
+                    child_record = db.session.get(JobRecord, child_job_id)
+                    if child_record and child_record.status == "queued" and job_executor_mode() != "inline":
+                        run_job_by_id(current_app._get_current_object(), child_job_id, worker_id=f"{job_id}/mapping")
+                    child_result = get_job_result_payload(child_job_id)
+                    mapping_results.append(
+                        {
+                            "scheme_id": scheme_id,
+                            "scheme_name": scheme_name,
+                            "ok": (child_result.get("status") or "").lower() == "completed",
+                            "run_id": child_result.get("run_id") or child_job_id,
+                            "output_count": int(child_result.get("output_count") or 0),
+                            "zip_file": child_result.get("zip_file") or "",
+                            "log_file": child_result.get("log_file") or "",
+                            "zip_relpath": child_result.get("zip_relpath") or "",
+                            "log_relpath": child_result.get("log_relpath") or "",
+                            "error": child_result.get("error") or "",
+                        }
+                    )
+                    if (child_result.get("status") or "").lower() != "completed":
+                        task_errors.append(child_result.get("error") or "Mapping execution failed")
+                except Exception as exc:
+                    mapping_results.append(
+                        {
+                            "scheme_id": scheme_id,
+                            "scheme_name": scheme_name,
+                            "ok": False,
+                            "run_id": "",
+                            "output_count": 0,
+                            "zip_file": "",
+                            "log_file": "",
+                            "zip_relpath": "",
+                            "log_relpath": "",
+                            "error": str(exc),
+                        }
+                    )
+                    task_errors.append(f"{scheme_name}: {exc}")
+            task_ok = all(run.get("ok") for run in mapping_results)
+            failed_mapping_count = sum(1 for run in mapping_results if not run.get("ok"))
+            send_batch_notification(
+                task_id=tid,
+                batch_id=batch_id,
+                status="failed" if failed_mapping_count else "completed",
+                results=mapping_results,
+                actor_work_id=actor.get("work_id", ""),
+                actor_label=actor.get("label", ""),
+                completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                error=(f"{failed_mapping_count} mapping scheme(s) failed" if failed_mapping_count else None),
+            )
+    elif not os.path.isdir(flow_dir):
+        task_ok = False
+        task_errors.append("Flow directory not found")
+    else:
+        flows_to_run = _load_saved_flows(flow_dir)
+        if not flows_to_run:
+            task_ok = False
+            task_errors.append("No saved flow found")
+        else:
+            flow_sequence = [
+                (f.get("name") or "").strip()
+                for f in flows_to_run
+                if (f.get("name") or "").strip()
+            ]
+            if not flow_sequence:
+                task_ok = False
+                task_errors.append("No runnable flow found")
+            else:
+                if not acquire_task_lock(tid, job_id):
                     task_ok = False
-                    task_errors.append("Task not found")
-                elif kind == "mapping_scheme":
-                    schemes = list_mapping_schemes(tid)
-                    if not schemes:
-                        task_ok = False
-                        task_errors.append("No saved mapping scheme found")
-                    else:
-                        for scheme in schemes:
-                            scheme_id = (scheme.get("id") or "").strip()
-                            scheme_name = (scheme.get("display_name") or scheme_id).strip() or scheme_id
-                            if not scheme.get("is_runnable"):
-                                error_message = scheme.get("status_label") or "Mapping scheme is not runnable"
-                                mapping_results.append(
-                                    {
-                                        "scheme_id": scheme_id,
-                                        "scheme_name": scheme_name,
-                                        "ok": False,
-                                        "run_id": "",
-                                        "output_count": 0,
-                                        "zip_file": "",
-                                        "log_file": "",
-                                        "zip_relpath": "",
-                                        "log_relpath": "",
-                                        "error": error_message,
-                                    }
-                                )
-                                task_errors.append(f"{scheme_name}: {error_message}")
-                                continue
-
-                            try:
-                                run_result = execute_saved_mapping_scheme(
-                                    tid,
-                                    scheme_id,
-                                    actor=actor,
-                                    source="global_batch",
-                                    global_batch_id=batch_id,
-                                )
-                            except Exception as exc:
-                                mapping_results.append(
-                                    {
-                                        "scheme_id": scheme_id,
-                                        "scheme_name": scheme_name,
-                                        "ok": False,
-                                        "run_id": "",
-                                        "output_count": 0,
-                                        "zip_file": "",
-                                        "log_file": "",
-                                        "zip_relpath": "",
-                                        "log_relpath": "",
-                                        "error": str(exc),
-                                    }
-                                )
-                                task_errors.append(f"{scheme_name}: {exc}")
-                                continue
-
-                            mapping_results.append(
+                    task_errors.append("Task is busy")
+                else:
+                    try:
+                        task_batch_id = str(uuid.uuid4())[:8]
+                        _write_batch_status(
+                            tid,
+                            task_batch_id,
+                            {
+                                "id": task_batch_id,
+                                "status": "queued",
+                                "flows": flow_sequence,
+                                "current_index": 0,
+                                "current_flow": "",
+                                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "actor": actor.get("label") or actor.get("work_id", ""),
+                            },
+                        )
+                        _run_flow_batch(
+                            current_app._get_current_object(),
+                            tid,
+                            flow_sequence,
+                            task_batch_id,
+                            actor,
+                            source="global_batch",
+                            global_batch_id=batch_id,
+                        )
+                        task_batch_status = _load_batch_status(tid, task_batch_id) or {}
+                        task_ok = (task_batch_status.get("status") or "").lower() == "completed"
+                        batch_results = task_batch_status.get("results") or []
+                        for item_result in batch_results:
+                            flow_name = (item_result.get("flow") or "").strip()
+                            flow_ok = (item_result.get("status") or "").lower() == "completed"
+                            flow_error = (item_result.get("error") or "").strip()
+                            flow_job_id = (item_result.get("job_id") or "").strip()
+                            path_info = _build_job_relpaths(tid, flow_job_id) if flow_job_id else {}
+                            flow_results.append(
                                 {
-                                    "scheme_id": scheme_id,
-                                    "scheme_name": scheme_name,
-                                    "ok": bool(run_result.get("ok")),
-                                    "run_id": run_result.get("run_id") or "",
-                                    "output_count": int(run_result.get("output_count") or 0),
-                                    "zip_file": run_result.get("zip_file") or "",
-                                    "log_file": run_result.get("log_file") or "",
-                                    "zip_relpath": run_result.get("zip_relpath") or "",
-                                    "log_relpath": run_result.get("log_relpath") or "",
-                                    "error": run_result.get("error") or "",
+                                    "flow": flow_name,
+                                    "ok": flow_ok,
+                                    "job_id": flow_job_id,
+                                    "error": flow_error,
+                                    "job_relpath": path_info.get("job_relpath", ""),
+                                    "result_relpath": path_info.get("result_relpath", ""),
+                                    "log_relpath": path_info.get("log_relpath", ""),
                                 }
                             )
-                            if not run_result.get("ok"):
-                                task_errors.append(run_result.get("error") or "Mapping execution failed")
-                        task_ok = all(run.get("ok") for run in mapping_results)
-                        failed_mapping_count = sum(1 for run in mapping_results if not run.get("ok"))
-                        send_batch_notification(
-                            task_id=tid,
-                            batch_id=batch_id,
-                            status="failed" if failed_mapping_count else "completed",
-                            results=mapping_results,
-                            actor_work_id=actor.get("work_id", ""),
-                            actor_label=actor.get("label", ""),
-                            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            error=(f"{failed_mapping_count} mapping scheme(s) failed" if failed_mapping_count else None),
-                        )
-                elif not os.path.isdir(flow_dir):
-                    task_ok = False
-                    task_errors.append("Flow directory not found")
-                else:
-                    flows_to_run = _load_saved_flows(flow_dir)
-                    if not flows_to_run:
-                        task_ok = False
-                        task_errors.append("No saved flow found")
-                    else:
-                        flow_sequence = [
-                            (f.get("name") or "").strip()
-                            for f in flows_to_run
-                            if (f.get("name") or "").strip()
-                        ]
-                        if not flow_sequence:
-                            task_ok = False
-                            task_errors.append("No runnable flow found")
-                        else:
-                            task_batch_id = str(uuid.uuid4())[:8]
-                            _write_batch_status(
-                                tid,
-                                task_batch_id,
-                                {
-                                    "id": task_batch_id,
-                                    "status": "queued",
-                                    "flows": flow_sequence,
-                                    "current_index": 0,
-                                    "current_flow": "",
-                                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                    "actor": actor.get("label") or actor.get("work_id", ""),
-                                },
-                            )
-                            _run_flow_batch(
-                                app,
-                                tid,
-                                flow_sequence,
-                                task_batch_id,
-                                actor,
-                                source="global_batch",
-                                global_batch_id=batch_id,
-                            )
-                            task_batch_status = _load_batch_status(tid, task_batch_id) or {}
-                            task_ok = (task_batch_status.get("status") or "").lower() == "completed"
-                            batch_results = task_batch_status.get("results") or []
-                            for item in batch_results:
-                                flow_name = (item.get("flow") or "").strip()
-                                flow_ok = (item.get("status") or "").lower() == "completed"
-                                flow_error = (item.get("error") or "").strip()
-                                flow_job_id = (item.get("job_id") or "").strip()
-                                path_info = _build_job_relpaths(tid, flow_job_id) if flow_job_id else {}
-                                flow_results.append(
-                                    {
-                                        "flow": flow_name,
-                                        "ok": flow_ok,
-                                        "job_id": flow_job_id,
-                                        "error": flow_error,
-                                        "job_relpath": path_info.get("job_relpath", ""),
-                                        "result_relpath": path_info.get("result_relpath", ""),
-                                        "log_relpath": path_info.get("log_relpath", ""),
-                                    }
-                                )
-                                if not flow_ok:
-                                    task_errors.append(
-                                        f"{flow_name}: {flow_error or 'Workflow step failed'}"
-                                    )
+                            if not flow_ok:
+                                task_errors.append(f"{flow_name}: {flow_error or 'Workflow step failed'}")
+                    finally:
+                        release_task_lock(tid, job_id)
 
-                results.append(
-                    {
-                        "kind": kind,
-                        "task_id": tid,
-                        "name": task_name,
-                        "label": _batch_item_label(item),
-                        "ok": task_ok,
-                        "errors": task_errors,
-                        "flows": flow_results,
-                        "mapping_runs": mapping_results,
-                        "scheme_id": "",
-                        "scheme_name": "",
-                        "task_batch_id": task_batch_id,
-                    }
-                )
-                any_failed = any_failed or (not task_ok)
-                status["results"] = results
-                _write_global_batch_status(batch_id, status)
+    task_result = {
+        "kind": kind,
+        "task_id": tid,
+        "name": task_name,
+        "label": _batch_item_label(item),
+        "ok": task_ok,
+        "errors": task_errors,
+        "flows": flow_results,
+        "mapping_runs": mapping_results,
+        "scheme_id": "",
+        "scheme_name": "",
+        "task_batch_id": task_batch_id,
+    }
+    return {"result_payload": task_result}
 
-        except Exception as exc:
-            current_app.logger.exception("Global batch failed")
-            any_failed = True
-            terminal_error = str(exc)
-            status["error"] = terminal_error
-        finally:
-            completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            status["status"] = "failed" if any_failed else "completed"
-            status["completed_at"] = completed_at
+
+def _run_tasks_batch(batch_id: str, payload: dict) -> dict:
+    batch_items = list(payload.get("batch_items") or [])
+    actor = dict(payload.get("actor") or {})
+    status = _load_global_batch_status(batch_id) or {}
+    status.update(
+        {
+            "status": "running",
+            "current_index": 0,
+            "current_task_id": "",
+            "current_task_name": "",
+        }
+    )
+    _write_global_batch_status(batch_id, status)
+
+    results = []
+    any_failed = False
+    terminal_error = ""
+    try:
+        for i, item in enumerate(batch_items, start=1):
+            tid = (item.get("task_id") or "").strip()
+            status["current_task_id"] = tid
+            status["current_index"] = i
+            status["current_task_name"] = _batch_item_label(item)
+            _write_global_batch_status(batch_id, status)
+
+            child_job_id = enqueue_job(
+                GLOBAL_BATCH_ITEM_JOB,
+                {"item": item, "actor": actor, "batch_id": batch_id},
+                task_id=tid or None,
+                target_name=_batch_item_label(item),
+                actor=actor,
+                queue_name="heavy",
+                parent_job_id=batch_id,
+            )
+            child_record = db.session.get(JobRecord, child_job_id)
+            if child_record and child_record.status == "queued" and job_executor_mode() != "inline":
+                run_job_by_id(current_app._get_current_object(), child_job_id, worker_id=f"{batch_id}/item")
+            item_result = get_job_result_payload(child_job_id)
+            if not item_result:
+                child_record = db.session.get(JobRecord, child_job_id)
+                item_result = {
+                    "kind": (item.get("kind") or "task").strip().lower() or "task",
+                    "task_id": tid,
+                    "name": (_load_task_context(tid) or {}).get("name", tid),
+                    "label": _batch_item_label(item),
+                    "ok": False,
+                    "errors": [child_record.error_summary or "Child job failed"] if child_record else ["Child job failed"],
+                    "flows": [],
+                    "mapping_runs": [],
+                    "scheme_id": "",
+                    "scheme_name": "",
+                    "task_batch_id": "",
+                }
+
+            results.append(item_result)
+            any_failed = any_failed or (not item_result.get("ok"))
             status["results"] = results
             _write_global_batch_status(batch_id, status)
 
-            actor_work_id = actor.get("work_id", "")
-            actor_label = actor.get("label", "")
+    except Exception as exc:
+        current_app.logger.exception("Global batch failed")
+        any_failed = True
+        terminal_error = str(exc)
+        status["error"] = terminal_error
+        raise
+    finally:
+        completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status["status"] = "failed" if any_failed else "completed"
+        status["completed_at"] = completed_at
+        status["results"] = results
+        _write_global_batch_status(batch_id, status)
 
-            record_audit(
-                action="global_task_batch_completed" if status["status"] == "completed" else "global_task_batch_failed",
-                actor={"work_id": actor_work_id, "label": actor_label},
-                detail={
-                    "batch_id": batch_id,
-                    "status": status["status"],
-                    "items": batch_items,
-                    "count": len(results),
-                    "failed_count": sum(1 for item in results if not item.get("ok")),
-                    "error": terminal_error or status.get("error") or "",
-                },
-                task_id=None,
-            )
+        actor_work_id = actor.get("work_id", "")
+        actor_label = actor.get("label", "")
+
+        record_audit(
+            action="global_task_batch_completed" if status["status"] == "completed" else "global_task_batch_failed",
+            actor={"work_id": actor_work_id, "label": actor_label},
+            detail={
+                "batch_id": batch_id,
+                "status": status["status"],
+                "items": batch_items,
+                "count": len(results),
+                "failed_count": sum(1 for item in results if not item.get("ok")),
+                "error": terminal_error or status.get("error") or "",
+            },
+            task_id=None,
+        )
+    status_path = _global_batch_status_path(batch_id)
+    return {
+        "artifact_root": os.path.join("global_batches", f"{batch_id}.json").replace("\\", "/"),
+        "artifacts": [
+            {
+                "artifact_type": "batch_status",
+                "rel_path": os.path.join("global_batches", f"{batch_id}.json").replace("\\", "/"),
+                "size_bytes": os.path.getsize(status_path) if os.path.isfile(status_path) else None,
+            }
+        ],
+    }
 
 
 @global_batch_bp.get("", endpoint="global_batch_page")
@@ -542,13 +611,17 @@ def run_global_batch():
     }
     _write_global_batch_status(batch_id, status)
 
-    app = current_app._get_current_object()
-    thread = threading.Thread(
-        target=_run_tasks_batch,
-        args=(app, valid_items, batch_id, {"work_id": work_id, "label": label}),
-        daemon=True,
+    enqueue_job(
+        GLOBAL_BATCH_JOB,
+        {
+            "batch_items": valid_items,
+            "actor": {"work_id": work_id, "label": label},
+        },
+        target_name=batch_id,
+        actor={"work_id": work_id, "label": label},
+        queue_name="heavy",
+        job_id=batch_id,
     )
-    thread.start()
 
     record_audit(
         action="global_task_batch_queued",

@@ -61,26 +61,5 @@ class MappingRunRecord(db.Model):
     )
 
 
-class MappingJobRecord(db.Model):
-    __tablename__ = "mapping_jobs"
-
-    job_id = db.Column(db.String(40), primary_key=True)
-    task_id = db.Column(db.String(40), nullable=False, index=True)
-    action = db.Column(db.String(50))
-    status = db.Column(db.String(50), nullable=False, server_default="queued")
-    mapping_display_name = db.Column(db.String(260))
-    resume_url = db.Column(db.String(500))
-    error = db.Column(db.Text)
-    payload_json = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
-    started_at = db.Column(db.DateTime)
-    completed_at = db.Column(db.DateTime)
-
-    __table_args__ = (
-        db.Index("ix_mapping_jobs_task_created", "task_id", "created_at"),
-        db.Index("ix_mapping_jobs_task_status_created", "task_id", "status", "created_at"),
-    )
-
-
 def ensure_schema() -> None:
     db.create_all()

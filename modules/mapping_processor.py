@@ -5,8 +5,9 @@ import uuid
 import shutil
 import json
 import zipfile
+import inspect
 from collections import defaultdict
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Callable
 
 from docx import Document as DocxDocument
 from spire.doc import Document, FileFormat
@@ -39,6 +40,7 @@ from app.services.flow_service import (
     SKIP_DOCX_CLEANUP,
     collect_titles_to_hide,
 )
+from app.services.execution_service import JobCanceledError
 
 
 def _split_rel_parts(path: str) -> list[str]:
@@ -276,6 +278,7 @@ def process_mapping_excel(
     log_dir: str | None = None,
     validate_only: bool = False,
     validate_extract_only: bool = False,
+    cancel_check: Callable[[], None] | None = None,
 ) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
 
@@ -294,6 +297,19 @@ def process_mapping_excel(
     """
     if validate_only and validate_extract_only:
         raise ValueError("validate_only and validate_extract_only cannot both be True")
+
+    def _check_canceled() -> None:
+        if cancel_check:
+            cancel_check()
+
+    def _run_workflow_with_cancel(steps: List[Dict[str, Any]], workdir: str, template_cfg: Dict[str, Any] | None) -> Dict[str, Any]:
+        kwargs = {"workdir": workdir, "template": template_cfg}
+        try:
+            if "cancel_check" in inspect.signature(run_workflow).parameters:
+                kwargs["cancel_check"] = cancel_check
+        except (TypeError, ValueError):
+            pass
+        return run_workflow(steps, **kwargs)
 
     logs: List[str] = []
     outputs: List[str] = []
@@ -324,6 +340,7 @@ def process_mapping_excel(
     max_row = ws.max_row or 0
     scan = min(max_row, 10)
     for row_idx in range(1, scan + 1):
+        _check_canceled()
         row_vals = [
             str(c.value).strip() if c is not None and c.value is not None else ""
             for c in ws[row_idx]
@@ -340,6 +357,7 @@ def process_mapping_excel(
         hidden_titles: Dict[str, List[str]] = defaultdict(list)
         if validate_only or validate_extract_only:
             for row in ws.iter_rows(min_row=start_row, values_only=True):
+                _check_canceled()
                 raw_out, _raw_title, raw_folder, raw_input, raw_instruction = row[:5]
                 out_name = str(raw_out).strip() if raw_out else ""
                 folder = str(raw_folder).strip() if raw_folder else ""
@@ -379,6 +397,7 @@ def process_mapping_excel(
             return {"logs": logs, "outputs": [], "log_file": log_file}
 
         for row in ws.iter_rows(min_row=start_row, values_only=True):
+            _check_canceled()
             raw_out, raw_title, raw_folder, raw_input, raw_instruction = row[:5]
             out_name = str(raw_out).strip() if raw_out else ""
             title = str(raw_title).strip() if raw_title else ""
@@ -487,6 +506,7 @@ def process_mapping_excel(
 
         os.makedirs(output_dir, exist_ok=True)
         for name, (doc, _section) in docs.items():
+            _check_canceled()
             out_path = os.path.join(output_dir, f"{name}.docx")
             doc.SaveToFile(out_path, FileFormat.Docx)
             doc.Close()
@@ -791,6 +811,7 @@ def process_mapping_excel(
         ws.iter_rows(min_row=header_row + 1, values_only=True),
         start=header_row + 1,
     ):
+        _check_canceled()
         if not row or all(v is None or str(v).strip() == "" for v in row):
             continue
         def _cell(idx: int) -> str:
@@ -1346,6 +1367,7 @@ def process_mapping_excel(
         groups[group_key]["steps"].append({"type": step_type, "params": params})
 
     for (output_path, template_path), payload in groups.items():
+        _check_canceled()
         if validate_only:
             workflow_log = []
             has_error = False
@@ -1386,7 +1408,7 @@ def process_mapping_excel(
                     "default_mode": "insert_after",
                 }
             try:
-                workflow_result = run_workflow(payload.get("steps", []), workdir=workdir, template=template_cfg)
+                workflow_result = _run_workflow_with_cancel(payload.get("steps", []), workdir=workdir, template_cfg=template_cfg)
                 workflow_log = workflow_result.get("log_json", [])
                 has_error = any((entry.get("status") == "error") for entry in workflow_log if isinstance(entry, dict))
                 run_logs.append(
@@ -1397,6 +1419,8 @@ def process_mapping_excel(
                         "status": "error" if has_error else "ok",
                     }
                 )
+            except JobCanceledError:
+                raise
             except Exception as e:
                 logs.append(f"ERROR: 驗證擷取參數失敗: {os.path.basename(output_path)} :: {e}")
                 run_logs.append(
@@ -1423,7 +1447,7 @@ def process_mapping_excel(
                 "default_mode": "insert_after",
             }
         try:
-            workflow_result = run_workflow(payload.get("steps", []), workdir=workdir, template=template_cfg)
+            workflow_result = _run_workflow_with_cancel(payload.get("steps", []), workdir=workdir, template_cfg=template_cfg)
             for entry in workflow_result.get("log_json", []):
                 if entry.get("status") == "error":
                     step_type = entry.get("type") or "step"
@@ -1433,6 +1457,7 @@ def process_mapping_excel(
             result_path = workflow_result.get("result_docx") or os.path.join(workdir, "result.docx")
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
             if DEFAULT_APPLY_FORMATTING and DEFAULT_DOCUMENT_FORMAT_KEY != "none":
+                _check_canceled()
                 preset = DOCUMENT_FORMAT_PRESETS.get(DEFAULT_DOCUMENT_FORMAT_KEY) or DOCUMENT_FORMAT_PRESETS.get("default", {})
                 apply_basic_style(
                     result_path,
@@ -1444,8 +1469,10 @@ def process_mapping_excel(
                     space_after=int(preset.get("space_after") or 6),
                 )
             if not SKIP_DOCX_CLEANUP:
+                _check_canceled()
                 remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
                 hide_paragraphs_with_text(result_path, titles_to_hide)
+            _check_canceled()
             shutil.copyfile(result_path, output_path)
             outputs.append(output_path)
             packaged_outputs.append(output_path)
@@ -1457,6 +1484,8 @@ def process_mapping_excel(
                     "status": "ok",
                 }
             )
+        except JobCanceledError:
+            raise
         except Exception as e:
             logs.append(f"Output failed: {os.path.basename(output_path)} ({e})")
             run_logs.append(
@@ -1472,6 +1501,7 @@ def process_mapping_excel(
     packaged_outputs = [p for p in packaged_outputs if os.path.exists(p)]
     for registry in (copied_file_registry, copied_dir_registry):
         for final_path, info in registry.items():
+            _check_canceled()
             if os.path.isdir(final_path):
                 if final_path not in packaged_outputs:
                     packaged_outputs.append(final_path)
@@ -1494,9 +1524,11 @@ def process_mapping_excel(
         zip_path = os.path.join(output_dir, zip_filename)
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for output_path in packaged_outputs:
+                _check_canceled()
                 if os.path.isdir(output_path):
                     for root, _dirs, files in os.walk(output_path):
                         for name in files:
+                            _check_canceled()
                             file_path = os.path.join(root, name)
                             arcname = os.path.relpath(file_path, output_dir).replace("\\", "/")
                             zf.write(file_path, arcname)
@@ -1507,6 +1539,7 @@ def process_mapping_excel(
 
     log_file = None
     if run_logs or logs:
+        _check_canceled()
         target_log_dir = log_dir or output_dir
         os.makedirs(target_log_dir, exist_ok=True)
         log_filename = "mapping_log.json"

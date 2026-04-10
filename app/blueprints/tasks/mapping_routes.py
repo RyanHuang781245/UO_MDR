@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
@@ -12,20 +13,24 @@ from urllib.parse import urlencode
 from flask import abort, current_app, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from werkzeug.utils import secure_filename
 
+from app.services.execution_service import (
+    JobCanceledError,
+    MAPPING_OPERATION_JOB,
+    enqueue_job,
+    ensure_job_not_canceled,
+)
 from app.services.task_service import load_task_context as _load_task_context
 from app.services.mapping_metadata_service import (
     list_mapping_run_payloads,
     list_mapping_scheme_payloads,
-    sync_job_payload,
     sync_run_payload,
     sync_scheme_payload,
 )
 from app.services.user_context_service import get_actor_info as _get_actor_info
-from app.jobs.thread_queue import start_daemon_job
 from .blueprint import tasks_bp
 from .mapping_scheme_helpers import (
     delete_mapping_scheme,
-    execute_saved_mapping_scheme,
+    enqueue_saved_mapping_scheme_run,
     list_mapping_schemes,
     load_mapping_scheme,
     load_scheduled_mapping_scheme,
@@ -215,8 +220,6 @@ def _write_mapping_op(workspace_dir: str, op_id: str, payload: dict) -> None:
         json.dumps(payload, ensure_ascii=False),
         encoding="utf-8",
     )
-    task_id = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(workspace_dir))))
-    sync_job_payload(task_id, op_id, payload)
 
 
 def _update_mapping_op(workspace_dir: str, op_id: str, **fields) -> dict:
@@ -260,200 +263,287 @@ def _first_mapping_error(messages: list[str]) -> str:
     return ""
 
 
-def _run_mapping_operation_job(
-    app,
-    task_id: str,
-    workspace_dir: str,
-    op_id: str,
-    action: str,
-    mapping_path: str,
-    current_mapping_display_name: str,
-    validation_state_snapshot: dict,
-    actor: dict,
-) -> None:
-    with app.app_context():
-        tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-        files_dir = os.path.join(tdir, "files")
-        out_dir = os.path.join(tdir, "mapping_job")
-        validation_state_path = os.path.join(workspace_dir, "mapping_validation_state.json")
-        ui_state_path = os.path.join(workspace_dir, _MAPPING_UI_STATE_FILE)
-        current_run_id = op_id
+def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
+    task_id = str(payload.get("task_id") or "").strip()
+    workspace_dir = str(payload.get("workspace_dir") or "").strip()
+    action = str(payload.get("action") or "").strip()
+    mapping_path = str(payload.get("mapping_path") or "").strip()
+    current_mapping_display_name = str(payload.get("current_mapping_display_name") or "").strip()
+    validation_state_snapshot = dict(payload.get("validation_state_snapshot") or {})
+    actor = dict(payload.get("actor") or {})
+    if not task_id or not workspace_dir or not action or not mapping_path:
+        raise RuntimeError("Invalid mapping operation payload")
+
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(tdir, "files")
+    out_dir = os.path.join(tdir, "mapping_job")
+    validation_state_path = os.path.join(workspace_dir, "mapping_validation_state.json")
+    ui_state_path = os.path.join(workspace_dir, _MAPPING_UI_STATE_FILE)
+    current_run_id = op_id
+
+    def _check_canceled() -> None:
+        ensure_job_not_canceled(op_id)
+
+    _update_mapping_op(
+        workspace_dir,
+        op_id,
+        status="running",
+        started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    try:
+        from modules.mapping_processor import process_mapping_excel
+
+        run_out_dir = os.path.join(out_dir, current_run_id)
+        process_kwargs = {
+            "log_dir": run_out_dir,
+            "validate_only": (action == "check"),
+            "validate_extract_only": (action == "check_extract"),
+        }
+        try:
+            if "cancel_check" in inspect.signature(process_mapping_excel).parameters:
+                process_kwargs["cancel_check"] = _check_canceled
+        except (TypeError, ValueError):
+            pass
+
+        _check_canceled()
+        result = process_mapping_excel(
+            mapping_path,
+            files_dir,
+            run_out_dir,
+            **process_kwargs,
+        )
+        messages = [str(item) for item in (result.get("logs") or [])]
+        outputs = [str(item) for item in (result.get("outputs") or [])]
+        log_file_raw = str(result.get("log_file") or "").strip()
+        zip_file_raw = str(result.get("zip_file") or "").strip()
+        log_file = f"{current_run_id}/{log_file_raw}" if log_file_raw else ""
+        zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else ""
+        current_has_error = any("ERROR" in message for message in messages)
+        current_mapping_name = os.path.basename(mapping_path)
+        next_validation_state = {
+            "mapping_file": current_mapping_name,
+            "mapping_display_name": current_mapping_display_name or current_mapping_name,
+            "reference_ok": bool(validation_state_snapshot.get("reference_ok")),
+            "extract_ok": bool(validation_state_snapshot.get("extract_ok")),
+            "run_id": current_run_id,
+        }
+        if action == "check":
+            next_validation_state["reference_ok"] = not current_has_error
+            next_validation_state["extract_ok"] = False
+        elif action == "check_extract":
+            next_validation_state["extract_ok"] = not current_has_error
+        Path(validation_state_path).write_text(
+            json.dumps(next_validation_state, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        rel_outputs = []
+        for output_path in outputs:
+            rel = os.path.relpath(output_path, out_dir) if os.path.isabs(output_path) else str(output_path)
+            rel_outputs.append(rel.replace("\\", "/"))
+
+        if action == "run_cached":
+            run_outputs = []
+            run_prefix = f"{current_run_id}/"
+            for rel in rel_outputs:
+                run_outputs.append(rel[len(run_prefix):] if rel.startswith(run_prefix) else rel)
+            write_mapping_run_meta(
+                os.path.join(out_dir, current_run_id),
+                {
+                    "record_type": "mapping_run",
+                    "run_id": current_run_id,
+                    "mapping_file": next_validation_state.get("mapping_file") or "",
+                    "mapping_display_name": next_validation_state.get("mapping_display_name") or "",
+                    "status": "failed" if current_has_error else "completed",
+                    "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "reference_ok": bool(next_validation_state.get("reference_ok")),
+                    "extract_ok": bool(next_validation_state.get("extract_ok")),
+                    "outputs": run_outputs,
+                    "output_count": len(run_outputs),
+                    "zip_file": zip_file_raw,
+                    "log_file": log_file_raw,
+                    "error": _first_mapping_error(messages),
+                    "actor_work_id": actor.get("work_id", ""),
+                    "actor_label": actor.get("label", ""),
+                    "source": "manual",
+                },
+            )
+
+        ui_payload = {
+            "current_action": action,
+            "current_run_id": current_run_id,
+            "current_mapping_display_name": next_validation_state.get("mapping_display_name") or "",
+            "messages": messages,
+            "outputs": rel_outputs,
+            "log_file": log_file,
+            "zip_file": zip_file,
+            "log_file_name": log_file_raw,
+            "zip_file_name": zip_file_raw,
+        }
+        if action == "check_extract" and not current_has_error:
+            try:
+                auto_saved_scheme = save_mapping_scheme(
+                    task_id,
+                    mapping_path,
+                    "",
+                    next_validation_state,
+                    actor=actor,
+                )
+                ui_payload["auto_saved_scheme_name"] = str(
+                    auto_saved_scheme.get("display_name") or auto_saved_scheme.get("id") or ""
+                ).strip()
+            except Exception:
+                current_app.logger.exception("Failed to auto-save validated mapping scheme")
+        _write_mapping_ui_state(ui_state_path, ui_payload)
         _update_mapping_op(
             workspace_dir,
             op_id,
-            status="running",
-            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            status="failed" if current_has_error else "completed",
+            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            mapping_display_name=next_validation_state.get("mapping_display_name") or "",
+            current_action=action,
+            current_run_id=current_run_id,
+            messages=messages,
+            outputs=rel_outputs,
+            log_file=log_file,
+            zip_file=zip_file,
+            log_file_name=log_file_raw,
+            zip_file_name=zip_file_raw,
+            error=_first_mapping_error(messages),
+            resume_url=_mapping_op_resume_url(task_id, op_id),
+            auto_saved_scheme_name=str(ui_payload.get("auto_saved_scheme_name") or "").strip(),
         )
-        try:
-            from modules.mapping_processor import process_mapping_excel
-
-            run_out_dir = os.path.join(out_dir, current_run_id)
-            result = process_mapping_excel(
-                mapping_path,
-                files_dir,
-                run_out_dir,
-                log_dir=run_out_dir,
-                validate_only=(action == "check"),
-                validate_extract_only=(action == "check_extract"),
-            )
-            messages = [str(item) for item in (result.get("logs") or [])]
-            outputs = [str(item) for item in (result.get("outputs") or [])]
-            log_file_raw = str(result.get("log_file") or "").strip()
-            zip_file_raw = str(result.get("zip_file") or "").strip()
-            log_file = f"{current_run_id}/{log_file_raw}" if log_file_raw else ""
-            zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else ""
-            current_has_error = any("ERROR" in message for message in messages)
-            current_mapping_name = os.path.basename(mapping_path)
-            next_validation_state = {
-                "mapping_file": current_mapping_name,
-                "mapping_display_name": current_mapping_display_name or current_mapping_name,
-                "reference_ok": bool(validation_state_snapshot.get("reference_ok")),
-                "extract_ok": bool(validation_state_snapshot.get("extract_ok")),
-                "run_id": current_run_id,
-            }
-            if action == "check":
-                next_validation_state["reference_ok"] = not current_has_error
-                next_validation_state["extract_ok"] = False
-            elif action == "check_extract":
-                next_validation_state["extract_ok"] = not current_has_error
-            Path(validation_state_path).write_text(
-                json.dumps(next_validation_state, ensure_ascii=False),
-                encoding="utf-8",
-            )
-
-            rel_outputs = []
-            for output_path in outputs:
-                rel = os.path.relpath(output_path, out_dir) if os.path.isabs(output_path) else str(output_path)
-                rel_outputs.append(rel.replace("\\", "/"))
-
-            if action == "run_cached":
-                run_outputs = []
-                run_prefix = f"{current_run_id}/"
-                for rel in rel_outputs:
-                    run_outputs.append(rel[len(run_prefix):] if rel.startswith(run_prefix) else rel)
-                write_mapping_run_meta(
-                    os.path.join(out_dir, current_run_id),
+        artifacts = []
+        for artifact_type, filename in (("log_json", log_file_raw), ("result_zip", zip_file_raw)):
+            if not filename:
+                continue
+            path = os.path.join(run_out_dir, filename)
+            if os.path.isfile(path):
+                artifacts.append(
                     {
-                        "record_type": "mapping_run",
-                        "run_id": current_run_id,
-                        "mapping_file": next_validation_state.get("mapping_file") or "",
-                        "mapping_display_name": next_validation_state.get("mapping_display_name") or "",
-                        "status": "failed" if current_has_error else "completed",
-                        "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "reference_ok": bool(next_validation_state.get("reference_ok")),
-                        "extract_ok": bool(next_validation_state.get("extract_ok")),
-                        "outputs": run_outputs,
-                        "output_count": len(run_outputs),
-                        "zip_file": zip_file_raw,
-                        "log_file": log_file_raw,
-                        "error": _first_mapping_error(messages),
-                        "actor_work_id": actor.get("work_id", ""),
-                        "actor_label": actor.get("label", ""),
-                        "source": "manual",
-                    },
+                        "artifact_type": artifact_type,
+                        "rel_path": os.path.join(task_id, "mapping_job", current_run_id, filename).replace("\\", "/"),
+                        "size_bytes": os.path.getsize(path),
+                    }
                 )
-
-            ui_payload = {
-                "current_action": action,
-                "current_run_id": current_run_id,
-                "current_mapping_display_name": next_validation_state.get("mapping_display_name") or "",
-                "messages": messages,
-                "outputs": rel_outputs,
-                "log_file": log_file,
-                "zip_file": zip_file,
-                "log_file_name": log_file_raw,
-                "zip_file_name": zip_file_raw,
-            }
-            if action == "check_extract" and not current_has_error:
-                try:
-                    auto_saved_scheme = save_mapping_scheme(
-                        task_id,
-                        mapping_path,
-                        "",
-                        next_validation_state,
-                        actor=actor,
-                    )
-                    ui_payload["auto_saved_scheme_name"] = str(
-                        auto_saved_scheme.get("display_name") or auto_saved_scheme.get("id") or ""
-                    ).strip()
-                except Exception:
-                    current_app.logger.exception("Failed to auto-save validated mapping scheme")
-            _write_mapping_ui_state(ui_state_path, ui_payload)
-            _update_mapping_op(
-                workspace_dir,
-                op_id,
-                status="failed" if current_has_error else "completed",
-                completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                mapping_display_name=next_validation_state.get("mapping_display_name") or "",
-                current_action=action,
-                current_run_id=current_run_id,
-                messages=messages,
-                outputs=rel_outputs,
-                log_file=log_file,
-                zip_file=zip_file,
-                log_file_name=log_file_raw,
-                zip_file_name=zip_file_raw,
-                error=_first_mapping_error(messages),
-                resume_url=_mapping_op_resume_url(task_id, op_id),
-                auto_saved_scheme_name=str(ui_payload.get("auto_saved_scheme_name") or "").strip(),
+        return {
+            "artifact_root": os.path.join(task_id, "mapping_job", current_run_id).replace("\\", "/"),
+            "artifacts": artifacts,
+        }
+    except JobCanceledError as exc:
+        messages = [f"CANCELED: {exc}"]
+        ui_payload = {
+            "current_action": action,
+            "current_run_id": current_run_id,
+            "current_mapping_display_name": current_mapping_display_name or os.path.basename(mapping_path),
+            "messages": messages,
+            "outputs": [],
+            "log_file": "",
+            "zip_file": "",
+            "log_file_name": "",
+            "zip_file_name": "",
+            "auto_saved_scheme_name": "",
+        }
+        _write_mapping_ui_state(ui_state_path, ui_payload)
+        if action == "run_cached":
+            write_mapping_run_meta(
+                os.path.join(out_dir, current_run_id),
+                {
+                    "record_type": "mapping_run",
+                    "run_id": current_run_id,
+                    "mapping_file": os.path.basename(mapping_path),
+                    "mapping_display_name": current_mapping_display_name or os.path.basename(mapping_path),
+                    "status": "canceled",
+                    "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "reference_ok": bool(validation_state_snapshot.get("reference_ok")),
+                    "extract_ok": bool(validation_state_snapshot.get("extract_ok")),
+                    "outputs": [],
+                    "output_count": 0,
+                    "zip_file": "",
+                    "log_file": "",
+                    "error": str(exc),
+                    "actor_work_id": actor.get("work_id", ""),
+                    "actor_label": actor.get("label", ""),
+                    "source": "manual",
+                },
             )
-        except Exception as exc:
-            current_app.logger.exception("Mapping operation failed")
-            messages = [f"ERROR: {exc}"]
-            ui_payload = {
-                "current_action": action,
-                "current_run_id": current_run_id,
-                "current_mapping_display_name": current_mapping_display_name or os.path.basename(mapping_path),
-                "messages": messages,
-                "outputs": [],
-                "log_file": "",
-                "zip_file": "",
-                "log_file_name": "",
-                "zip_file_name": "",
-                "auto_saved_scheme_name": "",
-            }
-            _write_mapping_ui_state(ui_state_path, ui_payload)
-            if action == "run_cached":
-                write_mapping_run_meta(
-                    os.path.join(out_dir, current_run_id),
-                    {
-                        "record_type": "mapping_run",
-                        "run_id": current_run_id,
-                        "mapping_file": os.path.basename(mapping_path),
-                        "mapping_display_name": current_mapping_display_name or os.path.basename(mapping_path),
-                        "status": "failed",
-                        "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "reference_ok": bool(validation_state_snapshot.get("reference_ok")),
-                        "extract_ok": bool(validation_state_snapshot.get("extract_ok")),
-                        "outputs": [],
-                        "output_count": 0,
-                        "zip_file": "",
-                        "log_file": "",
-                        "error": str(exc),
-                        "actor_work_id": actor.get("work_id", ""),
-                        "actor_label": actor.get("label", ""),
-                        "source": "manual",
-                    },
-                )
-            _update_mapping_op(
-                workspace_dir,
-                op_id,
-                status="failed",
-                completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                mapping_display_name=current_mapping_display_name or os.path.basename(mapping_path),
-                current_action=action,
-                current_run_id=current_run_id,
-                messages=messages,
-                outputs=[],
-                log_file="",
-                zip_file="",
-                log_file_name="",
-                zip_file_name="",
-                error=str(exc),
-                resume_url=_mapping_op_resume_url(task_id, op_id),
+        _update_mapping_op(
+            workspace_dir,
+            op_id,
+            status="canceled",
+            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            mapping_display_name=current_mapping_display_name or os.path.basename(mapping_path),
+            current_action=action,
+            current_run_id=current_run_id,
+            messages=messages,
+            outputs=[],
+            log_file="",
+            zip_file="",
+            log_file_name="",
+            zip_file_name="",
+            error=str(exc),
+            resume_url=_mapping_op_resume_url(task_id, op_id),
+        )
+        raise
+    except Exception as exc:
+        current_app.logger.exception("Mapping operation failed")
+        messages = [f"ERROR: {exc}"]
+        ui_payload = {
+            "current_action": action,
+            "current_run_id": current_run_id,
+            "current_mapping_display_name": current_mapping_display_name or os.path.basename(mapping_path),
+            "messages": messages,
+            "outputs": [],
+            "log_file": "",
+            "zip_file": "",
+            "log_file_name": "",
+            "zip_file_name": "",
+            "auto_saved_scheme_name": "",
+        }
+        _write_mapping_ui_state(ui_state_path, ui_payload)
+        if action == "run_cached":
+            write_mapping_run_meta(
+                os.path.join(out_dir, current_run_id),
+                {
+                    "record_type": "mapping_run",
+                    "run_id": current_run_id,
+                    "mapping_file": os.path.basename(mapping_path),
+                    "mapping_display_name": current_mapping_display_name or os.path.basename(mapping_path),
+                    "status": "failed",
+                    "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "reference_ok": bool(validation_state_snapshot.get("reference_ok")),
+                    "extract_ok": bool(validation_state_snapshot.get("extract_ok")),
+                    "outputs": [],
+                    "output_count": 0,
+                    "zip_file": "",
+                    "log_file": "",
+                    "error": str(exc),
+                    "actor_work_id": actor.get("work_id", ""),
+                    "actor_label": actor.get("label", ""),
+                    "source": "manual",
+                },
             )
+        _update_mapping_op(
+            workspace_dir,
+            op_id,
+            status="failed",
+            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            mapping_display_name=current_mapping_display_name or os.path.basename(mapping_path),
+            current_action=action,
+            current_run_id=current_run_id,
+            messages=messages,
+            outputs=[],
+            log_file="",
+            zip_file="",
+            log_file_name="",
+            zip_file_name="",
+            error=str(exc),
+            resume_url=_mapping_op_resume_url(task_id, op_id),
+        )
+        raise
 
 @tasks_bp.route("/tasks/<task_id>/mapping", methods=["GET", "POST"], endpoint="task_mapping")
 def task_mapping(task_id):
@@ -725,21 +815,16 @@ def task_mapping(task_id):
             else:
                 try:
                     work_id, actor_label = _get_actor_info()
-                    run_result = execute_saved_mapping_scheme(
+                    current_run_id = enqueue_saved_mapping_scheme_run(
                         task_id,
                         scheme_id,
                         actor={"work_id": work_id, "label": actor_label},
                         source="manual",
+                        job_id=None,
                     )
-                    current_run_id = run_result["run_id"]
-                    messages = list(run_result.get("messages") or [])
-                    outputs = [f"{current_run_id}/{name}" for name in (run_result.get("outputs") or [])]
-                    log_file_name = run_result.get("log_file") or ""
-                    zip_file_name = run_result.get("zip_file") or ""
-                    log_file = run_result.get("log_relpath") or None
-                    zip_file = run_result.get("zip_relpath") or None
                     current_mapping_display_name = active_scheme.get("display_name") or active_scheme.get("mapping_display_name") or ""
                     active_mapping_tab = "results"
+                    messages = []
                 except Exception as e:
                     messages = [str(e)]
         elif action == "schedule_scheme":
@@ -894,17 +979,23 @@ def task_mapping(task_id):
                             "resume_url": _mapping_op_resume_url(task_id, current_run_id),
                         },
                     )
-                    start_daemon_job(
-                        _run_mapping_operation_job,
-                        current_app._get_current_object(),
-                        task_id,
-                        workspace_dir,
-                        current_run_id,
-                        action,
-                        mapping_path,
-                        current_mapping_display_name,
-                        dict(validation_state),
-                        {"work_id": actor_work_id, "label": actor_label},
+                    enqueue_job(
+                        MAPPING_OPERATION_JOB,
+                        {
+                            "task_id": task_id,
+                            "workspace_dir": workspace_dir,
+                            "action": action,
+                            "mapping_path": mapping_path,
+                            "current_mapping_display_name": current_mapping_display_name,
+                            "validation_state_snapshot": dict(validation_state),
+                            "actor": {"work_id": actor_work_id, "label": actor_label},
+                        },
+                        task_id=task_id,
+                        target_name=current_mapping_display_name or os.path.basename(mapping_path),
+                        actor={"work_id": actor_work_id, "label": actor_label},
+                        queue_name="light" if action in {"check", "check_extract"} else "heavy",
+                        job_id=current_run_id,
+                        artifact_root=os.path.join(task_id, "mapping_job", current_run_id).replace("\\", "/"),
                     )
                     return redirect(
                         url_for(
@@ -1121,94 +1212,30 @@ def task_mapping(task_id):
                 "source": "manual",
             },
         )
-    scheduled_scheme = None
-    saved_schemes_all: list[dict] = []
-    saved_schemes: list[dict] = []
-    saved_schemes_pagination = {
-        "page": mapping_page,
-        "total_count": 0,
-        "total_pages": 1,
-        "has_prev": False,
-        "has_next": False,
-    }
-    if active_mapping_tab == "saved":
-        scheduled_scheme = load_scheduled_mapping_scheme(task_id)
-        scheduled_scheme_id = (scheduled_scheme or {}).get("id") or (scheduled_scheme or {}).get("scheme_id") or ""
-        current_files_revision = int(task_files_last_updated(task_id))
-        saved_scheme_result = list_mapping_scheme_payloads(
-            task_id,
-            page=mapping_page,
-            per_page=10,
-            scheduled_scheme_id=scheduled_scheme_id,
-            current_revision=current_files_revision,
-        )
-        saved_schemes = saved_scheme_result["items"]
-        saved_schemes_pagination = saved_scheme_result["pagination"]
-        if not saved_schemes_pagination.get("total_count"):
-            saved_schemes_all = list_mapping_schemes(task_id)
-            for scheme in saved_schemes_all:
-                sync_scheme_payload(task_id, scheme)
-            saved_scheme_result = list_mapping_scheme_payloads(
-                task_id,
-                page=mapping_page,
-                per_page=10,
-                scheduled_scheme_id=scheduled_scheme_id,
-                current_revision=current_files_revision,
-            )
-            saved_schemes = saved_scheme_result["items"]
-            saved_schemes_pagination = saved_scheme_result["pagination"]
+    # 始終獲取所有分頁所需的資料，以支援無刷新切換
+    scheduled_scheme = load_scheduled_mapping_scheme(task_id)
+    scheduled_scheme_id = (scheduled_scheme or {}).get("id") or (scheduled_scheme or {}).get("scheme_id") or ""
+    
+    saved_scheme_result = list_mapping_scheme_payloads(
+        task_id,
+        page=mapping_page,
+        per_page=10,
+        scheduled_scheme_id=scheduled_scheme_id,
+        current_revision=None,
+    )
+    saved_schemes = saved_scheme_result["items"]
+    saved_schemes_pagination = saved_scheme_result["pagination"]
 
-    mapping_results = {
-        "runs": [],
-        "pagination": {
-            "page": mapping_results_page,
-            "per_page": 10,
-            "total_count": 0,
-            "total_pages": 1,
-            "has_prev": False,
-            "has_next": False,
-        },
-        "filters": {
-            "q": mapping_results_q,
-            "status": mapping_results_status,
-            "start_date": mapping_results_start_date,
-            "end_date": mapping_results_end_date,
-        },
-    }
-    if active_mapping_tab == "results":
-        mapping_results = list_mapping_run_payloads(
-            task_id,
-            page=mapping_results_page,
-            per_page=10,
-            q=mapping_results_q,
-            status=mapping_results_status,
-            start_date=mapping_results_start_date,
-            end_date=mapping_results_end_date,
-        )
-        if not mapping_results["pagination"].get("total_count"):
-            tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-            mapping_dir = os.path.join(tdir, "mapping_job")
-            if os.path.isdir(mapping_dir):
-                for run_id in os.listdir(mapping_dir):
-                    run_dir = os.path.join(mapping_dir, run_id)
-                    meta_path = os.path.join(run_dir, "meta.json")
-                    if not os.path.isdir(run_dir) or not os.path.isfile(meta_path):
-                        continue
-                    try:
-                        payload = json.loads(Path(meta_path).read_text(encoding="utf-8"))
-                    except Exception:
-                        continue
-                    if isinstance(payload, dict) and payload.get("record_type") == "mapping_run":
-                        sync_run_payload(task_id, payload)
-            mapping_results = list_mapping_run_payloads(
-                task_id,
-                page=mapping_results_page,
-                per_page=10,
-                q=mapping_results_q,
-                status=mapping_results_status,
-                start_date=mapping_results_start_date,
-                end_date=mapping_results_end_date,
-            )
+    mapping_results = list_mapping_run_payloads(
+        task_id,
+        page=mapping_results_page,
+        per_page=10,
+        q=mapping_results_q,
+        status=mapping_results_status,
+        start_date=mapping_results_start_date,
+        end_date=mapping_results_end_date,
+    )
+
     current_job_in_progress = bool(
         current_mapping_job_id
         and current_mapping_job_status in {"queued", "running"}

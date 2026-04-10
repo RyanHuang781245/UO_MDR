@@ -8,7 +8,7 @@ from flask import Flask, render_template
 from app.blueprints import register_blueprints
 from app.config import CONFIG_MAP, BaseConfig
 from app.extensions import db, ldap_manager, login_manager
-from app.services import auth_service, mapping_metadata_service, nas_service, system_service, task_service
+from app.services import auth_service, execution_service, mapping_metadata_service, nas_service, system_service, task_service
 from modules.env_loader import load_dotenv_if_present
 
 
@@ -41,11 +41,13 @@ def create_app(config_name: str | None = None) -> Flask:
     task_service.init_task_store(app)
     system_service.init_system_settings(app)
     mapping_metadata_service.init_mapping_metadata(app)
+    execution_service.init_execution_metadata(app)
 
     os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
     os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
 
     auth_service.init_auth(app)
+    execution_service.register_execution_cli(app)
     register_blueprints(app)
 
     @app.errorhandler(403)

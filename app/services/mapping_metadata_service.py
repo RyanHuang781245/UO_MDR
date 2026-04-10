@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime
 from datetime import timedelta
@@ -10,13 +9,14 @@ from flask import current_app
 from sqlalchemy import or_
 
 from app.extensions import db
+from app.models.execution import JobRecord
 from app.models.mapping_metadata import (
-    MappingJobRecord,
     MappingRunRecord,
     MappingSchemeRecord,
     TaskFileState,
     ensure_schema,
 )
+from app.services.execution_service import MAPPING_OPERATION_JOB, MAPPING_SCHEME_RUN_JOB, get_job_payload, get_job_result_payload
 
 
 def init_mapping_metadata(app) -> None:
@@ -148,25 +148,6 @@ def record_mapping_run(task_id: str, payload: dict) -> None:
     record.extract_ok = bool(payload.get("extract_ok"))
     record.source = str(payload.get("source") or "manual").strip() or "manual"
     record.started_at = _coerce_dt(payload.get("started_at")) or record.started_at or datetime.now()
-    record.completed_at = _coerce_dt(payload.get("completed_at"))
-    db.session.add(record)
-    _commit()
-
-
-def record_mapping_job(task_id: str, job_id: str, payload: dict) -> None:
-    job_id = str(job_id or "").strip()
-    if not job_id:
-        return
-    record = db.session.get(MappingJobRecord, job_id) or MappingJobRecord(job_id=job_id)
-    record.task_id = task_id
-    record.action = str(payload.get("action") or payload.get("current_action") or "").strip() or None
-    record.status = str(payload.get("status") or "queued").strip().lower() or "queued"
-    record.mapping_display_name = str(payload.get("mapping_display_name") or "").strip() or None
-    record.resume_url = str(payload.get("resume_url") or "").strip() or None
-    record.error = str(payload.get("error") or "").strip() or None
-    record.payload_json = json.dumps(payload, ensure_ascii=False)
-    record.created_at = _coerce_dt(payload.get("created_at")) or record.created_at or datetime.now()
-    record.started_at = _coerce_dt(payload.get("started_at"))
     record.completed_at = _coerce_dt(payload.get("completed_at"))
     db.session.add(record)
     _commit()
@@ -307,7 +288,8 @@ def list_mapping_scheme_payloads(
             status_label = "有錯誤"
 
         source_path = str(row.source_path or "").strip()
-        source_exists = bool(source_path and os.path.isfile(source_path))
+        # 移除對磁碟檔案的即時檢查，信任資料庫
+        source_exists = True if source_path else False
         items.append(
             {
                 "id": row.scheme_id,
@@ -352,54 +334,89 @@ def list_mapping_run_payloads(
     start_date: str = "",
     end_date: str = "",
 ) -> dict:
-    result = list_mapping_run_rows(
-        task_id,
-        page=page,
-        per_page=per_page,
-        q=q,
-        status=status,
-        start_date=start_date,
-        end_date=end_date,
-    )
-    rows = result.get("rows") or []
-    task_mapping_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id, "mapping_job")
     items: list[dict] = []
+    rows = (
+        JobRecord.query.filter(
+            JobRecord.task_id == task_id,
+            or_(
+                JobRecord.job_type == MAPPING_SCHEME_RUN_JOB,
+                JobRecord.job_type == MAPPING_OPERATION_JOB,
+            ),
+        )
+        .order_by(JobRecord.created_at.desc(), JobRecord.job_id.desc())
+        .all()
+    )
+    q = (q or "").strip()
+    status = (status or "").strip().lower()
+    start_at = _parse_date_start(start_date)
+    end_before = _parse_date_end(end_date)
     for row in rows:
-        scheme_name = ""
-        if row.scheme_id:
-            scheme = db.session.get(MappingSchemeRecord, row.scheme_id)
-            scheme_name = str((scheme.name if scheme else "") or "").strip()
-        zip_name = str(row.zip_file or "").strip()
-        log_name = str(row.log_file or "").strip()
-        zip_rel = f"{row.run_id}/{zip_name}" if zip_name else ""
-        log_rel = f"{row.run_id}/{log_name}" if log_name else ""
+        payload = get_job_payload(row)
+        if row.job_type == MAPPING_OPERATION_JOB and str(payload.get("action") or "").strip() != "run_cached":
+            continue
+        result_payload = get_job_result_payload(row)
+        run_id = row.job_id
+        started_dt = row.started_at or row.created_at
+        if start_at and (not started_dt or started_dt < start_at):
+            continue
+        if end_before and (not started_dt or started_dt >= end_before):
+            continue
+        current_status = str(row.status or "unknown").strip().lower()
+        if status and current_status != status:
+            continue
+
+        scheme_name = str(result_payload.get("scheme_name") or payload.get("scheme_name") or "").strip()
+        mapping_file = str(
+            result_payload.get("mapping_file")
+            or row.target_name
+            or payload.get("mapping_display_name")
+            or payload.get("scheme_name")
+            or ""
+        ).strip() or "未命名 Mapping"
+        if q:
+            like = q.lower()
+            if like not in mapping_file.lower() and like not in run_id.lower():
+                continue
+
+        zip_name = str(result_payload.get("zip_file") or "").strip()
+        log_name = str(result_payload.get("log_file") or "").strip()
+        zip_rel = f"{run_id}/{zip_name}" if zip_name else ""
+        log_rel = f"{run_id}/{log_name}" if log_name else ""
+        # 移除對實體檔案存在與否的即時檢查 (os.path.isfile)，大幅提升效能
         items.append(
             {
-                "run_id": row.run_id,
-                "mapping_file": str(row.mapping_display_name or "").strip() or "未命名 Mapping",
+                "run_id": run_id,
+                "mapping_file": mapping_file,
                 "scheme_name": scheme_name,
-                "started_at": _format_dt(row.started_at),
-                "status": str(row.status or "unknown").strip().lower(),
-                "output_count": int(row.output_count or 0),
-                "has_zip": bool(zip_name and os.path.isfile(os.path.join(task_mapping_dir, zip_rel))),
-                "has_log": bool(log_name and os.path.isfile(os.path.join(task_mapping_dir, log_rel))),
+                "started_at": _format_dt(started_dt),
+                "status": current_status,
+                "output_count": int(result_payload.get("output_count") or 0),
+                "has_zip": bool(zip_name),
+                "has_log": bool(log_name),
                 "zip_file": zip_rel,
                 "log_file": log_rel,
-                "reference_ok": bool(row.reference_ok),
-                "extract_ok": bool(row.extract_ok),
-                "source": str(row.source or "").strip() or "manual",
-                "error": str(row.error or "").strip(),
+                "reference_ok": bool(result_payload.get("reference_ok")),
+                "extract_ok": bool(result_payload.get("extract_ok")),
+                "source": str(result_payload.get("source") or payload.get("source") or "").strip() or "manual",
+                "error": str(row.error_summary or result_payload.get("error") or "").strip(),
             }
         )
+
+    total_count = len(items)
+    page = max(int(page or 1), 1)
+    per_page = max(int(per_page or 10), 1)
+    total_pages = max((total_count + per_page - 1) // per_page, 1)
+    page = min(page, total_pages)
+    items = items[(page - 1) * per_page : page * per_page]
     return {
         "runs": items,
-        "pagination": result.get("pagination") or {
-            "page": 1,
+        "pagination": {
+            "page": page,
             "per_page": per_page,
-            "total_count": 0,
-            "total_pages": 1,
-            "has_prev": False,
-            "has_next": False,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
         },
         "filters": {
             "q": (q or "").strip(),
@@ -424,11 +441,3 @@ def sync_run_payload(task_id: str, payload: dict) -> None:
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Failed to sync mapping run metadata")
-
-
-def sync_job_payload(task_id: str, job_id: str, payload: dict) -> None:
-    try:
-        record_mapping_job(task_id, job_id, payload)
-    except Exception:
-        db.session.rollback()
-        current_app.logger.exception("Failed to sync mapping job metadata")

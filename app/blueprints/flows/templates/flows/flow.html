@@ -1984,6 +1984,24 @@ async function refreshRunStatus(){
         }
         continue;
       }
+      if (status === "canceled"){
+        if (titleEl) titleEl.textContent = "流程已取消";
+        if (bodyEl) bodyEl.textContent = `已取消：${flowName}`;
+        if (!toast.dataset.autoCloseAt) {
+          toast.dataset.autoCloseAt = String(Date.now() + 4000);
+          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 4000);
+        }
+        continue;
+      }
+      if (status === "timeout"){
+        if (titleEl) titleEl.textContent = "流程逾時";
+        if (bodyEl) bodyEl.textContent = `逾時：${flowName}`;
+        if (!toast.dataset.autoCloseAt) {
+          toast.dataset.autoCloseAt = String(Date.now() + 4000);
+          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 4000);
+        }
+        continue;
+      }
       if (titleEl) titleEl.textContent = status === "queued" ? "流程排隊中" : "流程執行中";
       if (bodyEl) bodyEl.textContent = `${status === "queued" ? "排隊中" : "正在執行"}：${flowName}`;
     }catch(e){

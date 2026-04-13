@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 import shutil
+import zipfile
+from io import BytesIO
 from flask import url_for
 
 from app import create_app
@@ -114,6 +116,7 @@ def test_flow_list_task_files_endpoint_reads_output_scope(app, client) -> None:
     output_dir = task_root / "output" / "pkg" / "files"
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "result.txt").write_text("ok", encoding="utf-8")
+    (task_root / "output" / ".uo_flow_copy_registry.json").write_text("{}", encoding="utf-8")
 
     with app.test_request_context():
         url = url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id)
@@ -126,6 +129,7 @@ def test_flow_list_task_files_endpoint_reads_output_scope(app, client) -> None:
     assert data["scope"] == "output"
     assert data["path"] == "pkg"
     assert any(item["path"] == "pkg/files" for item in data["dirs"])
+    assert all(item["name"] != ".uo_flow_copy_registry.json" for item in data["files"])
 
 
 def test_flow_create_task_folder_endpoint_creates_output_scope_directory(app, client) -> None:
@@ -147,3 +151,131 @@ def test_flow_create_task_folder_endpoint_creates_output_scope_directory(app, cl
     assert data["scope"] == "output"
     assert data["path"] == "pkg/attachments"
     assert (output_dir / "attachments").is_dir()
+
+
+def test_flow_output_scope_downloads_single_file(app, client) -> None:
+    task_id = "flow-output-download-file"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    target_file = task_root / "output" / "pkg" / "report.txt"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("report", encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_download_task_file", task_id=task_id)
+
+    response = client.get(url, query_string={"scope": "output", "path": "pkg/report.txt"})
+
+    assert response.status_code == 200
+    assert response.data == b"report"
+    assert "attachment" in response.headers.get("Content-Disposition", "")
+
+
+def test_flow_output_scope_downloads_zip(app, client) -> None:
+    task_id = "flow-output-download-zip"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    target_file = task_root / "output" / "pkg" / "report.txt"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("report", encoding="utf-8")
+    (task_root / "output" / ".uo_flow_copy_registry.json").write_text("{}", encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_download_task_scope_zip", task_id=task_id)
+
+    response = client.get(url, query_string={"scope": "output"})
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/zip"
+    assert len(response.data) > 20
+    with zipfile.ZipFile(BytesIO(response.data), "r") as archive:
+        assert ".uo_flow_copy_registry.json" not in archive.namelist()
+        assert "pkg/report.txt" in archive.namelist()
+
+
+def test_flow_output_scope_downloads_subfolder_zip(app, client) -> None:
+    task_id = "flow-output-download-subfolder-zip"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    (task_root / "output" / "pkg").mkdir(parents=True, exist_ok=True)
+    (task_root / "output" / "other").mkdir(parents=True, exist_ok=True)
+    (task_root / "output" / "pkg" / "a.txt").write_text("a", encoding="utf-8")
+    (task_root / "output" / "other" / "b.txt").write_text("b", encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_download_task_scope_zip", task_id=task_id)
+
+    response = client.get(url, query_string={"scope": "output", "path": "pkg"})
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(BytesIO(response.data), "r") as archive:
+        assert "a.txt" in archive.namelist()
+        assert "other/b.txt" not in archive.namelist()
+
+
+def test_flow_output_scope_renames_entry(app, client) -> None:
+    task_id = "flow-output-rename-entry"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    target_file = task_root / "output" / "pkg" / "report.txt"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("report", encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_rename_task_entry", task_id=task_id)
+
+    response = client.post(url, data={"scope": "output", "path": "pkg/report.txt", "name": "renamed.txt"})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["path"] == "pkg/renamed.txt"
+    assert not target_file.exists()
+    assert (task_root / "output" / "pkg" / "renamed.txt").is_file()
+
+
+def test_flow_output_scope_deletes_entry(app, client) -> None:
+    task_id = "flow-output-delete-entry"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    target_file = task_root / "output" / "pkg" / "report.txt"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("report", encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_delete_task_entry", task_id=task_id)
+
+    response = client.post(url, data={"scope": "output", "path": "pkg/report.txt"})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["deleted"] == "pkg/report.txt"
+    assert not target_file.exists()
+
+
+def test_flow_output_scope_clear_removes_all_entries(app, client) -> None:
+    task_id = "flow-output-clear"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    output_dir = task_root / "output"
+    (output_dir / "pkg").mkdir(parents=True, exist_ok=True)
+    (output_dir / "pkg" / "report.txt").write_text("report", encoding="utf-8")
+    (output_dir / ".uo_flow_copy_registry.json").write_text("{}", encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_clear_task_scope", task_id=task_id)
+
+    response = client.post(url, data={"scope": "output"})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["cleared"] is True
+    assert list(output_dir.iterdir()) == []

@@ -104,7 +104,7 @@ def build_flow_builder_context(task_id: str, args) -> dict:
         end_date=flow_results_end_date,
     )
     active_flow_tab = (args.get("flow_tab") or "").strip().lower()
-    if active_flow_tab not in {"builder", "saved", "results"}:
+    if active_flow_tab not in {"builder", "saved", "results", "output"}:
         if args.get("fpage"):
             active_flow_tab = "saved"
         elif any((args.get("rq"), args.get("rstatus"), args.get("rstart_date"), args.get("rend_date"))):

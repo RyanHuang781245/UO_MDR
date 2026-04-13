@@ -49,6 +49,21 @@ def _validate_new_folder_name(name: str) -> str:
     return text
 
 
+def _validate_new_entry_name(name: str) -> str:
+    text = (name or "").strip()
+    if not text:
+        raise ValueError("缺少名稱")
+    if text in {".", ".."}:
+        raise ValueError("名稱不合法")
+    if any(ord(ch) < 32 for ch in text):
+        raise ValueError("名稱含有不可見控制字元")
+    if any(ch in r'\/:*?"<>|' for ch in text):
+        raise ValueError('名稱不可包含 \\ / : * ? " < > |')
+    if text[-1] in {" ", "."}:
+        raise ValueError("名稱結尾不可為空白或句點")
+    return text
+
+
 def _normalize_step_file_value(raw_value: str, accept: str) -> str:
     cleaned = (raw_value or "").strip()
     if not cleaned:

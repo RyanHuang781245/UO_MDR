@@ -7,7 +7,6 @@
     <div class="mb-3 d-flex justify-content-between align-items-center">
         <div>
             <h1 class="h3 mb-1 fw-bold">流程管理</h1>
-            <!-- <p class="text-muted mb-0 small">複製步驟會輸出到任務 Output 路徑：<span class="font-monospace">{{ task.output_path or task.nas_path or '尚未設定' }}</span></p> -->
         </div>
     </div>
 
@@ -25,6 +24,11 @@
       <li class="nav-item" role="presentation">
             <button class="nav-link {% if active_flow_tab == 'results' %}active{% endif %}" id="results-tab" data-bs-toggle="tab" data-bs-target="#results-pane" data-flow-tab="results" type="button" role="tab" aria-controls="results-pane" aria-selected="{{ 'true' if active_flow_tab == 'results' else 'false' }}">
               <i class="bi bi-clock-history me-2"></i>流程執行結果
+          </button>
+      </li>
+      <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_flow_tab == 'output' %}active{% endif %}" id="output-tab" data-bs-toggle="tab" data-bs-target="#output-pane" data-flow-tab="output" type="button" role="tab" aria-controls="output-pane" aria-selected="{{ 'true' if active_flow_tab == 'output' else 'false' }}">
+              <i class="bi bi-diagram-3 me-2"></i>複製存放空間
           </button>
       </li>
     </ul>
@@ -253,7 +257,7 @@
         <div class="tab-pane fade {% if active_flow_tab == 'results' %}show active{% endif %}" id="results-pane" role="tabpanel" aria-labelledby="results-tab">
             {% set results_id_prefix = 'flowRuns' %}
             {% set results_title = '流程執行結果' %}
-            {% set results_empty_message = '目前沒有流程執行結果。' %}
+            {% set results_empty_message = '目前沒有流程執行結果' %}
             {% set results_active_tab = 'flows' %}
             {% set results_runs = flow_results_runs %}
             {% set results_pagination = flow_results_pagination %}
@@ -267,6 +271,43 @@
             {% set results_end_date_param = 'rend_date' %}
             {% set results_task_id = task.id %}
             {% include "partials/run_results_panel.html" %}
+        </div>
+
+        <div class="tab-pane fade {% if active_flow_tab == 'output' %}show active{% endif %}" id="output-pane" role="tabpanel" aria-labelledby="output-tab">
+            <div class="main-card">
+                <div class="flow-section-header px-4 py-3 border-bottom d-flex justify-content-between align-items-center">
+                  <div>
+                      <h5 class="fw-bold mb-0">複製存放空間</h5>
+                  </div>
+                </div>
+                <!-- <div class="px-4 py-3 bg-light bg-opacity-50 border-bottom">
+                    <div class="small text-muted">
+                        Output 路徑：
+                        <code class="text-primary fw-bold">{{ task.output_path or '-' }}</code>
+                    </div>
+                </div> -->
+                <div class="px-4 pt-3 pb-4">
+                    <div class="d-flex align-items-center gap-2 mb-3">
+                      <a class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1" id="downloadOutputZipBtn" href="{{ url_for('flow_file_bp.api_flow_download_task_scope_zip', task_id=task.id, scope='output') }}">
+                        <i class="bi bi-file-zip text-primary"></i>
+                        下載 ZIP
+                      </a>
+                      <button class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1 text-danger" type="button" id="clearOutputTreeBtn">
+                        <i class="bi bi-trash"></i>
+                        清除目錄
+                      </button>
+                      <button class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1" type="button" id="refreshOutputTreeBtn">
+                        <i class="bi bi-arrow-clockwise text-primary"></i>
+                        重新整理
+                      </button>
+                    </div>
+                    <div class="file-tree-container p-3 border rounded-3 bg-white" id="outputFileTreePanel">
+                      <p class="text-muted small mb-3">複製步驟檔案/資料夾輸出的資料夾結構</p>
+                      <div class="small text-muted mb-3" id="outputFileTreeStatus">切換分頁後載入目錄樹</div>
+                      <ul class="file-tree file-tree-root" id="outputFileTreeRoot"></ul>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -1134,10 +1175,19 @@ const TASK_FILE_BROWSER_URL = "{{ url_for('flow_file_bp.api_flow_list_task_files
 const TASK_FILE_CREATE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_create_task_folder', task_id=task.id) }}";
 const TASK_FILE_RENAME_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_rename_task_folder', task_id=task.id) }}";
 const TASK_FILE_DELETE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_delete_task_folder', task_id=task.id) }}";
+const TASK_FILE_DOWNLOAD_URL = "{{ url_for('flow_file_bp.api_flow_download_task_file', task_id=task.id) }}";
+const TASK_SCOPE_ZIP_URL = "{{ url_for('flow_file_bp.api_flow_download_task_scope_zip', task_id=task.id) }}";
+const TASK_ENTRY_RENAME_URL = "{{ url_for('flow_file_bp.api_flow_rename_task_entry', task_id=task.id) }}";
+const TASK_ENTRY_DELETE_URL = "{{ url_for('flow_file_bp.api_flow_delete_task_entry', task_id=task.id) }}";
+const TASK_SCOPE_CLEAR_URL = "{{ url_for('flow_file_bp.api_flow_clear_task_scope', task_id=task.id) }}";
 const TASK_OUTPUT_ROOT = {{ (task.output_path or "")|tojson }};
 const flowFileTreeModalEl = document.getElementById("filesModal");
 const flowFileTreeRoot = document.getElementById("flowFileTreeRoot");
 const flowFileTreeStatus = document.getElementById("flowFileTreeStatus");
+const outputFileTreeRoot = document.getElementById("outputFileTreeRoot");
+const outputFileTreeStatus = document.getElementById("outputFileTreeStatus");
+const refreshOutputTreeBtn = document.getElementById("refreshOutputTreeBtn");
+const clearOutputTreeBtn = document.getElementById("clearOutputTreeBtn");
 const BOOL_DEFAULTS = {
   include_caption: "true",
   use_chapter_title: "false",
@@ -1223,7 +1273,10 @@ function createFlowFileNode(entry, level){
   item.dataset.level = String(level);
 
   const row = document.createElement("div");
-  row.className = "file-tree-row";
+  row.className = "file-tree-row d-flex align-items-center justify-content-between gap-2";
+
+  const left = document.createElement("div");
+  left.className = "d-flex align-items-center gap-2 min-width-0";
 
   const bullet = document.createElement("span");
   bullet.className = "file-tree-bullet";
@@ -1232,16 +1285,135 @@ function createFlowFileNode(entry, level){
   const label = document.createElement("span");
   label.className = "file-tree-label";
   label.textContent = entry.name;
+  label.title = entry.path || entry.name;
+  left.append(bullet, label);
 
-  row.append(bullet, label);
+  const meta = document.createElement("div");
+  meta.className = "small text-muted d-flex align-items-center gap-2 flex-shrink-0";
+  const metaParts = [];
+  if (entry.size_bytes !== undefined && entry.size_bytes !== null){
+    metaParts.push(formatFileSize(entry.size_bytes));
+  }
+  if (entry.updated_at){
+    metaParts.push(entry.updated_at);
+  }
+  meta.textContent = metaParts.join(" | ");
+  row.append(left, meta);
   item.append(row);
   return item;
 }
 
-async function populateFlowFileTree(relPath, listEl, level){
+function createOutputFileNode(entry, level){
+  const item = createFlowFileNode(entry, level);
+  const row = item.querySelector(".file-tree-row");
+  if (!row) return item;
+  const actions = document.createElement("div");
+  actions.className = "d-flex align-items-center gap-2 flex-shrink-0";
+
+  const downloadLink = document.createElement("a");
+  downloadLink.className = "btn btn-sm btn-outline-secondary";
+  downloadLink.href = `${TASK_FILE_DOWNLOAD_URL}?${new URLSearchParams({ scope: "output", path: entry.path || "" }).toString()}`;
+  downloadLink.innerHTML = '<i class="bi bi-download"></i>';
+  downloadLink.title = "下載檔案";
+  actions.appendChild(downloadLink);
+  row.appendChild(actions);
+
+  const renameBtn = document.createElement("button");
+  renameBtn.type = "button";
+  renameBtn.className = "btn btn-sm btn-outline-secondary";
+  renameBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+  renameBtn.title = "重新命名";
+  renameBtn.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await renameOutputEntry(entry);
+  });
+  actions.appendChild(renameBtn);
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "btn btn-sm btn-outline-danger";
+  deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+  deleteBtn.title = "刪除";
+  deleteBtn.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await deleteOutputEntry(entry);
+  });
+  actions.appendChild(deleteBtn);
+  return item;
+}
+
+function formatFileSize(size){
+  const value = Number(size || 0);
+  if (!Number.isFinite(value) || value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+async function postOutputAction(url, payload){
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: new URLSearchParams({ scope: "output", ...payload }).toString(),
+  });
+  const data = await resp.json();
+  if (!resp.ok || !data.ok){
+    throw new Error(data.error || "操作失敗");
+  }
+  return data;
+}
+
+async function renameOutputEntry(entry){
+  const currentName = String(entry?.name || "").trim();
+  const path = String(entry?.path || "").trim();
+  if (!currentName || !path) return;
+  const nextName = window.prompt("請輸入新名稱", currentName);
+  if (nextName === null) return;
+  if (!nextName.trim() || nextName.trim() === currentName) return;
+  setOutputFileTreeStatus("重新命名中...");
+  try{
+    await postOutputAction(TASK_ENTRY_RENAME_URL, { path, name: nextName.trim() });
+    await loadOutputFileTreeRoot();
+    setOutputFileTreeStatus("已重新命名");
+  }catch(err){
+    setOutputFileTreeStatus(err.message || "重新命名失敗", "danger");
+  }
+}
+
+async function deleteOutputEntry(entry){
+  const currentName = String(entry?.name || "").trim();
+  const path = String(entry?.path || "").trim();
+  if (!currentName || !path) return;
+  if (!window.confirm(`確定刪除「${currentName}」嗎？`)) return;
+  setOutputFileTreeStatus("刪除中...");
+  try{
+    await postOutputAction(TASK_ENTRY_DELETE_URL, { path });
+    await loadOutputFileTreeRoot();
+    setOutputFileTreeStatus("已刪除");
+  }catch(err){
+    setOutputFileTreeStatus(err.message || "刪除失敗", "danger");
+  }
+}
+
+async function clearOutputTree(){
+  if (!window.confirm("檔案與資料夾會全部清除，確定要清除整個複製輸出目錄嗎？")) return;
+  setOutputFileTreeStatus("清除中...");
+  try{
+    await postOutputAction(TASK_SCOPE_CLEAR_URL, {});
+    await loadOutputFileTreeRoot();
+    setOutputFileTreeStatus("已清除全部輸出");
+  }catch(err){
+    setOutputFileTreeStatus(err.message || "清除失敗", "danger");
+  }
+}
+
+async function populateScopedFileTree(relPath, listEl, level, scope = "files"){
   listEl.replaceChildren(createFlowFileTreePlaceholder("載入中..."));
 
   const url = new URL(TASK_FILE_BROWSER_URL, window.location.origin);
+  url.searchParams.set("scope", scope);
   if (relPath){
     url.searchParams.set("path", relPath);
   }
@@ -1267,6 +1439,10 @@ async function populateFlowFileTree(relPath, listEl, level){
     listEl.append(createFlowFileNode(entry, level));
   });
   return { dirCount, fileCount };
+}
+
+async function populateFlowFileTree(relPath, listEl, level){
+  return populateScopedFileTree(relPath, listEl, level, "files");
 }
 
 function createFlowFileDirNode(entry, level){
@@ -1342,6 +1518,158 @@ function createFlowFileDirNode(entry, level){
   return item;
 }
 
+function createScopedDirNode(entry, level, statusSetter, scope){
+  const item = document.createElement("li");
+  item.className = "file-tree-item dir";
+  item.dataset.level = String(level);
+  item.dataset.path = entry.path;
+  item.dataset.loaded = "0";
+  item.dataset.loading = "0";
+
+  const row = document.createElement("div");
+  row.className = "file-tree-row d-flex align-items-center justify-content-between gap-2";
+  row.setAttribute("role", "button");
+  row.setAttribute("tabindex", "0");
+  row.setAttribute("aria-expanded", "false");
+
+  const left = document.createElement("div");
+  left.className = "d-flex align-items-center gap-2 min-width-0";
+
+  const caret = document.createElement("span");
+  caret.className = "file-tree-caret";
+  caret.setAttribute("aria-hidden", "true");
+
+  const label = document.createElement("span");
+  label.className = "file-tree-label";
+  label.textContent = entry.name;
+  label.title = entry.path || entry.name;
+
+  const meta = document.createElement("div");
+  meta.className = "small text-muted flex-shrink-0";
+  meta.textContent = entry.updated_at || "";
+
+  const actions = document.createElement("div");
+  actions.className = "d-flex align-items-center gap-2 flex-shrink-0";
+  if (scope === "output"){
+    const zipLink = document.createElement("a");
+    zipLink.className = "btn btn-sm btn-outline-secondary";
+    zipLink.href = `${TASK_SCOPE_ZIP_URL}?${new URLSearchParams({ scope: "output", path: entry.path || "" }).toString()}`;
+    zipLink.innerHTML = '<i class="bi bi-file-zip"></i>';
+    zipLink.title = "下載子資料夾 ZIP";
+    zipLink.addEventListener("click", (event) => event.stopPropagation());
+    actions.appendChild(zipLink);
+
+    const renameBtn = document.createElement("button");
+    renameBtn.type = "button";
+    renameBtn.className = "btn btn-sm btn-outline-secondary";
+    renameBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+    renameBtn.title = "重新命名";
+    renameBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await renameOutputEntry(entry);
+    });
+    actions.appendChild(renameBtn);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "btn btn-sm btn-outline-danger";
+    deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+    deleteBtn.title = "刪除";
+    deleteBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await deleteOutputEntry(entry);
+    });
+    actions.appendChild(deleteBtn);
+  }
+
+  const childList = document.createElement("ul");
+  childList.className = "file-tree";
+
+  const toggle = async () => {
+    if (item.dataset.loading === "1"){
+      return;
+    }
+    if (item.classList.contains("is-open")){
+      item.classList.remove("is-open");
+      row.setAttribute("aria-expanded", "false");
+      return;
+    }
+    if (item.dataset.loaded !== "1"){
+      item.dataset.loading = "1";
+      label.classList.add("text-muted");
+      try{
+        await populateScopedOutputTree(entry.path, childList, level + 1, scope);
+        item.dataset.loaded = "1";
+      }finally{
+        item.dataset.loading = "0";
+        label.classList.remove("text-muted");
+      }
+    }
+    item.classList.add("is-open");
+    row.setAttribute("aria-expanded", "true");
+  };
+
+  row.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggle().catch((err) => statusSetter(err.message || "載入檔案結構失敗", "danger"));
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " "){
+      event.preventDefault();
+      toggle().catch((err) => statusSetter(err.message || "載入檔案結構失敗", "danger"));
+    }
+  });
+
+  left.append(caret, label);
+  row.append(left, meta, actions);
+  item.append(row, childList);
+  return item;
+}
+
+function setOutputFileTreeStatus(message, tone = "muted"){
+  if (!outputFileTreeStatus) return;
+  if (!message){
+    outputFileTreeStatus.textContent = "";
+    outputFileTreeStatus.className = `small mb-3 text-${tone} d-none`;
+    return;
+  }
+  outputFileTreeStatus.className = `small mb-3 text-${tone}`;
+  outputFileTreeStatus.textContent = message;
+}
+
+async function populateScopedOutputTree(relPath, listEl, level, scope = "output"){
+  listEl.replaceChildren(createFlowFileTreePlaceholder("載入中..."));
+  const data = await (async () => {
+    const url = new URL(TASK_FILE_BROWSER_URL, window.location.origin);
+    url.searchParams.set("scope", scope);
+    if (relPath){
+      url.searchParams.set("path", relPath);
+    }
+    const resp = await fetch(url.toString(), { cache: "no-store" });
+    const payload = await resp.json();
+    if (!resp.ok || !payload.ok){
+      throw new Error(payload.error || "載入檔案結構失敗");
+    }
+    return payload;
+  })();
+
+  listEl.replaceChildren();
+  const dirCount = Array.isArray(data.dirs) ? data.dirs.length : 0;
+  const fileCount = Array.isArray(data.files) ? data.files.length : 0;
+  if (!dirCount && !fileCount){
+    listEl.append(createFlowFileTreePlaceholder("空資料夾"));
+    return;
+  }
+  (data.dirs || []).forEach((entry) => {
+    listEl.append(createScopedDirNode(entry, level, setOutputFileTreeStatus, scope));
+  });
+  (data.files || []).forEach((entry) => {
+    listEl.append(createOutputFileNode(entry, level));
+  });
+}
+
 async function loadFlowFileTreeRoot(){
   if (!flowFileTreeRoot) return;
 
@@ -1358,6 +1686,18 @@ async function loadFlowFileTreeRoot(){
 flowFileTreeModalEl?.addEventListener("show.bs.modal", () => {
   loadFlowFileTreeRoot();
 });
+
+async function loadOutputFileTreeRoot(){
+  if (!outputFileTreeRoot) return;
+  setOutputFileTreeStatus("載入檔案結構中...");
+  try{
+    await populateScopedOutputTree("", outputFileTreeRoot, 0, "output");
+    setOutputFileTreeStatus("");
+  }catch(err){
+    outputFileTreeRoot.replaceChildren(createFlowFileTreePlaceholder("檔案結構載入失敗"));
+    setOutputFileTreeStatus(err.message || "檔案結構載入失敗", "danger");
+  }
+}
 
 const FIELD_META = {
   pdf_zip: {
@@ -2472,6 +2812,18 @@ if (stepFileApplyBtn){
   stepFileApplyBtn.addEventListener("click", applyStepFileSelection);
 }
 
+if (refreshOutputTreeBtn){
+  refreshOutputTreeBtn.addEventListener("click", () => {
+    loadOutputFileTreeRoot();
+  });
+}
+
+if (clearOutputTreeBtn){
+  clearOutputTreeBtn.addEventListener("click", () => {
+    clearOutputTree();
+  });
+}
+
 document.addEventListener("click", (event) => {
   if (IS_VERSION_PREVIEW) return;
   const btn = event.target.closest(".step-file-browse-btn");
@@ -3401,8 +3753,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.set('flow_tab', tabName);
       window.history.replaceState({}, document.title, nextUrl.toString());
+      if (tabName === 'output') {
+        loadOutputFileTreeRoot();
+      }
     });
   });
+  if ({{ 'true' if active_flow_tab == 'output' else 'false' }}) {
+    loadOutputFileTreeRoot();
+  }
   if (addStepDropdownBtn && typeof bootstrap !== 'undefined' && bootstrap.Dropdown) {
     bootstrap.Dropdown.getOrCreateInstance(addStepDropdownBtn, {
       boundary: 'viewport',

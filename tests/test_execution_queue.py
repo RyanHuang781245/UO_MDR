@@ -82,6 +82,136 @@ def test_enqueue_single_flow_job_runs_inline_and_persists_job_metadata(app, monk
     assert "log_json" in artifact_types
 
 
+def test_enqueue_single_flow_job_publishes_copy_steps_to_task_output_path(app, monkeypatch, tmp_path) -> None:
+    task_id = "flow-copy-output-root"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    source_dir = files_dir / "src"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    source_file = source_dir / "report.txt"
+    source_file.write_text("copy-me", encoding="utf-8")
+    output_root = tmp_path / "published-output"
+    (task_dir / "meta.json").write_text(
+        json.dumps({"name": "Flow Copy Output", "output_path": str(output_root)}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    def fake_run_workflow(runtime_steps, workdir, template=None):
+        assert runtime_steps[0]["type"] == "copy_files"
+        assert runtime_steps[0]["params"]["source_dir"] == str(source_file)
+        assert runtime_steps[0]["params"]["dest_dir"] == str(output_root / "pkg" / "files")
+        job_dir = Path(workdir)
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "result.docx").write_bytes(b"docx-output")
+        (job_dir / "log.json").write_text('[{"status":"ok"}]', encoding="utf-8")
+        return {
+            "result_docx": str(job_dir / "result.docx"),
+            "log_json": [{"status": "ok"}],
+        }
+
+    monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
+
+    job_id = enqueue_single_flow_job(
+        task_id=task_id,
+        runtime_steps=[
+            {
+                "type": "copy_files",
+                "params": {"source_dir": str(source_file), "dest_dir": "pkg/files", "keywords": "", "target_name": "", "recursive_search": "true"},
+            }
+        ],
+        template_cfg=None,
+        document_format="none",
+        line_spacing=1.5,
+        apply_formatting=False,
+        actor={"work_id": "A123", "label": "Tester"},
+        flow_name="Copy Flow",
+        output_filename="",
+    )
+
+    meta = json.loads((task_dir / "jobs" / job_id / "meta.json").read_text(encoding="utf-8"))
+    assert meta["output_root"] == str(output_root)
+    assert meta["has_copy_output"] is True
+
+
+def test_load_task_context_defaults_output_path_to_task_output_dir(app) -> None:
+    task_id = "task-output-default"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "meta.json").write_text(
+        json.dumps({"name": "Task Output Default", "nas_path": r"\\nas\demo"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    from app.services.task_service import load_task_context
+
+    context = load_task_context(task_id)
+    assert context["output_path"] == str(task_dir / "output")
+
+
+def test_execute_saved_flow_remaps_copy_dest_to_task_output_path(app, monkeypatch, tmp_path) -> None:
+    task_id = "saved-flow-copy-output"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    source_file = files_dir / "report.txt"
+    source_file.write_text("copy-me", encoding="utf-8")
+    flow_dir = task_dir / "flows"
+    flow_dir.mkdir(parents=True, exist_ok=True)
+    output_root = tmp_path / "saved-flow-output"
+    (task_dir / "meta.json").write_text(
+        json.dumps({"name": "Saved Flow Copy", "output_path": str(output_root)}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (flow_dir / "CopyFlow.json").write_text(
+        json.dumps(
+            {
+                "steps": [
+                    {
+                        "type": "copy_files",
+                        "params": {
+                            "source_dir": "report.txt",
+                            "dest_dir": "pkg/files",
+                            "keywords": "",
+                            "target_name": "",
+                            "recursive_search": "true",
+                        },
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_workflow(runtime_steps, workdir, template=None):
+        assert runtime_steps[0]["params"]["source_dir"] == str(source_file)
+        assert runtime_steps[0]["params"]["dest_dir"] == str(output_root / "pkg" / "files")
+        job_dir = Path(workdir)
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "result.docx").write_bytes(b"docx-output")
+        return {"result_docx": str(job_dir / "result.docx"), "log_json": [{"status": "ok"}]}
+
+    monkeypatch.setattr("app.blueprints.flows.run_helpers.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("app.blueprints.flows.run_helpers.remove_hidden_runs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.blueprints.flows.run_helpers.hide_paragraphs_with_text", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.blueprints.flows.run_helpers.apply_basic_style", lambda *args, **kwargs: None)
+
+    from app.blueprints.flows.run_helpers import _execute_saved_flow
+
+    job_id = _execute_saved_flow(task_id, "CopyFlow")
+    meta = json.loads((task_dir / "jobs" / job_id / "meta.json").read_text(encoding="utf-8"))
+    assert meta["output_root"] == str(output_root)
+
+
 def test_cancel_job_marks_queued_job_as_canceled(app, monkeypatch) -> None:
     app.config["JOB_EXECUTOR_MODE"] = "worker"
     task_id = "flow-cancel-job"

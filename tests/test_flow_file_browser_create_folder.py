@@ -104,3 +104,46 @@ def test_flow_delete_task_folder_endpoint_deletes_child_directory(app, client) -
     assert data["ok"] is True
     assert data["deleted"] == "輸出區/待刪除"
     assert not target_dir.exists()
+
+
+def test_flow_list_task_files_endpoint_reads_output_scope(app, client) -> None:
+    task_id = "flow-output-browser"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    output_dir = task_root / "output" / "pkg" / "files"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "result.txt").write_text("ok", encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id)
+
+    response = client.get(url, query_string={"scope": "output", "path": "pkg"})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["scope"] == "output"
+    assert data["path"] == "pkg"
+    assert any(item["path"] == "pkg/files" for item in data["dirs"])
+
+
+def test_flow_create_task_folder_endpoint_creates_output_scope_directory(app, client) -> None:
+    task_id = "flow-output-create-folder"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    output_dir = task_root / "output" / "pkg"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_create_task_folder", task_id=task_id)
+
+    response = client.post(url, data={"scope": "output", "parent": "pkg", "name": "attachments"})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["scope"] == "output"
+    assert data["path"] == "pkg/attachments"
+    assert (output_dir / "attachments").is_dir()

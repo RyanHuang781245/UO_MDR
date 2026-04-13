@@ -287,7 +287,7 @@ SUPPORTED_STEPS = {
         "inputs": ["source_dir", "dest_dir", "keywords", "target_name", "recursive_search"],
         "accepts": {
             "source_dir": "file:path",
-            "dest_dir": "file:dir",
+            "dest_dir": "text",
             "keywords": "text",
             "target_name": "text",
             "recursive_search": "bool",
@@ -298,7 +298,7 @@ SUPPORTED_STEPS = {
         "inputs": ["source_dir", "dest_dir", "keywords", "target_name", "recursive_search"],
         "accepts": {
             "source_dir": "file:dir",
-            "dest_dir": "file:dir",
+            "dest_dir": "text",
             "keywords": "text",
             "target_name": "text",
             "recursive_search": "bool",

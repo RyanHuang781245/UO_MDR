@@ -5,7 +5,10 @@
 
 <div class="container-fluid px-0">
     <div class="mb-3 d-flex justify-content-between align-items-center">
-        <h1 class="h3 mb-0 fw-bold">流程管理</h1>
+        <div>
+            <h1 class="h3 mb-1 fw-bold">流程管理</h1>
+            <!-- <p class="text-muted mb-0 small">複製步驟會輸出到任務 Output 路徑：<span class="font-monospace">{{ task.output_path or task.nas_path or '尚未設定' }}</span></p> -->
+        </div>
     </div>
 
     <ul class="nav nav-tabs nav-tabs-custom mb-4" id="flowTabs" role="tablist">
@@ -353,7 +356,10 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header border-bottom-0 pb-0">
-        <h5 class="modal-title fw-bold" id="stepFileBrowserModalLabel">選擇任務檔案</h5>
+        <div>
+          <h5 class="modal-title fw-bold" id="stepFileBrowserModalLabel">選擇任務檔案</h5>
+          <div class="small text-muted mt-1" id="stepFileBrowserRootHint"></div>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-4">
@@ -1128,6 +1134,7 @@ const TASK_FILE_BROWSER_URL = "{{ url_for('flow_file_bp.api_flow_list_task_files
 const TASK_FILE_CREATE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_create_task_folder', task_id=task.id) }}";
 const TASK_FILE_RENAME_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_rename_task_folder', task_id=task.id) }}";
 const TASK_FILE_DELETE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_delete_task_folder', task_id=task.id) }}";
+const TASK_OUTPUT_ROOT = {{ (task.output_path or "")|tojson }};
 const flowFileTreeModalEl = document.getElementById("filesModal");
 const flowFileTreeRoot = document.getElementById("flowFileTreeRoot");
 const flowFileTreeStatus = document.getElementById("flowFileTreeStatus");
@@ -1446,7 +1453,8 @@ const FIELD_META = {
     label: "來源資料夾"
   },
   dest_dir: {
-    label: "目的資料夾"
+    label: "輸出資料夾",
+    placeholder: "相對於任務 Output 路徑，例如 pkg/files"
   },
   target_name: {
     label: "複製後名稱",
@@ -1948,7 +1956,21 @@ function renderTaskFilePickerField({ sid, key, label, value, accept, colClass = 
   </div>`;
 }
 
+function renderOutputFolderPickerField({ sid, key, label, value, placeholder, colClass = "col-md-6" }){
+  const inputName = `step_${sid}_${key}`;
+  return `<div class="${colClass}">
+    <label class="form-label">${label}</label>
+    <div class="input-group">
+      <input class="form-control" name="${inputName}" value="${escapeAttr(value || "")}" placeholder="${escapeAttr(placeholder || "")}">
+      <button class="btn btn-outline-secondary step-file-browse-btn" type="button" data-target="${inputName}" data-accept="file:dir" data-browser-scope="output">瀏覽</button>
+    </div>
+    <div class="form-text">留白代表直接輸出到任務 Output 根目錄</div>
+  </div>`;
+}
+
 const stepFileModalEl = document.getElementById("stepFileBrowserModal");
+const stepFileModalTitleEl = document.getElementById("stepFileBrowserModalLabel");
+const stepFileBrowserRootHintEl = document.getElementById("stepFileBrowserRootHint");
 const stepFileCurrentPathEl = document.getElementById("stepFileCurrentPath");
 const stepFileStatusEl = document.getElementById("stepFileStatus");
 const stepFileEntryList = document.getElementById("stepFileEntryList");
@@ -1968,6 +1990,7 @@ const stepFileState = {
   mode: "file",
   ext: "docx",
   browserMode: "file",
+  scope: "files",
   currentRel: "",
   selectedRel: null,
   dirs: [],
@@ -1991,6 +2014,20 @@ function canManageStepFileFolders(){
   return stepFileState.browserMode === "dir_manage";
 }
 
+function getStepFileScopeLabel(){
+  return stepFileState.scope === "output" ? "任務 Output 路徑" : "任務檔案";
+}
+
+function updateStepFileScopeUI(){
+  if (stepFileModalTitleEl){
+    stepFileModalTitleEl.textContent = stepFileState.scope === "output" ? "選擇輸出資料夾" : "選擇任務檔案";
+  }
+  if (stepFileBrowserRootHintEl){
+    const rootText = stepFileState.scope === "output" ? (TASK_OUTPUT_ROOT || "尚未設定") : `task_store/${TASK_ID}/files`;
+    stepFileBrowserRootHintEl.textContent = `${getStepFileScopeLabel()}：${rootText}`;
+  }
+}
+
 function setStepFileStatus(text){
   if (stepFileStatusEl) stepFileStatusEl.textContent = text || "";
 }
@@ -2003,10 +2040,12 @@ function updateStepFileCurrentPath(){
 function updateStepFileModeUI(){
   if (!stepFileSelectCurrentBtn) return;
   stepFileSelectCurrentBtn.classList.toggle("d-none", stepFileState.mode === "file");
+  stepFileSelectCurrentBtn.textContent = stepFileState.scope === "output" ? "選擇目前輸出資料夾" : "選擇目前目錄";
   stepFileCreateFolderBtn?.classList.toggle("d-none", stepFileState.mode !== "dir" || !canManageStepFileFolders());
   if (stepFileState.mode !== "dir" || !canManageStepFileFolders()){
     toggleStepFileCreateFolder(false);
   }
+  updateStepFileScopeUI();
 }
 
 function toggleStepFileCreateFolder(show, mode = "create", targetPath = "", initialName = ""){
@@ -2228,7 +2267,7 @@ async function loadStepFileEntries(rel = ""){
   const cleanRel = normalizeBrowserRelPath(rel);
   setStepFileStatus("讀取中...");
   updateStepFileCurrentPath();
-  const qs = new URLSearchParams({ path: cleanRel });
+  const qs = new URLSearchParams({ path: cleanRel, scope: stepFileState.scope || "files" });
   try {
     const resp = await fetch(`${TASK_FILE_BROWSER_URL}?${qs.toString()}`, { cache: "no-store" });
     const data = await resp.json();
@@ -2262,8 +2301,8 @@ async function createStepFolder(){
     const isRename = stepFileState.folderAction === "rename";
     const url = isRename ? TASK_FILE_RENAME_FOLDER_URL : TASK_FILE_CREATE_FOLDER_URL;
     const payload = isRename
-      ? { path: stepFileState.folderActionPath || "", name }
-      : { parent: stepFileState.currentRel || "", name };
+      ? { scope: stepFileState.scope || "files", path: stepFileState.folderActionPath || "", name }
+      : { scope: stepFileState.scope || "files", parent: stepFileState.currentRel || "", name };
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
@@ -2291,7 +2330,7 @@ async function deleteStepFolder(dir){
     const resp = await fetch(TASK_FILE_DELETE_FOLDER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: new URLSearchParams({ path: dir.path }).toString(),
+      body: new URLSearchParams({ scope: stepFileState.scope || "files", path: dir.path }).toString(),
     });
     const data = await resp.json();
     if (!resp.ok || !data.ok){
@@ -2308,7 +2347,7 @@ async function deleteStepFolder(dir){
   }
 }
 
-function openStepFileBrowser(input, accept){
+function openStepFileBrowser(input, accept, browserScope = "files"){
   if (IS_VERSION_PREVIEW) return;
   if (!input || !stepFileModalEl || typeof bootstrap === "undefined") return;
   const parsed = parseFileAccept(accept);
@@ -2316,6 +2355,7 @@ function openStepFileBrowser(input, accept){
   stepFileState.accept = parsed.raw;
   stepFileState.mode = parsed.mode;
   stepFileState.ext = parsed.ext;
+  stepFileState.scope = browserScope === "output" ? "output" : "files";
   stepFileState.browserMode = resolveStepFileBrowserMode(input, parsed);
   stepFileState.dirs = [];
   stepFileState.files = [];
@@ -2348,7 +2388,7 @@ function applyStepFileSelection(){
   let chosen = "";
   if (stepFileState.mode === "dir"){
     const rel = stepFileState.selectedRel !== null ? stepFileState.selectedRel : stepFileState.currentRel;
-    chosen = rel ? rel : ".";
+    chosen = rel ? rel : (stepFileState.scope === "output" ? "" : ".");
   } else if (stepFileState.mode === "mixed"){
     const rel = stepFileState.selectedRel !== null ? stepFileState.selectedRel : stepFileState.currentRel;
     chosen = rel ? rel : ".";
@@ -2441,7 +2481,11 @@ document.addEventListener("click", (event) => {
   const scope = btn.closest(".card") || document;
   const input = scope.querySelector(`[name="${target}"]`) || document.querySelector(`[name="${target}"]`);
   if (!input) return;
-  openStepFileBrowser(input, btn.getAttribute("data-accept") || "file:docx");
+  openStepFileBrowser(
+    input,
+    btn.getAttribute("data-accept") || "file:docx",
+    btn.getAttribute("data-browser-scope") || "files",
+  );
 });
 
 const normalizePreset = (raw = {}) => {
@@ -2806,6 +2850,16 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                </select></div>`;
     }
     if (accept === "text"){
+      if (k === "dest_dir" && (typeKey === "copy_files" || typeKey === "copy_directory")) {
+        return renderOutputFolderPickerField({
+          sid,
+          key: k,
+          label,
+          value: val,
+          placeholder,
+          colClass: "col-md-6",
+        });
+      }
       if (k === "target_subtitle" && !subtitleToggleSteps.includes(typeKey)) {
         const hideStyle = (spec.inputs.includes("use_chapter_title") && targetTitleVal === "false") ? "display: none;" : "";
         return `<div class="col-md-9 subheading-input" style="${hideStyle}"><label class="form-label">${label}</label>

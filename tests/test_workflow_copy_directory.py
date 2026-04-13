@@ -8,7 +8,7 @@ def test_supported_steps_include_copy_directory() -> None:
 
     assert step["label"] == "複製資料夾"
     assert step["accepts"]["source_dir"] == "file:dir"
-    assert step["accepts"]["dest_dir"] == "file:dir"
+    assert step["accepts"]["dest_dir"] == "text"
     assert step["accepts"]["keywords"] == "text"
 
 

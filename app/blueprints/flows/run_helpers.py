@@ -38,10 +38,31 @@ from app.services.flow_service import (
 )
 from app.services.flow_version_service import flow_version_count as _flow_version_count
 from app.services.notification_service import send_batch_notification
+from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
 from app.utils import normalize_docx_output_filename, parse_bool
 
 from .flow_file_helpers import _resolve_task_file_path
 from .flow_route_helpers import _touch_task_last_edit
+
+
+def _normalize_output_rel_path(raw_path: str) -> str:
+    text = (raw_path or "").strip()
+    if text in {"", ".", "/"}:
+        return ""
+    if os.path.isabs(text) or text.startswith(("/", "\\")):
+        raise ValueError("輸出資料夾必須為相對路徑")
+    normalized = os.path.normpath(text.replace("\\", "/")).replace("\\", "/")
+    if normalized in {"", "."}:
+        return ""
+    if normalized == ".." or normalized.startswith("../"):
+        raise ValueError("輸出資料夾不合法")
+    return normalized
+
+
+def _resolve_flow_output_root(task_id: str) -> str:
+    task_meta = _load_task_context(task_id) or {}
+    raw_output_root = str(task_meta.get("output_path") or build_task_output_path(task_id)).strip()
+    return os.path.abspath(raw_output_root) if raw_output_root else ""
 
 
 def _execute_saved_flow(
@@ -92,6 +113,7 @@ def _execute_saved_flow(
         if tpl_abs and os.path.isfile(tpl_abs):
             template_paragraphs = parse_template_paragraphs(tpl_abs)
             template_cfg = {"path": tpl_abs, "paragraphs": template_paragraphs}
+    output_root = _resolve_flow_output_root(task_id)
     runtime_steps = []
     for step in workflow:
         stype = step.get("type")
@@ -110,6 +132,13 @@ def _execute_saved_flow(
                 params[key] = _resolve_task_file_path(files_dir, str(value), expect_dir=expect_dir)
             else:
                 params[key] = value
+        if stype in {"copy_files", "copy_directory"}:
+            if not output_root:
+                raise RuntimeError("任務尚未設定輸出路徑，無法執行複製步驟")
+            rel_dest = _normalize_output_rel_path(str(params.get("dest_dir") or ""))
+            dest_dir = os.path.join(output_root, rel_dest.replace("/", os.sep)) if rel_dest else output_root
+            os.makedirs(dest_dir, exist_ok=True)
+            params["dest_dir"] = dest_dir
         runtime_steps.append({"type": stype, "params": params})
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
@@ -124,6 +153,7 @@ def _execute_saved_flow(
             "task_batch_id": task_batch_id,
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "output_filename": output_filename,
+            "output_root": output_root,
         },
     )
     workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)

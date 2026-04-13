@@ -13,6 +13,7 @@ class TaskRecord(db.Model):
     description = db.Column(db.Text)
     creator = db.Column(db.String(200))
     nas_path = db.Column(db.Text)
+    output_path = db.Column(db.Text)
     created_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
 
 
@@ -33,6 +34,8 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE tasks ADD creator NVARCHAR(200) NULL;"))
             if "nas_path" not in existing_columns:
                 conn.execute(text("ALTER TABLE tasks ADD nas_path NVARCHAR(MAX) NULL;"))
+            if "output_path" not in existing_columns:
+                conn.execute(text("ALTER TABLE tasks ADD output_path NVARCHAR(MAX) NULL;"))
             if "created_at" not in existing_columns:
                 conn.execute(
                     text(
@@ -51,5 +54,7 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN creator TEXT;"))
             if "nas_path" not in existing_columns:
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN nas_path TEXT;"))
+            if "output_path" not in existing_columns:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN output_path TEXT;"))
             if "created_at" not in existing_columns:
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN created_at DATETIME;"))

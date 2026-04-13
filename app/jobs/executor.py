@@ -21,6 +21,29 @@ from app.services.flow_service import (
     remove_hidden_runs,
     run_workflow,
 )
+from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
+
+
+def _normalize_output_rel_path(raw_path: str) -> str:
+    text = (raw_path or "").strip()
+    if text in {"", ".", "/"}:
+        return ""
+    if os.path.isabs(text) or text.startswith(("/", "\\")):
+        raise ValueError("輸出資料夾必須為相對路徑")
+    normalized = os.path.normpath(text.replace("\\", "/")).replace("\\", "/")
+    if normalized in {"", "."}:
+        return ""
+    if normalized == ".." or normalized.startswith("../"):
+        raise ValueError("輸出資料夾不合法")
+    return normalized
+
+
+def _resolve_flow_output_root(task_id: str) -> str:
+    task_meta = _load_task_context(task_id) or {}
+    raw_output_root = str(task_meta.get("output_path") or build_task_output_path(task_id)).strip()
+    if not raw_output_root:
+        return ""
+    return os.path.abspath(raw_output_root)
 
 
 def run_single_flow_job(job_id: str, payload: dict) -> dict:
@@ -38,6 +61,21 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
     task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     job_dir = os.path.join(task_dir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
+    output_root = _resolve_flow_output_root(task_id)
+    runtime_steps = []
+    copy_step_present = False
+    for step in list(payload.get("runtime_steps") or []):
+        step_type = str(step.get("type") or "").strip()
+        params = dict(step.get("params") or {})
+        if step_type in {"copy_files", "copy_directory"}:
+            copy_step_present = True
+            if not output_root:
+                raise RuntimeError("任務尚未設定輸出路徑，無法執行複製步驟")
+            rel_dest = _normalize_output_rel_path(str(params.get("dest_dir") or ""))
+            dest_dir = os.path.join(output_root, rel_dest.replace("/", os.sep)) if rel_dest else output_root
+            os.makedirs(dest_dir, exist_ok=True)
+            params["dest_dir"] = dest_dir
+        runtime_steps.append({"type": step_type, "params": params})
 
     def _check_canceled() -> None:
         ensure_job_not_canceled(job_id)
@@ -161,6 +199,11 @@ def enqueue_single_flow_job(
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(task_dir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
+    output_root = _resolve_flow_output_root(task_id)
+    has_copy_output = any(
+        str(step.get("type") or "").strip() in {"copy_files", "copy_directory"}
+        for step in (runtime_steps or [])
+    )
     write_job_meta(
         job_dir,
         {
@@ -170,6 +213,8 @@ def enqueue_single_flow_job(
             "status": "queued",
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "output_filename": output_filename,
+            "output_root": output_root,
+            "has_copy_output": has_copy_output,
         },
     )
     payload = {

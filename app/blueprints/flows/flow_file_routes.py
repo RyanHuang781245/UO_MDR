@@ -5,6 +5,8 @@ import shutil
 
 from flask import current_app, request
 
+from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
+
 from .flow_file_blueprint import flow_file_bp
 from .flow_file_helpers import (
     _normalize_task_file_rel_path,
@@ -13,17 +15,34 @@ from .flow_file_helpers import (
 )
 
 
-@flow_file_bp.get("", endpoint="api_flow_list_task_files")
-def api_flow_list_task_files(task_id):
+def _resolve_browser_root(task_id: str, scope_raw: str) -> tuple[str, str]:
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    scope = (scope_raw or "files").strip().lower()
+    if scope == "output":
+        task_meta = _load_task_context(task_id) or {}
+        root_dir = str(task_meta.get("output_path") or build_task_output_path(task_id)).strip()
+        if not root_dir:
+            root_dir = build_task_output_path(task_id)
+        os.makedirs(root_dir, exist_ok=True)
+        return os.path.abspath(root_dir), "output"
+
     files_dir = os.path.join(tdir, "files")
     if not os.path.isdir(files_dir):
-        return {"ok": False, "error": "Task files not found"}, 404
+        raise FileNotFoundError("Task files not found")
+    return files_dir, "files"
+
+
+@flow_file_bp.get("", endpoint="api_flow_list_task_files")
+def api_flow_list_task_files(task_id):
+    try:
+        root_dir, scope = _resolve_browser_root(task_id, request.args.get("scope"))
+    except FileNotFoundError as exc:
+        return {"ok": False, "error": str(exc)}, 404
 
     rel_path_raw = (request.args.get("path") or "").strip()
     try:
         rel_path = _normalize_task_file_rel_path(rel_path_raw)
-        abs_dir = _resolve_task_file_path(files_dir, rel_path, expect_dir=True)
+        abs_dir = _resolve_task_file_path(root_dir, rel_path, expect_dir=True)
     except (ValueError, FileNotFoundError) as exc:
         return {"ok": False, "error": str(exc)}, 400
     except PermissionError:
@@ -47,6 +66,8 @@ def api_flow_list_task_files(task_id):
 
     return {
         "ok": True,
+        "scope": scope,
+        "root": root_dir,
         "path": rel_path,
         "parent": parent,
         "dirs": dirs,
@@ -56,23 +77,20 @@ def api_flow_list_task_files(task_id):
 
 @flow_file_bp.post("/folders", endpoint="api_flow_create_task_folder")
 def api_flow_create_task_folder(task_id):
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    files_dir = os.path.join(tdir, "files")
-    if not os.path.isdir(files_dir):
-        return {"ok": False, "error": "Task files not found"}, 404
-
     payload = request.get_json(silent=True) if request.is_json else None
+    scope_raw = ((payload or {}).get("scope") or request.form.get("scope") or "").strip()
     parent_raw = ((payload or {}).get("parent") or request.form.get("parent") or "").strip()
     name_raw = ((payload or {}).get("name") or request.form.get("name") or "").strip()
 
     try:
+        root_dir, scope = _resolve_browser_root(task_id, scope_raw)
         parent_rel = _normalize_task_file_rel_path(parent_raw)
-        _resolve_task_file_path(files_dir, parent_rel, expect_dir=True)
+        _resolve_task_file_path(root_dir, parent_rel, expect_dir=True)
         folder_name = _validate_new_folder_name(name_raw)
         target_rel = _normalize_task_file_rel_path(
             f"{parent_rel}/{folder_name}" if parent_rel else folder_name
         )
-        target_abs = _resolve_task_file_path(files_dir, target_rel, expect_dir=None)
+        target_abs = _resolve_task_file_path(root_dir, target_rel, expect_dir=None)
     except (ValueError, FileNotFoundError) as exc:
         return {"ok": False, "error": str(exc)}, 400
     except PermissionError:
@@ -82,64 +100,58 @@ def api_flow_create_task_folder(task_id):
         return {"ok": False, "error": "資料夾已存在"}, 409
 
     os.makedirs(target_abs, exist_ok=False)
-    return {"ok": True, "path": target_rel, "name": folder_name}
+    return {"ok": True, "scope": scope, "path": target_rel, "name": folder_name}
 
 
 @flow_file_bp.post("/folders/rename", endpoint="api_flow_rename_task_folder")
 def api_flow_rename_task_folder(task_id):
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    files_dir = os.path.join(tdir, "files")
-    if not os.path.isdir(files_dir):
-        return {"ok": False, "error": "Task files not found"}, 404
-
     payload = request.get_json(silent=True) if request.is_json else None
+    scope_raw = ((payload or {}).get("scope") or request.form.get("scope") or "").strip()
     path_raw = ((payload or {}).get("path") or request.form.get("path") or "").strip()
     name_raw = ((payload or {}).get("name") or request.form.get("name") or "").strip()
 
     try:
+        root_dir, scope = _resolve_browser_root(task_id, scope_raw)
         target_rel = _normalize_task_file_rel_path(path_raw)
         if not target_rel:
             raise ValueError("根目錄不可重新命名")
-        target_abs = _resolve_task_file_path(files_dir, target_rel, expect_dir=True)
+        target_abs = _resolve_task_file_path(root_dir, target_rel, expect_dir=True)
         folder_name = _validate_new_folder_name(name_raw)
         parent_rel = os.path.dirname(target_rel).replace("\\", "/")
         renamed_rel = _normalize_task_file_rel_path(
             f"{parent_rel}/{folder_name}" if parent_rel else folder_name
         )
-        renamed_abs = _resolve_task_file_path(files_dir, renamed_rel, expect_dir=None)
+        renamed_abs = _resolve_task_file_path(root_dir, renamed_rel, expect_dir=None)
     except (ValueError, FileNotFoundError) as exc:
         return {"ok": False, "error": str(exc)}, 400
     except PermissionError:
         return {"ok": False, "error": "Permission denied"}, 403
 
     if os.path.abspath(target_abs) == os.path.abspath(renamed_abs):
-        return {"ok": True, "path": target_rel, "name": os.path.basename(target_rel)}
+        return {"ok": True, "scope": scope, "path": target_rel, "name": os.path.basename(target_rel)}
     if os.path.exists(renamed_abs):
         return {"ok": False, "error": "資料夾已存在"}, 409
 
     os.rename(target_abs, renamed_abs)
-    return {"ok": True, "path": renamed_rel, "name": folder_name}
+    return {"ok": True, "scope": scope, "path": renamed_rel, "name": folder_name}
 
 
 @flow_file_bp.post("/folders/delete", endpoint="api_flow_delete_task_folder")
 def api_flow_delete_task_folder(task_id):
-    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    files_dir = os.path.join(tdir, "files")
-    if not os.path.isdir(files_dir):
-        return {"ok": False, "error": "Task files not found"}, 404
-
     payload = request.get_json(silent=True) if request.is_json else None
+    scope_raw = ((payload or {}).get("scope") or request.form.get("scope") or "").strip()
     path_raw = ((payload or {}).get("path") or request.form.get("path") or "").strip()
 
     try:
+        root_dir, scope = _resolve_browser_root(task_id, scope_raw)
         target_rel = _normalize_task_file_rel_path(path_raw)
         if not target_rel:
             raise ValueError("根目錄不可刪除")
-        target_abs = _resolve_task_file_path(files_dir, target_rel, expect_dir=True)
+        target_abs = _resolve_task_file_path(root_dir, target_rel, expect_dir=True)
     except (ValueError, FileNotFoundError) as exc:
         return {"ok": False, "error": str(exc)}, 400
     except PermissionError:
         return {"ok": False, "error": "Permission denied"}, 403
 
     shutil.rmtree(target_abs)
-    return {"ok": True, "deleted": target_rel}
+    return {"ok": True, "scope": scope, "deleted": target_rel}

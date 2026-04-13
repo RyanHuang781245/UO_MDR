@@ -14,6 +14,7 @@ from app.services.audit_service import record_audit
 from app.services.flow_service import parse_template_paragraphs
 from app.services.nas_service import get_configured_nas_roots, resolve_nas_path
 from app.services.task_service import (
+    build_task_output_path,
     can_delete_task as _can_delete_task,
     deduplicate_name,
     delete_task_record,
@@ -92,7 +93,9 @@ def create_task():
     tid = str(uuid.uuid4())[:8]
     tdir = os.path.join(current_app.config["TASK_FOLDER"], tid)
     files_dir = os.path.join(tdir, "files")
+    output_dir = build_task_output_path(tid)
     os.makedirs(files_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
     src_dir = ensure_windows_long_path(resolved_path)
     dest_dir = ensure_windows_long_path(files_dir)
     try:
@@ -134,6 +137,7 @@ def create_task():
         "description": task_desc,
         "created": created_at.strftime("%Y-%m-%d %H:%M"),
         "nas_path": display_nas_path,
+        "output_path": output_dir,
     }
     if creator:
         meta_payload["creator"] = creator
@@ -157,6 +161,7 @@ def create_task():
         description=task_desc,
         creator=creator or None,
         nas_path=display_nas_path or None,
+        output_path=output_dir,
         created_at=created_at,
     )
     record_audit(
@@ -260,6 +265,7 @@ def copy_task(task_id):
 
     new_id = str(uuid.uuid4())[:8]
     new_dir = os.path.join(current_app.config["TASK_FOLDER"], new_id)
+    new_output_dir = build_task_output_path(new_id)
     os.makedirs(new_dir, exist_ok=False)
     try:
         for subdir in ("files", "flows"):
@@ -269,6 +275,7 @@ def copy_task(task_id):
                 shutil.copytree(ensure_windows_long_path(src), ensure_windows_long_path(dest))
             elif subdir == "files":
                 os.makedirs(dest, exist_ok=True)
+        os.makedirs(new_output_dir, exist_ok=True)
     except Exception:
         current_app.logger.exception("複製任務資料夾失敗")
         shutil.rmtree(new_dir, ignore_errors=True)
@@ -278,6 +285,7 @@ def copy_task(task_id):
         "name": new_name,
         "description": meta.get("description", ""),
         "nas_path": target_nas_path,
+        "output_path": new_output_dir,
         "created": created_at.strftime("%Y-%m-%d %H:%M"),
         "last_edited": created_at.strftime("%Y-%m-%d %H:%M"),
     }
@@ -296,6 +304,7 @@ def copy_task(task_id):
         description=new_meta.get("description") or None,
         creator=creator or None,
         nas_path=new_meta.get("nas_path") or None,
+        output_path=new_meta.get("output_path") or None,
         created_at=created_at,
     )
     record_audit(
@@ -405,6 +414,7 @@ def task_detail(task_id):
     description = ""
     creator = ""
     nas_path = ""
+    output_path = ""
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
@@ -412,9 +422,10 @@ def task_detail(task_id):
             description = meta.get("description", "")
             creator = meta.get("creator", "") or ""
             nas_path = meta.get("nas_path", "") or ""
+            output_path = meta.get("output_path", "") or build_task_output_path(task_id)
     return render_template(
         "tasks/task_detail.html",
-        task={"id": task_id, "name": name, "description": description, "creator": creator, "nas_path": nas_path},
+        task={"id": task_id, "name": name, "description": description, "creator": creator, "nas_path": nas_path, "output_path": output_path},
         files_api_url=url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id),
     )
 

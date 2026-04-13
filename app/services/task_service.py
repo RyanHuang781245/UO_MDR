@@ -23,6 +23,10 @@ ALLOWED_EXCEL = {".xlsx", ".xls"}
 def _normalize_rel_path(rel_path: str) -> str:
     return (rel_path or "").replace("\\", "/")
 
+
+def build_task_output_path(task_id: str) -> str:
+    return os.path.join(current_app.config["TASK_FOLDER"], task_id, "output")
+
 def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel")):
     ext = os.path.splitext(filename)[1].lower()
     if "docx" in kinds and ext in ALLOWED_DOCX:
@@ -152,6 +156,7 @@ def load_task_context(task_id: str) -> dict:
     task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     meta_path = os.path.join(task_dir, "meta.json")
     task = {"id": task_id}
+    default_output_path = build_task_output_path(task_id)
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r", encoding="utf-8") as file_obj:
@@ -162,6 +167,7 @@ def load_task_context(task_id: str) -> dict:
                     "description": meta.get("description", ""),
                     "creator": meta.get("creator", "") or "",
                     "nas_path": meta.get("nas_path", "") or "",
+                    "output_path": meta.get("output_path", "") or default_output_path,
                 }
             )
         except Exception:
@@ -218,6 +224,7 @@ def list_tasks():
         last_editor = ""
         last_edited = ""
         nas_path = ""
+        output_path = ""
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
@@ -229,6 +236,7 @@ def list_tasks():
                 last_editor = meta.get("last_editor", "") or ""
                 last_edited = meta.get("last_edited", "") or ""
                 nas_path = meta.get("nas_path", "") or ""
+                output_path = meta.get("output_path", "") or build_task_output_path(tid)
         except Exception:
             pass
         if not created:
@@ -248,6 +256,7 @@ def list_tasks():
                 "last_editor": last_editor,
                 "last_edited": last_edited,
                 "nas_path": nas_path,
+                "output_path": output_path,
             }
         )
     task_list.sort(key=lambda x: x["created"], reverse=True)
@@ -269,6 +278,7 @@ def record_task_in_db(
     description: str | None = None,
     creator: str | None = None,
     nas_path: str | None = None,
+    output_path: str | None = None,
     created_at: datetime | None = None,
 ) -> None:
     try:
@@ -284,6 +294,8 @@ def record_task_in_db(
             task.creator = creator
         if nas_path is not None:
             task.nas_path = nas_path
+        if output_path is not None:
+            task.output_path = output_path
         if created_at and not task.created_at:
             task.created_at = created_at
         commit_session()

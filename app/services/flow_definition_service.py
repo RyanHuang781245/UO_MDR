@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Callable
 
 from app.services.flow_service import DEFAULT_APPLY_FORMATTING, DEFAULT_DOCUMENT_FORMAT_KEY, DEFAULT_LINE_SPACING, coerce_line_spacing, normalize_document_format
-from app.utils import normalize_docx_output_filename, parse_bool
+from app.utils import normalize_docx_output_path, parse_bool
 
 
 def build_workflow_from_form(form, supported_steps: dict, normalize_step_file_value: Callable[[str, str], str]) -> list[dict]:
@@ -88,7 +88,7 @@ def load_saved_flow_execution_context(flow_path: str) -> dict:
         line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
         template_file = data.get("template_file")
         apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
-        output_filename, output_filename_error = normalize_docx_output_filename(data.get("output_filename"), default="")
+        output_filename, output_filename_error = normalize_docx_output_path(data.get("output_filename"), default="")
         if output_filename_error:
             output_filename = ""
         if document_format == "none" or line_spacing_none:

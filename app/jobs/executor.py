@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import shutil
 import uuid
 from datetime import datetime
 
@@ -22,6 +23,7 @@ from app.services.flow_service import (
     run_workflow,
 )
 from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
+from app.utils import normalize_docx_output_path
 
 
 def _normalize_output_rel_path(raw_path: str) -> str:
@@ -44,6 +46,20 @@ def _resolve_flow_output_root(task_id: str) -> str:
     if not raw_output_root:
         return ""
     return os.path.abspath(raw_output_root)
+
+
+def _publish_flow_result_docx(output_root: str, result_path: str, output_filename: str) -> list[str]:
+    published: list[str] = []
+    normalized_output_path, output_path_error = normalize_docx_output_path(output_filename, default="")
+    if output_path_error:
+        raise ValueError(output_path_error)
+    if not output_root or not normalized_output_path or not os.path.isfile(result_path):
+        return published
+    target_abs = os.path.abspath(os.path.join(output_root, normalized_output_path.replace("/", os.sep)))
+    os.makedirs(os.path.dirname(target_abs), exist_ok=True)
+    shutil.copy2(result_path, target_abs)
+    published.append(target_abs)
+    return published
 
 
 def run_single_flow_job(job_id: str, payload: dict) -> dict:
@@ -76,7 +92,6 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
             os.makedirs(dest_dir, exist_ok=True)
             params["dest_dir"] = dest_dir
         runtime_steps.append({"type": step_type, "params": params})
-
     def _check_canceled() -> None:
         ensure_job_not_canceled(job_id)
 
@@ -114,12 +129,14 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
             remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
             hide_paragraphs_with_text(result_path, titles_to_hide)
         _check_canceled()
+        published_outputs = _publish_flow_result_docx(output_root, result_path, str(payload.get("output_filename") or ""))
         _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
         if has_step_error:
             update_job_meta(
                 job_dir,
                 status="failed",
                 error="Workflow step failed",
+                published_outputs=published_outputs,
                 completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             record_audit(
@@ -130,7 +147,12 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
             )
             raise RuntimeError("Workflow step failed")
 
-        update_job_meta(job_dir, status="completed", completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        update_job_meta(
+            job_dir,
+            status="completed",
+            published_outputs=published_outputs,
+            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
         record_audit(
             action="flow_run_single_completed",
             actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},

@@ -23,7 +23,7 @@ from app.services.flow_service import (
 from app.services.flow_version_service import has_duplicate_manual_version_name as _has_duplicate_manual_version_name
 from app.services.flow_version_service import snapshot_flow_version as _snapshot_flow_version
 from app.services.user_context_service import get_actor_info as _get_actor_info
-from app.utils import normalize_docx_output_filename, parse_bool
+from app.utils import normalize_docx_output_path, parse_bool
 
 from .execution_helpers import _queue_single_flow_job, _resolve_runtime_step_params
 from .flow_execution_blueprint import flow_execution_bp
@@ -60,7 +60,7 @@ def run_flow(task_id):
             return "缺少版本名稱", 400
         if len(version_name) > 50:
             return "版本名稱最多 50 字", 400
-    output_filename, output_filename_error = normalize_docx_output_filename(
+    output_filename, output_filename_error = normalize_docx_output_path(
         request.form.get("output_filename", ""),
         default="",
     )

@@ -162,6 +162,7 @@ def test_execute_saved_flow_remaps_copy_dest_to_task_output_path(app, monkeypatc
         shutil.rmtree(task_dir)
     files_dir = task_dir / "files"
     files_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "ignored.docx").write_bytes(b"source")
     source_file = files_dir / "report.txt"
     source_file.write_text("copy-me", encoding="utf-8")
     flow_dir = task_dir / "flows"
@@ -210,6 +211,99 @@ def test_execute_saved_flow_remaps_copy_dest_to_task_output_path(app, monkeypatc
     job_id = _execute_saved_flow(task_id, "CopyFlow")
     meta = json.loads((task_dir / "jobs" / job_id / "meta.json").read_text(encoding="utf-8"))
     assert meta["output_root"] == str(output_root)
+
+
+def test_enqueue_single_flow_job_publishes_flow_output_filename_to_task_output(app, monkeypatch) -> None:
+    task_id = "flow-publish-output-filename"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    output_root = task_dir / "output"
+    output_root.mkdir(parents=True, exist_ok=True)
+    (task_dir / "meta.json").write_text(
+        json.dumps({"name": "Publish Output", "output_path": str(output_root)}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    def fake_run_workflow(runtime_steps, workdir, template=None):
+        job_dir = Path(workdir)
+        (job_dir / "result.docx").write_bytes(b"docx-output")
+        return {"result_docx": str(job_dir / "result.docx"), "log_json": [{"status": "ok"}]}
+
+    monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
+
+    job_id = enqueue_single_flow_job(
+        task_id=task_id,
+        runtime_steps=[
+            {"type": "extract_word_all_content", "params": {"input_file": "ignored.docx", "output_docx_path": "published/chapter.docx"}},
+            {"type": "extract_word_all_content", "params": {"input_file": "ignored.docx"}},
+        ],
+        template_cfg=None,
+        document_format="none",
+        line_spacing=1.5,
+        apply_formatting=False,
+        actor={"work_id": "A123", "label": "Tester"},
+        flow_name="Publish Flow",
+        output_filename="published/final-report",
+    )
+
+    assert (output_root / "published" / "final-report.docx").read_bytes() == b"docx-output"
+    meta = json.loads((task_dir / "jobs" / job_id / "meta.json").read_text(encoding="utf-8"))
+    assert str(output_root / "published" / "final-report.docx") in (meta.get("published_outputs") or [])
+    assert not (output_root / "published" / "chapter.docx").exists()
+
+
+def test_execute_saved_flow_publishes_flow_output_filename_to_task_output(app, monkeypatch) -> None:
+    task_id = "saved-flow-publish-output-filename"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "ignored.docx").write_bytes(b"source")
+    flow_dir = task_dir / "flows"
+    flow_dir.mkdir(parents=True, exist_ok=True)
+    output_root = task_dir / "output"
+    output_root.mkdir(parents=True, exist_ok=True)
+    (task_dir / "meta.json").write_text(
+        json.dumps({"name": "Saved Publish Output", "output_path": str(output_root)}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (flow_dir / "PublishFlow.json").write_text(
+        json.dumps(
+            {
+                "output_filename": "published/final-report",
+                "steps": [
+                    {"type": "extract_word_all_content", "params": {"input_file": "ignored.docx", "output_docx_path": "published/chapter.docx"}},
+                    {"type": "insert_text", "params": {"text": "no publish"}},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_workflow(runtime_steps, workdir, template=None):
+        job_dir = Path(workdir)
+        (job_dir / "result.docx").write_bytes(b"docx-output")
+        return {"result_docx": str(job_dir / "result.docx"), "log_json": [{"status": "ok"}]}
+
+    monkeypatch.setattr("app.blueprints.flows.run_helpers.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("app.blueprints.flows.run_helpers.remove_hidden_runs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.blueprints.flows.run_helpers.hide_paragraphs_with_text", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.blueprints.flows.run_helpers.apply_basic_style", lambda *args, **kwargs: None)
+
+    from app.blueprints.flows.run_helpers import _execute_saved_flow
+
+    job_id = _execute_saved_flow(task_id, "PublishFlow")
+    assert (output_root / "published" / "final-report.docx").read_bytes() == b"docx-output"
+    meta = json.loads((task_dir / "jobs" / job_id / "meta.json").read_text(encoding="utf-8"))
+    assert str(output_root / "published" / "final-report.docx") in (meta.get("published_outputs") or [])
+    assert not (output_root / "published" / "chapter.docx").exists()
 
 
 def test_cancel_job_marks_queued_job_as_canceled(app, monkeypatch) -> None:

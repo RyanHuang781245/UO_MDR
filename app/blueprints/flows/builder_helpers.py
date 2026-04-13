@@ -27,7 +27,7 @@ from app.services.task_service import (
     gather_available_files,
     load_task_context as _load_task_context,
 )
-from app.utils import normalize_docx_output_filename, parse_bool
+from app.utils import normalize_docx_output_path, parse_bool
 
 from .flow_file_helpers import _normalize_task_file_rel_path, _resolve_task_file_path
 from .flow_route_helpers import _serialize_restore_backup
@@ -153,7 +153,7 @@ def build_flow_builder_context(task_id: str, args) -> dict:
                 document_format = normalize_document_format(data.get("document_format"))
                 line_spacing = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
                 apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
-                output_filename, output_filename_error = normalize_docx_output_filename(
+                output_filename, output_filename_error = normalize_docx_output_path(
                     data.get("output_filename"),
                     default="",
                 )

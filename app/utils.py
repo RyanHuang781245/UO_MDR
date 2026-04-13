@@ -76,3 +76,35 @@ def normalize_docx_output_filename(value: Optional[str], default: str = "") -> t
         return "", "輸出檔名為系統保留字，請更換名稱"
 
     return text, None
+
+
+def normalize_docx_output_path(value: Optional[str], default: str = "") -> tuple[str, Optional[str]]:
+    text = (value or "").strip()
+    if not text:
+        return default, None
+    if text in {".", ".."}:
+        return "", "輸出路徑不合法"
+    if any(ord(ch) < 32 for ch in text):
+        return "", "輸出路徑含有不可見控制字元"
+    if os.path.isabs(text) or text.startswith(("/", "\\")):
+        return "", "輸出路徑必須為相對路徑"
+
+    normalized = os.path.normpath(text.replace("\\", "/")).replace("\\", "/")
+    if normalized in {"", ".", ".."} or normalized.startswith("../"):
+        return "", "輸出路徑不合法"
+
+    parts = normalized.split("/")
+    for segment in parts[:-1]:
+        if not segment:
+            return "", "輸出路徑不合法"
+        if any(ch in _INVALID_FILENAME_CHARS for ch in segment):
+            return "", '輸出路徑不可包含 \\ : * ? " < > |'
+        if segment[-1] in {" ", "."}:
+            return "", "輸出路徑結尾不可為空白或句點"
+
+    filename = parts[-1]
+    normalized_filename, error = normalize_docx_output_filename(filename, default="")
+    if error:
+        return "", error.replace("輸出檔名", "輸出路徑")
+    parts[-1] = normalized_filename
+    return "/".join(parts), None

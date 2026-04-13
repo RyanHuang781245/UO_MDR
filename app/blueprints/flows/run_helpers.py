@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import uuid
 from datetime import datetime
 
@@ -39,7 +40,7 @@ from app.services.flow_service import (
 from app.services.flow_version_service import flow_version_count as _flow_version_count
 from app.services.notification_service import send_batch_notification
 from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
-from app.utils import normalize_docx_output_filename, parse_bool
+from app.utils import normalize_docx_output_path, parse_bool
 
 from .flow_file_helpers import _resolve_task_file_path
 from .flow_route_helpers import _touch_task_last_edit
@@ -63,6 +64,20 @@ def _resolve_flow_output_root(task_id: str) -> str:
     task_meta = _load_task_context(task_id) or {}
     raw_output_root = str(task_meta.get("output_path") or build_task_output_path(task_id)).strip()
     return os.path.abspath(raw_output_root) if raw_output_root else ""
+
+
+def _publish_flow_result_docx(output_root: str, result_path: str, output_filename: str) -> list[str]:
+    published: list[str] = []
+    normalized_output_path, output_path_error = normalize_docx_output_path(output_filename, default="")
+    if output_path_error:
+        raise ValueError(output_path_error)
+    if not output_root or not normalized_output_path or not os.path.isfile(result_path):
+        return published
+    target_abs = os.path.abspath(os.path.join(output_root, normalized_output_path.replace("/", os.sep)))
+    os.makedirs(os.path.dirname(target_abs), exist_ok=True)
+    shutil.copy2(result_path, target_abs)
+    published.append(target_abs)
+    return published
 
 
 def _execute_saved_flow(
@@ -97,7 +112,7 @@ def _execute_saved_flow(
         if document_format == "none" or line_spacing_none:
             apply_formatting = False
         template_file = data.get("template_file")
-        output_filename, output_filename_error = normalize_docx_output_filename(
+        output_filename, output_filename_error = normalize_docx_output_path(
             data.get("output_filename"),
             default="",
         )
@@ -158,6 +173,7 @@ def _execute_saved_flow(
     )
     workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
+    published_outputs = _publish_flow_result_docx(output_root, result_path, output_filename)
     log_entries = workflow_result.get("log_json", []) or []
     has_step_error = any(e.get("status") == "error" for e in log_entries)
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
@@ -180,12 +196,14 @@ def _execute_saved_flow(
             job_dir,
             status="failed",
             error="Workflow step failed",
+            published_outputs=published_outputs,
             completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
     else:
         _update_job_meta(
             job_dir,
             status="completed",
+            published_outputs=published_outputs,
             completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
     return job_id

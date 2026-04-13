@@ -222,6 +222,17 @@ def _flow_step_to_mapping_row(
             "template": template_name,
             "insert": insert_label,
         }
+    if stype == "insert_image":
+        return {
+            "source": _normalize_flow_source_for_mapping(params.get("input_file"), files_dir),
+            "item_type": "Add Image",
+            "operation": "",
+            "include_title": "",
+            "out_path": out_path,
+            "out_name": out_name,
+            "template": template_name,
+            "insert": insert_label,
+        }
     if stype in {"insert_text", "insert_roman_heading", "insert_bulleted_heading", "insert_numbered_heading"}:
         return {
             "source": str(params.get("text") or "").strip(),

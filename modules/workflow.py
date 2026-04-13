@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime
 from typing import List, Dict, Any, Callable
 from docx import Document as DocxDocument
-from docx.shared import Pt
+from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.text.paragraph import Paragraph as DocxParagraph
 from docx.oxml.ns import qn
@@ -278,6 +278,16 @@ SUPPORTED_STEPS = {
             "level": "int",
             "bold": "bool",
             "font_size": "float",
+            "template_index": "text",
+            "template_mode": "text",
+        }
+    },
+    "insert_image": {
+        "label": "插入純圖片檔案",
+        "inputs": ["input_file", "align", "template_index", "template_mode"],
+        "accepts": {
+            "input_file": "file:image",
+            "align": "align",
             "template_index": "text",
             "template_mode": "text",
         }
@@ -747,6 +757,19 @@ def run_workflow(
                     para.runs[0].font.size = Pt(float(params.get("font_size", 12)))
                 except Exception:
                     para.runs[0].font.size = None
+                doc.save(frag_path)
+                _route_fragment(frag_path, params, stype)
+
+            elif stype == "insert_image":
+                img_path = params.get("input_file")
+                if not img_path or not os.path.isfile(img_path):
+                    raise RuntimeError("Missing or invalid image path")
+                frag_path = _resolve_fragment_path(workdir, params.get("output_docx_path"), idx)
+                doc = _new_docx_fragment(frag_path)
+                para = doc.add_paragraph()
+                run = para.add_run()
+                run.add_picture(img_path)
+                _set_alignment(para, params.get("align", "center"))
                 doc.save(frag_path)
                 _route_fragment(frag_path, params, stype)
 

@@ -558,11 +558,19 @@ def process_mapping_excel(
             prefix = f"Row {row_num}: " if row_num else ""
             logs.append(f"{level.upper()}: {prefix}{message}")
 
-    def _normalize_item_type(raw_type: str) -> str:
+    def _normalize_item_type(raw_type: str, instruction: str = "") -> str:
         text = (raw_type or "").strip().lower()
+        instruction_text = (instruction or "").strip().lower()
+        # 「圖片/图片/圖/图」在舊版常被混用，依操作欄判斷語意：
+        # - 操作欄有內容（且非 add image/image）=> 視為擷取 Figure
+        # - 操作欄留白或 add image/image => 視為插入純圖片
+        if text in {"圖片", "图片", "圖", "图"}:
+            if instruction_text and instruction_text not in {"add image", "image"}:
+                return "figure"
+            return "add_image"
         if text in {"all", "extract all", "全文", "擷取全文", "提取全文"}:
             return "extract_all"
-        if text in {"figure", "fig", "圖片", "图"}:
+        if text in {"figure", "fig", "extract figure", "擷取圖片", "提取图片", "擷取图"}:
             return "figure"
         if text in {"table", "表格", "表"}:
             return "table"
@@ -574,6 +582,8 @@ def process_mapping_excel(
             return "add_text"
         if text in {"pdf image", "pdf images", "pdfimage", "pdf_img", "pdf圖片", "pdf图", "pdf 圖片", "pdf 图片"}:
             return "pdf_image"
+        if text in {"add image", "image", "圖片", "图片", "加入圖片", "新增圖片", "加入图片", "新增图片"}:
+            return "add_image"
         return ""
 
     def _parse_include_title(raw_value: str) -> tuple[bool, str]:
@@ -632,6 +642,8 @@ def process_mapping_excel(
             return "Extract table"
         if item_type == "pdf_image":
             return "Extract PDF images"
+        if item_type == "add_image":
+            return "Add Image"
         ins = (instruction or "").strip()
         if not ins:
             return "Mapping"
@@ -726,6 +738,8 @@ def process_mapping_excel(
         src_base = os.path.basename(src) if src else ""
         if action == "Append text":
             return src
+        if action == "Add Image":
+            return src_base or src
         if action in {"Copy file", "Copy folder"}:
             parts = [src_base or src]
             if out_rel:
@@ -826,7 +840,7 @@ def process_mapping_excel(
         out_name = _cell(col_idx.get("out_name", 3))
         template_name = _cell(col_idx.get("template", 4))
         insert_label = _cell(col_idx.get("insert", 5))
-        item_type = _normalize_item_type(_cell(col_idx.get("item_type", -1)))
+        item_type = _normalize_item_type(_cell(col_idx.get("item_type", -1)), instruction=instruction)
         include_title, include_title_error = _parse_include_title(_cell(col_idx.get("include_title", -1)))
 
         action_label = _guess_action(instruction, item_type=item_type)
@@ -841,7 +855,7 @@ def process_mapping_excel(
         if include_title_error:
             _log("error", include_title_error, row_num, action_label, detail_label)
             continue
-        if not instruction and item_type not in {"extract_all", "pdf_image", "add_text", "copy_file", "copy_folder"}:
+        if not instruction and item_type not in {"extract_all", "pdf_image", "add_text", "add_image", "copy_file", "copy_folder"}:
             _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
         if not out_name and item_type not in {"copy_file", "copy_folder"}:
@@ -1080,6 +1094,30 @@ def process_mapping_excel(
         group_key = (output_path, template_path)
         if group_key not in groups:
             groups[group_key] = {"steps": [], "parsed": parsed, "template": template_path}
+
+        if item_type == "add_image":
+            if instruction and instruction.lower() not in {"", "image", "add image"}:
+                _log("error", f"類型 Add Image 時，操作欄僅支援留白: {instruction}", row_num, action_label, detail_label)
+                continue
+            # Resolve image file from task_files_dir
+            infile, resolve_error = _resolve_any_file(task_files_dir, src_name)
+            if not infile:
+                _log("error", f"來源圖片解析失敗: {resolve_error}", row_num, action_label, detail_label)
+                continue
+            allowed_exts = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff"}
+            ext = os.path.splitext(str(infile))[1].lower()
+            if ext not in allowed_exts:
+                allowed_text = ", ".join(sorted(allowed_exts))
+                _log("error", f"Add Image 僅支援圖片格式: {allowed_text}", row_num, action_label, detail_label)
+                continue
+            params = {"input_file": infile, "align": "center"}
+            if template_path is not None:
+                params["template_index"] = target_idx
+                params["template_mode"] = "insert_after"
+            _attach_mapping_meta(params, row_num, action_label, detail_label)
+            groups[group_key]["steps"].append({"type": "insert_image", "params": params})
+            _log("info", f"add image: {src_name} into {out_name}", row_num)
+            continue
 
         if item_type == "add_text":
             if instruction and instruction.lower() != "add text":

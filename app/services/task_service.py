@@ -18,6 +18,7 @@ ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
 ALLOWED_EXCEL = {".xlsx", ".xls"}
+ALLOWED_IMAGE = {".png", ".jpg", ".jpeg", ".bmp", ".gif"}
 
 
 def _normalize_rel_path(rel_path: str) -> str:
@@ -27,7 +28,7 @@ def _normalize_rel_path(rel_path: str) -> str:
 def build_task_output_path(task_id: str) -> str:
     return os.path.join(current_app.config["TASK_FOLDER"], task_id, "output")
 
-def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel")):
+def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel", "image")):
     ext = os.path.splitext(filename)[1].lower()
     if "docx" in kinds and ext in ALLOWED_DOCX:
         return True
@@ -36,6 +37,8 @@ def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel")):
     if "zip" in kinds and ext in ALLOWED_ZIP:
         return True
     if "excel" in kinds and ext in ALLOWED_EXCEL:
+        return True
+    if "image" in kinds and ext in ALLOWED_IMAGE:
         return True
     return False
 
@@ -197,7 +200,7 @@ def can_delete_task(meta: dict) -> bool:
 
 
 def gather_available_files(files_dir):
-    mapping = {"docx": [], "pdf": [], "zip": [], "dir": [], "path": []}
+    mapping = {"docx": [], "pdf": [], "zip": [], "dir": [], "path": [], "image": []}
     for rel in list_files(files_dir):
         ext = os.path.splitext(rel)[1].lower()
         if ext == ".docx":
@@ -206,10 +209,12 @@ def gather_available_files(files_dir):
             mapping["pdf"].append(rel)
         elif ext == ".zip":
             mapping["zip"].append(rel)
+        elif ext in ALLOWED_IMAGE:
+            mapping["image"].append(rel)
     dirs = list_dirs(files_dir)
     dirs.insert(0, ".")
     mapping["dir"] = dirs
-    mapping["path"] = sorted(set(mapping["docx"] + mapping["pdf"] + mapping["zip"] + dirs), key=str.lower)
+    mapping["path"] = sorted(set(mapping["docx"] + mapping["pdf"] + mapping["zip"] + mapping["image"] + dirs), key=str.lower)
     return mapping
 
 

@@ -30,12 +30,13 @@
     <div class="main-card mb-4">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
-                <div class="fw-bold">Mapping File 上傳與檢查</div>
+                <!-- <div class="fw-bold">Mapping File 上傳與檢查</div> -->
+                <h5 class="fw-bold mb-0">Mapping File 上傳與檢查</h5>
                 <!-- <div class="small text-muted">步驟 1 上傳 Excel，步驟 2 完成檢查，步驟 3 儲存方案。</div> -->
             </div>
             <div class="d-flex flex-wrap align-items-center gap-2">
                 <button
-                    class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2"
+                    class="btn btn-sm btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2"
                     type="button"
                     data-bs-toggle="modal"
                     data-bs-target="#mappingDefinitionModal"
@@ -43,7 +44,7 @@
                     <i class="bi bi-info-circle text-primary"></i>
                     Mapping 定義說明
                 </button>
-                <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}">
+                <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_download_mapping_example', task_id=task_id) }}">
                     <i class="bi bi-download"></i>
                     下載 Mapping 範例
                 </a>

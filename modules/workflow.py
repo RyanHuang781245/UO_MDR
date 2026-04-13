@@ -428,6 +428,7 @@ def run_workflow(
     template_mode_default = (template_cfg.get("default_mode") or "insert_after").strip()
     template_paragraphs = template_cfg.get("paragraphs")
     copied_dir_registry: dict[str, dict[str, Any]] = {}
+    copied_file_registry: dict[str, dict[str, Any]] = {}
     arabic_counters: list[int] = [0, 0, 0]
     roman_counter = 0
     provenance_counter = 0
@@ -760,6 +761,9 @@ def run_workflow(
                             source_path,
                             params.get("dest_dir", ""),
                             target_name=target_name or None,
+                            copied_registry=copied_file_registry,
+                            registry_entry={"log_index": len(log) - 1, "source": os.path.abspath(source_path)},
+                            replace_existing=True,
                         )
                     ]
                     if keywords:
@@ -770,6 +774,8 @@ def run_workflow(
                         params.get("dest_dir", ""),
                         keywords,
                         recursive=recursive_search,
+                        copied_registry=copied_file_registry,
+                        replace_existing=True,
                     )
                     if not copied:
                         log[-1]["copied_files"] = []
@@ -795,6 +801,7 @@ def run_workflow(
                         recursive=recursive_search,
                         copied_registry=copied_dir_registry,
                         registry_entry_factory=lambda src_path: {"log_index": len(log) - 1, "source": os.path.abspath(src_path)},
+                        replace_existing=True,
                     )
                     if not copied_dirs:
                         log[-1]["copied_dirs"] = []
@@ -815,6 +822,7 @@ def run_workflow(
                         target_name=target_name or None,
                         copied_registry=copied_dir_registry,
                         registry_entry={"log_index": len(log) - 1, "source": os.path.abspath(params.get("source_dir", ""))},
+                        replace_existing=True,
                     )
                     copied_dirs = [copied_dir]
                 log[-1]["copied_dirs"] = copied_dirs

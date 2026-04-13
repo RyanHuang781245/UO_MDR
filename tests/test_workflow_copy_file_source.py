@@ -54,3 +54,90 @@ def test_workflow_copy_files_can_copy_single_selected_file(tmp_path: Path) -> No
     assert entry["copied_files"] == [str(dest_root / "renamed_output.docx")]
     assert (dest_root / "renamed_output.docx").read_text(encoding="utf-8") == "demo"
     assert entry["note"] == "已選擇單一來源檔案，已忽略關鍵字。"
+
+
+def test_workflow_copy_files_repeated_run_overwrites_existing_output(tmp_path: Path) -> None:
+    source_root = tmp_path / "source_root"
+    source_root.mkdir()
+    source_file = source_root / "ifu_demo.docx"
+    source_file.write_text("old-content", encoding="utf-8")
+
+    dest_root = tmp_path / "dest_root"
+    dest_root.mkdir()
+    run_workflow(
+        [
+            {
+                "type": "copy_files",
+                "params": {
+                    "source_dir": str(source_file),
+                    "dest_dir": str(dest_root),
+                },
+            }
+        ],
+        str(tmp_path / "job_copy_single_selected_file_seed"),
+    )
+    source_file.write_text("new-content", encoding="utf-8")
+
+    result = run_workflow(
+        [
+            {
+                "type": "copy_files",
+                "params": {
+                    "source_dir": str(source_file),
+                    "dest_dir": str(dest_root),
+                },
+            }
+        ],
+        str(tmp_path / "job_copy_single_selected_file_replace"),
+    )
+
+    entry = next(e for e in result["log_json"] if e.get("type") == "copy_files")
+    assert entry["copied_files"] == [str(dest_root / "ifu_demo.docx")]
+    assert (dest_root / "ifu_demo.docx").read_text(encoding="utf-8") == "new-content"
+
+
+def test_workflow_copy_files_different_source_on_later_run_adds_suffix(tmp_path: Path) -> None:
+    first_root = tmp_path / "first_source"
+    second_root = tmp_path / "second_source"
+    first_root.mkdir()
+    second_root.mkdir()
+    (first_root / "ifu_demo.docx").write_text("first", encoding="utf-8")
+    (second_root / "ifu_demo.docx").write_text("second", encoding="utf-8")
+
+    dest_root = tmp_path / "dest_root"
+    dest_root.mkdir()
+
+    run_workflow(
+        [
+            {
+                "type": "copy_files",
+                "params": {
+                    "source_dir": str(first_root / "ifu_demo.docx"),
+                    "dest_dir": str(dest_root),
+                },
+            }
+        ],
+        str(tmp_path / "job_copy_file_first_run"),
+    )
+
+    result = run_workflow(
+        [
+            {
+                "type": "copy_files",
+                "params": {
+                    "source_dir": str(second_root / "ifu_demo.docx"),
+                    "dest_dir": str(dest_root),
+                },
+            }
+        ],
+        str(tmp_path / "job_copy_file_second_run"),
+    )
+
+    entry = next(e for e in result["log_json"] if e.get("type") == "copy_files")
+    copied_files = sorted(
+        p for p in dest_root.iterdir()
+        if p.is_file() and p.name != ".uo_flow_copy_registry.json"
+    )
+    assert len(copied_files) == 2
+    assert Path(entry["copied_file"]).read_text(encoding="utf-8") == "second"
+    assert sorted(p.read_text(encoding="utf-8") for p in copied_files) == ["first", "second"]

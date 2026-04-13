@@ -178,3 +178,97 @@ def test_workflow_copy_directory_keywords_work_when_destination_is_source_ancest
     assert entry["status"] == "ok"
     assert sorted(Path(p).name for p in entry["copied_dirs"]) == ["IFU"]
     assert (files_root / "IFU" / "ifu.txt").read_text(encoding="utf-8") == "ifu"
+
+
+def test_workflow_copy_directory_repeated_run_replaces_existing_directory(tmp_path: Path) -> None:
+    source_dir = tmp_path / "source_bundle"
+    source_dir.mkdir()
+    (source_dir / "root.txt").write_text("old-root", encoding="utf-8")
+
+    dest_root = tmp_path / "dest_root"
+    dest_root.mkdir()
+    existing_dir = dest_root / "source_bundle"
+
+    run_workflow(
+        [
+            {
+                "type": "copy_directory",
+                "params": {
+                    "source_dir": str(source_dir),
+                    "dest_dir": str(dest_root),
+                },
+            }
+        ],
+        str(tmp_path / "job_copy_directory_seed"),
+    )
+    (existing_dir / "old.txt").write_text("old", encoding="utf-8")
+    (source_dir / "root.txt").write_text("new-root", encoding="utf-8")
+
+    result = run_workflow(
+        [
+            {
+                "type": "copy_directory",
+                "params": {
+                    "source_dir": str(source_dir),
+                    "dest_dir": str(dest_root),
+                },
+            }
+        ],
+        str(tmp_path / "job_copy_directory_replace"),
+    )
+
+    entry = next(e for e in result["log_json"] if e.get("type") == "copy_directory")
+    copied_dir = Path(entry["copied_dir"])
+    assert copied_dir == existing_dir
+    assert not (existing_dir / "old.txt").exists()
+    assert (existing_dir / "root.txt").read_text(encoding="utf-8") == "new-root"
+
+
+def test_workflow_copy_directory_different_source_on_later_run_adds_suffix(tmp_path: Path) -> None:
+    knee_ifu = tmp_path / "knee_system" / "IFU"
+    hip_ifu = tmp_path / "hip_system" / "IFU"
+    knee_ifu.mkdir(parents=True)
+    hip_ifu.mkdir(parents=True)
+    (knee_ifu / "knee.txt").write_text("knee", encoding="utf-8")
+    (hip_ifu / "hip.txt").write_text("hip", encoding="utf-8")
+
+    dest_root = tmp_path / "dest_root"
+    dest_root.mkdir()
+
+    run_workflow(
+        [
+            {
+                "type": "copy_directory",
+                "params": {
+                    "source_dir": str(knee_ifu),
+                    "dest_dir": str(dest_root),
+                },
+            }
+        ],
+        str(tmp_path / "job_copy_directory_first_run"),
+    )
+
+    result = run_workflow(
+        [
+            {
+                "type": "copy_directory",
+                "params": {
+                    "source_dir": str(hip_ifu),
+                    "dest_dir": str(dest_root),
+                },
+            }
+        ],
+        str(tmp_path / "job_copy_directory_second_run"),
+    )
+
+    entry = next(e for e in result["log_json"] if e.get("type") == "copy_directory")
+    copied_dirs = sorted(p for p in dest_root.iterdir() if p.is_dir())
+    assert len(copied_dirs) == 2
+    assert (Path(entry["copied_dir"]) / "hip.txt").read_text(encoding="utf-8") == "hip"
+    collected = sorted(
+        file.read_text(encoding="utf-8")
+        for folder in copied_dirs
+        for file in folder.iterdir()
+        if file.is_file()
+    )
+    assert collected == ["hip", "knee"]

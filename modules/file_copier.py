@@ -1,7 +1,31 @@
 import os
 import re
 import shutil
+import json
 from typing import Any, Dict, Iterable, List
+
+
+_COPY_REGISTRY_FILENAME = ".uo_flow_copy_registry.json"
+
+
+def _load_persistent_registry(destination: str) -> dict[str, str]:
+    registry_path = os.path.join(destination, _COPY_REGISTRY_FILENAME)
+    if not os.path.isfile(registry_path):
+        return {}
+    try:
+        with open(registry_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(key): str(value) for key, value in data.items() if key}
+
+
+def _save_persistent_registry(destination: str, registry: dict[str, str]) -> None:
+    registry_path = os.path.join(destination, _COPY_REGISTRY_FILENAME)
+    with open(registry_path, "w", encoding="utf-8") as fh:
+        json.dump(registry, fh, ensure_ascii=False, indent=2)
 
 
 def copy_files(
@@ -9,6 +33,8 @@ def copy_files(
     destination: str,
     keywords: Iterable[str],
     recursive: bool = True,
+    copied_registry: Dict[str, Dict[str, Any]] | None = None,
+    replace_existing: bool = False,
 ) -> List[str]:
     """Copy files whose names contain all provided keywords.
 
@@ -56,8 +82,14 @@ def copy_files(
                 # same file (e.g., destination inside source and already visited)
                 if os.path.abspath(src_path) == os.path.abspath(dest_path):
                     continue
-                shutil.copy2(src_path, dest_path)
-                copied_files.append(dest_path)
+                copied_files.append(
+                    copy_file(
+                        src_path,
+                        destination,
+                        copied_registry=copied_registry,
+                        replace_existing=replace_existing,
+                    )
+                )
         if not recursive:
             break
     return copied_files
@@ -175,6 +207,7 @@ def copy_directory(
     target_name: str | None = None,
     copied_registry: Dict[str, Dict[str, Any]] | None = None,
     registry_entry: Dict[str, Any] | None = None,
+    replace_existing: bool = False,
 ) -> str:
     """Copy a directory into the destination directory, preserving its name."""
     if not os.path.isdir(source):
@@ -191,11 +224,18 @@ def copy_directory(
         raise ValueError("Destination cannot be the same as or inside the source directory")
 
     registry = copied_registry if copied_registry is not None else {}
+    persistent_registry = _load_persistent_registry(destination_abs)
     existing_info = registry.get(target_abs) or {}
-    existing_source = existing_info.get("source") if isinstance(existing_info, dict) else str(existing_info)
+    existing_source = (
+        existing_info.get("source") if isinstance(existing_info, dict) else str(existing_info)
+    ) or persistent_registry.get(os.path.basename(target_abs), "")
 
     if os.path.exists(target_abs):
-        if existing_source and os.path.abspath(existing_source) != source_abs:
+        if replace_existing and existing_source and os.path.abspath(existing_source) == source_abs:
+            shutil.rmtree(target_abs)
+            registry.pop(target_abs, None)
+            persistent_registry.pop(os.path.basename(target_abs), None)
+        elif existing_source and os.path.abspath(existing_source) != source_abs:
             existing_suffix = _infer_conflict_suffix(existing_source, source_abs, folder_name)
             renamed_existing = _dedupe_path(
                 _build_target_path(destination_abs, folder_name, existing_suffix)
@@ -204,6 +244,8 @@ def copy_directory(
                 shutil.move(target_abs, renamed_existing)
                 registry.pop(target_abs, None)
                 registry[os.path.abspath(renamed_existing)] = existing_info
+                persistent_registry.pop(os.path.basename(target_abs), None)
+                persistent_registry[os.path.basename(renamed_existing)] = os.path.abspath(existing_source)
 
             current_suffix = _infer_conflict_suffix(source_abs, existing_source, folder_name)
             target_abs = _dedupe_path(
@@ -218,6 +260,8 @@ def copy_directory(
     info = dict(registry_entry or {})
     info["source"] = source_abs
     registry[os.path.abspath(target_abs)] = info
+    persistent_registry[os.path.basename(target_abs)] = source_abs
+    _save_persistent_registry(destination_abs, persistent_registry)
     return target_abs
 
 
@@ -228,6 +272,7 @@ def copy_directories(
     recursive: bool = True,
     copied_registry: Dict[str, Dict[str, Any]] | None = None,
     registry_entry_factory=None,
+    replace_existing: bool = False,
 ) -> List[str]:
     """Copy directories whose basenames contain all provided keywords."""
     if not os.path.isdir(source):
@@ -236,7 +281,7 @@ def copy_directories(
     lowered_keywords = [k.strip().lower() for k in keywords if k and k.strip()]
     if not lowered_keywords:
         entry = registry_entry_factory(source) if callable(registry_entry_factory) else None
-        return [copy_directory(source, destination, None, copied_registry, entry)]
+        return [copy_directory(source, destination, None, copied_registry, entry, replace_existing=replace_existing)]
 
     source_abs = os.path.abspath(source)
     destination_abs = os.path.abspath(destination)
@@ -272,6 +317,7 @@ def copy_directories(
                 None,
                 copied_registry,
                 entry,
+                replace_existing=replace_existing,
             )
         if not recursive:
             break
@@ -298,6 +344,7 @@ def copy_directories(
             None,
             copied_registry,
             entry,
+            replace_existing=replace_existing,
         )
         copied_dirs.append(copied_path)
 
@@ -310,6 +357,7 @@ def copy_file(
     target_name: str | None = None,
     copied_registry: Dict[str, Dict[str, Any]] | None = None,
     registry_entry: Dict[str, Any] | None = None,
+    replace_existing: bool = False,
 ) -> str:
     """Copy a file into the destination directory with conflict-aware suffixing."""
     if not os.path.isfile(source):
@@ -329,12 +377,19 @@ def copy_file(
         raise ValueError("Destination cannot be the same as the source file")
 
     registry = copied_registry if copied_registry is not None else {}
+    persistent_registry = _load_persistent_registry(destination_abs)
     existing_info = registry.get(target_abs) or {}
-    existing_source = existing_info.get("source") if isinstance(existing_info, dict) else str(existing_info)
+    existing_source = (
+        existing_info.get("source") if isinstance(existing_info, dict) else str(existing_info)
+    ) or persistent_registry.get(os.path.basename(target_abs), "")
     folder_name = os.path.splitext(os.path.basename(target_filename))[0] or "copied_file"
 
     if os.path.exists(target_abs):
-        if existing_source and os.path.abspath(existing_source) != source_abs:
+        if replace_existing and existing_source and os.path.abspath(existing_source) == source_abs:
+            os.remove(target_abs)
+            registry.pop(target_abs, None)
+            persistent_registry.pop(os.path.basename(target_abs), None)
+        elif existing_source and os.path.abspath(existing_source) != source_abs:
             existing_suffix = _infer_conflict_suffix(existing_source, source_abs, folder_name)
             renamed_existing = _dedupe_path(
                 _build_file_target_path(destination_abs, target_filename, existing_suffix)
@@ -343,6 +398,8 @@ def copy_file(
                 shutil.move(target_abs, renamed_existing)
                 registry.pop(target_abs, None)
                 registry[os.path.abspath(renamed_existing)] = existing_info
+                persistent_registry.pop(os.path.basename(target_abs), None)
+                persistent_registry[os.path.basename(renamed_existing)] = os.path.abspath(existing_source)
 
             current_suffix = _infer_conflict_suffix(source_abs, existing_source, folder_name)
             target_abs = _dedupe_path(
@@ -357,6 +414,8 @@ def copy_file(
     info = dict(registry_entry or {})
     info["source"] = source_abs
     registry[os.path.abspath(target_abs)] = info
+    persistent_registry[os.path.basename(target_abs)] = source_abs
+    _save_persistent_registry(destination_abs, persistent_registry)
     return target_abs
 
 

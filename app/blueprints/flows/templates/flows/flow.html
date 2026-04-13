@@ -175,7 +175,7 @@
                                 <tr>
                                     <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">流程名稱</th>
                                     <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
-                                    <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
+                                    <th class="text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="flowTableBody">
@@ -185,8 +185,8 @@
                                         <span class="fw-bold text-primary flow-name-truncate" style="font-size: 0.875rem;" title="{{ f.name }}">{{ f.name }}</span>
                                     </td>
                                     <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ f.created }}</td>
-                                    <td>
-                                        <div class="d-flex justify-content-center gap-1">
+                                    <td class="text-end pe-4">
+                                        <div class="d-flex justify-content-end gap-1">
                                             <form action="{{ url_for('flow_execution_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製步驟，執行前請確認 NAS 與任務資料夾內容一致')"{% endif %}>
                                                 <input type="hidden" name="apply_formatting" value="false">
                                                 <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
@@ -207,9 +207,9 @@
                                             <button class="btn-action-icon" type="button" onclick="renameFlow('{{ f.name }}')" title="重新命名">
                                                 <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
                                             </button>
-                                            <!-- <a class="btn-action-icon" href="{{ url_for('flow_crud_bp.export_flow', task_id=task.id, flow_name=f.name) }}" title="導出流程">
-                                                <i class="bi bi-box-arrow-up"></i>
-                                            </a> -->
+                                            <a class="btn-action-icon" href="{{ url_for('flow_crud_bp.export_flow_mapping', task_id=task.id, flow_name=f.name) }}" title="匯出 Mapping Excel">
+                                                <i class="bi bi-file-earmark-excel"></i><span class="d-none d-lg-inline small fw-semibold">匯出 Mapping</span>
+                                            </a>
                                             <form action="{{ url_for('flow_crud_bp.delete_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除流程「{{ f.name }}」?')">
                                                 <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
                                                 <button class="btn-action-icon text-danger" type="submit" title="刪除流程">
@@ -891,12 +891,13 @@
 .saved-flows-table {
   width: 100%;
   table-layout: fixed;
+  min-width: 1000px;
 }
 .saved-flows-col-created {
-  width: 150px;
+  width: 180px;
 }
 .saved-flows-col-actions {
-  width: 520px;
+  width: 620px;
 }
 .saved-flows-table .flow-name-truncate {
   max-width: none;

@@ -187,3 +187,39 @@ def test_export_flow_mapping_excel_populates_insert_label_from_template_index(ap
     wb = load_workbook(filename=BytesIO(response.data))
     ws = wb.active
     assert ws.cell(2, 8).value == "a) Product Description"
+
+
+def test_export_flow_mapping_excel_uses_figure_table_type_for_table_wrapped_figure(app, client) -> None:
+    task_id = "flow-export-mapping-figure-table"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    (task_dir / "flows").mkdir(parents=True, exist_ok=True)
+
+    flow_payload = {
+        "steps": [
+            {
+                "type": "extract_specific_figure_from_word",
+                "params": {
+                    "input_file": "Attachment 004_Description of Device Packaging_0.docx",
+                    "target_chapter_title": "Packaging for the Implant",
+                    "target_caption_label": "Figure 2",
+                    "allow_table_figure_container": "true",
+                },
+            }
+        ],
+        "output_filename": "test/Product Description.docx",
+    }
+    (task_dir / "flows" / "FlowFigureTable.json").write_text(json.dumps(flow_payload, ensure_ascii=False), encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_crud_bp.export_flow_mapping", task_id=task_id, flow_name="FlowFigureTable")
+
+    response = client.get(url)
+    assert response.status_code == 200
+
+    wb = load_workbook(filename=BytesIO(response.data))
+    ws = wb.active
+    assert ws.cell(2, 2).value == "Figure Table"
+    assert ws.cell(2, 3).value == "Packaging for the Implant | Figure 2"

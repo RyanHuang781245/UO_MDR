@@ -112,8 +112,10 @@ def _build_mapping_operation_for_visual(params: dict, *, kind: str) -> str:
     base = _build_extract_target(params)
     parts = [base] if base else []
     caption = str(params.get("target_caption_label") or "").strip()
-    title = str(params.get("target_figure_title") if kind == "figure" else params.get("target_table_title") or "").strip()
-    index = str(params.get("target_figure_index") if kind == "figure" else params.get("target_table_index") or "").strip()
+    title_value = params.get("target_figure_title") if kind == "figure" else params.get("target_table_title")
+    index_value = params.get("target_figure_index") if kind == "figure" else params.get("target_table_index")
+    title = str(title_value or "").strip()
+    index = str(index_value or "").strip()
     if caption:
         parts.append(caption)
     if title:
@@ -192,7 +194,7 @@ def _flow_step_to_mapping_row(
     if stype == "extract_specific_figure_from_word":
         return {
             "source": _normalize_flow_source_for_mapping(params.get("input_file"), files_dir),
-            "item_type": "Figure",
+            "item_type": "Figure Table" if parse_bool(params.get("allow_table_figure_container"), False) else "Figure",
             "operation": _build_mapping_operation_for_visual(params, kind="figure"),
             "include_title": _mapping_yes_no(params.get("include_caption"), default="Y"),
             "out_path": out_path,

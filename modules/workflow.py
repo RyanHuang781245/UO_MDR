@@ -583,7 +583,7 @@ SUPPORTED_STEPS = {
         }
     },
     "insert_image": {
-        "label": "插入純圖片檔案",
+        "label": "插入圖片檔",
         "inputs": ["input_file", "align", "template_index", "template_mode"],
         "accepts": {
             "input_file": "file:image",
@@ -1237,7 +1237,7 @@ def run_workflow(
             )
             log.append(
                 {
-                    "step": len(log) + 1,
+                    # "step": len(log) + 1,
                     "type": "template_merge",
                     "template_file": template_cfg["path"],
                     "mappings": [
@@ -1260,7 +1260,7 @@ def run_workflow(
         except Exception as e:
             log.append(
                 {
-                    "step": len(log) + 1,
+                    # "step": len(log) + 1,
                     "type": "template_merge",
                     "template_file": template_cfg.get("path"),
                     "mappings": template_mappings,
@@ -1342,7 +1342,7 @@ def run_workflow(
             _renumber_figure_table_labels(out_docx)
             log.append(
                 {
-                    "step": len(log) + 1,
+                    # "step": len(log) + 1,
                     "type": "postprocess_renumber_figure_table",
                     "output_docx": out_docx,
                     "status": "ok",
@@ -1351,7 +1351,7 @@ def run_workflow(
         except Exception as e:
             log.append(
                 {
-                    "step": len(log) + 1,
+                    # "step": len(log) + 1,
                     "type": "postprocess_renumber_figure_table",
                     "output_docx": out_docx,
                     "status": "error",

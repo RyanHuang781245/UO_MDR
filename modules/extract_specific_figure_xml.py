@@ -185,16 +185,6 @@ def _analyze_figure_caption_candidate(block: Optional[etree._Element]) -> dict:
     char_count = len(text)
     style = (get_pStyle(block) or "").strip().lower()
 
-    if char_count > 180:
-        return {
-            "accepted": False,
-            "reason": "too_long",
-            "text": text,
-            "style": style,
-            "word_count": word_count,
-            "char_count": char_count,
-        }
-
     if style in FIGURE_CAPTION_STYLES or style.startswith("heading"):
         return {
             "accepted": True,
@@ -211,6 +201,16 @@ def _analyze_figure_caption_candidate(block: Optional[etree._Element]) -> dict:
             "text": text,
             "style": style,
             "word_count": word_count,
+        }
+
+    if char_count > 180:
+        return {
+            "accepted": False,
+            "reason": "too_long",
+            "text": text,
+            "style": style,
+            "word_count": word_count,
+            "char_count": char_count,
         }
 
     # 沒有明確 Figure 1 開頭時，也接受較短、獨立成行的段落作為 fallback

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from docx import Document as DocxDocument
+from docx.shared import Inches
 
 import modules.extract_specific_figure_xml as figure_xml
 import modules.extract_specific_table_xml as table_xml
@@ -11,6 +12,25 @@ def _create_docx(path: Path) -> None:
     doc = DocxDocument()
     doc.add_paragraph("Device Under Evaluation")
     doc.add_paragraph("Body text")
+    doc.save(path)
+
+
+def _create_figure_docx_with_long_caption(path: Path, image_path: Path) -> None:
+    image_path.write_bytes(
+        bytes.fromhex(
+            "89504E470D0A1A0A0000000D4948445200000001000000010804000000B51C0C02"
+            "0000000B4944415478DA63FCFF1F0002EB01F6C5FD9F470000000049454E44AE426082"
+        )
+    )
+    doc = DocxDocument()
+    doc.add_paragraph("Device Under Evaluation")
+    doc.add_paragraph().add_run().add_picture(str(image_path), width=Inches(0.2))
+    doc.add_paragraph(
+        "Figure 1. The overlapping graph of predicate device (K082424) and the current "
+        "submission device. The above figure shows the locking mechanism (Taper at outer "
+        "surface, Thread in inner surface) of current submission (in blue) and predicate "
+        "device (in black) are identical."
+    )
     doc.save(path)
 
 
@@ -114,3 +134,29 @@ def test_extract_specific_table_disables_mismatch_guard_without_toc_match(
     assert captured["strict_heading_number_match"] is True
     assert captured["allow_start_number_mismatch_fallback"] is False
     assert isinstance(captured["style_numpr"], dict)
+
+
+def test_extract_specific_figure_index_keeps_long_figure_prefix_caption(tmp_path: Path) -> None:
+    src = tmp_path / "figure_long_caption.docx"
+    image_path = tmp_path / "pixel.png"
+    out = tmp_path / "figure_out.docx"
+    _create_figure_docx_with_long_caption(src, image_path)
+
+    result = figure_xml.extract_specific_figure_from_word_xml(
+        input_file=str(src),
+        output_docx_path=str(out),
+        target_chapter_section="",
+        target_caption_label="",
+        target_figure_index=1,
+        save_output=True,
+        return_reason=True,
+    )
+
+    assert result["ok"] is True
+    assert result["match_mode"] == "figure_index"
+    assert result["selected_caption_analysis"]["accepted"] is True
+    assert result["selected_caption_analysis"]["reason"] == "figure_number_prefix"
+
+    out_doc = DocxDocument(out)
+    lines = [p.text.strip() for p in out_doc.paragraphs if p.text.strip()]
+    assert any(line.startswith("Figure 1. The overlapping graph") for line in lines)

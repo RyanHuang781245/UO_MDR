@@ -184,7 +184,6 @@
           data-status-url="{{ url_for('flow_results_bp.flow_run_status', task_id=results_task_id, job_id=run.job_id) }}"
           data-detail-url="{{ url_for('flow_results_bp.flow_run_detail', task_id=results_task_id, job_id=run.job_id) }}"
           data-cancel-url="{{ url_for('flow_results_bp.cancel_flow_run', task_id=results_task_id, job_id=run.job_id) }}"
-          data-retry-url="{{ url_for('flow_results_bp.retry_flow_run', task_id=results_task_id, job_id=run.job_id) }}"
         >
           <td class="text-center"><input type="checkbox" class="form-check-input {{ results_id_prefix }}-run-select" value="{{ run.job_id }}"></td>
           <td class="text-start">
@@ -225,10 +224,6 @@
               {% if run.status in ['queued', 'running'] %}
               <form method="post" action="{{ url_for('flow_results_bp.cancel_flow_run', task_id=results_task_id, job_id=run.job_id) }}" class="d-inline">
                 <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
-              </form>
-              {% elif run.status in ['failed', 'canceled', 'timeout'] %}
-              <form method="post" action="{{ url_for('flow_results_bp.retry_flow_run', task_id=results_task_id, job_id=run.job_id) }}" class="d-inline">
-                <button type="submit" class="btn-action-icon" title="重試"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-lg-inline small fw-semibold">重試</span></button>
               </form>
               {% endif %}
             </div>
@@ -282,10 +277,6 @@
               {% if run.status in ['queued', 'running'] %}
               <form method="post" action="{{ url_for('mapping_run_bp.cancel_mapping_run', task_id=results_task_id, run_id=run.run_id) }}" class="d-inline">
                 <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
-              </form>
-              {% elif run.status in ['failed', 'canceled', 'timeout'] %}
-              <form method="post" action="{{ url_for('mapping_run_bp.retry_mapping_run', task_id=results_task_id, run_id=run.run_id) }}" class="d-inline">
-                <button type="submit" class="btn-action-icon" title="重試"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-lg-inline small fw-semibold">重試</span></button>
               </form>
               {% endif %}
             </div>
@@ -580,7 +571,6 @@
   function renderFlowActions(status, payload, row) {
     const key = String(status || "unknown").toLowerCase();
     const cancelUrl = row.dataset.cancelUrl || payload.cancel_url || "";
-    const retryUrl = row.dataset.retryUrl || payload.retry_url || "";
     const detailUrl = row.dataset.detailUrl || payload.detail_url || "";
     const jobId = row.dataset.jobId || "";
     const compareUrl = payload.compare_url || "";
@@ -590,13 +580,6 @@
       return `<div class="d-flex justify-content-center gap-1">
         <form method="post" action="${cancelUrl}" class="d-inline">
           <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
-        </form>
-      </div>`;
-    }
-    if (FINAL_RETRY_STATUSES.has(key) && retryUrl) {
-      return `<div class="d-flex justify-content-center gap-1">
-        <form method="post" action="${retryUrl}" class="d-inline">
-          <button type="submit" class="btn-action-icon" title="重試"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-lg-inline small fw-semibold">重試</span></button>
         </form>
       </div>`;
     }
@@ -622,18 +605,10 @@
   function renderMappingActions(status, payload, row) {
     const key = String(status || "unknown").toLowerCase();
     const cancelUrl = row.dataset.cancelUrl || payload.cancel_url || "";
-    const retryUrl = row.dataset.retryUrl || payload.retry_url || "";
     if (ACTIVE_STATUSES.has(key) && cancelUrl) {
       return `<div class="d-flex justify-content-center gap-1">
         <form method="post" action="${cancelUrl}" class="d-inline">
           <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
-        </form>
-      </div>`;
-    }
-    if (FINAL_RETRY_STATUSES.has(key) && retryUrl) {
-      return `<div class="d-flex justify-content-center gap-1">
-        <form method="post" action="${retryUrl}" class="d-inline">
-          <button type="submit" class="btn-action-icon" title="重試"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-lg-inline small fw-semibold">重試</span></button>
         </form>
       </div>`;
     }

@@ -323,7 +323,6 @@ def flow_run_status(task_id, job_id):
         "docx_url": url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx"),
         "log_url": url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="log"),
         "cancel_url": url_for("flow_results_bp.cancel_flow_run", task_id=task_id, job_id=job_id),
-        "retry_url": url_for("flow_results_bp.retry_flow_run", task_id=task_id, job_id=job_id),
     }
 
 
@@ -398,5 +397,4 @@ def mapping_run_status(task_id, run_id):
         "zip_url": url_for("tasks_bp.task_download_output_query", task_id=task_id, filename=zip_rel) if zip_rel else "",
         "log_url": url_for("tasks_bp.task_download_output_query", task_id=task_id, filename=log_rel) if log_rel else "",
         "cancel_url": url_for("mapping_run_bp.cancel_mapping_run", task_id=task_id, run_id=run_id),
-        "retry_url": url_for("mapping_run_bp.retry_mapping_run", task_id=task_id, run_id=run_id),
     }

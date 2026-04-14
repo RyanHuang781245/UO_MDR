@@ -297,7 +297,20 @@ def flow_run_status(task_id, job_id):
     if os.path.isdir(job_dir) and _job_has_error(job_dir):
         status = "failed"
     flow_name = str(record.target_name or meta.get("flow_name") or "").strip()
-    return {"ok": True, "status": status, "flow_name": flow_name}
+    result_exists = os.path.isfile(os.path.join(job_dir, "result.docx")) if os.path.isdir(job_dir) else False
+    log_exists = os.path.isfile(os.path.join(job_dir, "log.json")) if os.path.isdir(job_dir) else False
+    return {
+        "ok": True,
+        "status": status,
+        "flow_name": flow_name,
+        "has_result": bool(result_exists),
+        "has_log": bool(log_exists),
+        "result_url": url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id),
+        "docx_url": url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx"),
+        "log_url": url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="log"),
+        "cancel_url": url_for("flow_results_bp.cancel_flow_run", task_id=task_id, job_id=job_id),
+        "retry_url": url_for("flow_results_bp.retry_flow_run", task_id=task_id, job_id=job_id),
+    }
 
 
 @flow_results_bp.get("/runs/active", endpoint="flow_run_active")
@@ -310,4 +323,36 @@ def flow_run_active(task_id):
             {"job_id": r["job_id"], "status": r["status"], "flow_name": r["flow_name"]}
             for r in active
         ],
+    }
+
+
+@mapping_run_bp.get("/<run_id>/status", endpoint="mapping_run_status")
+def mapping_run_status(task_id, run_id):
+    record = db.session.get(JobRecord, run_id)
+    if not record or record.task_id != task_id:
+        return {"ok": False, "error": "Run not found"}, 404
+
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    run_dir = os.path.join(tdir, "mapping_job", run_id)
+    meta = _read_mapping_run_meta(run_dir) if os.path.isdir(run_dir) else {}
+    status = str(record.status or meta.get("status") or "unknown").strip().lower()
+    mapping_name = str(record.target_name or meta.get("mapping_file") or "").strip()
+
+    zip_file = str(meta.get("zip_file") or "").strip()
+    log_file = str(meta.get("log_file") or "").strip()
+    zip_rel = f"{run_id}/{zip_file}" if zip_file and "/" not in zip_file and "\\" not in zip_file else zip_file
+    log_rel = f"{run_id}/{log_file}" if log_file and "/" not in log_file and "\\" not in log_file else log_file
+    zip_exists = os.path.isfile(os.path.join(tdir, "mapping_job", zip_rel.replace("/", os.sep))) if zip_rel else False
+    log_exists = os.path.isfile(os.path.join(tdir, "mapping_job", log_rel.replace("/", os.sep))) if log_rel else False
+
+    return {
+        "ok": True,
+        "status": status,
+        "mapping_name": mapping_name,
+        "has_zip": bool(zip_exists),
+        "has_log": bool(log_exists),
+        "zip_url": url_for("tasks_bp.task_download_output_query", task_id=task_id, filename=zip_rel) if zip_rel else "",
+        "log_url": url_for("tasks_bp.task_download_output_query", task_id=task_id, filename=log_rel) if log_rel else "",
+        "cancel_url": url_for("mapping_run_bp.cancel_mapping_run", task_id=task_id, run_id=run_id),
+        "retry_url": url_for("mapping_run_bp.retry_mapping_run", task_id=task_id, run_id=run_id),
     }

@@ -690,6 +690,12 @@
   opacity: 0;
   transform: translateY(-6px);
 }
+.run-status-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
 .run-status-title {
   font-weight: 700;
   margin-bottom: 4px;
@@ -697,6 +703,29 @@
 .run-status-body {
   color: var(--bs-gray-500);
   font-size: 0.9rem;
+}
+.run-status-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.run-status-link {
+  color: var(--bs-blue-600, #2563eb);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.run-status-link:hover {
+  text-decoration: underline;
+}
+.run-status-close {
+  border: 0;
+  background: transparent;
+  color: var(--bs-gray-500, #64748b);
+  padding: 0;
+  line-height: 1;
 }
 .flow-toolbar-surface,
 .flow-section-header,
@@ -1940,9 +1969,21 @@ function renderRunToasts(){
     toast.dataset.jobId = jobId;
     toast.dataset.statusUrl = `{{ url_for('flow_results_bp.flow_run_status', task_id=task.id, job_id='__JOB__') }}`.replace("__JOB__", jobId);
     toast.innerHTML = `
-      <div class="run-status-title">流程執行中</div>
-      <div class="run-status-body">正在執行：<span class="run-status-name">（讀取中）</span></div>
+      <div class="run-status-header">
+        <div>
+          <div class="run-status-title">流程執行中</div>
+          <div class="run-status-body">正在執行：<span class="run-status-name">（讀取中）</span></div>
+        </div>
+        <button class="run-status-close" type="button" aria-label="Close">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="run-status-actions d-none">
+        <a class="run-status-link" href="#">查看結果</a>
+      </div>
     `;
+    const closeBtn = toast.querySelector(".run-status-close");
+    closeBtn?.addEventListener("click", () => removeRunJobWithFade(jobId));
     runStatusContainer.appendChild(toast);
   });
 }
@@ -1965,40 +2006,51 @@ async function refreshRunStatus(){
       const titleEl = toast.querySelector(".run-status-title");
       const bodyEl = toast.querySelector(".run-status-body");
       const nameEl = toast.querySelector(".run-status-name");
+      const actionsEl = toast.querySelector(".run-status-actions");
+      const linkEl = toast.querySelector(".run-status-link");
       if (nameEl) nameEl.textContent = flowName;
+      if (actionsEl) actionsEl.classList.add("d-none");
+      if (linkEl) {
+        linkEl.setAttribute("href", data.result_url || "#");
+        linkEl.textContent = "查看結果";
+      }
       if (status === "completed"){
         if (titleEl) titleEl.textContent = "流程已完成";
         if (bodyEl) bodyEl.textContent = `已完成：${flowName}`;
+        if (actionsEl && data.result_url && data.has_result) actionsEl.classList.remove("d-none");
         if (!toast.dataset.autoCloseAt) {
-          toast.dataset.autoCloseAt = String(Date.now() + 4000);
-          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 4000);
+          toast.dataset.autoCloseAt = String(Date.now() + 10000);
+          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 10000);
         }
         continue;
       }
       if (status === "failed"){
         if (titleEl) titleEl.textContent = "流程失敗";
         if (bodyEl) bodyEl.textContent = `失敗：${flowName}`;
+        if (actionsEl && data.result_url && data.has_result) actionsEl.classList.remove("d-none");
         if (!toast.dataset.autoCloseAt) {
-          toast.dataset.autoCloseAt = String(Date.now() + 4000);
-          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 4000);
+          toast.dataset.autoCloseAt = String(Date.now() + 15000);
+          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 15000);
         }
         continue;
       }
       if (status === "canceled"){
         if (titleEl) titleEl.textContent = "流程已取消";
         if (bodyEl) bodyEl.textContent = `已取消：${flowName}`;
+        if (actionsEl && data.result_url && data.has_result) actionsEl.classList.remove("d-none");
         if (!toast.dataset.autoCloseAt) {
-          toast.dataset.autoCloseAt = String(Date.now() + 4000);
-          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 4000);
+          toast.dataset.autoCloseAt = String(Date.now() + 15000);
+          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 15000);
         }
         continue;
       }
       if (status === "timeout"){
         if (titleEl) titleEl.textContent = "流程逾時";
         if (bodyEl) bodyEl.textContent = `逾時：${flowName}`;
+        if (actionsEl && data.result_url && data.has_result) actionsEl.classList.remove("d-none");
         if (!toast.dataset.autoCloseAt) {
-          toast.dataset.autoCloseAt = String(Date.now() + 4000);
-          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 4000);
+          toast.dataset.autoCloseAt = String(Date.now() + 15000);
+          setTimeout(() => removeRunJobWithFade(toast.dataset.jobId), 15000);
         }
         continue;
       }

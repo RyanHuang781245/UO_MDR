@@ -781,6 +781,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const renameSchemeCount = document.getElementById('renameSchemeCount');
     const mappingTabButtons = Array.from(document.querySelectorAll('#mappingTabs [data-bs-toggle="tab"]'));
     let mappingSubmitLocked = false;
+    let mappingSubmitUnlockTimer = null;
 
     function setMappingSubmitLocked(locked) {
         mappingSubmitLocked = !!locked;
@@ -789,6 +790,16 @@ document.addEventListener('DOMContentLoaded', function() {
             button.classList.toggle('disabled', mappingSubmitLocked);
             button.setAttribute('aria-disabled', mappingSubmitLocked ? 'true' : 'false');
         });
+    }
+
+    function scheduleMappingSubmitUnlock(delayMs = 8000) {
+        if (mappingSubmitUnlockTimer) {
+            clearTimeout(mappingSubmitUnlockTimer);
+        }
+        mappingSubmitUnlockTimer = setTimeout(() => {
+            setMappingSubmitLocked(false);
+            mappingSubmitUnlockTimer = null;
+        }, Math.max(500, Number(delayMs) || 8000));
     }
 
     function isCreateTabActive() {
@@ -912,6 +923,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     linkEl.textContent = '查看結果';
                 }
                 if (status === 'completed') {
+                    setMappingSubmitLocked(false);
                     if (titleEl) titleEl.textContent = `${actionLabel}已完成`;
                     if (bodyEl) bodyEl.textContent = `已完成：${mappingName}`;
                     if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
@@ -929,8 +941,45 @@ document.addEventListener('DOMContentLoaded', function() {
                     continue;
                 }
                 if (status === 'failed') {
+                    setMappingSubmitLocked(false);
                     if (titleEl) titleEl.textContent = `${actionLabel}失敗`;
                     if (bodyEl) bodyEl.textContent = data.error ? `失敗：${data.error}` : `失敗：${mappingName}`;
+                    if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
+                    if (toast.dataset.jobId === MAPPING_JOB_ID && currentJobNeedsAutoReload() && !toast.dataset.reloading) {
+                        toast.dataset.reloading = '1';
+                        setTimeout(() => {
+                            window.location.replace(data.resume_url || window.location.href);
+                        }, 300);
+                        continue;
+                    }
+                    if (!toast.dataset.autoCloseAt) {
+                        toast.dataset.autoCloseAt = String(Date.now() + 15000);
+                        setTimeout(() => removeMappingJobWithFade(toast.dataset.jobId), 15000);
+                    }
+                    continue;
+                }
+                if (status === 'canceled') {
+                    setMappingSubmitLocked(false);
+                    if (titleEl) titleEl.textContent = `${actionLabel}已取消`;
+                    if (bodyEl) bodyEl.textContent = `已取消：${mappingName}`;
+                    if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
+                    if (toast.dataset.jobId === MAPPING_JOB_ID && currentJobNeedsAutoReload() && !toast.dataset.reloading) {
+                        toast.dataset.reloading = '1';
+                        setTimeout(() => {
+                            window.location.replace(data.resume_url || window.location.href);
+                        }, 300);
+                        continue;
+                    }
+                    if (!toast.dataset.autoCloseAt) {
+                        toast.dataset.autoCloseAt = String(Date.now() + 15000);
+                        setTimeout(() => removeMappingJobWithFade(toast.dataset.jobId), 15000);
+                    }
+                    continue;
+                }
+                if (status === 'timeout') {
+                    setMappingSubmitLocked(false);
+                    if (titleEl) titleEl.textContent = `${actionLabel}逾時`;
+                    if (bodyEl) bodyEl.textContent = `逾時：${mappingName}`;
                     if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
                     if (toast.dataset.jobId === MAPPING_JOB_ID && currentJobNeedsAutoReload() && !toast.dataset.reloading) {
                         toast.dataset.reloading = '1';
@@ -1003,11 +1052,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     initTabFromHash();
     syncStatusSectionVisibility();
-    if (MAPPING_JOB_ID && (CURRENT_MAPPING_JOB_STATUS === 'completed' || CURRENT_MAPPING_JOB_STATUS === 'failed')) {
+    if (MAPPING_JOB_ID && ['completed', 'failed', 'canceled', 'timeout'].includes(String(CURRENT_MAPPING_JOB_STATUS || '').toLowerCase())) {
         removeMappingJob(MAPPING_JOB_ID);
     }
-    if (MAPPING_JOB_ID && CURRENT_MAPPING_JOB_STATUS !== 'completed' && CURRENT_MAPPING_JOB_STATUS !== 'failed') {
+    if (MAPPING_JOB_ID && !['completed', 'failed', 'canceled', 'timeout'].includes(String(CURRENT_MAPPING_JOB_STATUS || '').toLowerCase())) {
         ensureMappingJob(MAPPING_JOB_ID);
+    } else {
+        setMappingSubmitLocked(false);
     }
     renderMappingToasts();
     if (mappingRunStatusContainer) {
@@ -1035,6 +1086,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!form.closest('.container-fluid')) return;
         if (event.defaultPrevented) return;
         setMappingSubmitLocked(true);
+        scheduleMappingSubmitUnlock(10000);
     });
 
     mappingTabButtons.forEach((btn) => {

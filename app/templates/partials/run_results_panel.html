@@ -156,17 +156,23 @@
           <th style="width: 56px" class="text-center"><input type="checkbox" class="form-check-input" id="{{ results_id_prefix }}MasterCheckbox"></th>
           <th style="width: 28%" class="text-start">Mapping</th>
           <th style="width: 18%">Run ID</th>
-          <th style="width: 18%">執行時間</th>
+          <th style="width: 23%">執行時間</th>
           <th style="width: 12%">狀態</th>
-          <th style="width: 10%">輸出</th>
-          <th style="width: 14%">操作</th>
+          <!-- <th style="width: 10%">輸出</th> -->
+          <th style="width: 19%">操作</th>
         </tr>
         {% endif %}
       </thead>
       <tbody id="{{ results_id_prefix }}TableBody">
         {% if results_active_tab == 'flows' %}
         {% for run in results_runs %}
-        <tr data-job-id="{{ run.job_id }}">
+        <tr
+          data-job-id="{{ run.job_id }}"
+          data-status="{{ run.status }}"
+          data-status-url="{{ url_for('flow_results_bp.flow_run_status', task_id=results_task_id, job_id=run.job_id) }}"
+          data-cancel-url="{{ url_for('flow_results_bp.cancel_flow_run', task_id=results_task_id, job_id=run.job_id) }}"
+          data-retry-url="{{ url_for('flow_results_bp.retry_flow_run', task_id=results_task_id, job_id=run.job_id) }}"
+        >
           <td class="text-center"><input type="checkbox" class="form-check-input {{ results_id_prefix }}-run-select" value="{{ run.job_id }}"></td>
           <td class="text-start">
             {% if run.flow_name and run.flow_name != '未命名流程' %}
@@ -176,7 +182,7 @@
             {% endif %}
           </td>
           <td class="text-muted font-monospace">{{ run.started_at }}</td>
-          <td>
+          <td class="run-status-cell">
             {% if run.status == 'completed' %}
             <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>
             {% elif run.status == 'failed' %}
@@ -193,7 +199,7 @@
             <span class="status-badge status-badge-queued"><i class="bi bi-question-circle"></i> 未知</span>
             {% endif %}
           </td>
-          <td>
+          <td class="run-actions-cell">
             <div class="d-flex justify-content-center gap-1">
               {% if run.has_result %}
               <a href="{{ url_for('tasks_bp.task_result', task_id=results_task_id, job_id=run.job_id) }}" class="btn-action-icon" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></a>
@@ -217,7 +223,13 @@
         {% endfor %}
         {% else %}
         {% for run in results_runs %}
-        <tr data-run-id="{{ run.run_id }}">
+        <tr
+          data-run-id="{{ run.run_id }}"
+          data-status="{{ run.status }}"
+          data-status-url="{{ url_for('mapping_run_bp.mapping_run_status', task_id=results_task_id, run_id=run.run_id) }}"
+          data-cancel-url="{{ url_for('mapping_run_bp.cancel_mapping_run', task_id=results_task_id, run_id=run.run_id) }}"
+          data-retry-url="{{ url_for('mapping_run_bp.retry_mapping_run', task_id=results_task_id, run_id=run.run_id) }}"
+        >
           <td class="text-center"><input type="checkbox" class="form-check-input {{ results_id_prefix }}-run-select" value="{{ run.run_id }}"></td>
           <td class="text-start">
             <div class="fw-bold text-primary">{{ run.mapping_file }}</div>
@@ -228,7 +240,7 @@
           </td>
           <td class="text-muted font-monospace">{{ run.run_id }}</td>
           <td class="text-muted font-monospace">{{ run.started_at }}</td>
-          <td>
+          <td class="run-status-cell">
             {% if run.status == 'completed' %}
             <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>
             {% elif run.status == 'failed' %}
@@ -245,8 +257,8 @@
             <span class="status-badge status-badge-queued"><i class="bi bi-question-circle"></i> 未知</span>
             {% endif %}
           </td>
-          <td class="font-monospace">{{ run.output_count }}</td>
-          <td>
+          <!-- <td class="font-monospace">{{ run.output_count }}</td> -->
+          <td class="run-actions-cell">
             <div class="d-flex justify-content-center gap-1">
               {% if run.has_zip %}
               <a href="{{ url_for('tasks_bp.task_download_output_query', task_id=results_task_id, filename=run.zip_file) }}" class="btn-action-icon" title="下載 ZIP"><i class="bi bi-file-earmark-zip"></i><span class="d-none d-lg-inline small fw-semibold">ZIP</span></a>
@@ -497,6 +509,143 @@
       navigate({ page });
     });
   });
+
+  const ACTIVE_STATUSES = new Set(["queued", "running"]);
+  const FINAL_RETRY_STATUSES = new Set(["failed", "canceled", "timeout"]);
+  let syncingResultsRows = false;
+
+  function renderStatusBadge(status) {
+    const key = String(status || "unknown").toLowerCase();
+    if (key === "completed") return '<span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>';
+    if (key === "failed") return '<span class="status-badge status-badge-failed"><i class="bi bi-x-circle-fill"></i> 失敗</span>';
+    if (key === "canceled") return '<span class="status-badge status-badge-queued"><i class="bi bi-slash-circle"></i> 已取消</span>';
+    if (key === "timeout") return '<span class="status-badge status-badge-failed"><i class="bi bi-clock-history"></i> 逾時</span>';
+    if (key === "running") return '<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>';
+    if (key === "queued") return '<span class="status-badge status-badge-queued"><i class="bi bi-hourglass-split"></i> 排隊中</span>';
+    return '<span class="status-badge status-badge-queued"><i class="bi bi-question-circle"></i> 未知</span>';
+  }
+
+  function renderFlowActions(status, payload, row) {
+    const key = String(status || "unknown").toLowerCase();
+    const cancelUrl = row.dataset.cancelUrl || payload.cancel_url || "";
+    const retryUrl = row.dataset.retryUrl || payload.retry_url || "";
+    const resultUrl = payload.result_url || "";
+    const docxUrl = payload.docx_url || "";
+    const logUrl = payload.log_url || "";
+    if (ACTIVE_STATUSES.has(key) && cancelUrl) {
+      return `<div class="d-flex justify-content-center gap-1">
+        <form method="post" action="${cancelUrl}" class="d-inline">
+          <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
+        </form>
+      </div>`;
+    }
+    if (FINAL_RETRY_STATUSES.has(key) && retryUrl) {
+      return `<div class="d-flex justify-content-center gap-1">
+        <form method="post" action="${retryUrl}" class="d-inline">
+          <button type="submit" class="btn-action-icon" title="重試"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-lg-inline small fw-semibold">重試</span></button>
+        </form>
+      </div>`;
+    }
+    const parts = [];
+    if (payload.has_result && resultUrl) {
+      parts.push(`<a href="${resultUrl}" class="btn-action-icon" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></a>`);
+    }
+    if (payload.has_result && docxUrl) {
+      parts.push(`<a href="${docxUrl}" class="btn-action-icon" title="下載"><i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載</span></a>`);
+    }
+    if (payload.has_log && logUrl) {
+      parts.push(`<a href="${logUrl}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>`);
+    }
+    if (!parts.length) {
+      return '<div class="d-flex justify-content-center gap-1"><span class="text-muted small">-</span></div>';
+    }
+    return `<div class="d-flex justify-content-center gap-1">${parts.join("")}</div>`;
+  }
+
+  function renderMappingActions(status, payload, row) {
+    const key = String(status || "unknown").toLowerCase();
+    const cancelUrl = row.dataset.cancelUrl || payload.cancel_url || "";
+    const retryUrl = row.dataset.retryUrl || payload.retry_url || "";
+    if (ACTIVE_STATUSES.has(key) && cancelUrl) {
+      return `<div class="d-flex justify-content-center gap-1">
+        <form method="post" action="${cancelUrl}" class="d-inline">
+          <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
+        </form>
+      </div>`;
+    }
+    if (FINAL_RETRY_STATUSES.has(key) && retryUrl) {
+      return `<div class="d-flex justify-content-center gap-1">
+        <form method="post" action="${retryUrl}" class="d-inline">
+          <button type="submit" class="btn-action-icon" title="重試"><i class="bi bi-arrow-clockwise"></i><span class="d-none d-lg-inline small fw-semibold">重試</span></button>
+        </form>
+      </div>`;
+    }
+    const parts = [];
+    if (payload.has_zip && payload.zip_url) {
+      parts.push(`<a href="${payload.zip_url}" class="btn-action-icon" title="下載 ZIP"><i class="bi bi-file-earmark-zip"></i><span class="d-none d-lg-inline small fw-semibold">ZIP</span></a>`);
+    }
+    if (payload.has_log && payload.log_url) {
+      parts.push(`<a href="${payload.log_url}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>`);
+    }
+    if (!parts.length) {
+      return '<div class="d-flex justify-content-center gap-1"><span class="text-muted small">-</span></div>';
+    }
+    return `<div class="d-flex justify-content-center gap-1">${parts.join("")}</div>`;
+  }
+
+  function hasActiveRows() {
+    const rows = Array.from(byId("TableBody")?.querySelectorAll("tr") || []);
+    return rows.some((row) => ACTIVE_STATUSES.has(String(row.dataset.status || "").toLowerCase()));
+  }
+
+  async function syncLatestResultRows() {
+    if (syncingResultsRows) return;
+    if (document.hidden) return;
+    if (!hasActiveRows()) return;
+    syncingResultsRows = true;
+    try {
+      const rows = Array.from(byId("TableBody")?.querySelectorAll("tr") || []);
+      for (const row of rows) {
+        const currentStatus = String(row.dataset.status || "").toLowerCase();
+        if (!ACTIVE_STATUSES.has(currentStatus)) {
+          continue;
+        }
+        const statusUrl = row.dataset.statusUrl || "";
+        if (!statusUrl) {
+          continue;
+        }
+        try {
+          const resp = await fetch(statusUrl, { cache: "no-store" });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) {
+            continue;
+          }
+          const nextStatus = String(data.status || currentStatus).toLowerCase();
+          if (nextStatus === currentStatus) {
+            continue;
+          }
+          row.dataset.status = nextStatus;
+          const statusCell = row.querySelector(".run-status-cell");
+          if (statusCell) {
+            statusCell.innerHTML = renderStatusBadge(nextStatus);
+          }
+          const actionsCell = row.querySelector(".run-actions-cell");
+          if (actionsCell) {
+            actionsCell.innerHTML = activeTab === "flows"
+              ? renderFlowActions(nextStatus, data, row)
+              : renderMappingActions(nextStatus, data, row);
+          }
+        } catch (_error) {
+          // ignore per-row polling errors
+        }
+      }
+    } finally {
+      syncingResultsRows = false;
+    }
+  }
+
+  syncLatestResultRows();
+  setInterval(syncLatestResultRows, 5000);
 
   updateRunUi();
 })();

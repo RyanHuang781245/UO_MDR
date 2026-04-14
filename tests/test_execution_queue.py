@@ -82,6 +82,47 @@ def test_enqueue_single_flow_job_runs_inline_and_persists_job_metadata(app, monk
     assert "log_json" in artifact_types
 
 
+def test_enqueue_single_flow_job_forwards_enable_figure_reference_flag(app, monkeypatch) -> None:
+    task_id = "flow-enable-figure-reference-flag"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    (task_dir / "meta.json").write_text(json.dumps({"name": "Flag Flow"}, ensure_ascii=False), encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_run_workflow(runtime_steps, workdir, template=None, enable_figure_reference=True):
+        captured["enable_figure_reference"] = enable_figure_reference
+        job_dir = Path(workdir)
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "result.docx").write_bytes(b"docx-output")
+        (job_dir / "log.json").write_text('[{"status":"ok"}]', encoding="utf-8")
+        return {
+            "result_docx": str(job_dir / "result.docx"),
+            "log_json": [{"status": "ok"}],
+        }
+
+    monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
+
+    enqueue_single_flow_job(
+        task_id=task_id,
+        runtime_steps=[{"type": "fake_step", "params": {"value": "ok"}}],
+        template_cfg=None,
+        document_format="none",
+        line_spacing=1.5,
+        apply_formatting=False,
+        actor={"work_id": "A123", "label": "Tester"},
+        flow_name="Flag Flow",
+        output_filename="",
+        enable_figure_reference=False,
+    )
+
+    assert captured["enable_figure_reference"] is False
+
+
 def test_enqueue_single_flow_job_publishes_copy_steps_to_task_output_path(app, monkeypatch, tmp_path) -> None:
     task_id = "flow-copy-output-root"
     task_dir = Path(app.config["TASK_FOLDER"]) / task_id

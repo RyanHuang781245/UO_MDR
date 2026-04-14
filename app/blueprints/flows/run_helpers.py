@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import shutil
@@ -24,6 +25,7 @@ from app.services.audit_service import record_audit
 from app.services.flow_service import (
     DEFAULT_APPLY_FORMATTING,
     DEFAULT_DOCUMENT_FORMAT_KEY,
+    DEFAULT_ENABLE_FIGURE_REFERENCE,
     DEFAULT_LINE_SPACING,
     DOCUMENT_FORMAT_PRESETS,
     SKIP_DOCX_CLEANUP,
@@ -100,6 +102,7 @@ def _execute_saved_flow(
     line_spacing = DEFAULT_LINE_SPACING
     template_file = None
     apply_formatting = DEFAULT_APPLY_FORMATTING
+    enable_figure_reference = DEFAULT_ENABLE_FIGURE_REFERENCE
     output_filename = ""
     template_cfg = None
     if isinstance(data, dict):
@@ -109,6 +112,10 @@ def _execute_saved_flow(
         line_spacing_none = line_spacing_raw.strip().lower() == "none"
         line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
         apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        enable_figure_reference = parse_bool(
+            data.get("enable_figure_reference"),
+            DEFAULT_ENABLE_FIGURE_REFERENCE,
+        )
         if document_format == "none" or line_spacing_none:
             apply_formatting = False
         template_file = data.get("template_file")
@@ -171,7 +178,13 @@ def _execute_saved_flow(
             "output_root": output_root,
         },
     )
-    workflow_result = run_workflow(runtime_steps, workdir=job_dir, template=template_cfg)
+    run_kwargs = {"workdir": job_dir, "template": template_cfg}
+    try:
+        if "enable_figure_reference" in inspect.signature(run_workflow).parameters:
+            run_kwargs["enable_figure_reference"] = enable_figure_reference
+    except (TypeError, ValueError):
+        pass
+    workflow_result = run_workflow(runtime_steps, **run_kwargs)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
     published_outputs = _publish_flow_result_docx(output_root, result_path, output_filename)
     log_entries = workflow_result.get("log_json", []) or []

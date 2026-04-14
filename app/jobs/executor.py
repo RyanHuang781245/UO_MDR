@@ -69,6 +69,7 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
     document_format = str(payload.get("document_format") or DEFAULT_DOCUMENT_FORMAT_KEY)
     line_spacing = float(payload.get("line_spacing") or 1.5)
     apply_formatting = bool(payload.get("apply_formatting"))
+    enable_figure_reference = bool(payload.get("enable_figure_reference", True))
     actor = payload.get("actor") or {}
     flow_name = str(payload.get("flow_name") or "").strip() or None
     if not task_id:
@@ -100,6 +101,8 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
         try:
             if "cancel_check" in inspect.signature(run_workflow).parameters:
                 kwargs["cancel_check"] = _check_canceled
+            if "enable_figure_reference" in inspect.signature(run_workflow).parameters:
+                kwargs["enable_figure_reference"] = enable_figure_reference
         except (TypeError, ValueError):
             pass
         return run_workflow(runtime_steps, **kwargs)
@@ -216,6 +219,7 @@ def enqueue_single_flow_job(
     flow_name: str,
     output_filename: str = "",
     source: str = "manual",
+    enable_figure_reference: bool = True,
 ) -> str:
     task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     job_id = str(uuid.uuid4())[:8]
@@ -246,6 +250,7 @@ def enqueue_single_flow_job(
         "document_format": document_format,
         "line_spacing": line_spacing,
         "apply_formatting": apply_formatting,
+        "enable_figure_reference": enable_figure_reference,
         "actor": actor,
         "flow_name": flow_name,
         "output_filename": output_filename,

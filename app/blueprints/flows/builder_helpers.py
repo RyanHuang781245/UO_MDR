@@ -9,6 +9,7 @@ from flask import current_app, url_for
 from app.services.flow_service import (
     DEFAULT_APPLY_FORMATTING,
     DEFAULT_DOCUMENT_FORMAT_KEY,
+    DEFAULT_ENABLE_FIGURE_REFERENCE,
     DEFAULT_LINE_SPACING,
     DOCUMENT_FORMAT_PRESETS,
     LINE_SPACING_CHOICES,
@@ -120,6 +121,7 @@ def build_flow_builder_context(task_id: str, args) -> dict:
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = f"{DEFAULT_LINE_SPACING:g}"
     apply_formatting = DEFAULT_APPLY_FORMATTING
+    enable_figure_reference = DEFAULT_ENABLE_FIGURE_REFERENCE
     output_filename = ""
     loaded_name = args.get("flow")
     version_id = (args.get("version_id") or "").strip()
@@ -153,6 +155,10 @@ def build_flow_builder_context(task_id: str, args) -> dict:
                 document_format = normalize_document_format(data.get("document_format"))
                 line_spacing = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
                 apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+                enable_figure_reference = parse_bool(
+                    data.get("enable_figure_reference"),
+                    DEFAULT_ENABLE_FIGURE_REFERENCE,
+                )
                 output_filename, output_filename_error = normalize_docx_output_path(
                     data.get("output_filename"),
                     default="",
@@ -195,6 +201,7 @@ def build_flow_builder_context(task_id: str, args) -> dict:
         "document_format": document_format,
         "line_spacing": line_spacing,
         "apply_formatting": apply_formatting,
+        "enable_figure_reference": enable_figure_reference,
         "output_filename": output_filename,
         "is_version_preview": is_version_preview,
         "preview_version": preview_version,

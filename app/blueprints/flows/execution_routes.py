@@ -14,6 +14,7 @@ from app.services.flow_definition_service import (
 )
 from app.services.flow_service import (
     DEFAULT_APPLY_FORMATTING,
+    DEFAULT_ENABLE_FIGURE_REFERENCE,
     DEFAULT_LINE_SPACING,
     SUPPORTED_STEPS,
     coerce_line_spacing,
@@ -82,6 +83,10 @@ def run_flow(task_id):
     line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
     apply_formatting_param = request.form.get("apply_formatting")
     apply_formatting = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING)
+    enable_figure_reference = parse_bool(
+        request.form.get("enable_figure_reference"),
+        DEFAULT_ENABLE_FIGURE_REFERENCE,
+    )
     if document_format == "none" or line_spacing_none:
         apply_formatting = False
 
@@ -108,6 +113,7 @@ def run_flow(task_id):
             document_format=document_format,
             line_spacing_value=line_spacing_value,
             apply_formatting=apply_formatting,
+            enable_figure_reference=enable_figure_reference,
             output_filename=output_filename,
         )
         _work_id, actor_label = _get_actor_info()
@@ -161,6 +167,7 @@ def run_flow(task_id):
         document_format=document_format,
         line_spacing=line_spacing,
         apply_formatting=apply_formatting,
+        enable_figure_reference=enable_figure_reference,
         actor={"work_id": work_id, "label": label},
         flow_name=flow_name,
         output_filename=output_filename,
@@ -188,6 +195,7 @@ def execute_flow(task_id, flow_name):
     document_format = context["document_format"]
     line_spacing = context["line_spacing"]
     apply_formatting = context["apply_formatting"]
+    enable_figure_reference = context["enable_figure_reference"]
     output_filename = context["output_filename"]
     template_file = context["template_file"]
     template_cfg = None
@@ -224,6 +232,7 @@ def execute_flow(task_id, flow_name):
         document_format=document_format,
         line_spacing=line_spacing,
         apply_formatting=apply_formatting,
+        enable_figure_reference=enable_figure_reference,
         actor={"work_id": work_id, "label": label},
         flow_name=flow_name,
         output_filename=output_filename,

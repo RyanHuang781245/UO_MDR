@@ -5,7 +5,14 @@ import os
 from datetime import datetime
 from typing import Callable
 
-from app.services.flow_service import DEFAULT_APPLY_FORMATTING, DEFAULT_DOCUMENT_FORMAT_KEY, DEFAULT_LINE_SPACING, coerce_line_spacing, normalize_document_format
+from app.services.flow_service import (
+    DEFAULT_APPLY_FORMATTING,
+    DEFAULT_DOCUMENT_FORMAT_KEY,
+    DEFAULT_ENABLE_FIGURE_REFERENCE,
+    DEFAULT_LINE_SPACING,
+    coerce_line_spacing,
+    normalize_document_format,
+)
 from app.utils import normalize_docx_output_path, parse_bool
 
 
@@ -46,6 +53,7 @@ def build_flow_payload(
     document_format: str,
     line_spacing_value: str,
     apply_formatting: bool,
+    enable_figure_reference: bool,
     output_filename: str,
 ) -> dict:
     created = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -63,6 +71,7 @@ def build_flow_payload(
         "document_format": document_format,
         "line_spacing": line_spacing_value,
         "apply_formatting": apply_formatting,
+        "enable_figure_reference": enable_figure_reference,
         "output_filename": output_filename,
     }
 
@@ -77,6 +86,7 @@ def load_saved_flow_execution_context(flow_path: str) -> dict:
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
     apply_formatting = DEFAULT_APPLY_FORMATTING
+    enable_figure_reference = DEFAULT_ENABLE_FIGURE_REFERENCE
     output_filename = ""
     template_file = None
 
@@ -88,6 +98,10 @@ def load_saved_flow_execution_context(flow_path: str) -> dict:
         line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
         template_file = data.get("template_file")
         apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        enable_figure_reference = parse_bool(
+            data.get("enable_figure_reference"),
+            DEFAULT_ENABLE_FIGURE_REFERENCE,
+        )
         output_filename, output_filename_error = normalize_docx_output_path(data.get("output_filename"), default="")
         if output_filename_error:
             output_filename = ""
@@ -102,6 +116,7 @@ def load_saved_flow_execution_context(flow_path: str) -> dict:
         "document_format": document_format,
         "line_spacing": line_spacing,
         "apply_formatting": apply_formatting,
+        "enable_figure_reference": enable_figure_reference,
         "output_filename": output_filename,
         "template_file": template_file,
     }

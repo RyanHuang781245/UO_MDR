@@ -92,6 +92,7 @@ LINE_SPACING_CHOICES = [
     ("2", "雙行（2.0）"),
 ]
 DEFAULT_APPLY_FORMATTING = False
+DEFAULT_ENABLE_FIGURE_REFERENCE = True
 
 def normalize_document_format(key: str) -> str:
     if not key or key not in DOCUMENT_FORMAT_PRESETS:

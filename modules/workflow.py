@@ -6,6 +6,8 @@ import re
 import shutil
 from datetime import datetime
 from typing import List, Dict, Any, Callable
+from collections import deque
+from lxml import etree
 from docx import Document as DocxDocument
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -28,6 +30,17 @@ from .template_manager import (
 )
 from .docx_provenance import apply_final_provenance, build_provenance_descriptor
 from modules.extract_pdf_img import extract_pdf_pages_to_docx
+from modules.extract_word_chapter import (
+    NS as XML_NS_MAP,
+    _looks_like_plain_text_heading,
+    materialize_paragraph_numpr_as_text,
+    normalize_paragraph_to_plain_text_run,
+    normalize_text as xml_normalize_text,
+    parse_styles_numpr,
+    qn as xml_qn,
+    _ensure_style_without_numpr,
+    _render_numbering_prefix,
+)
 from app.services.execution_service import JobCanceledError
 
 
@@ -65,6 +78,291 @@ def _docx_has_content(path: str) -> bool:
             return any(name.startswith("word/media/") for name in zf.namelist())
     except Exception:
         return False
+
+
+def _materialize_numbered_caption_prefixes(docx_path: str) -> None:
+    """Convert Figure/Table numbering styles into plain caption text in document.xml."""
+    with zipfile.ZipFile(docx_path, "r") as zin:
+        parts = {name: zin.read(name) for name in zin.namelist()}
+
+    document_xml = parts.get("word/document.xml")
+    if not document_xml:
+        return
+
+    root = etree.fromstring(document_xml)
+    body = root.find("w:body", namespaces=XML_NS_MAP)
+    if body is None:
+        return
+
+    content_children = [child for child in list(body) if isinstance(child.tag, str)]
+    numbering_xml = parts.get("word/numbering.xml")
+    styles_xml = parts.get("word/styles.xml")
+    style_based, style_numpr = parse_styles_numpr(styles_xml)
+    caption_prefix_regex = re.compile(r"^(Figure|Fig\.?|Table|Tab\.?|圖|图|表)\b", re.IGNORECASE)
+    style_swap_cache: dict[str, str] = {}
+    document_changed = False
+    styles_changed = False
+
+    for p in content_children:
+        if p.tag != xml_qn("w:p"):
+            continue
+
+        prefix = xml_normalize_text(
+            _render_numbering_prefix(
+                p,
+                content_children,
+                numbering_xml,
+                style_based=style_based,
+                style_numpr=style_numpr,
+            )
+        )
+        if not prefix or not caption_prefix_regex.match(prefix):
+            continue
+
+        changed = materialize_paragraph_numpr_as_text(
+            p,
+            content_children,
+            numbering_xml,
+            style_based=style_based,
+            style_numpr=style_numpr,
+        )
+        if not changed:
+            continue
+
+        # Keep caption text as a single run to avoid split-number artifacts after prefix insertion.
+        normalize_paragraph_to_plain_text_run(p, prefer_following_text_run=True)
+        document_changed = True
+
+        p_style = p.find("w:pPr/w:pStyle", namespaces=XML_NS_MAP)
+        style_id = (p_style.get(xml_qn("w:val")) or "").strip() if p_style is not None else ""
+        if not style_id or not styles_xml:
+            continue
+
+        if style_id in style_swap_cache:
+            new_style_id = style_swap_cache[style_id]
+        else:
+            updated_styles_xml, new_style_id = _ensure_style_without_numpr(styles_xml, style_id)
+            if updated_styles_xml != styles_xml:
+                styles_xml = updated_styles_xml
+                parts["word/styles.xml"] = styles_xml
+                style_based, style_numpr = parse_styles_numpr(styles_xml)
+                styles_changed = True
+            style_swap_cache[style_id] = new_style_id
+
+        if new_style_id and new_style_id != style_id:
+            p_style.set(xml_qn("w:val"), new_style_id)
+            document_changed = True
+
+    if not document_changed and not styles_changed:
+        return
+
+    parts["word/document.xml"] = etree.tostring(
+        root,
+        xml_declaration=True,
+        encoding="UTF-8",
+        standalone="yes",
+    )
+    with zipfile.ZipFile(docx_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+        for name, data in parts.items():
+            zout.writestr(name, data)
+
+
+_HEADING_PREFIX_RE = re.compile(r"^\s*(\d+(?:[\.．]\d+)*)(?:[\.．])?\s*(\S.*)\s*$")
+_HEADING_STYLE_LEVEL_RE = re.compile(r"heading\s*([1-9])", re.IGNORECASE)
+
+
+def _heading_level_from_style_name(style_name: str) -> int | None:
+    text = (style_name or "").strip()
+    if not text:
+        return None
+    compact = re.sub(r"\s+", "", text)
+    match = _HEADING_STYLE_LEVEL_RE.search(compact)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _renumber_chapter_headings(docx_path: str) -> None:
+    """Renumber numbered Heading paragraphs from 1 in output order."""
+    doc = DocxDocument(docx_path)
+    counters: list[int] = []
+    changed = False
+
+    for para in doc.paragraphs:
+        raw_text = (para.text or "").strip()
+        if not raw_text:
+            continue
+        match = _HEADING_PREFIX_RE.match(raw_text)
+        if not match:
+            continue
+        style_name = ((para.style.name if para.style else "") or "")
+        level = _heading_level_from_style_name(style_name)
+        if level is None and _looks_like_plain_text_heading(raw_text):
+            level = len([token for token in re.split(r"[\.．]", match.group(1)) if token.strip().isdigit()])
+        if level is None:
+            continue
+
+        while len(counters) < level:
+            counters.append(0)
+        for idx in range(level - 1):
+            if counters[idx] == 0:
+                counters[idx] = 1
+        counters[level - 1] += 1
+        for idx in range(level, len(counters)):
+            counters[idx] = 0
+
+        new_prefix = ".".join(str(counters[idx]) for idx in range(level))
+        heading_text = match.group(2).strip()
+        new_text = f"{new_prefix} {heading_text}"
+        if new_text != raw_text:
+            para.text = new_text
+            changed = True
+
+    if changed:
+        doc.save(docx_path)
+
+
+def _renumber_figure_table_labels(docx_path: str, *, _allow_second_pass: bool = True) -> None:
+    """Renumber Figure/Table captions and simple in-text references from 1."""
+    _materialize_numbered_caption_prefixes(docx_path)
+    doc = DocxDocument(docx_path)
+
+    prefix_pattern = r"(Figure|Fig\.?|圖|图|Table|Tab\.?|表)"
+    number_pattern = r"\d+(?:-\d+)*"
+    caption_regex = re.compile(
+        rf"^\s*{prefix_pattern}([\s\u00A0]*)({number_pattern})",
+        re.IGNORECASE,
+    )
+    ref_regex = re.compile(
+        rf"(?<![A-Za-z]){prefix_pattern}([\s\u00A0]*)({number_pattern})",
+        re.IGNORECASE,
+    )
+    orphan_caption_only_regex = re.compile(
+        rf"^\s*{prefix_pattern}[\s\u00A0]*{number_pattern}(?:[\.:：．])?\s*$",
+        re.IGNORECASE,
+    )
+
+    figure_map: dict[str, deque[str]] = {}
+    table_map: dict[str, deque[str]] = {}
+    fig_counter = 1
+    tab_counter = 1
+
+    def _is_figure_prefix(prefix: str) -> bool:
+        lower = (prefix or "").lower()
+        return lower.startswith("f") or lower in {"圖", "图"}
+
+    # Pass 1: build old->new mapping for caption order
+    for para in doc.paragraphs:
+        text = (para.text or "").strip()
+        match = caption_regex.match(text)
+        if not match:
+            continue
+        style_name = ((para.style.name if para.style else "") or "").lower().replace(" ", "")
+        if (
+            "tableoffigures" in style_name
+            or "tableoftables" in style_name
+            or "tableofcontents" in style_name
+        ):
+            continue
+        prefix, _sep, old_num = match.group(1), match.group(2), match.group(3)
+        if _is_figure_prefix(prefix):
+            figure_map.setdefault(old_num, deque()).append(str(fig_counter))
+            fig_counter += 1
+        else:
+            table_map.setdefault(old_num, deque()).append(str(tab_counter))
+            tab_counter += 1
+
+    used_fig: dict[str, list[str]] = {k: [] for k in figure_map}
+    used_tab: dict[str, list[str]] = {k: [] for k in table_map}
+
+    def _caption_repl(match: re.Match) -> str:
+        prefix, sep, old = match.group(1), match.group(2), match.group(3)
+        if _is_figure_prefix(prefix):
+            dq = figure_map.get(old)
+            if dq:
+                new = dq.popleft()
+                used_fig.setdefault(old, []).append(new)
+                return f"{prefix}{sep}{new}"
+        else:
+            dq = table_map.get(old)
+            if dq:
+                new = dq.popleft()
+                used_tab.setdefault(old, []).append(new)
+                return f"{prefix}{sep}{new}"
+        return match.group(0)
+
+    def _ref_repl(match: re.Match) -> str:
+        prefix, sep, old = match.group(1), match.group(2), match.group(3)
+        if _is_figure_prefix(prefix):
+            if used_fig.get(old):
+                return f"{prefix}{sep}{used_fig[old][-1]}"
+            dq = figure_map.get(old)
+            if dq:
+                return f"{prefix}{sep}{dq[0]}"
+        else:
+            if used_tab.get(old):
+                return f"{prefix}{sep}{used_tab[old][-1]}"
+            dq = table_map.get(old)
+            if dq:
+                return f"{prefix}{sep}{dq[0]}"
+        return match.group(0)
+
+    # Pass 2: update caption text + in-text references.
+    # Use whole-paragraph text to avoid run-splitting issues.
+    for para in doc.paragraphs:
+        para_text = para.text or ""
+        stripped = para_text.strip()
+        if not stripped:
+            continue
+        style_name_raw = ((para.style.name if para.style else "") or "")
+        style_name = style_name_raw.lower().replace(" ", "")
+        if _heading_level_from_style_name(style_name_raw) is not None or _looks_like_plain_text_heading(stripped):
+            # Chapter boundary: references in following content should prefer the
+            # next local caption mapping instead of previous chapter mappings.
+            used_fig = {k: [] for k in figure_map}
+            used_tab = {k: [] for k in table_map}
+
+        is_caption = bool(caption_regex.match(stripped)) and not (
+            "tableoffigures" in style_name
+            or "tableoftables" in style_name
+            or "tableofcontents" in style_name
+        )
+        if is_caption:
+            updated_para = caption_regex.sub(_caption_repl, para_text, count=1)
+        else:
+            updated_para = ref_regex.sub(_ref_repl, para_text)
+        if updated_para != para_text:
+            para.text = updated_para
+
+    # Pass 3: remove orphan caption-only paragraphs (e.g., lone "Figure 4.")
+    # when there is no adjacent drawing object.
+    paragraphs = list(doc.paragraphs)
+    remove_nodes = []
+    for idx, para in enumerate(paragraphs):
+        stripped = (para.text or "").strip()
+        if not stripped or not orphan_caption_only_regex.match(stripped):
+            continue
+        has_drawing = para._p.find(".//" + xml_qn("w:drawing")) is not None
+        if has_drawing:
+            continue
+        prev_para = paragraphs[idx - 1] if idx > 0 else None
+        next_para = paragraphs[idx + 1] if idx + 1 < len(paragraphs) else None
+        prev_has_drawing = bool(prev_para is not None and prev_para._p.find(".//" + xml_qn("w:drawing")) is not None)
+        next_has_drawing = bool(next_para is not None and next_para._p.find(".//" + xml_qn("w:drawing")) is not None)
+        if prev_has_drawing or next_has_drawing:
+            continue
+        remove_nodes.append(para._element)
+
+    for node in remove_nodes:
+        parent = node.getparent()
+        if parent is not None:
+            parent.remove(node)
+
+    doc.save(docx_path)
+    if remove_nodes and _allow_second_pass:
+        # Compaction pass: after deleting orphan captions, renumber again so
+        # remaining Figure/Table numbers stay continuous.
+        _renumber_figure_table_labels(docx_path, _allow_second_pass=False)
 
 def _set_alignment(paragraph: DocxParagraph, align: str) -> None:
     align_map = {
@@ -366,6 +664,7 @@ def run_workflow(
     workdir: str,
     template: Dict[str, Any] | None = None,
     cancel_check: Callable[[], None] | None = None,
+    enable_figure_reference: bool = True,
 ) -> Dict[str, Any]:
     def _hash_file(path: str) -> str:
         sha = hashlib.sha256()
@@ -906,6 +1205,19 @@ def run_workflow(
                     reason = str(result.get("reason") or "").strip()
                 entry["error"] = reason or "Figure not found"
 
+    should_renumber_figure_table = any(
+        isinstance(entry, dict)
+        and entry.get("status") == "ok"
+        and entry.get("type")
+        in {
+            "extract_specific_figure_from_word",
+            "extract_specific_table_from_word",
+            "extract_word_chapter",
+            "extract_word_all_content",
+        }
+        for entry in log
+    )
+
     if template_cfg.get("path") and template_mappings:
         try:
             _check_canceled()
@@ -1018,6 +1330,29 @@ def run_workflow(
             provenance["bookmark_id"] = applied.get("bookmark_id", provenance.get("bookmark_id"))
             provenance["result_block_start"] = applied.get("result_block_start")
             provenance["result_block_end"] = applied.get("result_block_end")
+
+    if enable_figure_reference and should_renumber_figure_table and os.path.isfile(out_docx):
+        _check_canceled()
+        try:
+            _renumber_figure_table_labels(out_docx)
+            log.append(
+                {
+                    "step": len(log) + 1,
+                    "type": "postprocess_renumber_figure_table",
+                    "output_docx": out_docx,
+                    "status": "ok",
+                }
+            )
+        except Exception as e:
+            log.append(
+                {
+                    "step": len(log) + 1,
+                    "type": "postprocess_renumber_figure_table",
+                    "output_docx": out_docx,
+                    "status": "error",
+                    "error": str(e),
+                }
+            )
 
     out_log = os.path.join(workdir, "log.json")
     _check_canceled()

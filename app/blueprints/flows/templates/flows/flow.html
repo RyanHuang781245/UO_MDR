@@ -43,6 +43,7 @@
                     <input type="hidden" name="template_file" id="template_file_input" value="{{ template_file or '' }}">
                     <input type="hidden" name="save_as_name" id="saveAsNameInput" value="">
                     <input type="hidden" name="version_name" id="versionNameInput" value="">
+                    <input type="hidden" name="enable_figure_reference" id="enableFigureReferenceInput" value="{{ 'true' if enable_figure_reference else 'false' }}">
 
 
                     {% if is_version_preview and preview_version %}
@@ -125,6 +126,10 @@
                                 <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded">
                                     <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="toggleRuleVisibilitySwitch">
                                     <label class="form-check-label small text-muted mb-0" for="toggleRuleVisibilitySwitch">顯示擷取規則</label>
+                                </div>
+                                <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded">
+                                    <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="enableFigureReferenceSwitch" {% if enable_figure_reference %}checked{% endif %} {% if is_version_preview %}disabled{% endif %}>
+                                    <label class="form-check-label small text-muted mb-0" for="enableFigureReferenceSwitch">圖表參照重排</label>
                                 </div>
                             </div>
                             <div class="flow-toolbar-group flow-toolbar-group-end">
@@ -2194,6 +2199,8 @@ window.addEventListener('beforeunload', function(e){
 const flowForm = document.getElementById('flow_form');
 const flowNameInput = document.getElementById('flowNameInput');
 const outputFilenameInput = document.getElementById('outputFilenameInput');
+const enableFigureReferenceSwitch = document.getElementById('enableFigureReferenceSwitch');
+const enableFigureReferenceInput = document.getElementById('enableFigureReferenceInput');
 const saveAsNameInput = document.getElementById('saveAsNameInput');
 const saveAsSubmitTrigger = document.getElementById('saveAsSubmitTrigger');
 const versionNameInput = document.getElementById('versionNameInput');
@@ -2205,6 +2212,16 @@ const addStepDropdown = addStepDropdownBtn?.closest('.dropdown') || null;
 const openTemplateModalBtn = document.getElementById('openTemplateModalBtn');
 const saveFlowBtn = document.getElementById('saveFlowBtn');
 const runFlowBtn = document.getElementById('runFlowBtn');
+if (enableFigureReferenceSwitch && enableFigureReferenceInput) {
+  const syncEnableFigureReference = () => {
+    enableFigureReferenceInput.value = enableFigureReferenceSwitch.checked ? "true" : "false";
+  };
+  syncEnableFigureReference();
+  enableFigureReferenceSwitch.addEventListener('change', () => {
+    syncEnableFigureReference();
+    markDirty();
+  });
+}
 flowForm.addEventListener('submit', (e) => {
   if (IS_VERSION_PREVIEW) {
     e.preventDefault();

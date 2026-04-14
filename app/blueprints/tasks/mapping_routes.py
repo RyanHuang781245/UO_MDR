@@ -805,7 +805,7 @@ def task_mapping(task_id):
         uploaded_new_mapping = False
         active_scheme = None
 
-        if action == "run_scheme":
+        if action in {"run_scheme", "run_scheme_figure_reference"}:
             scheme_id = (request.form.get("scheme_id") or "").strip()
             active_scheme = load_mapping_scheme(task_id, scheme_id)
             if not active_scheme:
@@ -821,6 +821,7 @@ def task_mapping(task_id):
                         actor={"work_id": work_id, "label": actor_label},
                         source="manual",
                         job_id=None,
+                        enable_figure_reference=(action == "run_scheme_figure_reference"),
                     )
                     current_mapping_display_name = active_scheme.get("display_name") or active_scheme.get("mapping_display_name") or ""
                     active_mapping_tab = "results"

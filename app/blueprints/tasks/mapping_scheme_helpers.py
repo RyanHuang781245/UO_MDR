@@ -102,6 +102,7 @@ def _enrich_scheme(task_id: str, payload: dict, current_files_updated_at: float 
     scheme["status_key"] = status_key
     scheme["status_label"] = status_label
     scheme["is_runnable"] = reference_ok and extract_ok and not needs_review and scheme["source_exists"]
+    scheme["enable_figure_reference"] = bool(scheme.get("enable_figure_reference", True))
     scheme["display_name"] = (
         str(scheme.get("name") or "").strip()
         or str(scheme.get("mapping_display_name") or "").strip()
@@ -179,6 +180,7 @@ def save_mapping_scheme(
         "updated_at": now,
         "actor_work_id": actor.get("work_id", ""),
         "actor_label": actor.get("label", ""),
+        "enable_figure_reference": bool(validation_state.get("enable_figure_reference", True)),
     }
 
     with open(mapping_scheme_meta_path(task_id, scheme_id), "w", encoding="utf-8") as f:
@@ -271,6 +273,30 @@ def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
     return updated_scheme
 
 
+def set_mapping_scheme_figure_reference(task_id: str, scheme_id: str, enabled: bool) -> dict:
+    scheme = load_mapping_scheme(task_id, scheme_id)
+    if not scheme:
+        raise FileNotFoundError("Mapping scheme not found")
+
+    meta_path = mapping_scheme_meta_path(task_id, scheme_id)
+    with open(meta_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, dict):
+        raise ValueError("Mapping scheme metadata is invalid")
+
+    payload["enable_figure_reference"] = bool(enabled)
+    payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    updated_scheme = load_mapping_scheme(task_id, scheme_id)
+    if not updated_scheme:
+        raise RuntimeError("Failed to reload mapping scheme after update")
+    sync_scheme_payload(task_id, updated_scheme)
+    return updated_scheme
+
+
 def execute_saved_mapping_scheme(
     task_id: str,
     scheme_id: str,
@@ -278,6 +304,7 @@ def execute_saved_mapping_scheme(
     source: str = "manual",
     global_batch_id: str = "",
     run_id: str = "",
+    enable_figure_reference: bool = True,
 ) -> dict:
     actor = actor or {}
     scheme = load_mapping_scheme(task_id, scheme_id)
@@ -306,6 +333,7 @@ def execute_saved_mapping_scheme(
         "log_dir": run_dir,
         "validate_only": False,
         "validate_extract_only": False,
+        "enable_figure_reference": bool(enable_figure_reference),
     }
     try:
         if "cancel_check" in inspect.signature(process_mapping_excel).parameters:
@@ -345,6 +373,7 @@ def execute_saved_mapping_scheme(
                 "actor_label": actor.get("label", ""),
                 "source": source,
                 "global_batch_id": global_batch_id,
+                "enable_figure_reference": bool(enable_figure_reference),
             },
         )
         raise
@@ -391,6 +420,7 @@ def execute_saved_mapping_scheme(
             "actor_label": actor.get("label", ""),
             "source": source,
             "global_batch_id": global_batch_id,
+            "enable_figure_reference": bool(enable_figure_reference),
         },
     )
 
@@ -417,6 +447,7 @@ def enqueue_saved_mapping_scheme_run(
     global_batch_id: str = "",
     parent_job_id: str = "",
     job_id: str | None = None,
+    enable_figure_reference: bool | None = None,
 ) -> str:
     actor = actor or {}
     scheme = load_mapping_scheme(task_id, scheme_id)
@@ -428,6 +459,12 @@ def enqueue_saved_mapping_scheme_run(
         raise RuntimeError("Mapping scheme requires revalidation")
     if not scheme.get("reference_ok") or not scheme.get("extract_ok"):
         raise RuntimeError("Mapping scheme is not validated")
+
+    effective_enable_figure_reference = bool(
+        scheme.get("enable_figure_reference", True)
+        if enable_figure_reference is None
+        else enable_figure_reference
+    )
 
     return enqueue_job(
         MAPPING_SCHEME_RUN_JOB,
@@ -441,6 +478,7 @@ def enqueue_saved_mapping_scheme_run(
             "scheme_name": scheme.get("name") or "",
             "reference_ok": bool(scheme.get("reference_ok")),
             "extract_ok": bool(scheme.get("extract_ok")),
+            "enable_figure_reference": effective_enable_figure_reference,
         },
         task_id=task_id,
         target_name=scheme.get("display_name") or scheme.get("mapping_display_name") or scheme_id,
@@ -458,6 +496,7 @@ def run_saved_mapping_scheme_job(job_id: str, payload: dict) -> dict:
     source = str(payload.get("source") or "manual").strip() or "manual"
     global_batch_id = str(payload.get("global_batch_id") or "").strip()
     actor = dict(payload.get("actor") or {})
+    enable_figure_reference = bool(payload.get("enable_figure_reference", True))
     if not task_id or not scheme_id:
         raise RuntimeError("Invalid mapping scheme job payload")
 
@@ -468,6 +507,7 @@ def run_saved_mapping_scheme_job(job_id: str, payload: dict) -> dict:
         source=source,
         global_batch_id=global_batch_id,
         run_id=job_id,
+        enable_figure_reference=enable_figure_reference,
     )
 
     artifacts = []
@@ -503,5 +543,6 @@ def run_saved_mapping_scheme_job(job_id: str, payload: dict) -> dict:
             "source": source,
             "error": run_result.get("error") or "",
             "messages": list(run_result.get("messages") or []),
+            "enable_figure_reference": enable_figure_reference,
         },
     }

@@ -119,6 +119,7 @@ def record_mapping_scheme(task_id: str, payload: dict) -> None:
     record.updated_at = _coerce_dt(payload.get("updated_at")) or datetime.now()
     record.actor_work_id = str(payload.get("actor_work_id") or "").strip() or None
     record.actor_label = str(payload.get("actor_label") or "").strip() or None
+    record.enable_figure_reference = bool(payload.get("enable_figure_reference", True))
     db.session.add(record)
     _commit()
 
@@ -307,6 +308,9 @@ def list_mapping_scheme_payloads(
                 "updated_at": _format_dt(row.updated_at),
                 "actor_work_id": str(row.actor_work_id or ""),
                 "actor_label": str(row.actor_label or ""),
+                "enable_figure_reference": bool(
+                    True if row.enable_figure_reference is None else row.enable_figure_reference
+                ),
                 "is_scheduled": bool(scheduled_scheme_id and row.scheme_id == scheduled_scheme_id),
                 "is_runnable": computed_status == "ready" and reference_ok and extract_ok and source_exists,
                 "needs_review": computed_status == "needs_review",

@@ -278,6 +278,7 @@ def process_mapping_excel(
     log_dir: str | None = None,
     validate_only: bool = False,
     validate_extract_only: bool = False,
+    enable_figure_reference: bool = True,
     cancel_check: Callable[[], None] | None = None,
 ) -> Dict[str, List[str]]:
     """Process mapping Excel file and generate documents or copy files.
@@ -307,6 +308,8 @@ def process_mapping_excel(
         try:
             if "cancel_check" in inspect.signature(run_workflow).parameters:
                 kwargs["cancel_check"] = cancel_check
+            if "enable_figure_reference" in inspect.signature(run_workflow).parameters:
+                kwargs["enable_figure_reference"] = enable_figure_reference
         except (TypeError, ValueError):
             pass
         return run_workflow(steps, **kwargs)

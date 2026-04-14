@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 
 from app.extensions import db
 
@@ -30,6 +30,7 @@ class MappingSchemeRecord(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
     actor_work_id = db.Column(db.String(100))
     actor_label = db.Column(db.String(200))
+    enable_figure_reference = db.Column(db.Boolean, nullable=False, server_default="1")
 
     __table_args__ = (
         db.Index("ix_mapping_schemes_task_updated", "task_id", "updated_at"),
@@ -63,3 +64,29 @@ class MappingRunRecord(db.Model):
 
 def ensure_schema() -> None:
     db.create_all()
+
+    engine = db.engine
+    inspector = inspect(engine)
+    if "mapping_schemes" not in set(inspector.get_table_names()):
+        return
+
+    existing_columns = {col["name"].lower() for col in inspector.get_columns("mapping_schemes")}
+    if engine.dialect.name == "mssql":
+        with engine.begin() as conn:
+            if "enable_figure_reference" not in existing_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE mapping_schemes "
+                        "ADD enable_figure_reference BIT NOT NULL "
+                        "CONSTRAINT DF_mapping_schemes_enable_figure_reference DEFAULT(1);"
+                    )
+                )
+    elif engine.dialect.name == "sqlite":
+        with engine.begin() as conn:
+            if "enable_figure_reference" not in existing_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE mapping_schemes "
+                        "ADD COLUMN enable_figure_reference BOOLEAN NOT NULL DEFAULT 1;"
+                    )
+                )

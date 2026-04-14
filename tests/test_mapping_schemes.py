@@ -408,3 +408,137 @@ def test_saved_mapping_scheme_run_does_not_show_processing_status(app, client, m
     assert response.status_code == 200
     assert "處理狀態" not in html
     assert "生成結果" not in html
+
+
+def test_saved_mapping_scheme_general_run_forwards_disable_figure_reference(
+    app, client, monkeypatch
+) -> None:
+    task_id = "mapping-scheme-figure-ref-setting"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    source_path = task_dir / "mapping.xlsx"
+    source_path.write_bytes(b"dummy")
+
+    scheme = save_mapping_scheme(
+        task_id,
+        str(source_path),
+        "一般執行方案",
+        {
+            "mapping_file": "mapping.xlsx",
+            "mapping_display_name": "mapping.xlsx",
+            "reference_ok": True,
+            "extract_ok": True,
+        },
+        actor={"work_id": "A123", "label": "Tester"},
+    )
+
+    captured_job_payload: dict[str, object] = {}
+
+    def fake_enqueue_job(job_type, payload, **kwargs):
+        captured_job_payload.clear()
+        captured_job_payload.update(payload)
+        return "run-figure-ref-flag"
+
+    monkeypatch.setattr("app.blueprints.tasks.mapping_scheme_helpers.enqueue_job", fake_enqueue_job)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    run_response = client.post(
+        url,
+        data={
+            "action": "run_scheme",
+            "scheme_id": scheme["id"],
+            "mpage": "1",
+        },
+    )
+    assert run_response.status_code == 200
+    assert captured_job_payload["scheme_id"] == scheme["id"]
+    assert captured_job_payload["enable_figure_reference"] is False
+
+
+def test_saved_mapping_scheme_figure_reference_run_forwards_enable_figure_reference(
+    app, client, monkeypatch
+) -> None:
+    task_id = "mapping-scheme-figure-ref-run"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    source_path = task_dir / "mapping.xlsx"
+    source_path.write_bytes(b"dummy")
+
+    scheme = save_mapping_scheme(
+        task_id,
+        str(source_path),
+        "圖表參照執行方案",
+        {
+            "mapping_file": "mapping.xlsx",
+            "mapping_display_name": "mapping.xlsx",
+            "reference_ok": True,
+            "extract_ok": True,
+        },
+        actor={"work_id": "A123", "label": "Tester"},
+    )
+
+    captured_job_payload: dict[str, object] = {}
+
+    def fake_enqueue_job(job_type, payload, **kwargs):
+        captured_job_payload.clear()
+        captured_job_payload.update(payload)
+        return "run-figure-ref-flag"
+
+    monkeypatch.setattr("app.blueprints.tasks.mapping_scheme_helpers.enqueue_job", fake_enqueue_job)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    run_response = client.post(
+        url,
+        data={
+            "action": "run_scheme_figure_reference",
+            "scheme_id": scheme["id"],
+            "mpage": "1",
+        },
+    )
+    assert run_response.status_code == 200
+    assert captured_job_payload["scheme_id"] == scheme["id"]
+    assert captured_job_payload["enable_figure_reference"] is True
+
+
+def test_saved_mapping_scheme_list_shows_two_run_actions(app, client) -> None:
+    task_id = "mapping-scheme-list-run-actions"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+
+    source_path = task_dir / "mapping.xlsx"
+    source_path.write_bytes(b"dummy")
+    scheme = save_mapping_scheme(
+        task_id,
+        str(source_path),
+        "列表按鈕方案",
+        {
+            "mapping_file": "mapping.xlsx",
+            "mapping_display_name": "mapping.xlsx",
+            "reference_ok": True,
+            "extract_ok": True,
+        },
+        actor={"work_id": "A123", "label": "Tester"},
+    )
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id, mapping_tab="saved")
+
+    response = client.get(url)
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert scheme["id"] in html
+    assert 'value="run_scheme"' in html
+    assert 'value="run_scheme_figure_reference"' in html

@@ -156,7 +156,7 @@
 
     <div class="tab-pane fade {% if active_mapping_tab == 'saved' %}show active{% endif %}" id="saved-schemes-pane" role="tabpanel" aria-labelledby="saved-schemes-tab">
     <div class="main-card mb-4">
-        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center gap-2 flex-wrap">
             <h5 class="fw-bold mb-0">已保存 Mapping</h5>
             <div class="text-muted small">共 <span>{{ saved_schemes_pagination.total_count }}</span> 筆 Mapping (第 {{ saved_schemes_pagination.page }} / {{ saved_schemes_pagination.total_pages }} 頁)</div>
         </div>
@@ -166,7 +166,6 @@
                 <colgroup>
                     <col>
                     <col class="saved-mapping-col-file">
-                    <col class="saved-mapping-col-status">
                     <col class="saved-mapping-col-created">
                     <col class="saved-mapping-col-actions">
                 </colgroup>
@@ -174,7 +173,6 @@
                     <tr>
                         <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">名稱</th>
                         <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">Mapping 檔案</th>
-                        <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">狀態</th>
                         <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
                         <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
                     </tr>
@@ -187,23 +185,21 @@
                             <div class="small text-muted font-monospace">{{ scheme.id }}</div>
                         </td>
                         <td class="text-muted">{{ scheme.mapping_display_name or scheme.mapping_file }}</td>
-                        <td>
-                            {% if scheme.status_key == 'ready' %}
-                            <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> {{ scheme.status_label }}</span>
-                            {% elif scheme.status_key == 'needs_review' %}
-                            <span class="status-badge mapping-status-review"><i class="bi bi-arrow-repeat"></i> {{ scheme.status_label }}</span>
-                            {% else %}
-                            <span class="status-badge status-badge-failed"><i class="bi bi-exclamation-triangle-fill"></i> {{ scheme.status_label }}</span>
-                            {% endif %}
-                        </td>
                         <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ scheme.saved_at }}</td>
                         <td>
-                            <div class="d-flex justify-content-center gap-1">
+                            <div class="d-flex justify-content-center align-items-center gap-1">
                                 <form method="post" class="d-inline">
                                     <input type="hidden" name="mpage" value="{{ saved_schemes_pagination.page }}">
                                     <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
-                                    <button class="btn-action-icon text-success" type="submit" name="action" value="run_scheme" {% if not scheme.is_runnable %}disabled title="請先重新檢查方案"{% else %}title="生成"{% endif %}>
-                                        <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">生成</span>
+                                    <button class="btn-action-icon text-success" type="submit" name="action" value="run_scheme" {% if not scheme.is_runnable %}disabled title="請先重新檢查方案"{% else %}title="一般執行"{% endif %}>
+                                        <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">一般執行</span>
+                                    </button>
+                                </form>
+                                <form method="post" class="d-inline">
+                                    <input type="hidden" name="mpage" value="{{ saved_schemes_pagination.page }}">
+                                    <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
+                                    <button class="btn-action-icon text-primary" type="submit" name="action" value="run_scheme_figure_reference" {% if not scheme.is_runnable %}disabled title="請先重新檢查方案"{% else %}title="圖表參照執行"{% endif %}>
+                                        <i class="bi bi-diagram-3"></i><span class="d-none d-lg-inline small fw-semibold">圖表參照執行</span>
                                     </button>
                                 </form>
                                 <a class="btn-action-icon" href="{{ url_for('tasks_bp.task_download_mapping_scheme', task_id=task_id, scheme_id=scheme.id) }}" title="下載 Mapping 檔">
@@ -217,7 +213,7 @@
                                     data-scheme-name="{{ scheme.display_name }}"
                                     onclick="openRenameSchemeModal(this)"
                                 >
-                                    <i class="bi bi-input-cursor-text"></i><span class="d-none d-lg-inline small fw-semibold">重新命名</span>
+                                    <i class="bi bi-input-cursor-text"></i>
                                 </button>
                                 <form method="post" class="d-inline" onsubmit="return confirm('確定刪除 Mapping 方案「{{ scheme.display_name }}」？此動作無法復原。')">
                                     <input type="hidden" name="mpage" value="{{ saved_schemes_pagination.page }}">
@@ -618,14 +614,11 @@
 .saved-mapping-col-file {
     width: 260px;
 }
-.saved-mapping-col-status {
-    width: 120px;
-}
 .saved-mapping-col-created {
     width: 180px;
 }
 .saved-mapping-col-actions {
-    width: 370px;
+    width: 430px;
 }
 .run-status-container {
     position: fixed;

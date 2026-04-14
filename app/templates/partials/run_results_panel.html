@@ -236,7 +236,6 @@
             {% if run.scheme_name %}
             <div class="small text-muted">方案：{{ run.scheme_name }}</div>
             {% endif %}
-            <div class="small text-muted">引用檢查 {{ '通過' if run.reference_ok else '未通過' }} / 擷取參數 {{ '通過' if run.extract_ok else '未通過' }}</div>
           </td>
           <td class="text-muted font-monospace">{{ run.run_id }}</td>
           <td class="text-muted font-monospace">{{ run.started_at }}</td>

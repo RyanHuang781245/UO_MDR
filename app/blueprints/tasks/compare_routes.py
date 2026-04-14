@@ -6,7 +6,7 @@ import shutil
 import uuid
 from datetime import datetime
 
-from flask import abort, current_app, jsonify, render_template, request, send_file, send_from_directory, url_for
+from flask import abort, current_app, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
 
 from app.services.flow_service import (
     SKIP_DOCX_CLEANUP,
@@ -46,26 +46,7 @@ def task_result(task_id, job_id):
     docx_path = os.path.join(job_dir, "result.docx")
     if not os.path.exists(docx_path):
         return "Job not found or failed.", 404
-    log_json_path = os.path.join(job_dir, "log.json")
-    log_entries = []
-    overall_status = "ok"
-    if os.path.exists(log_json_path):
-        with open(log_json_path, "r", encoding="utf-8") as file_obj:
-            log_entries = json.load(file_obj)
-        if any(entry.get("status") == "error" for entry in log_entries):
-            overall_status = "error"
-    return render_template(
-        "tasks/run.html",
-        task=_load_task_context(task_id),
-        job_id=job_id,
-        docx_path=url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx"),
-        log_path=url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="log"),
-        translate_path=url_for("tasks_bp.task_translate", task_id=task_id, job_id=job_id),
-        compare_path=url_for("tasks_bp.task_compare", task_id=task_id, job_id=job_id),
-        back_link=url_for("flow_builder_bp.flow_builder", task_id=task_id),
-        log_entries=log_entries,
-        overall_status=overall_status,
-    )
+    return redirect(url_for("flow_builder_bp.flow_builder", task_id=task_id, flow_tab="results"))
 
 
 @tasks_bp.get("/tasks/<task_id>/translate/<job_id>", endpoint="task_translate")

@@ -1832,7 +1832,7 @@ const FIELD_META = {
   },
   dest_dir: {
     label: "輸出資料夾",
-    placeholder: "相對於任務 Output 路徑，例如 pkg/files"
+    placeholder: "選擇資料夾"
   },
   target_name: {
     label: "複製後名稱",
@@ -2395,7 +2395,7 @@ function renderOutputFolderPickerField({ sid, key, label, value, placeholder, co
       <input class="form-control" name="${inputName}" value="${escapeAttr(value || "")}" placeholder="${escapeAttr(placeholder || "")}">
       <button class="btn btn-outline-secondary step-file-browse-btn" type="button" data-target="${inputName}" data-accept="file:dir" data-browser-scope="output">瀏覽</button>
     </div>
-    <div class="form-text">留白代表直接輸出到任務 Output 根目錄</div>
+    <div class="form-text">留白代表直接複製到輸出存放空間</div>
   </div>`;
 }
 

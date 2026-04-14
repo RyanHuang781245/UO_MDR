@@ -46,6 +46,18 @@
     gap: 0.5rem;
   }
 
+  .run-detail-card {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: #fff;
+    padding: 0.875rem 1rem;
+  }
+
+  .run-log-list .list-group-item {
+    border-left: 0;
+    border-right: 0;
+  }
+
   @media (max-width: 991.98px) {
     .results-filter-bar,
     .results-filter-controls {
@@ -146,10 +158,10 @@
         {% if results_active_tab == 'flows' %}
         <tr>
           <th style="width: 56px" class="text-center"><input type="checkbox" class="form-check-input" id="{{ results_id_prefix }}MasterCheckbox"></th>
-          <th style="width: 36%" class="text-start">流程</th>
-          <th style="width: 30%">執行時間</th>
-          <th style="width: 14%">狀態</th>
-          <th style="width: 20%">操作</th>
+          <th style="width: 30%" class="text-start">流程</th>
+          <th style="width: 20%">執行時間</th>
+          <th style="width: 10%">狀態</th>
+          <th style="width: 35%">操作</th>
         </tr>
         {% else %}
         <tr>
@@ -170,6 +182,7 @@
           data-job-id="{{ run.job_id }}"
           data-status="{{ run.status }}"
           data-status-url="{{ url_for('flow_results_bp.flow_run_status', task_id=results_task_id, job_id=run.job_id) }}"
+          data-detail-url="{{ url_for('flow_results_bp.flow_run_detail', task_id=results_task_id, job_id=run.job_id) }}"
           data-cancel-url="{{ url_for('flow_results_bp.cancel_flow_run', task_id=results_task_id, job_id=run.job_id) }}"
           data-retry-url="{{ url_for('flow_results_bp.retry_flow_run', task_id=results_task_id, job_id=run.job_id) }}"
         >
@@ -202,7 +215,8 @@
           <td class="run-actions-cell">
             <div class="d-flex justify-content-center gap-1">
               {% if run.has_result %}
-              <a href="{{ url_for('tasks_bp.task_result', task_id=results_task_id, job_id=run.job_id) }}" class="btn-action-icon" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></a>
+              <button type="button" class="btn-action-icon flow-run-detail-btn" data-bs-toggle="modal" data-bs-target="#{{ results_id_prefix }}DetailModal" data-detail-url="{{ url_for('flow_results_bp.flow_run_detail', task_id=results_task_id, job_id=run.job_id) }}" data-job-id="{{ run.job_id }}" onclick="if (window.__openFlowRunDetailModal) window.__openFlowRunDetailModal(this)" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></button>
+              <a href="{{ url_for('tasks_bp.task_compare', task_id=results_task_id, job_id=run.job_id) }}" class="btn-action-icon" title="來源比對"><i class="bi bi-layout-split"></i><span class="d-none d-lg-inline small fw-semibold">來源比對</span></a>
               <a href="{{ url_for('tasks_bp.task_download', task_id=results_task_id, job_id=run.job_id, kind='docx') }}" class="btn-action-icon" title="下載"><i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載</span></a>
               {% endif %}
               {% if run.has_log %}
@@ -305,6 +319,36 @@
   </div>
 </div>
 
+{% if results_active_tab == 'flows' %}
+<div class="modal fade" id="{{ results_id_prefix }}DetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title fw-bold">流程 Log</h5>
+          <div class="small text-muted"><span id="{{ results_id_prefix }}DetailFlowName">-</span> <span class="mx-1">|</span> Job ID: <code id="{{ results_id_prefix }}DetailJobId">-</code></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="run-detail-card mb-3 d-none" id="{{ results_id_prefix }}DetailErrorWrap">
+          <div class="small text-muted mb-1">錯誤摘要</div>
+          <div class="text-danger small" id="{{ results_id_prefix }}DetailError"></div>
+        </div>
+        <div class="run-detail-card">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-semibold">流程 Log</div>
+            <div class="small text-muted" id="{{ results_id_prefix }}DetailLogCount">0 steps</div>
+          </div>
+          <div id="{{ results_id_prefix }}DetailLoading" class="small text-muted">載入中...</div>
+          <ul class="list-group list-group-flush run-log-list d-none" id="{{ results_id_prefix }}DetailLogList"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <script>
 (() => {
   const prefix = {{ results_id_prefix|tojson }};
@@ -319,6 +363,15 @@
 
   function byId(suffix) {
     return document.getElementById(`${prefix}${suffix}`);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function runCheckboxes() {
@@ -528,7 +581,9 @@
     const key = String(status || "unknown").toLowerCase();
     const cancelUrl = row.dataset.cancelUrl || payload.cancel_url || "";
     const retryUrl = row.dataset.retryUrl || payload.retry_url || "";
-    const resultUrl = payload.result_url || "";
+    const detailUrl = row.dataset.detailUrl || payload.detail_url || "";
+    const jobId = row.dataset.jobId || "";
+    const compareUrl = payload.compare_url || "";
     const docxUrl = payload.docx_url || "";
     const logUrl = payload.log_url || "";
     if (ACTIVE_STATUSES.has(key) && cancelUrl) {
@@ -546,8 +601,11 @@
       </div>`;
     }
     const parts = [];
-    if (payload.has_result && resultUrl) {
-      parts.push(`<a href="${resultUrl}" class="btn-action-icon" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></a>`);
+    if (payload.has_result && detailUrl) {
+      parts.push(`<button type="button" class="btn-action-icon flow-run-detail-btn" data-bs-toggle="modal" data-bs-target="#${prefix}DetailModal" data-detail-url="${detailUrl}" data-job-id="${jobId}" onclick="if (window.__openFlowRunDetailModal) window.__openFlowRunDetailModal(this)" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></button>`);
+    }
+    if (payload.has_result && compareUrl) {
+      parts.push(`<a href="${compareUrl}" class="btn-action-icon" title="來源比對"><i class="bi bi-layout-split"></i><span class="d-none d-lg-inline small fw-semibold">來源比對</span></a>`);
     }
     if (payload.has_result && docxUrl) {
       parts.push(`<a href="${docxUrl}" class="btn-action-icon" title="下載"><i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載</span></a>`);
@@ -641,6 +699,74 @@
     } finally {
       syncingResultsRows = false;
     }
+  }
+
+  if (activeTab === "flows") {
+    const detailModalElement = document.getElementById(`${prefix}DetailModal`);
+    const detailFlowName = document.getElementById(`${prefix}DetailFlowName`);
+    const detailJobId = document.getElementById(`${prefix}DetailJobId`);
+    const detailLoading = document.getElementById(`${prefix}DetailLoading`);
+    const detailLogList = document.getElementById(`${prefix}DetailLogList`);
+    const detailLogCount = document.getElementById(`${prefix}DetailLogCount`);
+    const detailErrorWrap = document.getElementById(`${prefix}DetailErrorWrap`);
+    const detailError = document.getElementById(`${prefix}DetailError`);
+
+    function renderLogEntry(entry) {
+      const statusText = String(entry?.status || "").toLowerCase() === "ok" ? "成功" : "失敗";
+      const badgeClass = String(entry?.status || "").toLowerCase() === "ok" ? "bg-success-subtle text-success border border-success-subtle" : "bg-danger-subtle text-danger border border-danger-subtle";
+      const errorHtml = entry?.error ? `<div class="small text-danger mt-1">${escapeHtml(String(entry.error))}</div>` : "";
+      return `<li class="list-group-item py-3">
+        <div class="d-flex justify-content-between align-items-start gap-3">
+          <div class="min-width-0">
+            <div class="fw-semibold">步驟 ${escapeHtml(String(entry?.step ?? "-"))} - ${escapeHtml(String(entry?.type || "-"))}</div>
+            ${errorHtml}
+          </div>
+          <span class="badge ${badgeClass} rounded-pill">${statusText}</span>
+        </div>
+      </li>`;
+    }
+
+    async function openFlowRunDetail(detailUrl, fallbackJobId = "") {
+      if (!detailUrl) return;
+      detailFlowName.textContent = "-";
+      detailJobId.textContent = fallbackJobId || "-";
+      detailLoading.classList.remove("d-none");
+      detailLoading.textContent = "載入中...";
+      detailLogList.classList.add("d-none");
+      detailLogList.innerHTML = "";
+      detailLogCount.textContent = "0 steps";
+      detailErrorWrap.classList.add("d-none");
+      detailError.textContent = "";
+      try {
+        const resp = await fetch(detailUrl, { cache: "no-store" });
+        const payload = await resp.json();
+        if (!resp.ok || !payload.ok) {
+          throw new Error(payload.error || "detail_load_failed");
+        }
+        detailFlowName.textContent = payload.flow_name || "未命名流程";
+        detailJobId.textContent = payload.job_id || fallbackJobId || "-";
+        const logEntries = Array.isArray(payload.log_entries) ? payload.log_entries : [];
+        detailLogCount.textContent = `${logEntries.length} steps`;
+        if (payload.error) {
+          detailErrorWrap.classList.remove("d-none");
+          detailError.textContent = payload.error;
+        }
+        if (logEntries.length) {
+          detailLogList.innerHTML = logEntries.map(renderLogEntry).join("");
+          detailLogList.classList.remove("d-none");
+          detailLoading.classList.add("d-none");
+        } else {
+          detailLoading.textContent = "沒有流程 Log";
+        }
+      } catch (error) {
+        detailLoading.textContent = "載入詳情失敗";
+      }
+    }
+
+    window.__openFlowRunDetailModal = (trigger) => {
+      if (!trigger) return;
+      openFlowRunDetail(trigger.dataset?.detailUrl || "", trigger.dataset?.jobId || "");
+    };
   }
 
   syncLatestResultRows();

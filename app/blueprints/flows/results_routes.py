@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import zipfile
@@ -21,6 +22,18 @@ from .run_helpers import (
     _read_job_meta,
     _read_mapping_run_meta,
 )
+
+
+def _read_flow_log_entries(job_dir: str) -> list[dict]:
+    log_json_path = os.path.join(job_dir, "log.json")
+    if not os.path.isfile(log_json_path):
+        return []
+    try:
+        with open(log_json_path, "r", encoding="utf-8") as file_obj:
+            data = json.load(file_obj)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
 
 
 def _redirect_with_fallback(default_endpoint: str, **default_values):
@@ -305,11 +318,42 @@ def flow_run_status(task_id, job_id):
         "flow_name": flow_name,
         "has_result": bool(result_exists),
         "has_log": bool(log_exists),
-        "result_url": url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id),
+        "detail_url": url_for("flow_results_bp.flow_run_detail", task_id=task_id, job_id=job_id),
+        "compare_url": url_for("tasks_bp.task_compare", task_id=task_id, job_id=job_id) if result_exists else "",
         "docx_url": url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx"),
         "log_url": url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="log"),
         "cancel_url": url_for("flow_results_bp.cancel_flow_run", task_id=task_id, job_id=job_id),
         "retry_url": url_for("flow_results_bp.retry_flow_run", task_id=task_id, job_id=job_id),
+    }
+
+
+@flow_results_bp.get("/runs/<job_id>/detail", endpoint="flow_run_detail")
+def flow_run_detail(task_id, job_id):
+    record = db.session.get(JobRecord, job_id)
+    if not record or record.task_id != task_id:
+        return {"ok": False, "error": "Run not found"}, 404
+    tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    job_dir = os.path.join(tdir, "jobs", job_id)
+    meta = _read_job_meta(job_dir) if os.path.isdir(job_dir) else {}
+    status = str(record.status or meta.get("status") or "unknown").strip().lower()
+    if os.path.isdir(job_dir) and _job_has_error(job_dir):
+        status = "failed"
+    flow_name = str(record.target_name or meta.get("flow_name") or "").strip() or "未命名流程"
+    log_entries = _read_flow_log_entries(job_dir) if os.path.isdir(job_dir) else []
+    has_result = os.path.isfile(os.path.join(job_dir, "result.docx")) if os.path.isdir(job_dir) else False
+    has_log = os.path.isfile(os.path.join(job_dir, "log.json")) if os.path.isdir(job_dir) else False
+    return {
+        "ok": True,
+        "job_id": job_id,
+        "flow_name": flow_name,
+        "status": status,
+        "error": str(record.error_summary or meta.get("error") or "").strip(),
+        "log_entries": log_entries,
+        "has_result": has_result,
+        "has_log": has_log,
+        "docx_url": url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx") if has_result else "",
+        "log_url": url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="log") if has_log else "",
+        "compare_url": url_for("tasks_bp.task_compare", task_id=task_id, job_id=job_id) if has_result else "",
     }
 
 

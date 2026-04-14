@@ -447,6 +447,14 @@ def test_mapping_figure_tail_title_and_index(tmp_path: Path) -> None:
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_figure_table_type_sets_allow_table_flag(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 2", item_type="Figure Table")
+    params = _first_step_params(log_data)
+    assert params.get("target_caption_label") == "Figure 2"
+    assert params.get("allow_table_figure_container") is True
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_tail_requires_figure_or_table_label(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "1.1 Chapter|title=No Label")
     assert any("使用 title/index 參數時必須指定 Figure 或 Table 標籤" in msg for msg in result.get("logs", []))
@@ -504,6 +512,19 @@ def test_mapping_figure_index_validation(tmp_path: Path) -> None:
     zero_result, _ = _run_validate_mapping(tmp_path / "zero", "1.1 Figure 1|index=0")
     assert any("index 必須是正整數: abc" in msg for msg in bad_result.get("logs", []))
     assert any("index 必須大於 0: 0" in msg for msg in zero_result.get("logs", []))
+
+
+def test_mapping_type_figure_table_allows_tail_without_label(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "1.1 General description|index=2",
+        item_type="Figure Table",
+    )
+    params = _first_step_params(log_data)
+    assert params.get("target_caption_label") == ""
+    assert params.get("target_figure_index") == 2
+    assert params.get("allow_table_figure_container") is True
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
 def test_mapping_table_tail_behavior_unchanged(tmp_path: Path) -> None:

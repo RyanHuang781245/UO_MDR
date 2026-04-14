@@ -29,7 +29,7 @@ from modules.extract_word_chapter import (
 
 
 FIGURE_NUMBER_PREFIX_RE = re.compile(
-    r"^\s*(figure|fig\.?)\s+\d+(?:\s*[-.:])?\s+\S+",
+    r"^\s*(figure|fig\.?)\s+\d+(?:\s*[-.:])?\s*\S+",
     re.IGNORECASE,
 )
 
@@ -151,12 +151,32 @@ def _paragraph_has_image(block: etree._Element) -> bool:
     return has_drawing
 
 
+def _table_has_image(block: etree._Element) -> bool:
+    if block is None:
+        return False
+    if block.tag != qn("w:tbl"):
+        return False
+    return bool(
+        block.xpath(
+            ".//w:drawing | .//a:blip | .//pic:pic | .//w:pict | .//v:imagedata",
+            namespaces={
+                **NS,
+                "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+                "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
+                "v": "urn:schemas-microsoft-com:vml",
+            },
+        )
+    )
+
+
 def _get_first_image_block(block: etree._Element) -> Optional[etree._Element]:
     """
-    與表格版 _get_first_table_element 類似，但圖片通常在段落內。
-    這裡直接回傳「包含圖片的 paragraph block」。
+    圖片可能直接在段落內，也可能被包在表格裡。
+    這裡回傳「包含圖片的最外層 block」，供後續用同樣流程比對下一段 caption/title。
     """
     if _paragraph_has_image(block):
+        return block
+    if _table_has_image(block):
         return block
     return None
 
@@ -267,6 +287,7 @@ def extract_specific_figure_from_word_xml(
     *,
     target_figure_title: str | None = None,
     target_figure_index: int | None = None,
+    allow_table_figure_container: bool = False,
     include_caption: bool = True,
     ignore_header_footer: bool = True,
     save_output: bool = True,
@@ -385,6 +406,8 @@ def extract_specific_figure_from_word_xml(
 
     for block in section_children:
         image_block = _get_first_image_block(block)
+        if image_block is not None and image_block.tag == qn("w:tbl") and not allow_table_figure_container:
+            image_block = None
         if image_block is not None:
             # 先記住這張圖，等待下一個段落當圖名
             pending_image_block = image_block

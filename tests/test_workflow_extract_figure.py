@@ -285,6 +285,34 @@ def test_workflow_extract_figure_forwards_title_and_index(
     assert captured["target_figure_index"] == "2"
 
 
+def test_workflow_extract_figure_forwards_table_container_flag(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    src = tmp_path / "source.docx"
+    _create_docx(src)
+    captured: dict[str, object] = {}
+
+    def fake_extract_specific_figure_from_word(*_args, **kwargs):
+        captured["allow_table_figure_container"] = kwargs.get("allow_table_figure_container")
+        output_docx_path = kwargs.get("output_docx_path")
+        out_path = Path(str(output_docx_path))
+        _create_docx(out_path, text="Figure result")
+        return {"ok": True, "reason": "ok"}
+
+    monkeypatch.setattr(
+        "modules.workflow.extract_specific_figure_from_word",
+        fake_extract_specific_figure_from_word,
+    )
+
+    steps = [_extract_step(str(src), allow_table_figure_container="true")]
+    result = run_workflow(steps, str(tmp_path / "job_table_container"))
+    figure_entry = next(e for e in result["log_json"] if e.get("type") == "extract_specific_figure_from_word")
+
+    assert figure_entry["status"] == "ok"
+    assert captured["allow_table_figure_container"] is True
+
+
 def test_workflow_extract_table_include_caption_defaults_true(
     tmp_path: Path,
     monkeypatch,

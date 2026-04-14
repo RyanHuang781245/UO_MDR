@@ -573,6 +573,8 @@ def process_mapping_excel(
             return "add_image"
         if text in {"all", "extract all", "全文", "擷取全文", "提取全文"}:
             return "extract_all"
+        if text in {"figure table", "figuretable", "table figure", "tablefigure", "表格圖片", "表格图片", "表格包圖", "表格包图"}:
+            return "figure_table"
         if text in {"figure", "fig", "extract figure", "擷取圖片", "提取图片", "擷取图"}:
             return "figure"
         if text in {"table", "表格", "表"}:
@@ -639,7 +641,7 @@ def process_mapping_excel(
             return "Copy file"
         if item_type == "copy_folder":
             return "Copy folder"
-        if item_type == "figure":
+        if item_type in {"figure", "figure_table"}:
             return "Extract figure"
         if item_type == "table":
             return "Extract table"
@@ -736,8 +738,10 @@ def process_mapping_excel(
         instruction_core = (instruction or "").split("|", 1)[0].strip()
         tail_title_match = re.search(r"(?:^|\|)\s*title\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
         tail_index_match = re.search(r"(?:^|\|)\s*index\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
+        tail_container_match = re.search(r"(?:^|\|)\s*container\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
         tail_title = (tail_title_match.group(1) if tail_title_match else "").strip()
         tail_index = (tail_index_match.group(1) if tail_index_match else "").strip()
+        tail_container = (tail_container_match.group(1) if tail_container_match else "").strip()
         src_base = os.path.basename(src) if src else ""
         if action == "Append text":
             return src
@@ -771,6 +775,8 @@ def process_mapping_excel(
                 parts.append(f"title={tail_title}")
             if tail_index:
                 parts.append(f"index={tail_index}")
+            if tail_container:
+                parts.append(f"container={tail_container}")
             if parts:
                 return f"{src_base} ({', '.join(parts)})".strip()
             return src_base
@@ -798,7 +804,7 @@ def process_mapping_excel(
     def _parse_instruction_tail_options(raw_instruction: str) -> tuple[str, dict[str, str], str]:
         """
         Parse optional tail tokens from mapping instruction:
-        <core>|title=...|index=...
+        <core>|title=...|index=...|container=...
         """
         raw = (raw_instruction or "").strip()
         if not raw:
@@ -814,7 +820,7 @@ def process_mapping_excel(
             key_raw, value_raw = token.split("=", 1)
             key = key_raw.strip().lower()
             value = value_raw.strip()
-            if key in {"title", "index"}:
+            if key in {"title", "index", "container"}:
                 options[key] = value
         return core, options, ""
 
@@ -1210,7 +1216,9 @@ def process_mapping_excel(
             tf_kind = "table" if tf_label.lower().startswith("table") else "figure"
             head = instruction_core[:label_match.start()].strip().rstrip("|").strip().strip(",，\u3001")
             tf_chapter, tf_chapter_title, tf_subtitle = _parse_table_head(head)
-            if forced_kind and forced_kind != tf_kind:
+            if forced_kind and not (
+                forced_kind == tf_kind or (forced_kind == "figure_table" and tf_kind == "figure")
+            ):
                 _log(
                     "error",
                     f"類型欄位與操作內容不一致: type={forced_kind}, label={tf_kind}",
@@ -1219,8 +1227,8 @@ def process_mapping_excel(
                     detail_label,
                 )
                 continue
-        elif forced_kind in {"figure", "table"}:
-            tf_kind = forced_kind
+        elif forced_kind in {"figure", "table", "figure_table"}:
+            tf_kind = "figure" if forced_kind == "figure_table" else forced_kind
             tf_label = ""
             head = instruction_core.strip().strip(",，\u3001")
             parsed_chapter, parsed_title, parsed_subtitle = _parse_chapter_parts(head)
@@ -1254,9 +1262,9 @@ def process_mapping_excel(
             if tf_kind == "table":
                 params["target_caption_label"] = tf_label
                 option_title = (tail_options.get("title") or "").strip()
+                option_index_raw = (tail_options.get("index") or "").strip()
                 if option_title:
                     params["target_table_title"] = option_title
-                option_index_raw = (tail_options.get("index") or "").strip()
                 if option_index_raw:
                     try:
                         option_index = int(option_index_raw)
@@ -1289,9 +1297,9 @@ def process_mapping_excel(
             else:
                 params["target_caption_label"] = tf_label
                 option_title = (tail_options.get("title") or "").strip()
+                option_index_raw = (tail_options.get("index") or "").strip()
                 if option_title:
                     params["target_figure_title"] = option_title
-                option_index_raw = (tail_options.get("index") or "").strip()
                 if option_index_raw:
                     try:
                         option_index = int(option_index_raw)
@@ -1302,6 +1310,8 @@ def process_mapping_excel(
                         _log("error", f"index 必須大於 0: {option_index}", row_num, action_label, detail_label)
                         continue
                     params["target_figure_index"] = option_index
+                if forced_kind == "figure_table":
+                    params["allow_table_figure_container"] = True
                 if not tf_label and not option_title and "target_figure_index" not in params:
                     _log(
                         "error",
@@ -1319,6 +1329,8 @@ def process_mapping_excel(
                     hint_parts.append(f"title={option_title}")
                 if "target_figure_index" in params:
                     hint_parts.append(f"index={params['target_figure_index']}")
+                if params.get("allow_table_figure_container"):
+                    hint_parts.append("container=table")
                 target_hint = ", ".join(hint_parts)
                 _log("info", f"extract figure: {src_name} ({target_hint})", row_num)
             if template_path is not None:

@@ -1773,6 +1773,9 @@ const FIELD_META = {
     label: "章節內圖片序號",
     placeholder: "例如 1"
   },
+  allow_table_figure_container: {
+    label: "允許表格包圖"
+  },
   target_table_title: {
     label: "表格標題全文",
     placeholder: "例如 General information of the accessories."
@@ -3387,7 +3390,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     if (accept === "bool"){
       const boolDefault = BOOL_DEFAULTS[k] || "true";
       const boolVal = val === "" ? boolDefault : val;
-      if (k === "ignore_toc" || k === "ignore_header_footer" || k === "use_chapter_title" || k === "subheading_strict_match" || k === "include_caption" || k === "bold" || k === "page_break_before"){
+      if (k === "ignore_toc" || k === "ignore_header_footer" || k === "use_chapter_title" || k === "subheading_strict_match" || k === "include_caption" || k === "allow_table_figure_container" || k === "bold" || k === "page_break_before"){
         const checked = boolVal !== "false" ? "checked" : "";
         const hiddenVal = boolVal !== "false" ? "true" : "false";
         const inputId = `step_${sid}_${k}_chk`;

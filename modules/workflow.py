@@ -481,6 +481,7 @@ SUPPORTED_STEPS = {
             "target_caption_label",
             "target_figure_title",
             "target_figure_index",
+            "allow_table_figure_container",
             "include_caption",
             "ignore_header_footer",
             "template_index",
@@ -495,6 +496,7 @@ SUPPORTED_STEPS = {
             "target_caption_label": "text",
             "target_figure_title": "text",
             "target_figure_index": "int",
+            "allow_table_figure_container": "bool",
             "include_caption": "bool",
             "ignore_header_footer": "bool",
             "template_index": "text",
@@ -949,6 +951,9 @@ def run_workflow(
                     target_figure_title=figure_title or None,
                     target_figure_index=figure_index or None,
                     output_docx_path=frag_path,
+                    allow_table_figure_container=boolish(
+                        params.get("allow_table_figure_container", "false")
+                    ),
                     include_caption=include_caption,
                     ignore_header_footer=boolish(params.get("ignore_header_footer", "true")),
                     save_output=True,

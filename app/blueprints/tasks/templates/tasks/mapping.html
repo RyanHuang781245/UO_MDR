@@ -166,14 +166,12 @@
             <table class="table mb-0 align-middle saved-mapping-table">
                 <colgroup>
                     <col>
-                    <col class="saved-mapping-col-file">
                     <col class="saved-mapping-col-created">
                     <col class="saved-mapping-col-actions">
                 </colgroup>
                 <thead style="background-color: #f8fafc;">
                     <tr>
                         <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">名稱</th>
-                        <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">Mapping 檔案</th>
                         <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
                         <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
                     </tr>
@@ -185,7 +183,6 @@
                             <div class="fw-bold text-primary mapping-name-truncate" title="{{ scheme.display_name }}">{{ scheme.display_name }}</div>
                             <div class="small text-muted font-monospace">{{ scheme.id }}</div>
                         </td>
-                        <td class="text-muted">{{ scheme.mapping_display_name or scheme.mapping_file }}</td>
                         <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ scheme.saved_at }}</td>
                         <td>
                             <div class="d-flex justify-content-center align-items-center gap-1">
@@ -611,9 +608,6 @@
 }
 .saved-mapping-table {
     table-layout: fixed;
-}
-.saved-mapping-col-file {
-    width: 260px;
 }
 .saved-mapping-col-created {
     width: 180px;

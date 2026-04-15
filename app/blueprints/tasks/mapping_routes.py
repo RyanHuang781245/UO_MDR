@@ -19,6 +19,7 @@ from app.services.execution_service import (
     MAPPING_SCHEME_RUN_JOB,
     enqueue_job,
     ensure_job_not_canceled,
+    find_active_job,
     get_job_payload,
 )
 from app.models.execution import JobRecord
@@ -941,6 +942,24 @@ def task_mapping(task_id):
                 try:
                     current_mapping_name = os.path.basename(mapping_path)
                     current_mapping_display_name = current_mapping_display_name or validation_state.get("mapping_display_name") or current_mapping_name
+                    existing = find_active_job(
+                        MAPPING_OPERATION_JOB,
+                        task_id=task_id,
+                        payload_matcher=lambda data: (
+                            str(data.get("workspace_dir") or "").strip() == str(workspace_dir or "").strip()
+                            and str(data.get("action") or "").strip() == str(action or "").strip()
+                            and str(data.get("mapping_path") or "").strip() == str(mapping_path or "").strip()
+                        ),
+                    )
+                    if existing:
+                        return redirect(
+                            url_for(
+                                "tasks_bp.task_mapping",
+                                task_id=task_id,
+                                mapping_tab="create",
+                                mapping_job=str(existing.job_id),
+                            )
+                        )
                     current_run_id = uuid.uuid4().hex[:8]
                     if action == "check":
                         validation_state = {

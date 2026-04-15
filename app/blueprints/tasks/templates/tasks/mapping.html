@@ -197,7 +197,7 @@
                                     <input type="hidden" name="mpage" value="{{ saved_schemes_pagination.page }}">
                                     <input type="hidden" name="scheme_id" value="{{ scheme.id }}">
                                     <button class="btn-action-icon text-primary" type="submit" name="action" value="run_scheme_figure_reference" {% if not scheme.is_runnable %}disabled title="請先重新檢查方案"{% else %}title="圖表參照執行"{% endif %}>
-                                        <i class="bi bi-diagram-3"></i><span class="d-none d-lg-inline small fw-semibold">圖表參照執行</span>
+                                        <i class="bi bi-diagram-3"></i><span class="d-none d-lg-inline small fw-semibold">圖表編號重排執行</span>
                                     </button>
                                 </form>
                                 <a class="btn-action-icon" href="{{ url_for('tasks_bp.task_download_mapping_scheme', task_id=task_id, scheme_id=scheme.id) }}" title="下載 Mapping 檔">
@@ -570,31 +570,6 @@
 </div>
 
 <style>
-.nav-tabs-custom {
-    border-bottom: 1px solid var(--bs-gray-200, #e2e8f0);
-    display: flex;
-    gap: 1.5rem;
-}
-.nav-tabs-custom .nav-link {
-    border: none;
-    background: none;
-    padding: 0.75rem 0;
-    color: var(--bs-gray-500, #64748b);
-    font-weight: 500;
-    position: relative;
-}
-.nav-tabs-custom .nav-link.active {
-    color: var(--bs-blue-600, #2563eb);
-}
-.nav-tabs-custom .nav-link.active::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -1px;
-    height: 2px;
-    background: var(--bs-blue-600, #2563eb);
-}
 .hover-shadow:hover {
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     border-color: var(--bs-blue-600) !important;

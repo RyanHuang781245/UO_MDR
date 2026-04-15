@@ -36,6 +36,22 @@ WRITE_LOCK_JOB_TYPES = {
     MAPPING_SCHEME_RUN_JOB,
 }
 
+ACTIVE_JOB_STATUSES = {
+    JOB_STATUS_QUEUED,
+    JOB_STATUS_CLAIMED,
+    JOB_STATUS_RUNNING,
+}
+
+ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    JOB_STATUS_QUEUED: {JOB_STATUS_CLAIMED, JOB_STATUS_CANCELED},
+    JOB_STATUS_CLAIMED: {JOB_STATUS_RUNNING, JOB_STATUS_CANCELED, JOB_STATUS_QUEUED},
+    JOB_STATUS_RUNNING: {JOB_STATUS_COMPLETED, JOB_STATUS_FAILED, JOB_STATUS_CANCELED, JOB_STATUS_TIMEOUT, JOB_STATUS_QUEUED},
+    JOB_STATUS_COMPLETED: set(),
+    JOB_STATUS_FAILED: set(),
+    JOB_STATUS_CANCELED: set(),
+    JOB_STATUS_TIMEOUT: set(),
+}
+
 
 class JobCanceledError(RuntimeError):
     pass
@@ -120,6 +136,40 @@ def log_job_event(job_id: str, event_type: str, message: str = "", payload: dict
         payload_json=_json_dumps(payload or {}),
     )
     db.session.add(record)
+
+
+def _is_status_transition_allowed(from_status: str, to_status: str) -> bool:
+    src = str(from_status or "").strip().lower()
+    dst = str(to_status or "").strip().lower()
+    if not src or src == dst:
+        return True
+    return dst in ALLOWED_STATUS_TRANSITIONS.get(src, set())
+
+
+def find_active_job(
+    job_type: str,
+    *,
+    task_id: str = "",
+    target_name: str = "",
+    payload_matcher: callable | None = None,
+) -> JobRecord | None:
+    query = JobRecord.query.filter(
+        JobRecord.job_type == str(job_type or "").strip(),
+        JobRecord.status.in_(list(ACTIVE_JOB_STATUSES)),
+    )
+    if task_id:
+        query = query.filter(JobRecord.task_id == str(task_id).strip())
+    if target_name:
+        query = query.filter(JobRecord.target_name == str(target_name).strip())
+    for row in query.order_by(JobRecord.created_at.desc(), JobRecord.job_id.desc()).all():
+        if payload_matcher is None:
+            return row
+        try:
+            if payload_matcher(get_job_payload(row)):
+                return row
+        except Exception:
+            continue
+    return None
 
 
 def enqueue_job(
@@ -227,6 +277,14 @@ def update_job_status(
 ) -> None:
     record = get_job(job_id)
     if not record:
+        return
+    if not _is_status_transition_allowed(str(record.status or ""), status):
+        current_app.logger.warning(
+            "Ignored invalid job status transition: job_id=%s %s->%s",
+            job_id,
+            record.status,
+            status,
+        )
         return
     record.status = status
     if worker_id:
@@ -378,6 +436,14 @@ def defer_job(job_id: str, message: str) -> None:
     record = get_job(job_id)
     if not record:
         return
+    if not _is_status_transition_allowed(str(record.status or ""), JOB_STATUS_QUEUED):
+        current_app.logger.warning(
+            "Ignored invalid defer status transition: job_id=%s %s->%s",
+            job_id,
+            record.status,
+            JOB_STATUS_QUEUED,
+        )
+        return
     record.status = JOB_STATUS_QUEUED
     record.worker_id = None
     record.claimed_at = None
@@ -394,6 +460,14 @@ def mark_job_running(job_id: str, worker_id: str) -> None:
     record = get_job(job_id)
     if not record:
         return
+    if not _is_status_transition_allowed(str(record.status or ""), JOB_STATUS_RUNNING):
+        current_app.logger.warning(
+            "Ignored invalid running status transition: job_id=%s %s->%s",
+            job_id,
+            record.status,
+            JOB_STATUS_RUNNING,
+        )
+        return
     record.status = JOB_STATUS_RUNNING
     record.worker_id = worker_id
     record.started_at = record.started_at or now
@@ -407,6 +481,14 @@ def mark_job_completed(job_id: str) -> None:
     now = _utcnow()
     record = get_job(job_id)
     if not record:
+        return
+    if not _is_status_transition_allowed(str(record.status or ""), JOB_STATUS_COMPLETED):
+        current_app.logger.warning(
+            "Ignored invalid completed status transition: job_id=%s %s->%s",
+            job_id,
+            record.status,
+            JOB_STATUS_COMPLETED,
+        )
         return
     record.status = JOB_STATUS_COMPLETED
     record.completed_at = now
@@ -423,6 +505,14 @@ def mark_job_failed(job_id: str, error: str) -> None:
     record = get_job(job_id)
     if not record:
         return
+    if not _is_status_transition_allowed(str(record.status or ""), JOB_STATUS_FAILED):
+        current_app.logger.warning(
+            "Ignored invalid failed status transition: job_id=%s %s->%s",
+            job_id,
+            record.status,
+            JOB_STATUS_FAILED,
+        )
+        return
     record.status = JOB_STATUS_FAILED
     record.error_summary = (error or "").strip() or None
     record.completed_at = now
@@ -438,6 +528,14 @@ def mark_job_canceled(job_id: str, message: str = "Job canceled") -> None:
     now = _utcnow()
     record = get_job(job_id)
     if not record:
+        return
+    if not _is_status_transition_allowed(str(record.status or ""), JOB_STATUS_CANCELED):
+        current_app.logger.warning(
+            "Ignored invalid canceled status transition: job_id=%s %s->%s",
+            job_id,
+            record.status,
+            JOB_STATUS_CANCELED,
+        )
         return
     record.status = JOB_STATUS_CANCELED
     record.error_summary = (message or "Job canceled").strip()

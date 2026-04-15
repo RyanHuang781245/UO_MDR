@@ -129,7 +129,7 @@
                                 </div>
                                 <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded">
                                     <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="enableFigureReferenceSwitch" {% if enable_figure_reference %}checked{% endif %} {% if is_version_preview %}disabled{% endif %}>
-                                    <label class="form-check-label small text-muted mb-0" for="enableFigureReferenceSwitch">圖表參照重排</label>
+                                    <label class="form-check-label small text-muted mb-0" for="enableFigureReferenceSwitch">圖表編號重排</label>
                                 </div>
                             </div>
                             <div class="flow-toolbar-group flow-toolbar-group-end">
@@ -2445,9 +2445,9 @@ function canManageStepFileFolders(){
   return stepFileState.browserMode === "dir_manage";
 }
 
-function getStepFileScopeLabel(){
-  return stepFileState.scope === "output" ? "任務 Output 路徑" : "任務檔案";
-}
+// function getStepFileScopeLabel(){
+//   return stepFileState.scope === "output" ? "任務 Output 路徑" : "任務檔案";
+// }
 
 function updateStepFileScopeUI(){
   if (stepFileModalTitleEl){
@@ -2455,7 +2455,7 @@ function updateStepFileScopeUI(){
   }
   if (stepFileBrowserRootHintEl){
     const rootText = stepFileState.scope === "output" ? (TASK_OUTPUT_ROOT || "尚未設定") : `task_store/${TASK_ID}/files`;
-    stepFileBrowserRootHintEl.textContent = `${getStepFileScopeLabel()}：${rootText}`;
+    // stepFileBrowserRootHintEl.textContent = `${getStepFileScopeLabel()}：${rootText}`;
   }
 }
 

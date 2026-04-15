@@ -137,17 +137,17 @@
 
       /* Tabs Styling */
       .nav-tabs-custom {
-        border-bottom: none;
+        border-bottom: 1px solid var(--bs-gray-200);
         display: flex;
-        gap: 0.5rem;
-        padding: 0 1rem;
+        gap: 1.5rem;
+        padding: 0;
         margin-bottom: 1rem;
       }
       .nav-tabs-custom .nav-link {
         border: none;
         color: var(--bs-gray-500);
         font-weight: 500;
-        padding: 0.75rem 1rem;
+        padding: 0.75rem 0;
         position: relative;
         background: none;
         text-decoration: none;
@@ -158,9 +158,9 @@
       .nav-tabs-custom .nav-link.active::after {
         content: '';
         position: absolute;
-        bottom: 0;
+        bottom: -1px;
         left: 0;
-        width: 100%;
+        right: 0;
         height: 2px;
         background-color: var(--bs-blue-600);
       }

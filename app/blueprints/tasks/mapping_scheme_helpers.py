@@ -14,6 +14,7 @@ from app.services.execution_service import (
     MAPPING_SCHEME_RUN_JOB,
     enqueue_job,
     ensure_job_not_canceled,
+    find_active_job,
 )
 from app.services.mapping_metadata_service import sync_run_payload, sync_scheme_payload, delete_mapping_scheme_record
 
@@ -465,6 +466,24 @@ def enqueue_saved_mapping_scheme_run(
         if enable_figure_reference is None
         else enable_figure_reference
     )
+
+    existing = find_active_job(
+        MAPPING_SCHEME_RUN_JOB,
+        task_id=task_id,
+        target_name=scheme.get("display_name") or scheme.get("mapping_display_name") or scheme_id,
+        payload_matcher=lambda data: (
+            str(data.get("scheme_id") or "").strip() == str(scheme_id or "").strip()
+            and bool(data.get("enable_figure_reference", True)) == bool(effective_enable_figure_reference)
+        ),
+    )
+    if existing:
+        current_app.logger.info(
+            "Deduplicated mapping scheme enqueue request: task_id=%s scheme_id=%s existing_job_id=%s",
+            task_id,
+            scheme_id,
+            existing.job_id,
+        )
+        return str(existing.job_id)
 
     return enqueue_job(
         MAPPING_SCHEME_RUN_JOB,

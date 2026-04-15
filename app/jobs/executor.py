@@ -10,7 +10,7 @@ from flask import current_app
 
 from app.blueprints.flows.flow_route_helpers import _touch_task_last_edit
 from app.jobs.store import update_job_meta, write_job_meta
-from app.services.execution_service import FLOW_SINGLE_JOB, JobCanceledError, enqueue_job, ensure_job_not_canceled
+from app.services.execution_service import FLOW_SINGLE_JOB, JobCanceledError, enqueue_job, ensure_job_not_canceled, find_active_job
 from app.services.audit_service import record_audit
 from app.services.flow_service import (
     DEFAULT_DOCUMENT_FORMAT_KEY,
@@ -221,6 +221,21 @@ def enqueue_single_flow_job(
     source: str = "manual",
     enable_figure_reference: bool = True,
 ) -> str:
+    target_name = flow_name or "未命名流程"
+    existing = find_active_job(
+        FLOW_SINGLE_JOB,
+        task_id=task_id,
+        target_name=target_name,
+    )
+    if existing:
+        current_app.logger.info(
+            "Deduplicated flow enqueue request: task_id=%s target=%s existing_job_id=%s",
+            task_id,
+            target_name,
+            existing.job_id,
+        )
+        return str(existing.job_id)
+
     task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(task_dir, "jobs", job_id)
@@ -260,7 +275,7 @@ def enqueue_single_flow_job(
         FLOW_SINGLE_JOB,
         payload,
         task_id=task_id,
-        target_name=flow_name or "未命名流程",
+        target_name=target_name,
         actor=actor,
         queue_name="heavy",
         job_id=job_id,

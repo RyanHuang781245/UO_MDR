@@ -16,9 +16,12 @@ from werkzeug.utils import secure_filename
 from app.services.execution_service import (
     JobCanceledError,
     MAPPING_OPERATION_JOB,
+    MAPPING_SCHEME_RUN_JOB,
     enqueue_job,
     ensure_job_not_canceled,
+    get_job_payload,
 )
+from app.models.execution import JobRecord
 from app.services.task_service import load_task_context as _load_task_context
 from app.services.mapping_metadata_service import (
     list_mapping_run_payloads,
@@ -1367,18 +1370,48 @@ def task_mapping_op_active(task_id):
         abort(404)
     workspace_dir = _mapping_workspace_dir(tdir)
     active_ops = _list_mapping_ops(workspace_dir, {"queued", "running"})
+    active_scheme_jobs = (
+        JobRecord.query.filter(
+            JobRecord.task_id == task_id,
+            JobRecord.job_type == MAPPING_SCHEME_RUN_JOB,
+            JobRecord.status.in_(["queued", "running"]),
+        )
+        .order_by(JobRecord.created_at.desc(), JobRecord.job_id.desc())
+        .all()
+    )
+    scheme_runs = []
+    for job in active_scheme_jobs:
+        payload = get_job_payload(job)
+        mapping_name = (
+            str(payload.get("mapping_display_name") or "").strip()
+            or str(payload.get("scheme_name") or "").strip()
+            or str(job.target_name or "").strip()
+            or "未命名 Mapping"
+        )
+        scheme_runs.append(
+            {
+                "job_id": str(job.job_id or "").strip(),
+                "status": str(job.status or "").strip().lower(),
+                "action": "run_scheme",
+                "mapping_display_name": mapping_name,
+                "status_url": url_for("mapping_run_bp.mapping_run_status", task_id=task_id, run_id=job.job_id),
+            }
+        )
+
+    op_runs = [
+        {
+            "job_id": str(item.get("op_id") or "").strip(),
+            "status": str(item.get("status") or "").strip().lower(),
+            "action": str(item.get("action") or "").strip(),
+            "mapping_display_name": str(item.get("mapping_display_name") or "").strip(),
+            "status_url": url_for("tasks_bp.task_mapping_op_status", task_id=task_id, op_id=str(item.get("op_id") or "").strip()),
+        }
+        for item in active_ops
+        if str(item.get("op_id") or "").strip()
+    ]
     return {
         "ok": True,
-        "runs": [
-            {
-                "job_id": str(item.get("op_id") or "").strip(),
-                "status": str(item.get("status") or "").strip().lower(),
-                "action": str(item.get("action") or "").strip(),
-                "mapping_display_name": str(item.get("mapping_display_name") or "").strip(),
-            }
-            for item in active_ops
-            if str(item.get("op_id") or "").strip()
-        ],
+        "runs": op_runs + scheme_runs,
     }
 
 

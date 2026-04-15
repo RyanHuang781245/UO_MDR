@@ -754,7 +754,6 @@ function openRenameSchemeModal(button) {
 
 document.addEventListener('DOMContentLoaded', function() {
     const TASK_ID = {{ task_id|tojson }};
-    const SERVER_ACTIVE_MAPPING_TAB = {{ active_mapping_tab|tojson }};
     const MAPPING_JOB_ID = {{ mapping_job_id|tojson }};
     const CURRENT_MAPPING_JOB_STATUS = {{ current_mapping_job_status|tojson }};
     const CURRENT_MAPPING_ACTION = {{ current_action|tojson }};
@@ -768,27 +767,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const renameSchemeInput = document.getElementById('renameSchemeInput');
     const renameSchemeCount = document.getElementById('renameSchemeCount');
     const mappingTabButtons = Array.from(document.querySelectorAll('#mappingTabs [data-bs-toggle="tab"]'));
-    let mappingSubmitLocked = false;
-    let mappingSubmitUnlockTimer = null;
-
-    function setMappingSubmitLocked(locked) {
-        mappingSubmitLocked = !!locked;
-        mappingTabButtons.forEach((button) => {
-            button.disabled = mappingSubmitLocked;
-            button.classList.toggle('disabled', mappingSubmitLocked);
-            button.setAttribute('aria-disabled', mappingSubmitLocked ? 'true' : 'false');
-        });
-    }
-
-    function scheduleMappingSubmitUnlock(delayMs = 8000) {
-        if (mappingSubmitUnlockTimer) {
-            clearTimeout(mappingSubmitUnlockTimer);
-        }
-        mappingSubmitUnlockTimer = setTimeout(() => {
-            setMappingSubmitLocked(false);
-            mappingSubmitUnlockTimer = null;
-        }, Math.max(500, Number(delayMs) || 8000));
-    }
+    // Keep tab behavior aligned with Flow: no tab-locking during submit.
 
     function isCreateTabActive() {
         return document.getElementById('create-scheme-tab')?.classList.contains('active');
@@ -896,9 +875,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     continue;
                 }
                 const status = data.status || 'unknown';
-                const action = data.action || '';
+                const action = data.action || toast.dataset.action || '';
                 const actionLabel = mappingActionLabel(action);
-                const mappingName = data.mapping_display_name || '（未命名）';
+                const mappingName = data.mapping_display_name || data.mapping_name || '（未命名）';
                 const titleEl = toast.querySelector('.run-status-title');
                 const bodyEl = toast.querySelector('.run-status-body');
                 const nameEl = toast.querySelector('.run-status-name');
@@ -911,7 +890,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     linkEl.textContent = '查看結果';
                 }
                 if (status === 'completed') {
-                    setMappingSubmitLocked(false);
                     if (titleEl) titleEl.textContent = `${actionLabel}已完成`;
                     if (bodyEl) bodyEl.textContent = `已完成：${mappingName}`;
                     if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
@@ -929,7 +907,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     continue;
                 }
                 if (status === 'failed') {
-                    setMappingSubmitLocked(false);
                     if (titleEl) titleEl.textContent = `${actionLabel}失敗`;
                     if (bodyEl) bodyEl.textContent = data.error ? `失敗：${data.error}` : `失敗：${mappingName}`;
                     if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
@@ -947,7 +924,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     continue;
                 }
                 if (status === 'canceled') {
-                    setMappingSubmitLocked(false);
                     if (titleEl) titleEl.textContent = `${actionLabel}已取消`;
                     if (bodyEl) bodyEl.textContent = `已取消：${mappingName}`;
                     if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
@@ -965,7 +941,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     continue;
                 }
                 if (status === 'timeout') {
-                    setMappingSubmitLocked(false);
                     if (titleEl) titleEl.textContent = `${actionLabel}逾時`;
                     if (bodyEl) bodyEl.textContent = `逾時：${mappingName}`;
                     if (actionsEl && data.resume_url) actionsEl.classList.remove('d-none');
@@ -1009,6 +984,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 saveMappingJobs(nextJobs);
                 renderMappingToasts();
             }
+            const runMap = new Map(
+                serverRuns
+                    .filter((run) => run && run.job_id)
+                    .map((run) => [String(run.job_id), run])
+            );
+            const toasts = Array.from(mappingRunStatusContainer.querySelectorAll('.run-status-toast'));
+            toasts.forEach((toast) => {
+                const jobId = String(toast.dataset.jobId || '');
+                const run = runMap.get(jobId);
+                if (!run) return;
+                if (run.status_url) {
+                    toast.dataset.statusUrl = String(run.status_url);
+                }
+                if (run.action) {
+                    toast.dataset.action = String(run.action);
+                }
+                const nameEl = toast.querySelector('.run-status-name');
+                if (nameEl && run.mapping_display_name) {
+                    nameEl.textContent = String(run.mapping_display_name);
+                }
+            });
         } catch (error) {
             // ignore
         }
@@ -1045,15 +1041,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (MAPPING_JOB_ID && !['completed', 'failed', 'canceled', 'timeout'].includes(String(CURRENT_MAPPING_JOB_STATUS || '').toLowerCase())) {
         ensureMappingJob(MAPPING_JOB_ID);
-    } else {
-        setMappingSubmitLocked(false);
     }
     renderMappingToasts();
     if (mappingRunStatusContainer) {
-        refreshMappingStatus();
-        setInterval(refreshMappingStatus, 3000);
         syncActiveMappingOps();
         setInterval(syncActiveMappingOps, 10000);
+        refreshMappingStatus();
+        setInterval(refreshMappingStatus, 3000);
     }
 
     if (mappingNextStepModalEl?.dataset.autoShow === 'true' && typeof bootstrap !== 'undefined' && {{ 'true' if active_mapping_tab == 'create' else 'false' }}) {
@@ -1067,39 +1061,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    document.addEventListener('submit', (event) => {
-        const form = event.target;
-        if (!(form instanceof HTMLFormElement)) return;
-        if ((form.method || '').toLowerCase() !== 'post') return;
-        if (!form.closest('.container-fluid')) return;
-        if (event.defaultPrevented) return;
-        setMappingSubmitLocked(true);
-        scheduleMappingSubmitUnlock(10000);
-    });
-
     mappingTabButtons.forEach((btn) => {
-        btn.addEventListener('show.bs.tab', (event) => {
-            if (mappingSubmitLocked) {
-                event.preventDefault();
-                return;
-            }
+        btn.addEventListener('shown.bs.tab', (event) => {
             const tabName = event.target.getAttribute('data-mapping-tab') || '';
-            const target = event.target.getAttribute('data-bs-target');
+            const target = event.target.getAttribute('data-bs-target') || '';
             if (tabName) {
                 const nextUrl = new URL(window.location.href);
                 nextUrl.searchParams.set('mapping_tab', tabName);
                 nextUrl.searchParams.delete('resume_mapping');
-                nextUrl.hash = target || '';
-                if (tabName !== SERVER_ACTIVE_MAPPING_TAB) {
-                    event.preventDefault();
-                    window.location.assign(nextUrl.toString());
-                    return;
-                }
+                nextUrl.hash = target;
                 window.history.replaceState(null, null, nextUrl.toString());
             }
-        });
-
-        btn.addEventListener('shown.bs.tab', (event) => {
             syncStatusSectionVisibility();
         });
     });

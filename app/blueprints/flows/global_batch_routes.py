@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
+import time
 import uuid
 import zipfile
 from datetime import datetime
@@ -221,6 +223,30 @@ def _list_global_batch_statuses(limit: int = 100) -> list[dict]:
     return items[: max(limit, 0)]
 
 
+def _wait_for_job_result(job_id: str, *, timeout_seconds: float | None = None) -> tuple[JobRecord | None, dict]:
+    timeout = float(timeout_seconds or current_app.config.get("JOB_POLL_INTERVAL_SECONDS") or 2.0)
+    timeout = max(timeout, 0.2)
+    deadline = time.monotonic() + timeout
+    terminal_statuses = {"completed", "failed", "canceled", "timeout"}
+    last_record: JobRecord | None = None
+    last_payload: dict = {}
+
+    while True:
+        db.session.expire_all()
+        record = db.session.get(JobRecord, job_id)
+        payload = get_job_result_payload(job_id)
+        last_record = record
+        last_payload = payload
+
+        if record and str(record.status or "").strip().lower() in terminal_statuses:
+            return record, payload
+        if payload:
+            return record, payload
+        if time.monotonic() >= deadline:
+            return record, payload
+        time.sleep(0.1)
+
+
 def _run_global_batch_item_job(job_id: str, payload: dict) -> dict:
     item = dict(payload.get("item") or {})
     actor = dict(payload.get("actor") or {})
@@ -281,23 +307,29 @@ def _run_global_batch_item_job(job_id: str, payload: dict) -> dict:
                     child_record = db.session.get(JobRecord, child_job_id)
                     if child_record and child_record.status == "queued" and job_executor_mode() != "inline":
                         run_job_by_id(current_app._get_current_object(), child_job_id, worker_id=f"{job_id}/mapping")
-                    child_result = get_job_result_payload(child_job_id)
+                    child_record, child_result = _wait_for_job_result(child_job_id)
+                    child_status = str((child_result.get("status") or (child_record.status if child_record else "")) or "").lower()
+                    child_error = (
+                        child_result.get("error")
+                        or (child_record.error_summary if child_record else "")
+                        or "Mapping execution failed"
+                    )
                     mapping_results.append(
                         {
                             "scheme_id": scheme_id,
                             "scheme_name": scheme_name,
-                            "ok": (child_result.get("status") or "").lower() == "completed",
+                            "ok": child_status == "completed",
                             "run_id": child_result.get("run_id") or child_job_id,
                             "output_count": int(child_result.get("output_count") or 0),
                             "zip_file": child_result.get("zip_file") or "",
                             "log_file": child_result.get("log_file") or "",
                             "zip_relpath": child_result.get("zip_relpath") or "",
                             "log_relpath": child_result.get("log_relpath") or "",
-                            "error": child_result.get("error") or "",
+                            "error": "" if child_status == "completed" else child_error,
                         }
                     )
-                    if (child_result.get("status") or "").lower() != "completed":
-                        task_errors.append(child_result.get("error") or "Mapping execution failed")
+                    if child_status != "completed":
+                        task_errors.append(child_error)
                 except Exception as exc:
                     mapping_results.append(
                         {
@@ -450,8 +482,14 @@ def _run_tasks_batch(batch_id: str, payload: dict) -> dict:
             child_record = db.session.get(JobRecord, child_job_id)
             if child_record and child_record.status == "queued" and job_executor_mode() != "inline":
                 run_job_by_id(current_app._get_current_object(), child_job_id, worker_id=f"{batch_id}/item")
-            item_result = get_job_result_payload(child_job_id)
+            child_record, item_result = _wait_for_job_result(child_job_id)
             if not item_result:
+                child_status = str((child_record.status if child_record else "") or "").strip().lower()
+                child_error = (
+                    child_record.error_summary
+                    if child_record and child_record.error_summary
+                    else ("Child job timed out" if child_status == "timeout" else "Child job failed")
+                )
                 child_record = db.session.get(JobRecord, child_job_id)
                 item_result = {
                     "kind": (item.get("kind") or "task").strip().lower() or "task",
@@ -459,7 +497,7 @@ def _run_tasks_batch(batch_id: str, payload: dict) -> dict:
                     "name": (_load_task_context(tid) or {}).get("name", tid),
                     "label": _batch_item_label(item),
                     "ok": False,
-                    "errors": [child_record.error_summary or "Child job failed"] if child_record else ["Child job failed"],
+                    "errors": [child_error],
                     "flows": [],
                     "mapping_runs": [],
                     "scheme_id": "",
@@ -716,3 +754,42 @@ def download_global_batch(batch_id):
             os.remove(zip_path)
         flash("Failed to prepare batch download", "danger")
         return redirect(url_for("global_batch_bp.global_batch_page", batch=batch_id))
+
+
+@global_batch_bp.post("/<batch_id>/delete", endpoint="delete_global_batch")
+def delete_global_batch(batch_id):
+    history_url = f"{url_for('global_batch_bp.global_batch_page', page=max(request.form.get('page', 1, type=int), 1))}#history-pane"
+    status = _load_global_batch_status(batch_id)
+    if not status:
+        flash("找不到指定的歷史排程。", "warning")
+        return redirect(history_url)
+
+    batch_status = (status.get("status") or "").strip().lower()
+    if batch_status in {"queued", "running"}:
+        flash("執行中或排隊中的排程不可刪除。", "warning")
+        return redirect(history_url)
+
+    work_id, label = _get_actor_info()
+    record_audit(
+        action="global_batch_delete",
+        actor={"work_id": work_id, "label": label},
+        detail={
+            "batch_id": batch_id,
+            "status": batch_status,
+            "task_count": len(status.get("items") or status.get("tasks") or []),
+        },
+        task_id=None,
+    )
+
+    status_path = _global_batch_status_path(batch_id)
+    if os.path.isfile(status_path):
+        os.remove(status_path)
+
+    status_dir = os.path.dirname(status_path)
+    zip_pattern = os.path.join(status_dir, f"global_batch_{batch_id}_*.zip")
+    for temp_zip in glob.glob(zip_pattern):
+        if os.path.isfile(temp_zip):
+            os.remove(temp_zip)
+
+    flash("歷史排程已刪除。", "success")
+    return redirect(history_url)

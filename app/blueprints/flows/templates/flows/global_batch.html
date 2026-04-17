@@ -1024,6 +1024,21 @@
                         Log
                       </span>
                     </button>
+                    {% if item.status not in ['queued', 'running'] %}
+                    <form
+                      action="{{ url_for('global_batch_bp.delete_global_batch', batch_id=item.id) }}"
+                      method="post"
+                      class="d-inline"
+                      onsubmit="return confirm('確定刪除歷史排程「{{ item.id }}」？此操作只會移除列表紀錄。')"
+                    >
+                      <input type="hidden" name="page" value="{{ pagination.page }}">
+                      <button type="submit" class="btn-action-icon text-danger" title="刪除歷史排程">
+                        <i class="bi bi-trash"></i><span>
+                          刪除
+                        </span>
+                      </button>
+                    </form>
+                    {% endif %}
                   </div>
                 </td>
               </tr>

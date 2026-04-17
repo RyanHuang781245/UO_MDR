@@ -367,6 +367,9 @@ def extract_specific_figure_from_word_xml(
                 heading_number=chapter_section,
                 heading_title=start_heading_text,
             ),
+            # Figure extraction often needs to keep trailing non-text blocks
+            # (e.g. drawings after a short body paragraph) inside the section.
+            llm_boundary_fallback=False,
         )
         section_children = content_children[start_idx:end_idx]
     else:

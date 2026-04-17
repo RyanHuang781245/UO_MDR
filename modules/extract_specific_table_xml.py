@@ -319,6 +319,9 @@ def extract_specific_table_from_word_xml(
                 heading_number=chapter_section,
                 heading_title=start_heading_text,
             ),
+            # Table extraction should not let LLM fallback trim away the
+            # following table block when the section opens with short text.
+            llm_boundary_fallback=False,
         )
         section_children = content_children[start_idx:end_idx]
     else:

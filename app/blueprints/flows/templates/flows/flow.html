@@ -1740,16 +1740,16 @@ const FIELD_META = {
     placeholder: ""
   },
   target_section: {
-    label: "章節編號",
-    placeholder: "例如 6.12.1"
+    label: "章節編號和標題",
+    placeholder: "例如 1.1.1"
   },
   target_chapter_section: {
-    label: "章節編號",
-    placeholder: "例如 6.12.1"
+    label: "章節編號和標題",
+    placeholder: "例如 1.1.1"
   },
   target_chapter_title: {
     label: "章節標題",
-    placeholder: "請輸入完整章節標題"
+    placeholder: "General description "
   },
   target_subtitle: {
     label: "子標題",
@@ -1805,8 +1805,8 @@ const FIELD_META = {
     label: "段落前換頁"
   },
   explicit_end_title: {
-    label: "結束標題",
-    placeholder: "例如 1.1.3 Accessories not included but necessary for use"
+    label: "結束章節與標題",
+    placeholder: "例如 2. Materials"
   },
   ignore_toc: {
     label: "移除目錄及前言"
@@ -1892,6 +1892,34 @@ function syncChapterRefInput(input){
   if (sectionInput) sectionInput.value = parsed.section;
   if (titleInput) titleInput.value = parsed.title;
   if (rawInput) rawInput.value = input.value;
+}
+
+function parseExplicitEndRef(rawValue){
+  const text = String(rawValue || "").trim();
+  if (!text) {
+    return { number: "", title: "" };
+  }
+  const match = text.match(/^(\d+(?:\.\d+)*\.?)(?:\s+(.+))?$/);
+  if (match) {
+    return {
+      number: (match[1] || "").replace(/\.$/, ""),
+      title: (match[2] || "").trim(),
+    };
+  }
+  return { number: "", title: text };
+}
+
+function syncExplicitEndRefInput(input){
+  if (!input) return;
+  const card = input.closest(".card");
+  const numberName = input.dataset.number;
+  const titleName = input.dataset.title;
+  if (!numberName || !titleName) return;
+  const parsed = parseExplicitEndRef(input.value);
+  const numberInput = card ? card.querySelector(`input[name="${numberName}"]`) : null;
+  const titleInput = card ? card.querySelector(`input[name="${titleName}"]`) : null;
+  if (numberInput) numberInput.value = parsed.number;
+  if (titleInput) titleInput.value = parsed.title;
 }
 
 function buildInsertMenu(sid, position){
@@ -2232,6 +2260,7 @@ flowForm.addEventListener('submit', (e) => {
     return;
   }
   flowForm.querySelectorAll(".chapter-ref").forEach(syncChapterRefInput);
+  flowForm.querySelectorAll(".continuous-end-ref").forEach(syncExplicitEndRefInput);
   const action = e.submitter?.value;
   if ((action === 'save' || action === 'run') && !flowForm.elements['flow_name'].value.trim()) {
     e.preventDefault();
@@ -3016,7 +3045,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const subheadingPlaceholder = (FIELD_META["target_subtitle"] || {}).placeholder || subheadingLabel;
     const subheadingHideStyle = targetTitleVal === "false" ? "display: none;" : "";
 
-    const explicitLabel = (FIELD_META["explicit_end_title"] || {}).label || "強制結束標題";
+    const explicitLabel = (FIELD_META["explicit_end_title"] || {}).label || "結束章節";
     const explicitPlaceholder = (FIELD_META["explicit_end_title"] || {}).placeholder || explicitLabel;
     const explicitVal = getValue("explicit_end_title");
     const explicitEndNumVal = getValue("explicit_end_number");
@@ -3112,7 +3141,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             <div class="row g-3">
               <div class="col-12 continuous-end-wrap">
                 <label class="form-label">${explicitLabel}</label>
-                <input class="form-control continuous-end-input" name="step_${sid}_explicit_end_title" value="${explicitCombinedVal}" placeholder="${explicitPlaceholder}" ${continuousExtractDisabled}>
+                <input class="form-control continuous-end-input continuous-end-ref" value="${explicitCombinedVal}" placeholder="${explicitPlaceholder}" data-number="step_${sid}_explicit_end_number" data-title="step_${sid}_explicit_end_title" ${continuousExtractDisabled}>
+                <input type="hidden" name="step_${sid}_explicit_end_number" value="${explicitEndNumVal}">
+                <input type="hidden" name="step_${sid}_explicit_end_title" value="${explicitVal}">
+                <div class="form-text">可直接輸入完整章節參考，例如 <code>2. Materials</code> 或 <code>6.13.4 EO Sterilization validation</code>。</div>
               </div>
             </div>
           </div>
@@ -3199,15 +3231,26 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const continuousCardWrap = card.querySelector(".continuous-card-wrap");
     const continuousEndWrap = card.querySelector(".continuous-end-wrap");
     const continuousEndInput = card.querySelector(".continuous-end-input");
+    const continuousEndNumberInput = card.querySelector(`input[name="step_${sid}_explicit_end_number"]`);
+    const continuousEndTitleInput = card.querySelector(`input[name="step_${sid}_explicit_end_title"]`);
     if (continuousExtractToggle && continuousCardWrap && continuousEndWrap && continuousEndInput) {
       const syncContinuousExtract = () => {
         const enabled = continuousExtractToggle.checked;
         continuousCardWrap.style.display = enabled ? "" : "none";
         continuousEndInput.disabled = !enabled;
+        if (continuousEndNumberInput) continuousEndNumberInput.disabled = !enabled;
+        if (continuousEndTitleInput) continuousEndTitleInput.disabled = !enabled;
+        if (enabled) {
+          syncExplicitEndRefInput(continuousEndInput);
+        }
       };
       continuousExtractToggle.addEventListener("change", syncContinuousExtract);
       syncContinuousExtract();
     }
+    card.querySelectorAll(".continuous-end-ref").forEach(input => {
+      input.addEventListener("input", () => syncExplicitEndRefInput(input));
+      syncExplicitEndRefInput(input);
+    });
     card.querySelectorAll(".chapter-ref").forEach(input => {
       input.addEventListener("input", () => syncChapterRefInput(input));
       syncChapterRefInput(input);

@@ -330,10 +330,10 @@ def extract_word_chapter(
 
     # Allow combined end marker in one field:
     # "1.1.3 Accessories not included but necessary for use"
-    end_match = re.match(r"^(\d+(?:\.\d+)*)(?:\s+(.+))?$", end_title)
+    end_match = re.match(r"^(\d+(?:\.\d+)*\.?)(?:\s+(.+))?$", end_title)
     if end_match:
         if not end_section:
-            end_section = end_match.group(1)
+            end_section = end_match.group(1).rstrip(".")
         if end_match.group(2):
             end_title = end_match.group(2).strip()
 

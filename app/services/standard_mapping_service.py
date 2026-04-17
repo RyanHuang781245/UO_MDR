@@ -30,7 +30,8 @@ EXCEL_STANDARD_COL_INDEX = 5
 ISO_FAMILY_SHEETS = ["ISO", "BS-EN-DIN(歐洲國家標準)"]
 RED_COLOR = "FF0000"
 BLUE_COLOR = "2563EB"
-DEFAULT_ISO_PRIORITY = ("BS EN ISO", "EN ISO", "ISO")
+STANDARD_LEVELS = ("BS EN ISO", "BS EN", "EN", "EN ISO", "BS ISO", "ISO", "BS")
+DEFAULT_ISO_PRIORITY = STANDARD_LEVELS
 DEFAULT_PREFER_LATEST_EN_VARIANTS = True
 AVAILABLE_HEADER_OPTIONS = (
     "Standards",
@@ -160,21 +161,31 @@ def detect_search_family(standard_name: str) -> str | None:
         return None
     if "ASTM" in s:
         return "ASTM"
-    if re.match(r"^(?:BS\s+EN\s+ISO|DIN\s+EN\s+ISO|EN\s+ISO|ISO)\b", s):
+    if re.match(r"^(?:IEC)\b", s):
+        return "IEC_FAMILY"
+    if re.match(r"^(?:BS\s+EN\s+ISO|DIN\s+EN\s+ISO|EN\s+ISO|BS\s+ISO|ISO|BS\s+EN|DIN\s+EN|EN|BS)\b", s):
         return "ISO_FAMILY"
-    if re.match(r"^(?:BS\s+EN|DIN\s+EN|EN)\b", s):
-        return "EN_FAMILY"
     return None
 
 
 def classify_standard_level(std_no: str) -> tuple[str, int]:
     s = normalize_key_for_search(std_no)
     if s.startswith("BS EN ISO "):
-        return "BS EN ISO", 3
+        return "BS EN ISO", 7
+    if s.startswith("BS EN ") or s.startswith("DIN EN "):
+        return "BS EN", 6
+    if s.startswith("EN "):
+        return "EN", 5
     if s.startswith("DIN EN ISO ") or s.startswith("EN ISO "):
-        return "EN ISO", 2
+        return "EN ISO", 4
+    if s.startswith("BS ISO "):
+        return "BS ISO", 3
     if s.startswith("ISO "):
-        return "ISO", 1
+        return "ISO", 2
+    if s.startswith("BS "):
+        return "BS", 1
+    if s.startswith("IEC "):
+        return "IEC", 1
     return "OTHER", 0
 
 
@@ -187,10 +198,18 @@ def normalize_iso_priority(priority_order: list[str] | tuple[str, ...] | None) -
         value = normalize_key_for_search(item)
         if value == "BS EN ISO":
             label = "BS EN ISO"
+        elif value == "BS EN":
+            label = "BS EN"
+        elif value == "EN":
+            label = "EN"
         elif value == "EN ISO":
             label = "EN ISO"
+        elif value == "BS ISO":
+            label = "BS ISO"
         elif value == "ISO":
             label = "ISO"
+        elif value == "BS":
+            label = "BS"
         else:
             continue
         if label not in seen:
@@ -199,7 +218,7 @@ def normalize_iso_priority(priority_order: list[str] | tuple[str, ...] | None) -
     for label in DEFAULT_ISO_PRIORITY:
         if label not in seen:
             normalized.append(label)
-    return tuple(normalized[:3])
+    return tuple(normalized[: len(DEFAULT_ISO_PRIORITY)])
 
 
 def normalize_required_headers(required_headers: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
@@ -260,14 +279,15 @@ def extract_iso_family_core(std_no: str) -> str:
     s = normalize_key_for_search(std_no)
     if not s:
         return ""
+    s = re.sub(r"/A\d+(?::\s*(19\d{2}|20\d{2}))?.*$", "", s).strip()
     s = re.sub(r":\s*(19\d{2}|20\d{2}).*$", "", s).strip()
-    return re.sub(r"^(?:BS\s+EN\s+ISO|DIN\s+EN\s+ISO|EN\s+ISO|ISO)\s+", "", s).strip()
+    return re.sub(r"^(?:BS\s+EN\s+ISO|DIN\s+EN\s+ISO|EN\s+ISO|BS\s+EN|DIN\s+EN|EN|BS\s+ISO|ISO|BS|IEC)\s+", "", s).strip()
 
 
 def extract_display_standard_no(std_no: str) -> str:
     family = detect_search_family(std_no)
     s = normalize_text(std_no)
-    if family in {"ISO_FAMILY", "EN_FAMILY"}:
+    if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         s = s.replace("：", ":")
         return re.sub(r"\s*:\s*(19\d{2}|20\d{2}).*$", "", s).strip()
     if family == "ASTM":
@@ -471,7 +491,9 @@ def detect_sheet_type(standard_name: str) -> str | None:
     s = normalize_key_for_search(standard_name)
     if "ASTM" in s:
         return "ASTM"
-    if "EN ISO" in s or "BS EN" in s or re.search(r"\bEN\b", s):
+    if "IEC" in s:
+        return "ISO"
+    if "EN ISO" in s or "BS EN" in s or re.search(r"\bEN\b", s) or "BS ISO" in s or re.search(r"^BS\b", s):
         return "BS-EN-DIN(歐洲國家標準)"
     if re.search(r"\bISO\b", s):
         return "ISO"
@@ -509,7 +531,7 @@ def extract_standard_match_key(std_no: str, sheet_name: str) -> str:
     s = normalize_key_for_search(std_no)
     if not s:
         return ""
-    if family == "ISO_FAMILY":
+    if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         return extract_iso_family_core(std_no)
     if family == "ASTM":
         return re.sub(r"\s*-\s*(\d{2}[A-Z]?)(?!\d).*$", "", s).strip()
@@ -576,7 +598,7 @@ def find_latest_year_from_excel(
     candidates = []
     normalized_iso_priority = normalize_iso_priority(iso_priority)
 
-    if family == "ISO_FAMILY":
+    if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         target_sheets = ISO_FAMILY_SHEETS
     elif family == "ASTM":
         target_sheets = ["ASTM"]
@@ -616,25 +638,14 @@ def find_latest_year_from_excel(
         return None
 
     all_candidates = [dict(item) for item in candidates]
-    if family == "ISO_FAMILY":
+    if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         priority_index = {label: idx for idx, label in enumerate(normalized_iso_priority)}
-        candidates = [x for x in all_candidates if x["standard_level"] in normalized_iso_priority]
-        if not candidates:
-            return None
-        has_en_variant_pair = (
-            any(x["standard_level"] == "EN ISO" for x in candidates)
-            and any(x["standard_level"] == "BS EN ISO" for x in candidates)
-        )
+        candidates = list(all_candidates)
         for candidate in all_candidates:
             if candidate["standard_level"] not in normalized_iso_priority:
-                candidate["decision"] = "excluded"
-                candidate["decision_reason"] = "不屬於 EN ISO / BS EN ISO / ISO 候選，排除"
-            elif prefer_latest_en_variants and has_en_variant_pair and candidate["standard_level"] in {"EN ISO", "BS EN ISO"}:
-                candidate["decision_reason"] = "EN ISO 與 BS EN ISO 同時存在，依年份較新優先"
-            elif prefer_latest_en_variants and has_en_variant_pair and candidate["standard_level"] == "ISO":
-                candidate["decision_reason"] = "保留 ISO 候選，但 EN ISO 與 BS EN ISO 會先依年份比較"
+                candidate["decision_reason"] = "不在優先級清單內，僅在無更高優先候選時作為後備"
             else:
-                candidate["decision_reason"] = f"納入 { ' > '.join(normalized_iso_priority) } 優先級候選，進入排序"
+                candidate["decision_reason"] = "納入同核心編號候選，先依年份、再依優先級排序"
     else:
         for candidate in all_candidates:
             candidate["decision_reason"] = "符合查詢條件，進入最終排序"
@@ -642,22 +653,13 @@ def find_latest_year_from_excel(
     if not candidates:
         return None
 
-    has_en_variant_pair = (
-        family == "ISO_FAMILY"
-        and any(x["standard_level"] == "EN ISO" for x in candidates)
-        and any(x["standard_level"] == "BS EN ISO" for x in candidates)
-    )
-
     def candidate_sort_key(candidate: dict) -> tuple:
         latest_year = candidate["latest_year"]
         name_length = len(candidate["matched_standard_no"])
-        if family == "ISO_FAMILY":
-            priority_rank = -priority_index.get(candidate["standard_level"], 99)
-            if prefer_latest_en_variants and has_en_variant_pair:
-                if candidate["standard_level"] in {"EN ISO", "BS EN ISO"}:
-                    return (2, latest_year, priority_rank, name_length)
-                return (1, priority_rank, latest_year, name_length)
-            return (1, priority_rank, latest_year, name_length)
+        if family in {"ISO_FAMILY", "IEC_FAMILY"}:
+            priority_rank = -priority_index.get(candidate["standard_level"], len(normalized_iso_priority))
+            prioritized = 1 if candidate["standard_level"] in normalized_iso_priority else 0
+            return (latest_year, prioritized, priority_rank, -name_length)
         return (1, 0, latest_year, name_length)
 
     candidates.sort(
@@ -670,8 +672,8 @@ def find_latest_year_from_excel(
             candidate["decision"] = "kept"
             candidate["decision_reason"] = "通過篩選，但排序結果未被選用"
     selected["decision"] = "selected"
-    if family == "ISO_FAMILY" and prefer_latest_en_variants and has_en_variant_pair:
-        selected["decision_reason"] = "最終採用：EN ISO 與 BS EN ISO 同時存在，依年份較新選中"
+    if family in {"ISO_FAMILY", "IEC_FAMILY"}:
+        selected["decision_reason"] = "最終採用：同核心編號中先依年份、再依優先級排序後選中"
     else:
         selected["decision_reason"] = "最終採用：依優先級與年份排序後選中"
 

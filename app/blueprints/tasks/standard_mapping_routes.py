@@ -10,7 +10,6 @@ from flask import abort, current_app, flash, redirect, render_template, request,
 from app.services.standard_mapping_service import (
     DEFAULT_REQUIRED_HEADERS,
     DEFAULT_ISO_PRIORITY,
-    DEFAULT_PREFER_LATEST_EN_VARIANTS,
     HEADER_FIELD_IDS,
     inspect_document_tables,
     inspect_document_sections,
@@ -30,6 +29,15 @@ _MANUAL_HEADER_FIELD_ORDER = [
     ("EU Harmonised Standards under MDR 2017/745 (YES/NO)", HEADER_FIELD_IDS["EU Harmonised Standards under MDR 2017/745 (YES/NO)"]),
     ("Title", HEADER_FIELD_IDS["Title"]),
 ]
+_STANDARD_PRIORITY_FIELDS = {
+    "BS EN ISO": "priority_bs_en_iso",
+    "BS EN": "priority_bs_en",
+    "EN": "priority_en",
+    "EN ISO": "priority_en_iso",
+    "BS ISO": "priority_bs_iso",
+    "ISO": "priority_iso",
+    "BS": "priority_bs",
+}
 
 
 def _task_files_dir(task_id: str) -> str:
@@ -79,9 +87,8 @@ def _parse_override_map(raw_value: str) -> dict[str, str]:
 
 def _parse_iso_priority(values) -> tuple[str, ...]:
     raw_positions = {
-        "BS EN ISO": (values.get("priority_bs_en_iso") or "").strip(),
-        "EN ISO": (values.get("priority_en_iso") or "").strip(),
-        "ISO": (values.get("priority_iso") or "").strip(),
+        label: (values.get(field_name) or "").strip()
+        for label, field_name in _STANDARD_PRIORITY_FIELDS.items()
     }
     if not any(raw_positions.values()):
         return DEFAULT_ISO_PRIORITY
@@ -91,23 +98,11 @@ def _parse_iso_priority(values) -> tuple[str, ...]:
     except ValueError as exc:
         raise ValueError("優先級設定格式不正確") from exc
 
-    if sorted(positions.values()) != [1, 2, 3]:
+    if sorted(positions.values()) != list(range(1, len(_STANDARD_PRIORITY_FIELDS) + 1)):
         raise ValueError("優先級設定不可重複")
 
     ordered = [label for label, _ in sorted(positions.items(), key=lambda item: item[1])]
     return normalize_iso_priority(ordered)
-
-
-def _parse_prefer_latest_en_variants(values) -> bool:
-    if hasattr(values, "getlist"):
-        raw_values = [str(item).strip().lower() for item in values.getlist("prefer_latest_en_variants") if str(item).strip()]
-        if raw_values:
-            return raw_values[-1] in {"1", "true", "on", "yes"}
-        return DEFAULT_PREFER_LATEST_EN_VARIANTS
-    raw_value = str(values.get("prefer_latest_en_variants") or "").strip().lower()
-    if not raw_value:
-        return DEFAULT_PREFER_LATEST_EN_VARIANTS
-    return raw_value in {"1", "true", "on", "yes"}
 
 
 def _parse_limit_to_chapter(values) -> bool:
@@ -223,7 +218,6 @@ def _render_standard_mapping_page(
     selected_word: str = "",
     selected_excel: str = "",
     iso_priority: tuple[str, ...] | list[str] | None = None,
-    prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
     required_headers: tuple[str, ...] | list[str] | None = None,
     limit_to_chapter: bool = False,
     target_chapter_ref: str = "",
@@ -261,7 +255,7 @@ def _render_standard_mapping_page(
         last_generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if preview_result else "",
         iso_priority=active_iso_priority,
         iso_priority_positions=iso_priority_positions,
-        prefer_latest_en_variants=(preview_result or {}).get("prefer_latest_en_variants", prefer_latest_en_variants),
+        standard_priority_fields=_STANDARD_PRIORITY_FIELDS,
         required_headers=active_required_headers,
         default_required_headers=DEFAULT_REQUIRED_HEADERS,
         limit_to_chapter=bool((preview_result or {}).get("target_chapter_ref") or limit_to_chapter),
@@ -286,7 +280,6 @@ def task_standard_mapping(task_id):
     if request.method == "GET":
         try:
             iso_priority = _parse_iso_priority(request.values)
-            prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.values)
             required_headers = _parse_required_headers(request.values)
             manual_header_mappings = _parse_manual_header_mappings(request.values)
             limit_to_chapter = _parse_limit_to_chapter(request.values)
@@ -296,7 +289,6 @@ def task_standard_mapping(task_id):
         except ValueError as exc:
             flash(str(exc), "danger")
             iso_priority = DEFAULT_ISO_PRIORITY
-            prefer_latest_en_variants = DEFAULT_PREFER_LATEST_EN_VARIANTS
             required_headers = DEFAULT_REQUIRED_HEADERS
             limit_to_chapter = False
             target_chapter_ref = ""
@@ -308,7 +300,6 @@ def task_standard_mapping(task_id):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=iso_priority,
-            prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
@@ -323,7 +314,6 @@ def task_standard_mapping(task_id):
 
     try:
         iso_priority = _parse_iso_priority(request.form)
-        prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
         required_headers = _parse_required_headers(request.form)
         manual_header_mappings = _parse_manual_header_mappings(request.form)
         limit_to_chapter = _parse_limit_to_chapter(request.form)
@@ -337,7 +327,6 @@ def task_standard_mapping(task_id):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=DEFAULT_ISO_PRIORITY,
-            prefer_latest_en_variants=DEFAULT_PREFER_LATEST_EN_VARIANTS,
             required_headers=DEFAULT_REQUIRED_HEADERS,
             limit_to_chapter=False,
             target_chapter_ref="",
@@ -371,7 +360,6 @@ def task_standard_mapping(task_id):
                     selected_word=selected_word,
                     selected_excel=selected_excel,
                     iso_priority=iso_priority,
-                    prefer_latest_en_variants=prefer_latest_en_variants,
                     required_headers=required_headers,
                     limit_to_chapter=limit_to_chapter,
                     target_chapter_ref=target_chapter_ref,
@@ -384,7 +372,6 @@ def task_standard_mapping(task_id):
                 word_path,
                 excel_path,
                 iso_priority=iso_priority,
-                prefer_latest_en_variants=prefer_latest_en_variants,
                 required_headers=required_headers,
                 target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
                 target_table_index=target_table_index if limit_to_chapter else None,
@@ -399,7 +386,6 @@ def task_standard_mapping(task_id):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=iso_priority,
-            prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
@@ -415,7 +401,6 @@ def task_standard_mapping(task_id):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=iso_priority,
-            prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
@@ -430,7 +415,6 @@ def task_standard_mapping(task_id):
         selected_word=selected_word,
         selected_excel=selected_excel,
         iso_priority=iso_priority,
-        prefer_latest_en_variants=prefer_latest_en_variants,
         required_headers=required_headers,
         limit_to_chapter=limit_to_chapter,
         target_chapter_ref=target_chapter_ref,
@@ -448,7 +432,6 @@ def task_standard_mapping_download(task_id):
 
     try:
         iso_priority = _parse_iso_priority(request.form)
-        prefer_latest_en_variants = _parse_prefer_latest_en_variants(request.form)
         required_headers = _parse_required_headers(request.form)
         manual_header_mappings = _parse_manual_header_mappings(request.form)
         limit_to_chapter = _parse_limit_to_chapter(request.form)
@@ -472,7 +455,6 @@ def task_standard_mapping_download(task_id):
                 selected_word=selected_word,
                 selected_excel=selected_excel,
                 iso_priority=iso_priority,
-                prefer_latest_en_variants=prefer_latest_en_variants,
                 required_headers=required_headers,
                 limit_to_chapter=limit_to_chapter,
                 target_chapter_ref=target_chapter_ref,
@@ -493,7 +475,6 @@ def task_standard_mapping_download(task_id):
             override_map=override_map,
             output_path=output_path,
             iso_priority=iso_priority,
-            prefer_latest_en_variants=prefer_latest_en_variants,
             required_headers=required_headers,
             target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
             target_table_index=target_table_index if limit_to_chapter else None,

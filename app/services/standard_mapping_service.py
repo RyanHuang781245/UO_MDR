@@ -1063,6 +1063,8 @@ def resolve_target_table_indexes(
                 explicit_end_number=explicit_end_number or None,
                 ignore_toc=True,
                 numbering_xml=numbering_xml,
+                rule_based_boundary_fallback=False,
+                llm_boundary_fallback=False,
                 strict_heading_number_match=attempt["strict_heading_number_match"],
             )
             break

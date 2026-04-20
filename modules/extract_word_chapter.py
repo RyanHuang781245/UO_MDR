@@ -1845,6 +1845,7 @@ def find_section_range_children(
     llm_boundary_fallback: bool | None = None,
     llm_boundary_model_id: str | None = None,
     llm_boundary_resolver: Callable[..., int | None] | None = None,
+    rule_based_boundary_fallback: bool = True,
     strict_heading_number_match: bool = False,
     allow_start_number_mismatch_fallback: bool = False,
     allow_explicit_end_number_mismatch_fallback: bool = False,
@@ -2174,22 +2175,23 @@ def find_section_range_children(
     if fallback_end_idx is not None:
         return start_idx, fallback_end_idx
 
-    rule_based_end_idx = _find_rule_based_boundary_fallback_index(
-        body_children,
-        start_idx=start_idx,
-        reference_heading_depth=start_heading_depth,
-        reference_number_parts=start_number_parts,
-        reference_style=start_style,
-        reference_ilvl=start_ilvl,
-        style_outline=style_outline,
-        style_based=style_based,
-        style_numpr=style_numpr,
-        style_heading_rank=style_heading_rank,
-        numbering_xml=numbering_xml,
-        ignore_toc=ignore_toc,
-    )
-    if rule_based_end_idx is not None:
-        return start_idx, rule_based_end_idx
+    if rule_based_boundary_fallback:
+        rule_based_end_idx = _find_rule_based_boundary_fallback_index(
+            body_children,
+            start_idx=start_idx,
+            reference_heading_depth=start_heading_depth,
+            reference_number_parts=start_number_parts,
+            reference_style=start_style,
+            reference_ilvl=start_ilvl,
+            style_outline=style_outline,
+            style_based=style_based,
+            style_numpr=style_numpr,
+            style_heading_rank=style_heading_rank,
+            numbering_xml=numbering_xml,
+            ignore_toc=ignore_toc,
+        )
+        if rule_based_end_idx is not None:
+            return start_idx, rule_based_end_idx
 
     llm_fallback_end_idx = _find_llm_boundary_fallback_index(
         body_children,

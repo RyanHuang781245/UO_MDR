@@ -61,6 +61,7 @@ def test_extract_specific_figure_uses_toc_backed_mismatch_guard(monkeypatch, tmp
         captured["allow_start_number_mismatch_fallback"] = kwargs.get(
             "allow_start_number_mismatch_fallback"
         )
+        captured["rule_based_boundary_fallback"] = kwargs.get("rule_based_boundary_fallback")
         captured["style_numpr"] = kwargs.get("style_numpr")
         return 0, len(args[0])
 
@@ -113,6 +114,7 @@ def test_extract_specific_table_disables_mismatch_guard_without_toc_match(
         captured["allow_start_number_mismatch_fallback"] = kwargs.get(
             "allow_start_number_mismatch_fallback"
         )
+        captured["rule_based_boundary_fallback"] = kwargs.get("rule_based_boundary_fallback")
         captured["style_numpr"] = kwargs.get("style_numpr")
         return 0, len(args[0])
 
@@ -150,6 +152,7 @@ def test_extract_specific_table_disables_mismatch_guard_without_toc_match(
     assert result["ok"] is False
     assert captured["strict_heading_number_match"] is True
     assert captured["allow_start_number_mismatch_fallback"] is False
+    assert captured["rule_based_boundary_fallback"] is False
     assert isinstance(captured["style_numpr"], dict)
 
 

@@ -1,3 +1,9 @@
+import os
+import tempfile
+import zipfile
+
+from lxml import etree
+
 from app.services.standard_mapping_service import (
     build_preserve_original_segments,
     build_title_with_amendment,
@@ -8,6 +14,7 @@ from app.services.standard_mapping_service import (
     is_harmonised_standard,
     normalize_harmonised_standard_text,
     normalize_iso_priority,
+    resolve_target_table_indexes,
 )
 
 
@@ -333,3 +340,22 @@ def test_find_latest_year_keeps_iec_candidate_as_fallback():
 
     assert result is not None
     assert result["matched_standard_no"] == "IEC 60601-1:2005"
+
+
+def test_resolve_target_table_indexes_keeps_standards_applied_table_after_up_to_date_block():
+    src = os.path.join(os.getcwd(), "table1.docx")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with zipfile.ZipFile(src, "r") as archive:
+            archive.extractall(tmpdir)
+
+        document_xml_path = os.path.join(tmpdir, "word", "document.xml")
+        tree = etree.parse(document_xml_path)
+
+        result = resolve_target_table_indexes(
+            tree,
+            document_xml_path=document_xml_path,
+            target_chapter_ref="4.1.2 Standards applied",
+            target_table_index=1,
+        )
+
+    assert result == {0}

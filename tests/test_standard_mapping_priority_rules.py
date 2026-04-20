@@ -1,5 +1,6 @@
 from app.services.standard_mapping_service import (
     extract_standard_match_key,
+    extract_latest_year_from_astm_style,
     find_latest_year_from_excel,
     normalize_iso_priority,
 )
@@ -23,6 +24,10 @@ def test_extract_standard_match_key_removes_prefix_year_and_amendment():
         == "14971"
     )
     assert extract_standard_match_key("IEC 60601-1-2:2014", "ISO") == "60601-1-2"
+
+
+def test_extract_latest_year_from_astm_style_prefers_bracket_year():
+    assert extract_latest_year_from_astm_style("ASTM F1140/F1140M-13(2025)") == 2025
 
 
 def test_find_latest_year_prefers_newer_year_before_priority():

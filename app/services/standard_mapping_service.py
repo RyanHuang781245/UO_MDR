@@ -520,6 +520,9 @@ def normalize_astm_standard_text(std_no: str) -> str:
 
 def extract_latest_year_from_astm_style(std_no: str) -> int | None:
     normalized = normalize_astm_standard_text(std_no)
+    bracket_years = re.findall(r"\((19\d{2}|20\d{2})\)", normalized)
+    if bracket_years:
+        return max(int(year) for year in bracket_years)
     matches = re.findall(r"-(\d{2}[A-Z]?)(?!\d)", normalized)
     if not matches:
         return None

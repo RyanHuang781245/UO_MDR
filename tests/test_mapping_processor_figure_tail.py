@@ -423,7 +423,7 @@ def test_mapping_copy_folder_literal_copy_is_treated_as_keyword(tmp_path: Path) 
 
 
 def test_mapping_figure_tail_title(tmp_path: Path) -> None:
-    result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 1|title=Overview Figure")
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 1|title=Overview Figure", item_type="Figure")
     params = _first_step_params(log_data)
     assert params.get("target_caption_label") == "Figure 1"
     assert params.get("target_figure_title") == "Overview Figure"
@@ -432,7 +432,7 @@ def test_mapping_figure_tail_title(tmp_path: Path) -> None:
 
 
 def test_mapping_figure_tail_index(tmp_path: Path) -> None:
-    result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 1|index=2")
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 1|index=2", item_type="Figure")
     params = _first_step_params(log_data)
     assert params.get("target_caption_label") == "Figure 1"
     assert params.get("target_figure_index") == 2
@@ -440,7 +440,7 @@ def test_mapping_figure_tail_index(tmp_path: Path) -> None:
 
 
 def test_mapping_figure_tail_title_and_index(tmp_path: Path) -> None:
-    result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 1|title=System Overview|index=3")
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 1|title=System Overview|index=3", item_type="Figure")
     params = _first_step_params(log_data)
     assert params.get("target_figure_title") == "System Overview"
     assert params.get("target_figure_index") == 3
@@ -508,8 +508,8 @@ def test_mapping_type_figure_requires_caption_or_title_or_index(tmp_path: Path) 
 
 
 def test_mapping_figure_index_validation(tmp_path: Path) -> None:
-    bad_result, _ = _run_validate_mapping(tmp_path / "bad", "1.1 Figure 1|index=abc")
-    zero_result, _ = _run_validate_mapping(tmp_path / "zero", "1.1 Figure 1|index=0")
+    bad_result, _ = _run_validate_mapping(tmp_path / "bad", "1.1 Figure 1|index=abc", item_type="Figure")
+    zero_result, _ = _run_validate_mapping(tmp_path / "zero", "1.1 Figure 1|index=0", item_type="Figure")
     assert any("index 必須是正整數: abc" in msg for msg in bad_result.get("logs", []))
     assert any("index 必須大於 0: 0" in msg for msg in zero_result.get("logs", []))
 
@@ -528,13 +528,84 @@ def test_mapping_type_figure_table_allows_tail_without_label(tmp_path: Path) -> 
 
 
 def test_mapping_table_tail_behavior_unchanged(tmp_path: Path) -> None:
-    result, log_data = _run_validate_mapping(tmp_path, "1.1 Table 1|title=Table Name|index=4")
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Table 1|title=Table Name|index=4", item_type="Table")
     params = _first_step_params(log_data)
     assert params.get("target_caption_label") == "Table 1"
     assert params.get("target_table_title") == "Table Name"
     assert params.get("target_table_index") == 4
     assert "target_figure_title" not in params
     assert "target_figure_index" not in params
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_chapter_title_with_table_word_stays_chapter_extract(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Table overview and summary")
+    assert _first_step_type(log_data) == "extract_word_chapter"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "1.1"
+    assert params.get("target_chapter_title") == "Table overview and summary"
+    assert "target_caption_label" not in params
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_chapter_title_with_table_number_phrase_stays_chapter_extract(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Summary of Table 1 results")
+    assert _first_step_type(log_data) == "extract_word_chapter"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "1.1"
+    assert params.get("target_chapter_title") == "Summary of Table 1 results"
+    assert "target_caption_label" not in params
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_blank_type_figure_like_text_stays_chapter_extract(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 2")
+    assert _first_step_type(log_data) == "extract_word_chapter"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "1.1"
+    assert params.get("target_chapter_title") == "Figure 2"
+    assert "target_caption_label" not in params
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_blank_type_table_like_text_stays_chapter_extract(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 Table 1")
+    assert _first_step_type(log_data) == "extract_word_chapter"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "1.1"
+    assert params.get("target_chapter_title") == "Table 1"
+    assert "target_caption_label" not in params
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_blank_type_all_keyword_is_not_special_anymore(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, "All")
+    assert any("unsupported operation: All" in msg for msg in result.get("logs", []))
+    runs = log_data.get("runs") or []
+    assert runs
+    assert all(not (run.get("workflow_log") or []) for run in runs)
+
+
+def test_mapping_blank_type_add_text_keyword_is_not_special_anymore(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "Add Text",
+        source_name="這是一段說明文字",
+        source_files=[],
+    )
+    assert any("unsupported operation: Add Text" in msg for msg in result.get("logs", []))
+    runs = log_data.get("runs") or []
+    assert runs
+    assert all(not (run.get("workflow_log") or []) for run in runs)
+
+
+def test_mapping_explicit_figure_type_with_separator_label_still_extracts_figure(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, "1.1 General description|Figure 2", item_type="Figure")
+    assert _first_step_type(log_data) == "extract_specific_figure_from_word"
+    params = _first_step_params(log_data)
+    assert params.get("target_chapter_section") == "1.1"
+    assert params.get("target_chapter_title") == "General description"
+    assert params.get("target_caption_label") == "Figure 2"
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
@@ -553,6 +624,7 @@ def test_mapping_figure_include_title_false_disables_caption(tmp_path: Path) -> 
     result, log_data = _run_validate_mapping(
         tmp_path,
         "1.1 Figure 1|title=Overview Figure",
+        item_type="Figure",
         include_title="否",
     )
     params = _first_step_params(log_data)
@@ -564,6 +636,7 @@ def test_mapping_table_include_title_false_disables_caption(tmp_path: Path) -> N
     result, log_data = _run_validate_mapping(
         tmp_path,
         "1.1 Table 1|title=Table Name",
+        item_type="Table",
         include_title="N",
     )
     params = _first_step_params(log_data)

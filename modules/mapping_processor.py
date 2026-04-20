@@ -632,6 +632,52 @@ def process_mapping_excel(
             return False, ""
         return True, f"包含標題欄位值無效: {text}"
 
+    _OBJECT_LABEL_RE = re.compile(
+        r"^(?P<kind>Table|Figure)\s*(?P<number>\d+(?:[.\-]\d+)*)(?:[\s\.:：-]*)$",
+        re.IGNORECASE,
+    )
+
+    def _match_object_label_token(token: str) -> re.Match[str] | None:
+        return _OBJECT_LABEL_RE.match((token or "").strip())
+
+    def _find_object_label(raw_instruction: str) -> tuple[re.Match[str] | None, str]:
+        instruction_text = (raw_instruction or "").strip()
+        if not instruction_text:
+            return None, ""
+
+        quote_char = ""
+        last_pipe = -1
+        for idx, ch in enumerate(instruction_text):
+            if ch in {'"', "'"}:
+                if not quote_char:
+                    quote_char = ch
+                elif quote_char == ch:
+                    quote_char = ""
+                continue
+            if ch == "|" and not quote_char:
+                last_pipe = idx
+
+        if last_pipe >= 0:
+            head = instruction_text[:last_pipe].strip().rstrip("|").strip().strip(",，\u3001")
+            tail = instruction_text[last_pipe + 1 :].strip()
+            match = _match_object_label_token(tail)
+            if match:
+                return match, head
+
+        chapter_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.*))?$", instruction_text)
+        if chapter_match:
+            head = (chapter_match.group(1) or "").rstrip(".")
+            tail = (chapter_match.group(2) or "").strip()
+            match = _match_object_label_token(tail)
+            if match:
+                return match, head
+
+        match = _match_object_label_token(instruction_text)
+        if match:
+            return match, ""
+
+        return None, ""
+
     def _guess_action(instruction: str, item_type: str = "") -> str:
         if item_type == "extract_all":
             return "Extract all"
@@ -652,14 +698,6 @@ def process_mapping_excel(
         ins = (instruction or "").strip()
         if not ins:
             return "Mapping"
-        low = ins.lower()
-        if low == "add text":
-            return "Append text"
-        label_match = re.search(r"\b(Table|Figure)\b", ins, re.IGNORECASE)
-        if label_match:
-            return "Extract table" if label_match.group(1).lower() == "table" else "Extract figure"
-        if low == "all":
-            return "Extract all"
         if re.match(r"^\d+(?:\.\d+)*", ins):
             return "Extract chapter"
         return "Mapping"
@@ -764,8 +802,12 @@ def process_mapping_excel(
             suffix = f" ({', '.join(parts)})" if parts else ""
             return f"{src_base}{suffix}".strip()
         if action == "Extract figure":
-            label_match = re.search(r"\b(Figure)\b.*", instruction_core, re.IGNORECASE)
-            label = label_match.group(0).strip() if label_match else ""
+            label_match, _label_head = _find_object_label(instruction_core)
+            label = (
+                f"{label_match.group('kind')} {label_match.group('number')}".strip()
+                if label_match and label_match.group("kind").lower() == "figure"
+                else ""
+            )
             parts = []
             if label:
                 parts.append(label)
@@ -781,8 +823,12 @@ def process_mapping_excel(
                 return f"{src_base} ({', '.join(parts)})".strip()
             return src_base
         if action == "Extract table":
-            label_match = re.search(r"\b(Table)\b.*", instruction_core, re.IGNORECASE)
-            label = label_match.group(0).strip() if label_match else ""
+            label_match, _label_head = _find_object_label(instruction_core)
+            label = (
+                f"{label_match.group('kind')} {label_match.group('number')}".strip()
+                if label_match and label_match.group("kind").lower() == "table"
+                else ""
+            )
             parts = []
             if label:
                 parts.append(label)
@@ -870,10 +916,10 @@ def process_mapping_excel(
         if not out_name and item_type not in {"copy_file", "copy_folder"}:
             _log("error", "缺少輸出文件檔名", row_num, action_label, detail_label)
             continue
-        if item_type != "add_text" and instruction.lower() != "add text" and not src_name:
+        if item_type != "add_text" and not src_name:
             _log("error", "缺少輸入文件檔名", row_num, action_label, detail_label)
             continue
-        if (item_type == "add_text" or instruction.lower() == "add text") and not src_name:
+        if item_type == "add_text" and not src_name:
             _log("error", "Add Text 需要文字內容", row_num, action_label, detail_label)
             continue
         if insert_label and not template_name:
@@ -1158,16 +1204,6 @@ def process_mapping_excel(
             _log("info", f"extract all: {src_name}", row_num)
             continue
 
-        if instruction.lower() == "add text":
-            params = {"text": src_name}
-            if template_path is not None:
-                params["template_index"] = target_idx
-                params["template_mode"] = "insert_after"
-            _attach_mapping_meta(params, row_num, action_label, detail_label)
-            groups[group_key]["steps"].append({"type": "insert_text", "params": params})
-            _log("info", f"append text into {out_name}", row_num)
-            continue
-
         tf_kind = None
         tf_subtitle = None
         tf_label = None
@@ -1210,11 +1246,11 @@ def process_mapping_excel(
                 parsed_subtitle = " ".join(head_parts).strip() or None
             return parsed_chapter, parsed_title, parsed_subtitle
 
-        label_match = re.search(r"\b(Table|Figure)\b.*", instruction_core, re.IGNORECASE)
-        if label_match:
-            tf_label = instruction_core[label_match.start():].strip()
-            tf_kind = "table" if tf_label.lower().startswith("table") else "figure"
-            head = instruction_core[:label_match.start()].strip().rstrip("|").strip().strip(",，\u3001")
+        label_match, label_head = _find_object_label(instruction_core)
+        if forced_kind in {"figure", "table", "figure_table"} and label_match:
+            tf_label = f"{label_match.group('kind')} {label_match.group('number')}".strip()
+            tf_kind = "table" if label_match.group("kind").lower() == "table" else "figure"
+            head = label_head
             tf_chapter, tf_chapter_title, tf_subtitle = _parse_table_head(head)
             if forced_kind and not (
                 forced_kind == tf_kind or (forced_kind == "figure_table" and tf_kind == "figure")
@@ -1361,7 +1397,7 @@ def process_mapping_excel(
             _log("info", f"extract pdf pages as images: {src_name}", row_num)
             continue
 
-        is_all = instruction.lower() == "all"
+        is_all = False
         chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction_core)
         if not is_all and not chapter_match:
             _log("error", f"unsupported operation: {instruction_core}", row_num, action_label, detail_label)

@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 import types
 
+from docx import Document as DocxDocument
 from spire.doc import Document, FileFormat
 
 from app.blueprints.tasks import compare_compat as task_routes
@@ -718,6 +719,67 @@ def test_build_page_source_map_preserves_table_caption_source_on_mixed_page(
         {"source_file": "Knee.docx", "count": 3, "inherited": False},
         {"source_file": "Hip.docx", "count": 1, "inherited": False},
     ]
+
+
+def test_build_paragraph_trace_skips_table_and_figure_extract_steps(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    result_path = job_dir / "result.docx"
+    log_path = job_dir / "log.json"
+
+    result_doc = DocxDocument()
+    result_doc.add_paragraph("Merged chapter paragraph")
+    result_doc.save(result_path)
+    log_path.write_text("[]", encoding="utf-8")
+
+    chapter_fragment = tmp_path / "chapter.docx"
+    chapter_doc = DocxDocument()
+    chapter_doc.add_paragraph("Merged chapter paragraph")
+    chapter_doc.save(chapter_fragment)
+
+    table_fragment = tmp_path / "table.docx"
+    table_doc = DocxDocument()
+    table = table_doc.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "Table-only content"
+    table_doc.save(table_fragment)
+
+    figure_fragment = tmp_path / "figure.docx"
+    figure_doc = DocxDocument()
+    figure_doc.add_paragraph("Figure 1 Packaging")
+    figure_doc.save(figure_fragment)
+
+    entries = [
+        {
+            "type": "extract_word_chapter",
+            "status": "ok",
+            "output_docx": str(chapter_fragment),
+            "params": {"input_file": "Chapter.docx"},
+        },
+        {
+            "type": "extract_specific_table_from_word",
+            "status": "ok",
+            "output_docx": str(table_fragment),
+            "params": {"input_file": "Table.docx"},
+        },
+        {
+            "type": "extract_specific_figure_from_word",
+            "status": "ok",
+            "output_docx": str(figure_fragment),
+            "params": {"input_file": "Figure.docx"},
+        },
+    ]
+
+    trace = task_routes._build_paragraph_trace(
+        str(job_dir),
+        str(result_path),
+        str(log_path),
+        entries,
+        [],
+    )
+
+    assert len(trace) == 1
+    assert trace[0]["source_step"] == "extract_word_chapter"
+    assert str(trace[0]["source_file"]).startswith("Chapter.docx")
 
 
 def test_build_page_source_map_orders_sources_by_first_appearance_on_page(

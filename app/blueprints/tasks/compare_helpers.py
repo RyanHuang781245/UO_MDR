@@ -694,7 +694,14 @@ def _build_paragraph_trace(
             continue
         if entry.get("status") == "error":
             continue
-        if entry.get("type") in {"file_metadata", "template_merge", "copy_files", "copy_directory"}:
+        if entry.get("type") in {
+            "file_metadata",
+            "template_merge",
+            "copy_files",
+            "copy_directory",
+            "extract_specific_figure_from_word",
+            "extract_specific_table_from_word",
+        }:
             continue
         output_docx = entry.get("output_docx")
         if not output_docx or not os.path.isfile(str(output_docx)):

@@ -174,6 +174,37 @@ def test_find_latest_year_uses_priority_as_tiebreaker():
     assert result["matched_standard_no"] == "BS EN ISO 14971:2021"
 
 
+def test_find_latest_year_candidate_title_includes_amendment_suffix():
+    excel_index = {
+        "BS-EN-DIN(歐洲國家標準)": [
+            {
+                "sheet_name": "BS-EN-DIN(歐洲國家標準)",
+                "excel_row_index": 3,
+                "excel_col_letter": "F",
+                "standard_no": "BS EN ISO 14971:2019+A11:2021",
+                "standard_title": "Application of risk management to medical devices",
+                "standard_match_key": "14971",
+                "search_family": "ISO_FAMILY",
+                "standard_display_no": "BS EN ISO 14971",
+                "standard_level": "BS EN ISO",
+                "standard_level_rank": 7,
+            },
+        ],
+        "ISO": [],
+        "ASTM": [],
+    }
+
+    result = find_latest_year_from_excel(
+        "ISO 14971:2019",
+        excel_index,
+        ("BS EN ISO", "BS EN", "EN", "EN ISO", "BS ISO", "ISO", "BS"),
+    )
+
+    assert result is not None
+    assert result["matched_title"] == "Application of risk management to medical devices - Amendment 11"
+    assert result["all_candidates"][0]["matched_title"] == "Application of risk management to medical devices - Amendment 11"
+
+
 def test_find_latest_year_keeps_iec_candidate_as_fallback():
     excel_index = {
         "BS-EN-DIN(歐洲國家標準)": [],

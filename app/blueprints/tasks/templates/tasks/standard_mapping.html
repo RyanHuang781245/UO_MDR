@@ -1769,6 +1769,7 @@
     if (!acc[rowKey]) acc[rowKey] = {};
     if (meta.field_label === "Standards") acc[rowKey].standards = referenceKey;
     if (meta.field_label === "Issued Year") acc[rowKey].issuedYear = referenceKey;
+    if (meta.field_label === "Title") acc[rowKey].title = referenceKey;
     return acc;
   }, {});
   let activeReferenceKey = "";
@@ -1812,6 +1813,7 @@
       meta.excel_row_index = selectedCandidate.excel_row_index || "";
       meta.matched_standard_no = selectedCandidate.matched_standard_no || "";
       meta.matched_display_standard_no = selectedCandidate.matched_display_standard_no || selectedCandidate.matched_standard_no || "";
+      meta.matched_title = selectedCandidate.matched_title || meta.matched_title || "";
       meta.excel_year = selectedCandidate.latest_year || "";
     }
 
@@ -1959,6 +1961,16 @@
           refreshCellOverflow(issuedYearCell);
         }
       }
+      if (keys.title) {
+        const titleCell = document.querySelector(`[data-reference-key="${CSS.escape(keys.title)}"]`);
+        if (titleCell && Object.prototype.hasOwnProperty.call(originalCellHtml, keys.title)) {
+          const titleContent = titleCell.querySelector(".preview-cell__content");
+          if (titleContent) {
+            titleContent.innerHTML = originalCellHtml[keys.title];
+          }
+          refreshCellOverflow(titleCell);
+        }
+      }
       if (row) {
         row.classList.remove("row-selected");
       }
@@ -1967,6 +1979,7 @@
 
     const standardsMeta = keys.standards ? getEffectiveMeta(keys.standards) : null;
     const issuedYearMeta = keys.issuedYear ? getEffectiveMeta(keys.issuedYear) : null;
+    const titleMeta = keys.title ? getEffectiveMeta(keys.title) : null;
     if (standardsMeta && keys.standards) {
       const cell = document.querySelector(`[data-reference-key="${CSS.escape(keys.standards)}"]`);
       if (cell) {
@@ -1987,6 +2000,18 @@
         const content = cell.querySelector(".preview-cell__content");
         if (content) {
           content.innerHTML = renderSegmentsHtml(buildYearSegments(oldYear, newYear));
+        }
+        refreshCellOverflow(cell);
+      }
+    }
+    if (titleMeta && keys.title) {
+      const cell = document.querySelector(`[data-reference-key="${CSS.escape(keys.title)}"]`);
+      if (cell) {
+        const oldTitle = titleMeta.word_title || "";
+        const newTitle = titleMeta.matched_title || oldTitle;
+        const content = cell.querySelector(".preview-cell__content");
+        if (content) {
+          content.innerHTML = renderSegmentsHtml(buildDiffSegments(oldTitle, newTitle));
         }
         refreshCellOverflow(cell);
       }

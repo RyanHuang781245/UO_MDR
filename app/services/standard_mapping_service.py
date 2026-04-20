@@ -668,7 +668,7 @@ def find_latest_year_from_excel(
                 "excel_row_index": rec["excel_row_index"],
                 "matched_standard_no": rec["standard_no"],
                 "matched_display_standard_no": rec["standard_display_no"],
-                "matched_title": rec.get("standard_title", ""),
+                "matched_title": build_title_with_amendment(rec.get("standard_title", ""), rec["standard_no"]),
                 "latest_year": year,
                 "standard_level": rec["standard_level"],
                 "standard_level_rank": rec["standard_level_rank"],
@@ -1382,6 +1382,9 @@ def build_preview_tables(
                     elif row_meta and label == "Issued Year":
                         reference_key = f"{row_meta['row_key']}:issued_year"
                         reference_payload[reference_key] = {**row_meta, "field_label": "Issued Year"}
+                    elif row_meta and label == "Title":
+                        reference_key = f"{row_meta['row_key']}:title"
+                        reference_payload[reference_key] = {**row_meta, "field_label": "Title"}
                     cells.append({
                         "tag": "td",
                         "colspan": 1,
@@ -1507,9 +1510,11 @@ def process_document(
                     "excel_row_index": "",
                     "matched_standard_no": "",
                     "matched_display_standard_no": "",
+                    "matched_title": "",
                     "excel_year": "",
                     "word_standard": standards,
                     "word_year": word_year_text,
+                    "word_title": word_title_text,
                     "all_candidates": [],
                     "selected_candidate_id": "",
                     "auto_selected_candidate_id": "",
@@ -1555,9 +1560,11 @@ def process_document(
                 "excel_row_index": match_info["excel_row_index"],
                 "matched_standard_no": matched_standard_no,
                 "matched_display_standard_no": matched_display_standard_no,
+                "matched_title": matched_title,
                 "excel_year": latest_year,
                 "word_standard": standards,
                 "word_year": word_year_text,
+                "word_title": word_title_text,
                 "all_candidates": match_info.get("all_candidates", []),
                 "selected_candidate_id": match_info.get("selected_candidate_id", ""),
                 "auto_selected_candidate_id": match_info.get("auto_selected_candidate_id", ""),

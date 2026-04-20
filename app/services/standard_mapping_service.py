@@ -1279,6 +1279,12 @@ def inspect_table_headers(
         best_match["header_options"] = header_options
         best_match["is_processable"] = is_full_match or manual_mapping_ready
         best_match["is_full_match"] = is_full_match
+        best_match["harmonised_update_supported"] = (
+            "EU Harmonised Standards under MDR 2017/745 (YES/NO)" in best_match.get("detected_headers", [])
+            or bool((manual_mapping_summary if manual_mapping_ready else {}).get("EU Harmonised Standards under MDR 2017/745 (YES/NO)"))
+        )
+        if best_match["is_processable"] and not best_match["harmonised_update_supported"]:
+            best_match["message"] = f"{best_match['message']} 此表未包含 EU Harmonised Standards under MDR 2017/745 (YES/NO) 欄位，更新時會略過該欄。"
         best_match["needs_manual_mapping"] = (not is_full_match) or bool(manual_mapping)
         best_match["manual_mapping"] = manual_mapping_summary
         best_match["manual_mapping_ready"] = manual_mapping_ready

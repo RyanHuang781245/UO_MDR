@@ -117,6 +117,9 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
   }
+  .standard-form-grid__full {
+    grid-column: 1 / -1;
+  }
   .standard-priority-panel {
     display: grid;
     gap: 1rem;
@@ -1022,7 +1025,7 @@
       {% else %}
         <form id="standardMappingConfigForm" method="post" action="{{ url_for('tasks_bp.task_standard_mapping', task_id=task_id) }}" class="vstack gap-3">
           <div class="standard-form-grid">
-            <div>
+            <div class="standard-form-grid__full">
               <label class="form-label fw-bold">
                 <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
                 Word 文件
@@ -2292,17 +2295,6 @@
   document.querySelectorAll(".preview-cell.has-reference").forEach((cell) => {
     const referenceKey = cell.dataset.referenceKey || "";
     if (!referenceKey) return;
-    cell.addEventListener("mouseenter", (event) => {
-      if (isTooltipPinned) return;
-      openTooltip(referenceKey, event, false);
-    });
-    cell.addEventListener("mousemove", (event) => {
-      if (isTooltipPinned) return;
-      positionTooltip(event);
-    });
-    cell.addEventListener("mouseleave", () => {
-      if (!isTooltipPinned) scheduleHideTooltip();
-    });
     cell.addEventListener("click", (event) => {
       event.stopPropagation();
       openTooltip(referenceKey, event, true);
@@ -2327,15 +2319,6 @@
     });
   });
 
-  tooltip.addEventListener("mouseenter", () => {
-    if (hideTimer) {
-      window.clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  });
-  tooltip.addEventListener("mouseleave", () => {
-    if (!isTooltipPinned) scheduleHideTooltip();
-  });
   tooltip.addEventListener("click", (event) => {
     event.stopPropagation();
     const closeButton = event.target.closest("[data-action='close']");

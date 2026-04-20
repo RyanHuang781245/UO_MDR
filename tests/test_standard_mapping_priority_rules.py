@@ -66,6 +66,51 @@ def test_find_latest_year_prefers_newer_year_before_priority():
     assert result["latest_year"] == 2021
 
 
+def test_find_latest_year_prefers_en_group_over_newer_non_en_candidate():
+    excel_index = {
+        "BS-EN-DIN(歐洲國家標準)": [
+            {
+                "sheet_name": "BS-EN-DIN(歐洲國家標準)",
+                "excel_row_index": 2,
+                "excel_col_letter": "F",
+                "standard_no": "EN ISO 14971:2021",
+                "standard_match_key": "14971",
+                "search_family": "ISO_FAMILY",
+                "standard_display_no": "EN ISO 14971",
+                "standard_level": "EN ISO",
+                "standard_level_rank": 4,
+            }
+        ],
+        "ISO": [
+            {
+                "sheet_name": "ISO",
+                "excel_row_index": 4,
+                "excel_col_letter": "F",
+                "standard_no": "ISO 14971:2023",
+                "standard_match_key": "14971",
+                "search_family": "ISO_FAMILY",
+                "standard_display_no": "ISO 14971",
+                "standard_level": "ISO",
+                "standard_level_rank": 2,
+            }
+        ],
+        "ASTM": [],
+    }
+
+    result = find_latest_year_from_excel(
+        "ISO 14971:2019",
+        excel_index,
+        ("BS EN ISO", "BS EN", "EN", "EN ISO", "BS ISO", "ISO", "BS"),
+    )
+
+    assert result is not None
+    assert result["matched_standard_no"] == "EN ISO 14971:2021"
+    assert any(
+        candidate["matched_standard_no"] == "ISO 14971:2023" and candidate["decision"] == "excluded"
+        for candidate in result["all_candidates"]
+    )
+
+
 def test_find_latest_year_uses_priority_as_tiebreaker():
     excel_index = {
         "BS-EN-DIN(歐洲國家標準)": [

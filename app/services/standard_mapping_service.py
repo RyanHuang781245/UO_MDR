@@ -31,6 +31,7 @@ ISO_FAMILY_SHEETS = ["ISO", "BS-EN-DIN(歐洲國家標準)"]
 RED_COLOR = "FF0000"
 BLUE_COLOR = "2563EB"
 STANDARD_LEVELS = ("BS EN ISO", "BS EN", "EN", "EN ISO", "BS ISO", "ISO", "BS")
+EN_PRIORITY_LEVELS = ("BS EN ISO", "BS EN", "EN", "EN ISO")
 DEFAULT_ISO_PRIORITY = STANDARD_LEVELS
 DEFAULT_PREFER_LATEST_EN_VARIANTS = True
 AVAILABLE_HEADER_OPTIONS = (
@@ -640,10 +641,19 @@ def find_latest_year_from_excel(
     all_candidates = [dict(item) for item in candidates]
     if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         priority_index = {label: idx for idx, label in enumerate(normalized_iso_priority)}
-        candidates = list(all_candidates)
+        has_en_candidates = any(candidate["standard_level"] in EN_PRIORITY_LEVELS for candidate in all_candidates)
+        if has_en_candidates:
+            candidates = [candidate for candidate in all_candidates if candidate["standard_level"] in EN_PRIORITY_LEVELS]
+        else:
+            candidates = list(all_candidates)
         for candidate in all_candidates:
-            if candidate["standard_level"] not in normalized_iso_priority:
+            if has_en_candidates and candidate["standard_level"] not in EN_PRIORITY_LEVELS:
+                candidate["decision"] = "excluded"
+                candidate["decision_reason"] = "同核心編號已有 EN 系列候選，非 EN 候選不參與決選"
+            elif candidate["standard_level"] not in normalized_iso_priority:
                 candidate["decision_reason"] = "不在優先級清單內，僅在無更高優先候選時作為後備"
+            elif has_en_candidates:
+                candidate["decision_reason"] = "同核心編號已有 EN 系列候選，先在 EN 系列中比年份，再比優先級"
             else:
                 candidate["decision_reason"] = "納入同核心編號候選，先依年份、再依優先級排序"
     else:
@@ -673,7 +683,10 @@ def find_latest_year_from_excel(
             candidate["decision_reason"] = "通過篩選，但排序結果未被選用"
     selected["decision"] = "selected"
     if family in {"ISO_FAMILY", "IEC_FAMILY"}:
-        selected["decision_reason"] = "最終採用：同核心編號中先依年份、再依優先級排序後選中"
+        if any(candidate["standard_level"] in EN_PRIORITY_LEVELS for candidate in all_candidates):
+            selected["decision_reason"] = "最終採用：同核心編號已有 EN 系列候選，先在 EN 系列中比年份，再比優先級後選中"
+        else:
+            selected["decision_reason"] = "最終採用：同核心編號中先依年份、再依優先級排序後選中"
     else:
         selected["decision_reason"] = "最終採用：依優先級與年份排序後選中"
 

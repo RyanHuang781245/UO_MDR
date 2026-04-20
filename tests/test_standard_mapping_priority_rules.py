@@ -1,4 +1,5 @@
 from app.services.standard_mapping_service import (
+    build_title_with_amendment,
     extract_standard_match_key,
     extract_latest_year_from_astm_style,
     find_latest_year_from_excel,
@@ -28,6 +29,23 @@ def test_extract_standard_match_key_removes_prefix_year_and_amendment():
 
 def test_extract_latest_year_from_astm_style_prefers_bracket_year():
     assert extract_latest_year_from_astm_style("ASTM F1140/F1140M-13(2025)") == 2025
+
+
+def test_build_title_with_amendment_supports_plus_a_and_amd_formats():
+    assert (
+        build_title_with_amendment(
+            "Application of risk management to medical devices",
+            "BS EN ISO 14971:2019+A11:2021",
+        )
+        == "Application of risk management to medical devices - Amendment 11"
+    )
+    assert (
+        build_title_with_amendment(
+            "Hexalobular internal driving feature for bolts and screws",
+            "ISO 16047：2005/Amd 1：2012",
+        )
+        == "Hexalobular internal driving feature for bolts and screws - Amendment 1"
+    )
 
 
 def test_find_latest_year_prefers_newer_year_before_priority():

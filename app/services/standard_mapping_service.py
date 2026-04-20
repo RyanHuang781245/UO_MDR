@@ -93,6 +93,8 @@ HEADER_KEYWORDS = {
     "Title": {"TITLE"},
 }
 
+EXCEL_TITLE_HEADER_ALIASES = ("標準名稱", "TITLE", "STANDARD TITLE")
+
 
 def qn(tag: str) -> str:
     prefix, local = tag.split(":")
@@ -106,6 +108,10 @@ def normalize_text(text: str) -> str:
         return ""
     text = str(text).replace("\n", " ").replace("\r", " ")
     return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_standard_text(text: str) -> str:
+    return normalize_text(text).replace("：", ":").replace("／", "/").replace("＋", "+")
 
 
 def normalize_key_for_search(text: str) -> str:
@@ -134,6 +140,18 @@ def text_matches_manual_header(cell_text: str, target_text: str) -> bool:
         return True
 
     return False
+
+
+def find_excel_title_col_index(rows: list[tuple | list]) -> int | None:
+    for row in rows[:10]:
+        values = list(row or [])
+        for index, value in enumerate(values):
+            cell_text = normalize_text(value)
+            if not cell_text:
+                continue
+            if any(text_matches_manual_header(cell_text, alias) for alias in EXCEL_TITLE_HEADER_ALIASES):
+                return index
+    return None
 
 
 def header_matches_target(header_text: str, target_name: str) -> bool:
@@ -530,6 +548,23 @@ def extract_latest_year_from_astm_style(std_no: str) -> int | None:
     return max(years) if years else None
 
 
+def extract_amendment_number(std_no: str) -> str:
+    normalized = normalize_standard_text(std_no)
+    match = re.search(r"(?:\+|/)\s*A(?:MD)?\s*(\d+)\b", normalized, flags=re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def build_title_with_amendment(title: str, std_no: str) -> str:
+    base_title = normalize_text(title)
+    amendment_number = extract_amendment_number(std_no)
+    if not amendment_number:
+        return base_title
+    suffix = f" - Amendment {amendment_number}"
+    if base_title.endswith(suffix):
+        return base_title
+    return f"{base_title}{suffix}" if base_title else f"Amendment {amendment_number}"
+
+
 def extract_standard_match_key(std_no: str, sheet_name: str) -> str:
     family = detect_search_family(std_no)
     s = normalize_key_for_search(std_no)
@@ -549,23 +584,27 @@ def build_sheet_records(ws, std_col_index: int = EXCEL_STANDARD_COL_INDEX) -> li
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         return []
+    title_col_index = find_excel_title_col_index(rows)
     records = []
     for row_idx, row in enumerate(rows[1:], start=2):
         if row is None:
             continue
         values = list(row)
         std_val = values[std_col_index] if std_col_index < len(values) else None
+        title_val = values[title_col_index] if title_col_index is not None and title_col_index < len(values) else None
         if std_val is None:
             continue
         std_val = normalize_text(std_val)
         if not std_val:
             continue
+        title_val = normalize_text(title_val)
         standard_level, standard_level_rank = classify_standard_level(std_val)
         records.append({
             "sheet_name": ws.title,
             "excel_row_index": row_idx,
             "excel_col_letter": "F",
             "standard_no": std_val,
+            "standard_title": title_val,
             "standard_match_key": extract_standard_match_key(std_val, ws.title),
             "search_family": detect_search_family(std_val),
             "standard_display_no": extract_display_standard_no(std_val),
@@ -629,6 +668,7 @@ def find_latest_year_from_excel(
                 "excel_row_index": rec["excel_row_index"],
                 "matched_standard_no": rec["standard_no"],
                 "matched_display_standard_no": rec["standard_display_no"],
+                "matched_title": rec.get("standard_title", ""),
                 "latest_year": year,
                 "standard_level": rec["standard_level"],
                 "standard_level_rank": rec["standard_level_rank"],
@@ -1229,6 +1269,7 @@ def parse_word_tables_for_update(
                     "title": title_text,
                     "standards_tc": get_tc_at(standards_col),
                     "issued_year_tc": get_tc_at(issued_year_col),
+                    "title_tc": get_tc_at(title_col),
                 })
     return tree, all_records
 
@@ -1445,6 +1486,7 @@ def process_document(
             row_key = make_row_key(rec["table_index"], rec["row_index"])
             standards = rec["standards"]
             word_year_text = normalize_text(rec["issued_year"])
+            word_title_text = normalize_text(rec["title"])
             match_info = find_latest_year_from_excel(
                 standards,
                 excel_index,
@@ -1488,15 +1530,19 @@ def process_document(
             latest_year = str(match_info["latest_year"])
             matched_standard_no = match_info["matched_standard_no"]
             matched_display_standard_no = match_info["matched_display_standard_no"]
+            matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(matched_display_standard_no)
             year_needs_update = word_year_text != latest_year
+            title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(matched_title)
 
             if standards_needs_update and rec["standards_tc"] is not None:
                 rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, matched_display_standard_no))
             if year_needs_update and rec["issued_year_tc"] is not None:
                 rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, latest_year))
+            if title_needs_update and rec["title_tc"] is not None:
+                rebuild_cell_with_segments(rec["title_tc"], build_diff_segments(word_title_text, matched_title))
 
-            row_updated = standards_needs_update or year_needs_update
+            row_updated = standards_needs_update or year_needs_update or title_needs_update
             if row_updated:
                 updated_count += 1
 

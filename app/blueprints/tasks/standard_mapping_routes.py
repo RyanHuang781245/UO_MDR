@@ -217,6 +217,7 @@ def _render_standard_mapping_page(
     preview_result: dict | None = None,
     selected_word: str = "",
     selected_excel: str = "",
+    selected_harmonised_excel: str = "",
     iso_priority: tuple[str, ...] | list[str] | None = None,
     required_headers: tuple[str, ...] | list[str] | None = None,
     limit_to_chapter: bool = False,
@@ -245,6 +246,7 @@ def _render_standard_mapping_page(
         excel_options=excel_options,
         selected_word=selected_word,
         selected_excel=selected_excel,
+        selected_harmonised_excel=(preview_result or {}).get("harmonised_reference_path", selected_harmonised_excel),
         preview_tables=(preview_result or {}).get("preview_tables", []),
         table_checks=table_checks,
         reference_payload=reference_payload,
@@ -276,6 +278,7 @@ def task_standard_mapping(task_id):
     files_dir = _task_files_dir(task_id)
     selected_word = (request.values.get("word_path") or "").strip()
     selected_excel = (request.values.get("excel_path") or "").strip()
+    selected_harmonised_excel = (request.values.get("harmonised_excel_path") or "").strip()
 
     if request.method == "GET":
         try:
@@ -299,6 +302,7 @@ def task_standard_mapping(task_id):
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
+            selected_harmonised_excel=selected_harmonised_excel,
             iso_priority=iso_priority,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
@@ -326,6 +330,7 @@ def task_standard_mapping(task_id):
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
+            selected_harmonised_excel=selected_harmonised_excel,
             iso_priority=DEFAULT_ISO_PRIORITY,
             required_headers=DEFAULT_REQUIRED_HEADERS,
             limit_to_chapter=False,
@@ -359,6 +364,7 @@ def task_standard_mapping(task_id):
                     preview_result=inspection_result,
                     selected_word=selected_word,
                     selected_excel=selected_excel,
+                    selected_harmonised_excel=selected_harmonised_excel,
                     iso_priority=iso_priority,
                     required_headers=required_headers,
                     limit_to_chapter=limit_to_chapter,
@@ -368,9 +374,11 @@ def task_standard_mapping(task_id):
                     manual_header_mappings=manual_header_mappings,
                 )
             excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
+            harmonised_reference_path = _safe_task_file(files_dir, selected_harmonised_excel, _ALLOWED_EXCEL_EXTENSIONS) if selected_harmonised_excel else None
             result = process_document(
                 word_path,
                 excel_path,
+                harmonised_reference_path=harmonised_reference_path,
                 iso_priority=iso_priority,
                 required_headers=required_headers,
                 target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
@@ -385,6 +393,7 @@ def task_standard_mapping(task_id):
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
+            selected_harmonised_excel=selected_harmonised_excel,
             iso_priority=iso_priority,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
@@ -400,6 +409,7 @@ def task_standard_mapping(task_id):
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
+            selected_harmonised_excel=selected_harmonised_excel,
             iso_priority=iso_priority,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
@@ -414,6 +424,7 @@ def task_standard_mapping(task_id):
         preview_result=result,
         selected_word=selected_word,
         selected_excel=selected_excel,
+        selected_harmonised_excel=selected_harmonised_excel,
         iso_priority=iso_priority,
         required_headers=required_headers,
         limit_to_chapter=limit_to_chapter,
@@ -429,6 +440,7 @@ def task_standard_mapping_download(task_id):
     files_dir = _task_files_dir(task_id)
     selected_word = (request.form.get("word_path") or "").strip()
     selected_excel = (request.form.get("excel_path") or "").strip()
+    selected_harmonised_excel = (request.form.get("harmonised_excel_path") or "").strip()
 
     try:
         iso_priority = _parse_iso_priority(request.form)
@@ -440,6 +452,7 @@ def task_standard_mapping_download(task_id):
         target_table_index = _parse_target_table_index(request.form, limit_to_chapter=limit_to_chapter)
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
+        harmonised_reference_path = _safe_task_file(files_dir, selected_harmonised_excel, _ALLOWED_EXCEL_EXTENSIONS) if selected_harmonised_excel else None
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
         inspection_result = inspect_document_tables(
             word_path,
@@ -454,6 +467,7 @@ def task_standard_mapping_download(task_id):
                 preview_result=inspection_result,
                 selected_word=selected_word,
                 selected_excel=selected_excel,
+                selected_harmonised_excel=selected_harmonised_excel,
                 iso_priority=iso_priority,
                 required_headers=required_headers,
                 limit_to_chapter=limit_to_chapter,
@@ -472,6 +486,7 @@ def task_standard_mapping_download(task_id):
         process_document(
             word_path=word_path,
             excel_path=excel_path,
+            harmonised_reference_path=harmonised_reference_path,
             override_map=override_map,
             output_path=output_path,
             iso_priority=iso_priority,
@@ -488,6 +503,7 @@ def task_standard_mapping_download(task_id):
                 task_id=task_id,
                 word_path=selected_word,
                 excel_path=selected_excel,
+                harmonised_excel_path=selected_harmonised_excel,
                 limit_to_chapter=1 if limit_to_chapter else 0,
                 target_chapter_ref=target_chapter_ref,
                 target_table_index=target_table_index or "",
@@ -503,6 +519,7 @@ def task_standard_mapping_download(task_id):
                 task_id=task_id,
                 word_path=selected_word,
                 excel_path=selected_excel,
+                harmonised_excel_path=selected_harmonised_excel,
                 limit_to_chapter=1 if limit_to_chapter else 0,
                 target_chapter_ref=target_chapter_ref,
                 target_table_index=target_table_index or "",

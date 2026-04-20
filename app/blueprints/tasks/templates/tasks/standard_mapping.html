@@ -1052,6 +1052,18 @@
                 {% endfor %}
               </select>
             </div>
+            <div>
+              <label class="form-label fw-bold">
+                <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
+                Regulation (EU) 2017/745 參照表
+              </label>
+              <select class="form-select form-control-custom rounded-2" name="harmonised_excel_path" id="harmonisedExcelPathSelect">
+                <option value="">請選擇 Excel 檔案</option>
+                {% for item in excel_options %}
+                  <option value="{{ item }}" {% if item == selected_harmonised_excel %}selected{% endif %}>{{ item }}</option>
+                {% endfor %}
+              </select>
+            </div>
           </div>
           <div class="standard-priority-panel">
             <details class="standard-settings-group">
@@ -1434,6 +1446,7 @@
     <form id="downloadForm" action="{{ url_for('tasks_bp.task_standard_mapping_download', task_id=task_id) }}" method="post">
       <input type="hidden" name="word_path" value="{{ selected_word }}">
       <input type="hidden" name="excel_path" value="{{ selected_excel }}">
+      <input type="hidden" name="harmonised_excel_path" value="{{ selected_harmonised_excel }}">
       {% for label, field_name in standard_priority_fields.items() %}
         <input type="hidden" name="{{ field_name }}" value="{{ iso_priority_positions[label] }}">
       {% endfor %}
@@ -1514,6 +1527,9 @@
       const excelSelect = document.querySelector('select[name="excel_path"]');
       const excelPath = (excelSelect?.value || "").trim();
       if (excelPath) params.set("excel_path", excelPath);
+      const harmonisedExcelSelect = document.querySelector('select[name="harmonised_excel_path"]');
+      const harmonisedExcelPath = (harmonisedExcelSelect?.value || "").trim();
+      if (harmonisedExcelPath) params.set("harmonised_excel_path", harmonisedExcelPath);
       document.querySelectorAll('select[name^="priority_"]').forEach((select) => {
         if (select.value) params.set(select.name, select.value);
       });
@@ -1769,6 +1785,7 @@
     if (!acc[rowKey]) acc[rowKey] = {};
     if (meta.field_label === "Standards") acc[rowKey].standards = referenceKey;
     if (meta.field_label === "Issued Year") acc[rowKey].issuedYear = referenceKey;
+    if (meta.field_label === "EU Harmonised Standards under MDR 2017/745 (YES/NO)") acc[rowKey].harmonised = referenceKey;
     if (meta.field_label === "Title") acc[rowKey].title = referenceKey;
     return acc;
   }, {});
@@ -1813,6 +1830,7 @@
       meta.excel_row_index = selectedCandidate.excel_row_index || "";
       meta.matched_standard_no = selectedCandidate.matched_standard_no || "";
       meta.matched_display_standard_no = selectedCandidate.matched_display_standard_no || selectedCandidate.matched_standard_no || "";
+      meta.matched_harmonised = selectedCandidate.candidate_harmonised || meta.matched_harmonised || "";
       meta.matched_title = selectedCandidate.matched_title || meta.matched_title || "";
       meta.excel_year = selectedCandidate.latest_year || "";
     }
@@ -1903,6 +1921,19 @@
     return buildDiffSegments(source, target);
   }
 
+  function buildPreserveOriginalSegments(oldText, newText) {
+    const source = normalizeText(oldText);
+    const target = normalizeText(newText);
+    if (source === target) return [{ text: target, isRed: false }];
+    if (!source) return [{ text: target, isRed: true }];
+    if (!target) return [{ text: source, isRed: false }];
+    return mergeSegments([
+      { text: source, isRed: false },
+      { text: " ", isRed: false },
+      { text: target, isRed: true },
+    ]);
+  }
+
   function renderSegmentsHtml(segments) {
     return segments.map((segment) => {
       const escaped = escapeHtml(segment.text).replaceAll("\n", "<br>");
@@ -1961,6 +1992,16 @@
           refreshCellOverflow(issuedYearCell);
         }
       }
+      if (keys.harmonised) {
+        const harmonisedCell = document.querySelector(`[data-reference-key="${CSS.escape(keys.harmonised)}"]`);
+        if (harmonisedCell && Object.prototype.hasOwnProperty.call(originalCellHtml, keys.harmonised)) {
+          const harmonisedContent = harmonisedCell.querySelector(".preview-cell__content");
+          if (harmonisedContent) {
+            harmonisedContent.innerHTML = originalCellHtml[keys.harmonised];
+          }
+          refreshCellOverflow(harmonisedCell);
+        }
+      }
       if (keys.title) {
         const titleCell = document.querySelector(`[data-reference-key="${CSS.escape(keys.title)}"]`);
         if (titleCell && Object.prototype.hasOwnProperty.call(originalCellHtml, keys.title)) {
@@ -1979,6 +2020,7 @@
 
     const standardsMeta = keys.standards ? getEffectiveMeta(keys.standards) : null;
     const issuedYearMeta = keys.issuedYear ? getEffectiveMeta(keys.issuedYear) : null;
+    const harmonisedMeta = keys.harmonised ? getEffectiveMeta(keys.harmonised) : null;
     const titleMeta = keys.title ? getEffectiveMeta(keys.title) : null;
     if (standardsMeta && keys.standards) {
       const cell = document.querySelector(`[data-reference-key="${CSS.escape(keys.standards)}"]`);
@@ -2000,6 +2042,18 @@
         const content = cell.querySelector(".preview-cell__content");
         if (content) {
           content.innerHTML = renderSegmentsHtml(buildYearSegments(oldYear, newYear));
+        }
+        refreshCellOverflow(cell);
+      }
+    }
+    if (harmonisedMeta && keys.harmonised) {
+      const cell = document.querySelector(`[data-reference-key="${CSS.escape(keys.harmonised)}"]`);
+      if (cell) {
+        const oldHarmonised = harmonisedMeta.word_harmonised || "";
+        const newHarmonised = harmonisedMeta.matched_harmonised || oldHarmonised;
+        const content = cell.querySelector(".preview-cell__content");
+        if (content) {
+          content.innerHTML = renderSegmentsHtml(buildPreserveOriginalSegments(oldHarmonised, newHarmonised));
         }
         refreshCellOverflow(cell);
       }

@@ -7,6 +7,7 @@ import re
 import tempfile
 import zipfile
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from lxml import etree
 from openpyxl import load_workbook
@@ -94,6 +95,7 @@ HEADER_KEYWORDS = {
 }
 
 EXCEL_TITLE_HEADER_ALIASES = ("標準名稱", "TITLE", "STANDARD TITLE")
+HARMONISED_REFERENCE_HEADERS = ("Reference and title Provision",)
 
 
 def qn(tag: str) -> str:
@@ -112,6 +114,62 @@ def normalize_text(text: str) -> str:
 
 def normalize_standard_text(text: str) -> str:
     return normalize_text(text).replace("：", ":").replace("／", "/").replace("＋", "+")
+
+
+def normalize_harmonised_identifier(text: str) -> str:
+    normalized = normalize_standard_text(text).upper()
+    collapsed = re.sub(r"\s*([:/+()-])\s*", r"\1", normalized)
+    collapsed = re.sub(r"\s+", " ", collapsed).strip()
+    return collapsed.strip()
+
+
+def normalize_harmonised_standard_text(text: str, title: str = "") -> str:
+    raw_text = "" if text is None else str(text).replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+    first_line = lines[0] if lines else ""
+    return normalize_harmonised_identifier(first_line)
+
+
+def extract_harmonised_reference_entries(text: str) -> list[str]:
+    raw_text = "" if text is None else str(text).replace("\r\n", "\n").replace("\r", "\n")
+    entries: list[str] = []
+    for line in raw_text.split("\n"):
+        normalized_line = normalize_harmonised_identifier(line)
+        if not normalized_line:
+            continue
+        if re.match(r"^(?:EN|ISO|BS|DIN|IEC|ASTM)\b", normalized_line):
+            entries.append(normalized_line)
+    return entries
+
+
+def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> set[str]:
+    path = Path(reference_path or "download.xlsx")
+    if not path.is_file():
+        return set()
+    wb = load_workbook(path, data_only=True, read_only=True)
+    try:
+        lookup: set[str] = set()
+        for ws in wb.worksheets:
+            rows = list(ws.iter_rows(min_row=1, max_row=min(10, ws.max_row), values_only=True))
+            col_index = find_excel_header_col_index(rows, HARMONISED_REFERENCE_HEADERS)
+            if col_index is None:
+                continue
+            for row in ws.iter_rows(min_row=1, values_only=True):
+                values = list(row or [])
+                value = values[col_index] if col_index < len(values) else None
+                for normalized in extract_harmonised_reference_entries(value):
+                    if normalized != normalize_harmonised_standard_text(HARMONISED_REFERENCE_HEADERS[0]):
+                        lookup.add(normalized)
+        return lookup
+    finally:
+        wb.close()
+
+
+def is_harmonised_standard(std_no: str, title: str, harmonised_reference_index: set[str] | None) -> bool:
+    if not harmonised_reference_index:
+        return False
+    normalized = normalize_harmonised_standard_text(std_no)
+    return bool(normalized and normalized in harmonised_reference_index)
 
 
 def normalize_key_for_search(text: str) -> str:
@@ -150,6 +208,18 @@ def find_excel_title_col_index(rows: list[tuple | list]) -> int | None:
             if not cell_text:
                 continue
             if any(text_matches_manual_header(cell_text, alias) for alias in EXCEL_TITLE_HEADER_ALIASES):
+                return index
+    return None
+
+
+def find_excel_header_col_index(rows: list[tuple | list], aliases: tuple[str, ...]) -> int | None:
+    for row in rows[:10]:
+        values = list(row or [])
+        for index, value in enumerate(values):
+            cell_text = normalize_text(value)
+            if not cell_text:
+                continue
+            if any(text_matches_manual_header(cell_text, alias) for alias in aliases):
                 return index
     return None
 
@@ -404,6 +474,22 @@ def build_year_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
     return build_diff_segments(old_text, new_text)
 
 
+def build_preserve_original_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
+    old_text = normalize_text(old_text)
+    new_text = normalize_text(new_text)
+    if old_text == new_text:
+        return [(new_text, False)]
+    if not old_text:
+        return [(new_text, True)]
+    if not new_text:
+        return [(old_text, False)]
+    return merge_text_segments([
+        (old_text, False),
+        (" ", False),
+        (new_text, True),
+    ])
+
+
 def get_first_run_properties(tc: etree._Element) -> etree._Element | None:
     rpr = tc.find(".//w:r/w:rPr", namespaces=NS)
     return copy.deepcopy(rpr) if rpr is not None else None
@@ -584,7 +670,7 @@ def build_sheet_records(ws, std_col_index: int = EXCEL_STANDARD_COL_INDEX) -> li
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         return []
-    title_col_index = find_excel_title_col_index(rows)
+    title_col_index = find_excel_header_col_index(rows, EXCEL_TITLE_HEADER_ALIASES)
     records = []
     for row_idx, row in enumerate(rows[1:], start=2):
         if row is None:
@@ -629,6 +715,7 @@ def find_latest_year_from_excel(
     standard_name: str,
     excel_index: dict,
     iso_priority: list[str] | tuple[str, ...] | None = None,
+    harmonised_reference_index: set[str] | None = None,
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
 ) -> dict | None:
     family = detect_search_family(standard_name)
@@ -669,6 +756,7 @@ def find_latest_year_from_excel(
                 "matched_standard_no": rec["standard_no"],
                 "matched_display_standard_no": rec["standard_display_no"],
                 "matched_title": build_title_with_amendment(rec.get("standard_title", ""), rec["standard_no"]),
+                "candidate_harmonised": "Yes" if is_harmonised_standard(rec["standard_no"], rec.get("standard_title", ""), harmonised_reference_index) else "No",
                 "latest_year": year,
                 "standard_level": rec["standard_level"],
                 "standard_level_rank": rec["standard_level_rank"],
@@ -748,6 +836,11 @@ def find_latest_year_from_excel(
     result["all_candidates"] = ordered_candidates
     result["selected_candidate_id"] = make_candidate_id(selected)
     result["auto_selected_candidate_id"] = make_candidate_id(selected)
+    result["matched_harmonised"] = "Yes" if is_harmonised_standard(
+        selected["matched_standard_no"],
+        selected.get("matched_title", ""),
+        harmonised_reference_index,
+    ) else "No"
     result["iso_priority"] = list(normalized_iso_priority)
     result["prefer_latest_en_variants"] = prefer_latest_en_variants
     return result
@@ -1269,6 +1362,7 @@ def parse_word_tables_for_update(
                     "title": title_text,
                     "standards_tc": get_tc_at(standards_col),
                     "issued_year_tc": get_tc_at(issued_year_col),
+                    "harmonised_tc": get_tc_at(harmonised_col),
                     "title_tc": get_tc_at(title_col),
                 })
     return tree, all_records
@@ -1382,6 +1476,9 @@ def build_preview_tables(
                     elif row_meta and label == "Issued Year":
                         reference_key = f"{row_meta['row_key']}:issued_year"
                         reference_payload[reference_key] = {**row_meta, "field_label": "Issued Year"}
+                    elif row_meta and label == "EU Harmonised Standards under MDR 2017/745 (YES/NO)":
+                        reference_key = f"{row_meta['row_key']}:harmonised"
+                        reference_payload[reference_key] = {**row_meta, "field_label": "EU Harmonised Standards under MDR 2017/745 (YES/NO)"}
                     elif row_meta and label == "Title":
                         reference_key = f"{row_meta['row_key']}:title"
                         reference_payload[reference_key] = {**row_meta, "field_label": "Title"}
@@ -1446,6 +1543,7 @@ def inspect_document_tables(
 def process_document(
     word_path: str,
     excel_path: str,
+    harmonised_reference_path: str | None = None,
     override_map: dict | None = None,
     output_path: str | None = None,
     iso_priority: list[str] | tuple[str, ...] | None = None,
@@ -1460,6 +1558,7 @@ def process_document(
     normalized_required_headers = normalize_required_headers(required_headers)
     normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
     excel_index = load_excel_index(excel_path)
+    harmonised_reference_index = load_harmonised_reference_index(harmonised_reference_path)
     with tempfile.TemporaryDirectory() as tmpdir:
         unzip_docx(word_path, tmpdir)
         document_xml_path = os.path.join(tmpdir, "word", "document.xml")
@@ -1489,11 +1588,13 @@ def process_document(
             row_key = make_row_key(rec["table_index"], rec["row_index"])
             standards = rec["standards"]
             word_year_text = normalize_text(rec["issued_year"])
+            word_harmonised_text = normalize_text(rec["harmonised"])
             word_title_text = normalize_text(rec["title"])
             match_info = find_latest_year_from_excel(
                 standards,
                 excel_index,
                 normalized_iso_priority,
+                harmonised_reference_index=harmonised_reference_index,
                 prefer_latest_en_variants=prefer_latest_en_variants,
             )
             if match_info:
@@ -1510,10 +1611,12 @@ def process_document(
                     "excel_row_index": "",
                     "matched_standard_no": "",
                     "matched_display_standard_no": "",
+                    "matched_harmonised": "",
                     "matched_title": "",
                     "excel_year": "",
                     "word_standard": standards,
                     "word_year": word_year_text,
+                    "word_harmonised": word_harmonised_text,
                     "word_title": word_title_text,
                     "all_candidates": [],
                     "selected_candidate_id": "",
@@ -1535,19 +1638,23 @@ def process_document(
             latest_year = str(match_info["latest_year"])
             matched_standard_no = match_info["matched_standard_no"]
             matched_display_standard_no = match_info["matched_display_standard_no"]
+            matched_harmonised = normalize_text(match_info.get("matched_harmonised", ""))
             matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(matched_display_standard_no)
             year_needs_update = word_year_text != latest_year
+            harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(matched_harmonised)
             title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(matched_title)
 
             if standards_needs_update and rec["standards_tc"] is not None:
                 rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, matched_display_standard_no))
             if year_needs_update and rec["issued_year_tc"] is not None:
                 rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, latest_year))
+            if harmonised_needs_update and rec["harmonised_tc"] is not None:
+                rebuild_cell_with_segments(rec["harmonised_tc"], build_preserve_original_segments(word_harmonised_text, matched_harmonised))
             if title_needs_update and rec["title_tc"] is not None:
                 rebuild_cell_with_segments(rec["title_tc"], build_diff_segments(word_title_text, matched_title))
 
-            row_updated = standards_needs_update or year_needs_update or title_needs_update
+            row_updated = standards_needs_update or year_needs_update or harmonised_needs_update or title_needs_update
             if row_updated:
                 updated_count += 1
 
@@ -1560,10 +1667,12 @@ def process_document(
                 "excel_row_index": match_info["excel_row_index"],
                 "matched_standard_no": matched_standard_no,
                 "matched_display_standard_no": matched_display_standard_no,
+                "matched_harmonised": matched_harmonised,
                 "matched_title": matched_title,
                 "excel_year": latest_year,
                 "word_standard": standards,
                 "word_year": word_year_text,
+                "word_harmonised": word_harmonised_text,
                 "word_title": word_title_text,
                 "all_candidates": match_info.get("all_candidates", []),
                 "selected_candidate_id": match_info.get("selected_candidate_id", ""),
@@ -1596,6 +1705,7 @@ def process_document(
             "updated_count": updated_count,
             "preview_tables": preview_tables,
             "reference_payload": reference_payload,
+            "harmonised_reference_path": normalize_text(harmonised_reference_path or ""),
             "iso_priority": list(normalized_iso_priority),
             "prefer_latest_en_variants": prefer_latest_en_variants,
             "required_headers": list(normalized_required_headers),

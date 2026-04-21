@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block enable_sidebar %}false{% endblock %}
+{% block content %}
+<style>
+  .launcher-shell {
+    min-height: calc(100vh - 140px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .launcher-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 280px));
+    gap: 2rem;
+    justify-content: center;
+    width: 100%;
+  }
+  .launcher-card {
+    border: 0;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .launcher-card__tile {
+    background: linear-gradient(145deg, #5ec3a0 0%, #43b48c 100%);
+    border-radius: 1rem;
+    min-height: 180px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .launcher-card:hover .launcher-card__tile,
+  .launcher-card:focus-visible .launcher-card__tile {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.2);
+  }
+  .launcher-card__icon {
+    font-size: 4rem;
+    color: #fff;
+    line-height: 1;
+  }
+  .launcher-card__label {
+    margin-top: 1rem;
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--app-text);
+  }
+  .launcher-intro {
+    text-align: center;
+    margin-bottom: 2.5rem;
+  }
+  .launcher-intro p {
+    color: var(--bs-gray-500);
+    margin-bottom: 0;
+  }
+  @media (max-width: 767.98px) {
+    .launcher-grid {
+      grid-template-columns: 1fr;
+      max-width: 320px;
+    }
+    .launcher-card__tile {
+      min-height: 160px;
+    }
+  }
+</style>
+
+<section class="launcher-shell">
+  <div class="w-100">
+    <div class="launcher-intro">
+      <h1 class="h3 fw-bold mb-2">功能入口</h1>
+      <p>登入後先選擇要進入的工作區。</p>
+    </div>
+    <div class="launcher-grid">
+      <a class="launcher-card" href="{{ url_for('tasks_bp.tasks') }}">
+        <div class="launcher-card__tile">
+          <i class="bi bi-list-task launcher-card__icon" aria-hidden="true"></i>
+        </div>
+        <div class="launcher-card__label">任務管理</div>
+      </a>
+      <a class="launcher-card" href="{{ url_for('standard_updates_bp.list') }}">
+        <div class="launcher-card__tile">
+          <i class="bi bi-arrow-repeat launcher-card__icon" aria-hidden="true"></i>
+        </div>
+        <div class="launcher-card__label">標準更新</div>
+      </a>
+    </div>
+  </div>
+</section>
+{% endblock %}

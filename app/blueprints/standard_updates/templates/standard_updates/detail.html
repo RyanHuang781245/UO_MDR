@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  .detail-grid .main-card {
+    margin-bottom: 0;
+  }
+  .detail-meta-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--app-border);
+  }
+  .detail-meta-row:last-child {
+    border-bottom: 0;
+  }
+  @media (max-width: 991.98px) {
+    .detail-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="container-fluid px-0">
+  <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+    <div>
+      <h1 class="h3 mb-1 fw-bold">{{ task.name }}</h1>
+      <p class="text-muted mb-0 small">{{ task.description or '尚未填寫描述' }}</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('standard_updates_bp.list') }}">
+        <i class="bi bi-arrow-left"></i>
+        返回列表
+      </a>
+      <a class="btn btn-primary d-inline-flex align-items-center gap-2 {% if not is_ready %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
+        <i class="bi bi-arrow-repeat"></i>
+        進入預覽
+      </a>
+    </div>
+  </div>
+
+  <div class="detail-grid">
+    <div class="main-card p-4">
+      <h5 class="fw-bold mb-3">基本資訊</h5>
+      <div class="detail-meta-row">
+        <span class="text-muted">建立人員</span>
+        <span>{{ task.creator_name or '-' }}</span>
+      </div>
+      <div class="detail-meta-row">
+        <span class="text-muted">建立時間</span>
+        <span class="font-monospace">{{ task.created or '-' }}</span>
+      </div>
+      <div class="detail-meta-row">
+        <span class="text-muted">狀態</span>
+        <span>{{ task.status or '-' }}</span>
+      </div>
+      <div class="detail-meta-row">
+        <span class="text-muted">最近輸出</span>
+        <span class="text-break text-end">{{ task.last_output_path or '-' }}</span>
+      </div>
+      <div class="detail-meta-row">
+        <span class="text-muted">使用 harmonised 版本</span>
+        <span>{{ task.harmonised_snapshot_version or '-' }}</span>
+      </div>
+    </div>
+
+    <div class="main-card p-4">
+      <h5 class="fw-bold mb-3">系統 Harmonised Excel</h5>
+      {% if harmonised_release %}
+        <div class="detail-meta-row">
+          <span class="text-muted">檔名</span>
+          <span class="text-break text-end">{{ harmonised_release.file_name }}</span>
+        </div>
+        <div class="detail-meta-row">
+          <span class="text-muted">版本</span>
+          <span>{{ harmonised_release.version_label or '-' }}</span>
+        </div>
+        <div class="detail-meta-row">
+          <span class="text-muted">更新時間</span>
+          <span class="font-monospace">{{ harmonised_release.downloaded_at or '-' }}</span>
+        </div>
+        <div class="small text-muted mt-3">此欄位目前固定使用系統最新版，不需手動上傳。</div>
+      {% else %}
+        <div class="alert alert-warning mb-0">目前找不到系統 harmonised Excel，請先確認同步排程或指定資料夾。</div>
+      {% endif %}
+    </div>
+
+    <div class="main-card p-4">
+      <h5 class="fw-bold mb-3">Word 文件</h5>
+      <form action="{{ url_for('standard_updates_bp.upload_word', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-3">
+        <input class="form-control form-control-custom" type="file" name="word_file" accept=".docx" required>
+        {% if task.word_file_path %}
+        <div class="small text-muted">目前檔案：{{ task.word_file_path }}</div>
+        {% else %}
+        <div class="small text-muted">尚未上傳 Word 文件。</div>
+        {% endif %}
+        <button class="btn btn-primary align-self-start" type="submit">上傳 Word</button>
+      </form>
+    </div>
+
+    <div class="main-card p-4">
+      <h5 class="fw-bold mb-3">標準 Excel</h5>
+      <form action="{{ url_for('standard_updates_bp.upload_standard_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-3">
+        <input class="form-control form-control-custom" type="file" name="standard_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
+        {% if task.standard_excel_path %}
+        <div class="small text-muted">目前檔案：{{ task.standard_excel_path }}</div>
+        {% else %}
+        <div class="small text-muted">尚未上傳標準 Excel。</div>
+        {% endif %}
+        <button class="btn btn-primary align-self-start" type="submit">上傳 Excel</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

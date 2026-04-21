@@ -29,12 +29,10 @@ from app.services.user_context_service import get_actor_info as _get_actor_info
 from .blueprint import tasks_bp
 
 
-@tasks_bp.get("/", endpoint="tasks")
-def tasks():
+def _build_task_listing_context() -> dict:
     task_list_all = list_tasks()
     pin_scope_key, _ = _get_actor_info()
-    
-    # Pagination
+
     page = request.args.get("page", 1, type=int)
     per_page = 10
     total_count = len(task_list_all)
@@ -49,21 +47,36 @@ def tasks():
         "has_prev": page > 1,
         "has_next": page < total_pages
     }
-    
+
     for t in task_list:
         meta = {
             "creator_work_id": t.get("creator_work_id", ""),
             "creator": t.get("creator", ""),
         }
         t["can_delete"] = _can_delete_task(meta)
-    return render_template(
-        "tasks/tasks.html",
-        tasks=task_list,
-        pagination=pagination,
-        all_task_ids=[(t.get("id") or "").strip() for t in task_list_all if (t.get("id") or "").strip()],
-        pin_scope_key=pin_scope_key or "anonymous",
-        allowed_nas_roots=get_configured_nas_roots(),
-    )
+    return {
+        "tasks": task_list,
+        "pagination": pagination,
+        "all_task_ids": [(t.get("id") or "").strip() for t in task_list_all if (t.get("id") or "").strip()],
+        "pin_scope_key": pin_scope_key or "anonymous",
+        "allowed_nas_roots": get_configured_nas_roots(),
+        "total_tasks": total_count,
+    }
+
+
+@tasks_bp.get("/", endpoint="launcher")
+def launcher():
+    return render_template("tasks/launcher.html")
+
+
+@tasks_bp.get("/tasks", endpoint="tasks")
+def tasks():
+    return render_template("tasks/tasks.html", **_build_task_listing_context())
+
+
+@tasks_bp.get("/standards-legacy", endpoint="standards")
+def standards():
+    return render_template("tasks/standards.html", **_build_task_listing_context())
 
 @tasks_bp.post("/tasks", endpoint="create_task")
 def create_task():

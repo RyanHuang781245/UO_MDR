@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block enable_sidebar %}false{% endblock %}
+{% block content %}
+<style>
+  .standard-task-name {
+    font-weight: 700;
+    color: var(--app-text);
+    text-decoration: none;
+  }
+  .standard-task-name:hover {
+    color: var(--bs-blue-600);
+  }
+  .system-release-card {
+    border: 1px solid var(--bs-blue-100);
+    background: linear-gradient(180deg, var(--bs-blue-50) 0%, #ffffff 100%);
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+  }
+</style>
+
+<div class="container-fluid px-0">
+  <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+    <div>
+      <h1 class="h3 mb-1 fw-bold">標準更新任務</h1>
+      <p class="text-muted mb-0 small">標準更新已獨立成專屬任務模組。建立任務後，上傳 Word 與標準 Excel 即可進入預覽與下載流程。</p>
+    </div>
+    <a class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.launcher') }}">
+      <i class="bi bi-grid"></i>
+      返回功能入口
+    </a>
+  </div>
+
+  <div class="system-release-card">
+    <div class="fw-bold mb-1">Regulation (EU) 2017/745 採認標準</div>
+    {% if harmonised_release %}
+      <div class="small text-muted">目前使用：{{ harmonised_release.file_name }}{% if harmonised_release.version_label %} / 版本 {{ harmonised_release.version_label }}{% endif %}</div>
+      <div class="small text-muted">更新時間：{{ harmonised_release.downloaded_at or '-' }}</div>
+    {% else %}
+      <div class="small text-danger">目前找不到系統 harmonised Excel，建立任務後仍無法執行標準更新。</div>
+    {% endif %}
+  </div>
+
+  <div class="main-card p-4 mb-4">
+    <form action="{{ url_for('standard_updates_bp.list') }}" method="post">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label small fw-bold text-uppercase text-muted">任務名稱</label>
+          <input class="form-control form-control-custom rounded-2" name="name" placeholder="輸入標準更新任務名稱" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small fw-bold text-uppercase text-muted">描述</label>
+          <input class="form-control form-control-custom rounded-2" name="description" placeholder="輸入任務描述">
+        </div>
+        <div class="col-md-2 d-grid align-items-end">
+          <button class="btn btn-primary fw-bold" type="submit">
+            <i class="bi bi-plus-lg me-1"></i>
+            建立任務
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div class="main-card">
+    <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
+      <h5 class="fw-bold mb-0">現有標準更新任務</h5>
+      <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆任務 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
+    </div>
+    <div class="table-responsive">
+      <table class="table mb-0 align-middle">
+        <thead>
+          <tr>
+            <th class="text-start ps-4" style="width: 25%;">任務名稱</th>
+            <th class="text-start">描述</th>
+            <th style="width: 14%;">建立人員</th>
+            <th style="width: 16%;">建立時間</th>
+            <th style="width: 12%;">狀態</th>
+            <th style="width: 18%;">使用版本</th>
+            <th style="width: 15%;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td class="text-start ps-4">
+              <a class="standard-task-name d-block" href="{{ url_for('standard_updates_bp.detail', task_id=item.id) }}">{{ item.name }}</a>
+            </td>
+            <td class="text-start text-muted">{{ item.description or '-' }}</td>
+            <td class="text-muted">{{ item.creator_name or '-' }}</td>
+            <td class="text-muted font-monospace">{{ item.created or '-' }}</td>
+            <td>
+              <span class="status-badge {% if item.status in ['completed'] %}status-badge-completed{% elif item.status in ['failed'] %}status-badge-failed{% else %}status-badge-running{% endif %}">
+                <i class="bi {% if item.status == 'completed' %}bi-check-circle{% elif item.status == 'failed' %}bi-exclamation-circle{% else %}bi-clock-history{% endif %}"></i>
+                {{ item.status }}
+              </span>
+            </td>
+            <td class="text-muted small">{{ item.harmonised_snapshot_version or '-' }}</td>
+            <td>
+              <div class="d-flex justify-content-center gap-1">
+                <a class="btn-action-icon" href="{{ url_for('standard_updates_bp.detail', task_id=item.id) }}" title="查看詳情">
+                  <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span>
+                </a>
+                <form action="{{ url_for('standard_updates_bp.delete', task_id=item.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除標準更新任務「{{ item.name }}」?')">
+                  <button class="btn-action-icon text-danger" type="submit" title="刪除任務">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="text-center py-5 text-muted">
+              <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+              目前沒有標準更新任務
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if pagination.total_pages > 1 %}
+    <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+      <nav>
+        <ul class="pagination pagination-sm mb-0 gap-1">
+          <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link rounded-2" href="{{ url_for('standard_updates_bp.list', page=pagination.page-1) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+          </li>
+          {% for p in range(1, pagination.total_pages + 1) %}
+            {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
+            <li class="page-item {% if p == pagination.page %}active{% endif %}">
+              <a class="page-link rounded-2" href="{{ url_for('standard_updates_bp.list', page=p) }}">{{ p }}</a>
+            </li>
+            {% endif %}
+          {% endfor %}
+          <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link rounded-2" href="{{ url_for('standard_updates_bp.list', page=pagination.page+1) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

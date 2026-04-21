@@ -14,16 +14,19 @@ from .flows import (
     register_flow_routes,
 )
 from .nas import nas_bp, register_nas_routes
+from .standard_updates import register_standard_update_routes, standard_updates_bp
 from .tasks import register_task_routes, tasks_bp
 
 
 def register_blueprints(app) -> None:
     register_auth_routes()
     register_nas_routes()
+    register_standard_update_routes()
     register_task_routes()
     register_flow_routes()
     app.register_blueprint(auth_bp)
     app.register_blueprint(nas_bp)
+    app.register_blueprint(standard_updates_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(flow_builder_bp)
     app.register_blueprint(flow_crud_bp)

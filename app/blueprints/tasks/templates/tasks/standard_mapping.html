@@ -991,8 +991,8 @@
 
 <div class="container-fluid px-0">
   <div class="mb-3">
-    <h1 class="h3 mb-1 fw-bold">標準清單更新</h1>
-    <p class="text-muted mb-0 small">請先選擇要更新的 Word 標準清單與 Excel 標準總表，下方設置可調整標準比對的優先選用規則、限制處理特定章節內的表格。未調整時，系統會依預設配置直接產生預覽與下載結果</p>
+    <h1 class="h3 mb-1 fw-bold">{{ page_title or '標準清單更新' }}</h1>
+    <p class="text-muted mb-0 small">{{ page_description or '請先選擇要更新的 Word 標準清單與 Excel 標準總表，下方設置可調整標準比對的優先選用規則、限制處理特定章節內的表格。未調整時，系統會依預設配置直接產生預覽與下載結果' }}</p>
   </div>
   <details class="standard-source-panel mb-3" {% if not has_preview %}open{% endif %}>
     <summary>
@@ -1020,10 +1020,10 @@
         <div class="alert alert-warning mb-0">
           {% if not word_options %}找不到可用的 Word 檔。{% endif %}
           {% if not word_options and not excel_options %}<br>{% endif %}
-          {% if not excel_options %}找不到可用的 Excel 標準總表。請先把檔案放進此任務的 `files` 目錄。{% endif %}
+          {% if not excel_options %}找不到可用的 Excel 標準總表。{{ missing_file_hint or '請先把檔案放進此任務的 `files` 目錄。' }}{% endif %}
         </div>
       {% else %}
-        <form id="standardMappingConfigForm" method="post" action="{{ url_for('tasks_bp.task_standard_mapping', task_id=task_id) }}" class="vstack gap-3">
+        <form id="standardMappingConfigForm" method="post" action="{{ url_for(mapping_route_endpoint or 'tasks_bp.task_standard_mapping', task_id=task_id) }}" class="vstack gap-3">
           <div class="standard-form-grid">
             <div class="standard-form-grid__full">
               <label class="form-label fw-bold">
@@ -1034,7 +1034,7 @@
                 class="form-select form-control-custom rounded-2"
                 id="wordPathSelect"
                 name="word_path"
-                data-refresh-url="{{ url_for('tasks_bp.task_standard_mapping', task_id=task_id) }}"
+                data-refresh-url="{{ url_for(mapping_route_endpoint or 'tasks_bp.task_standard_mapping', task_id=task_id) }}"
                 required
               >
                 <option value="">請選擇 Word 檔案</option>
@@ -1060,12 +1060,20 @@
                 <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
                 Regulation (EU) 2017/745 參照表
               </label>
+              {% if use_system_harmonised %}
+              <div class="form-control form-control-custom rounded-2 d-flex justify-content-between align-items-center gap-3">
+                <div class="text-truncate">{{ harmonised_system_release.file_name if harmonised_system_release else '尚未找到系統 harmonised Excel' }}</div>
+                <span class="badge text-bg-light border">{{ harmonised_system_release.version_label if harmonised_system_release and harmonised_system_release.version_label else 'system' }}</span>
+              </div>
+              <div class="form-text">目前固定使用系統最新版 harmonised Excel。</div>
+              {% else %}
               <select class="form-select form-control-custom rounded-2" name="harmonised_excel_path" id="harmonisedExcelPathSelect">
                 <option value="">請選擇 Excel 檔案</option>
                 {% for item in excel_options %}
                   <option value="{{ item }}" {% if item == selected_harmonised_excel %}selected{% endif %}>{{ item }}</option>
                 {% endfor %}
               </select>
+              {% endif %}
             </div>
           </div>
           <div class="standard-priority-panel">
@@ -1446,10 +1454,12 @@
       <div id="standardPreviewEmpty" class="standard-preview-empty">目前篩選條件下沒有符合的列。</div>
     </div>
 
-    <form id="downloadForm" action="{{ url_for('tasks_bp.task_standard_mapping_download', task_id=task_id) }}" method="post">
+    <form id="downloadForm" action="{{ url_for(mapping_download_endpoint or 'tasks_bp.task_standard_mapping_download', task_id=task_id) }}" method="post">
       <input type="hidden" name="word_path" value="{{ selected_word }}">
       <input type="hidden" name="excel_path" value="{{ selected_excel }}">
+      {% if not use_system_harmonised %}
       <input type="hidden" name="harmonised_excel_path" value="{{ selected_harmonised_excel }}">
+      {% endif %}
       {% for label, field_name in standard_priority_fields.items() %}
         <input type="hidden" name="{{ field_name }}" value="{{ iso_priority_positions[label] }}">
       {% endfor %}

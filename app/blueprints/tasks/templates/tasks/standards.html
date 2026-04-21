@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block enable_sidebar %}false{% endblock %}
+{% block content %}
+<style>
+  .standards-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .standards-task-name {
+    font-weight: 700;
+    color: var(--app-text);
+    text-decoration: none;
+  }
+  .standards-task-name:hover {
+    color: var(--bs-blue-600);
+  }
+  .standards-empty {
+    padding: 3rem 1.5rem;
+    text-align: center;
+    color: var(--bs-gray-500);
+  }
+  @media (max-width: 767.98px) {
+    .standards-hero {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+</style>
+
+<div class="container-fluid px-0">
+  <div class="standards-hero">
+    <div>
+      <h1 class="h3 mb-1 fw-bold">標準更新</h1>
+      <p class="text-muted mb-0 small">標準更新已從任務頁面拆出。先選擇任務，再進入該任務的標準更新工作區。</p>
+    </div>
+    <a class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.launcher') }}">
+      <i class="bi bi-grid"></i>
+      返回功能入口
+    </a>
+  </div>
+
+  <div class="main-card">
+    <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
+      <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+        <div class="fw-semibold">可用任務</div>
+        <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆任務 (第 {{ pagination.page }} / {{ pagination.total_pages or 1 }} 頁)</div>
+      </div>
+      <div class="toolbar-container border-0 p-0" style="min-height: auto;">
+        <div class="filter-bar">
+          <div class="search-wrapper">
+            <i class="bi bi-search"></i>
+            <input type="text" id="standardTaskSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋任務名稱、描述或建立人員...">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table mb-0 align-middle">
+        <thead>
+          <tr>
+            <th class="text-start" style="width: 28%;">任務名稱</th>
+            <th class="text-start">任務描述</th>
+            <th style="width: 16%;">建立人員</th>
+            <th style="width: 18%;">建立時間</th>
+            <th style="width: 18%;">操作</th>
+          </tr>
+        </thead>
+        <tbody id="standardTaskTableBody">
+          {% for t in tasks %}
+          <tr class="standard-task-row">
+            <td class="text-start">
+              <a class="standards-task-name d-block" href="{{ url_for('tasks_bp.task_standard_mapping', task_id=t.id) }}">{{ t.name }}</a>
+              <div class="d-none task-search-name">{{ t.name }}</div>
+            </td>
+            <td class="text-start text-muted">
+              <span class="task-search-desc">{{ t.description or '-' }}</span>
+            </td>
+            <td class="text-muted">{{ t.creator or '-' }}</td>
+            <td class="text-muted font-monospace">{{ t.created }}</td>
+            <td>
+              <div class="d-flex justify-content-center gap-2">
+                <a class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_standard_mapping', task_id=t.id) }}">
+                  <i class="bi bi-arrow-repeat"></i>
+                  進入標準更新
+                </a>
+                <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}">
+                  <i class="bi bi-info-circle"></i>
+                  任務詳情
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="standards-empty">
+              <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+              目前沒有可用任務，請先到任務管理建立任務。
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pagination.total_pages > 1 %}
+    <div class="px-4 py-3 d-flex justify-content-center align-items-center border-top bg-light bg-opacity-50">
+      <nav>
+        <ul class="pagination pagination-sm mb-0 gap-1">
+          <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.standards', page=pagination.page-1) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+          </li>
+          {% for p in range(1, pagination.total_pages + 1) %}
+            {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
+            <li class="page-item {% if p == pagination.page %}active{% endif %}">
+              <a class="page-link rounded-2" href="{{ url_for('tasks_bp.standards', page=p) }}">{{ p }}</a>
+            </li>
+            {% endif %}
+          {% endfor %}
+          <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.standards', page=pagination.page+1) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const searchInput = document.getElementById("standardTaskSearchInput");
+    const rows = Array.from(document.querySelectorAll(".standard-task-row"));
+    if (!searchInput || !rows.length) return;
+
+    searchInput.addEventListener("input", (event) => {
+      const keyword = (event.target.value || "").trim().toLowerCase();
+      rows.forEach((row) => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = !keyword || text.includes(keyword) ? "" : "none";
+      });
+    });
+  });
+</script>
+{% endblock %}

@@ -519,7 +519,7 @@
           <i class="bi bi-list fs-4"></i>
         </button>
         <div class="d-flex align-items-center me-auto overflow-hidden">
-          <a class="navbar-brand fw-bold d-flex align-items-center me-2" href="{{ url_for('tasks_bp.tasks') }}">
+          <a class="navbar-brand fw-bold d-flex align-items-center me-2" href="{{ url_for('tasks_bp.launcher') }}">
             <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo" class="me-2" style="height:30px;">
             <span class="d-none d-sm-inline text-body">法規文件轉換平台</span>
           </a>
@@ -592,15 +592,16 @@
             {% block sidebar %}
               <ul class="nav flex-column">
                 <li class="nav-item">
-                  <a class="nav-link {{ 'active' if request.path == url_for('tasks_bp.tasks') else '' }}" href="{{ url_for('tasks_bp.tasks') }}">
+                  <a class="nav-link {{ 'active' if ((request.endpoint and request.endpoint.startswith('tasks_bp.') and request.endpoint not in ['tasks_bp.standards', 'tasks_bp.task_standard_mapping']) or request.endpoint == 'flow_builder_bp.flow_builder') else '' }}" href="{{ url_for('tasks_bp.tasks') }}">
                     <i class="bi bi-list-task me-2"></i>
                     任務管理
                   </a>
-                  <a class="nav-link {{ 'active' if request.endpoint == 'global_batch_bp.global_batch_page' else '' }}" href="{{ url_for('global_batch_bp.global_batch_page') }}">
-                    <i class="bi bi-calendar2-week me-2"></i>
-                    排程中心
+                  <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('standard_updates_bp.') else '' }}" href="{{ url_for('standard_updates_bp.list') }}">
+                    <i class="bi bi-arrow-repeat me-2"></i>
+                    標準更新
                   </a>
                   {% if task and task.id %}
+                  <div class="px-3 pt-3 pb-2 small text-uppercase fw-semibold text-muted">任務內容</div>
                   <a class="nav-link {{ 'active' if request.path == url_for('tasks_bp.task_detail', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
                     <i class="bi bi-info-circle me-2"></i>
                     任務詳情
@@ -612,10 +613,6 @@
                   <a class="nav-link {{ 'active' if request.endpoint == 'flow_builder_bp.flow_builder' and '/batch' not in request.path else '' }}" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id) }}">
                     <i class="bi bi-diagram-3 me-2"></i>
                     流程管理
-                  </a>
-                  <a class="nav-link {{ 'active' if request.endpoint == 'tasks_bp.task_standard_mapping' else '' }}" href="{{ url_for('tasks_bp.task_standard_mapping', task_id=task.id) }}">
-                    <i class="bi bi-arrow-repeat me-2"></i>
-                    標準更新
                   </a>
                   {% endif %}
                 </li>

@@ -22,10 +22,10 @@ from .blueprint import auth_bp
 @auth_bp.route("/login", methods=["GET", "POST"], endpoint="login")
 def login():
     if not current_app.config.get("AUTH_ENABLED", True):
-        return redirect(url_for("tasks_bp.tasks"))
+        return redirect(url_for("tasks_bp.launcher"))
 
     if current_user.is_authenticated:
-        return redirect(url_for("tasks_bp.tasks"))
+        return redirect(url_for("tasks_bp.launcher"))
 
     form = LDAPLoginForm()
     error = ""
@@ -73,7 +73,7 @@ def login():
             login_user(user)
 
             next_url = sanitize_next_url(request.args.get("next"))
-            return redirect(next_url or url_for("tasks_bp.tasks"))
+            return redirect(next_url or url_for("tasks_bp.launcher"))
 
         except Exception:
             db.session.rollback()

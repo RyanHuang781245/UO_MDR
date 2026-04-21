@@ -37,6 +37,22 @@
     padding: 0.875rem 1rem;
     background: var(--app-card-bg);
   }
+  .version-chip--locked {
+    border-color: var(--bs-blue-100);
+    background: linear-gradient(180deg, var(--bs-blue-50) 0%, #ffffff 100%);
+  }
+  .version-chip--locked .version-chip__label,
+  .version-chip--locked .version-chip__value code {
+    color: var(--bs-blue-600);
+  }
+  .version-chip--latest {
+    border-color: #a7f3d0;
+    background: linear-gradient(180deg, var(--bs-emerald-50) 0%, #ffffff 100%);
+  }
+  .version-chip--latest .version-chip__label,
+  .version-chip--latest .version-chip__value code {
+    color: var(--bs-emerald-700);
+  }
   .version-chip__label {
     font-size: 0.75rem;
     text-transform: uppercase;
@@ -254,14 +270,14 @@
         </div>
       </div>
       <div class="version-summary">
-        <div class="version-chip">
+        <div class="version-chip version-chip--locked">
           <div class="version-chip__label">任務鎖定版本</div>
-          <div class="version-chip__value">{{ locked_harmonised_release.version_label or task.harmonised_snapshot_version or '-' }}</div>
+          <div class="version-chip__value"><code>{{ locked_harmonised_release.version_label or task.harmonised_snapshot_version or '-' }}</code></div>
           <div class="version-chip__meta">{{ locked_harmonised_release.file_name or '尚未鎖定檔案' }}</div>
         </div>
-        <div class="version-chip">
+        <div class="version-chip version-chip--latest">
           <div class="version-chip__label">系統最新版本</div>
-          <div class="version-chip__value">{{ harmonised_release.version_label or '-' }}</div>
+          <div class="version-chip__value"><code>{{ harmonised_release.version_label or '-' }}</code></div>
           <div class="version-chip__meta">{{ harmonised_release.file_name or '尚未找到系統檔案' }}</div>
         </div>
       </div>

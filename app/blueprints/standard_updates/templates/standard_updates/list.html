@@ -89,7 +89,7 @@
             <td class="text-start text-muted">{{ item.description or '-' }}</td>
             <td class="text-muted">{{ item.creator_name or '-' }}</td>
             <td class="text-muted font-monospace">{{ item.created or '-' }}</td>
-            <td class="text-muted small">{{ item.harmonised_snapshot_version or '-' }}</td>
+            <td class="text-muted small"><code>{{ item.harmonised_snapshot_version or '-' }}</code></td>
             <td>
               <div class="d-flex justify-content-center gap-1">
                 <form action="{{ url_for('standard_updates_bp.delete', task_id=item.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除標準更新任務「{{ item.name }}」?')">

@@ -183,10 +183,73 @@
   .standard-settings-group__body-inner {
     padding-top: 1rem;
   }
-  .standard-priority-grid {
+  .priority-sort-list {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  .priority-sort-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
     gap: 0.875rem;
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.875rem;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    cursor: grab;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  }
+  .priority-sort-item:hover {
+    border-color: var(--bs-blue-100);
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.08);
+  }
+  .priority-sort-item.is-dragging {
+    opacity: 0.72;
+    transform: scale(0.995);
+    border-color: var(--bs-blue-600);
+    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.14);
+  }
+  .priority-sort-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.75rem;
+    background: var(--bs-blue-50);
+    color: var(--bs-blue-600);
+    border: 1px solid var(--bs-blue-100);
+    font-size: 1rem;
+  }
+  .priority-sort-content {
+    min-width: 0;
+    max-height: 2.25rem;
+  }
+  .priority-sort-label {
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.4;
+  }
+  .priority-sort-caption {
+    margin-top: 0.2rem;
+    color: var(--bs-gray-500);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+  .priority-sort-rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 5.5rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid var(--bs-blue-100);
+    background: var(--bs-blue-50);
+    color: var(--bs-blue-600);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    white-space: nowrap;
   }
   .standard-priority-summary {
     margin-top: 0.5rem;
@@ -810,9 +873,15 @@
       grid-template-columns: 1fr;
       flex-direction: column;
     }
-    .standard-priority-grid,
+    .priority-sort-item,
     .standard-preview-filters {
       grid-template-columns: 1fr;
+    }
+    .priority-sort-item {
+      align-items: flex-start;
+    }
+    .priority-sort-rank {
+      justify-self: flex-start;
     }
     .standard-manual-mapping-board {
       grid-template-columns: 1fr;
@@ -1088,16 +1157,21 @@
                 </div>
               </summary>
               <div class="standard-settings-group__body">
-                <div class="standard-settings-group__body-inner">
-                  <div class="standard-priority-grid">
-                    {% for label, field_name in standard_priority_fields.items() %}
-                      <div>
-                        <label class="form-label small fw-bold text-uppercase text-muted">{{ label }} 優先級</label>
-                        <select class="form-select form-control-custom rounded-2" name="{{ field_name }}">
-                          {% for position in range(1, iso_priority|length + 1) %}
-                            <option value="{{ position }}" {% if iso_priority_positions[label] == position %}selected{% endif %}>第 {{ position }} 優先</option>
-                          {% endfor %}
-                        </select>
+                <div>
+                  <div class="priority-sort-list" id="prioritySortList" aria-label="標準優先級排序">
+                    <div class="standard-priority-summary">
+                      由上到下表示優先順序；若需調整，直接拖拉排序後再進行更新和下載
+                    </div>
+                    {% for label in iso_priority %}
+                      <div class="priority-sort-item" draggable="true" data-priority-item data-label="{{ label }}">
+                        <div class="priority-sort-handle" aria-hidden="true">
+                          <i class="bi bi-grip-vertical"></i>
+                        </div>
+                        <div class="priority-sort-content">
+                          <div class="priority-sort-label">{{ label }}</div>
+                          <input type="hidden" name="{{ standard_priority_fields[label] }}" value="{{ loop.index }}" data-priority-input>
+                        </div>
+                        <div class="priority-sort-rank" data-priority-rank>第 {{ loop.index }} 優先</div>
                       </div>
                     {% endfor %}
                   </div>
@@ -1530,6 +1604,64 @@
 </div>
 
 <script>
+  const prioritySortList = document.getElementById("prioritySortList");
+
+  const refreshPriorityRanks = () => {
+    if (!prioritySortList) return;
+    Array.from(prioritySortList.querySelectorAll("[data-priority-item]")).forEach((item, index) => {
+      const input = item.querySelector("[data-priority-input]");
+      const rank = item.querySelector("[data-priority-rank]");
+      const nextValue = String(index + 1);
+      if (input) input.value = nextValue;
+      if (rank) rank.textContent = `第 ${nextValue} 優先`;
+    });
+  };
+
+  if (prioritySortList) {
+    let draggingItem = null;
+
+    const getDragAfterElement = (container, clientY) => {
+      const items = Array.from(container.querySelectorAll("[data-priority-item]:not(.is-dragging)"));
+      let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+
+      items.forEach((item) => {
+        const rect = item.getBoundingClientRect();
+        const offset = clientY - rect.top - rect.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          closest = { offset, element: item };
+        }
+      });
+
+      return closest.element;
+    };
+
+    prioritySortList.querySelectorAll("[data-priority-item]").forEach((item) => {
+      item.addEventListener("dragstart", () => {
+        draggingItem = item;
+        item.classList.add("is-dragging");
+      });
+
+      item.addEventListener("dragend", () => {
+        item.classList.remove("is-dragging");
+        draggingItem = null;
+        refreshPriorityRanks();
+      });
+    });
+
+    prioritySortList.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (!draggingItem) return;
+      const nextItem = getDragAfterElement(prioritySortList, event.clientY);
+      if (!nextItem) {
+        prioritySortList.appendChild(draggingItem);
+      } else if (nextItem !== draggingItem) {
+        prioritySortList.insertBefore(draggingItem, nextItem);
+      }
+    });
+
+    refreshPriorityRanks();
+  }
+
   const wordPathSelect = document.getElementById("wordPathSelect");
   if (wordPathSelect) {
     wordPathSelect.addEventListener("change", () => {
@@ -1543,8 +1675,8 @@
       const harmonisedExcelSelect = document.querySelector('select[name="harmonised_excel_path"]');
       const harmonisedExcelPath = (harmonisedExcelSelect?.value || "").trim();
       if (harmonisedExcelPath) params.set("harmonised_excel_path", harmonisedExcelPath);
-      document.querySelectorAll('select[name^="priority_"]').forEach((select) => {
-        if (select.value) params.set(select.name, select.value);
+      document.querySelectorAll('[data-priority-input]').forEach((input) => {
+        if (input.value) params.set(input.name, input.value);
       });
       const chapterToggle = document.getElementById("limitToChapter");
       if (chapterToggle?.checked) params.set("limit_to_chapter", "1");

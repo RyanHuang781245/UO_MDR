@@ -269,6 +269,36 @@ def input_file_history(task_id: str, *, kind: str, current_file: str = "") -> li
     return items
 
 
+def delete_input_file(task_id: str, *, kind: str, rel_path: str) -> dict:
+    meta = load_standard_update(task_id)
+    if not meta:
+        raise FileNotFoundError("找不到標準更新任務")
+
+    allowed_exts = ALLOWED_WORD_EXTENSIONS if kind == "word" else ALLOWED_EXCEL_EXTENSIONS
+    target_path = safe_standard_update_file(task_id, rel_path, allowed_exts)
+    os.remove(target_path)
+
+    remaining = input_file_history(
+        task_id,
+        kind=kind,
+        current_file="",
+    )
+    replacement = remaining[0]["name"] if remaining else ""
+    if kind == "word":
+        if meta.get("word_file_path") == rel_path:
+            meta["word_file_path"] = replacement
+    else:
+        if meta.get("standard_excel_path") == rel_path:
+            meta["standard_excel_path"] = replacement
+
+    if meta.get("word_file_path") and meta.get("standard_excel_path"):
+        meta["status"] = STATUS_READY
+    elif meta.get("status") != STATUS_FAILED:
+        meta["status"] = STATUS_DRAFT
+    save_standard_update(task_id, meta)
+    return meta
+
+
 def safe_standard_update_file(task_id: str, rel_path: str, allowed_exts: set[str]) -> str:
     normalized = os.path.normpath((rel_path or "").replace("/", os.sep))
     if not normalized or normalized.startswith("..") or os.path.isabs(normalized):

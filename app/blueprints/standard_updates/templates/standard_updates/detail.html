@@ -121,28 +121,50 @@
   }
   .upload-history__list {
     display: grid;
-    gap: 0.5rem;
+    gap: 0.35rem;
   }
   .upload-history__item {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    column-gap: 0.75rem;
+    row-gap: 0.35rem;
+    padding: 0.15rem 0.7rem;
     border: 1px solid var(--app-border);
     border-radius: 0.625rem;
     background: var(--app-card-bg);
+  }
+  .upload-history__primary {
+    min-width: 0;
   }
   .upload-history__name {
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--app-text);
-    word-break: break-word;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .upload-history__meta {
     font-size: 0.8125rem;
     color: var(--bs-gray-500);
     white-space: nowrap;
+  }
+  .upload-history__actions {
+    display: contents;
+  }
+  .upload-history__remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .upload-history__remove .btn {
+    --bs-btn-padding-y: 0.12rem;
+    --bs-btn-padding-x: 0.3rem;
+    --bs-btn-font-size: 0.72rem;
+    --bs-btn-border-radius: 999px;
+    line-height: 1;
   }
   @media (max-width: 991.98px) {
     .detail-grid {
@@ -154,6 +176,17 @@
     .version-notice-row {
       flex-direction: column;
       align-items: stretch;
+    }
+    .upload-history__item {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .upload-history__meta {
+      grid-column: 1 / 2;
+    }
+    .upload-history__remove {
+      grid-column: 2 / 3;
+      grid-row: 1 / 3;
+      align-self: start;
     }
   }
 </style>
@@ -244,25 +277,32 @@
             <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
             Word 文件
           </label>
-          <form action="{{ url_for('standard_updates_bp.upload_word', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-3">
+          <form action="{{ url_for('standard_updates_bp.upload_word', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
             <input class="form-control form-control-custom" type="file" name="word_file" accept=".docx" required>
             <button class="btn btn-primary align-self-start" type="submit">上傳 Word</button>
-            <div class="upload-history">
-              <div class="upload-history__title">上傳歷史</div>
-              <div class="upload-history__list">
-                {% for item in word_history %}
-                <div class="upload-history__item">
-                  <div>
-                    <div class="upload-history__name">{{ item.name }}</div>
-                  </div>
-                  <div class="upload-history__meta">{{ item.uploaded_at }}</div>
-                </div>
-                {% else %}
-                <div class="small text-muted">目前沒有 Word 上傳紀錄。</div>
-                {% endfor %}
-              </div>
-            </div>
           </form>
+          <div class="upload-history mt-3">
+            <div class="upload-history__title">上傳歷史</div>
+            <div class="upload-history__list">
+              {% for item in word_history %}
+              <div class="upload-history__item">
+                <div class="upload-history__primary">
+                  <div class="upload-history__name" title="{{ item.name }}">{{ item.name }}</div>
+                </div>
+                <div class="upload-history__meta">{{ item.uploaded_at }}</div>
+                <form class="upload-history__remove" action="{{ url_for('standard_updates_bp.delete_input_file', task_id=task.id) }}" method="post" onsubmit="return confirm('確定移除此檔案？')">
+                  <input type="hidden" name="kind" value="word">
+                  <input type="hidden" name="file_name" value="{{ item.name }}">
+                  <button class="btn-action-icon text-danger" type="submit" title="移除" aria-label="移除">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+              {% else %}
+              <div class="small text-muted">目前沒有 Word 上傳紀錄。</div>
+              {% endfor %}
+            </div>
+          </div>
         </div>
 
         <div class="border rounded-3 p-3">
@@ -270,25 +310,32 @@
             <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
             Excel 標準總表
           </label>
-          <form action="{{ url_for('standard_updates_bp.upload_standard_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-3">
+          <form action="{{ url_for('standard_updates_bp.upload_standard_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
             <input class="form-control form-control-custom" type="file" name="standard_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
             <button class="btn btn-success align-self-start" type="submit">上傳 Excel</button>
-            <div class="upload-history">
-              <div class="upload-history__title">上傳歷史</div>
-              <div class="upload-history__list">
-                {% for item in standard_excel_history %}
-                <div class="upload-history__item">
-                  <div>
-                    <div class="upload-history__name">{{ item.name }}</div>
-                  </div>
-                  <div class="upload-history__meta">{{ item.uploaded_at }}</div>
-                </div>
-                {% else %}
-                <div class="small text-muted">目前沒有 Excel 上傳紀錄。</div>
-                {% endfor %}
-              </div>
-            </div>
           </form>
+          <div class="upload-history mt-3">
+            <div class="upload-history__title">上傳歷史</div>
+            <div class="upload-history__list">
+              {% for item in standard_excel_history %}
+              <div class="upload-history__item">
+                <div class="upload-history__primary">
+                  <div class="upload-history__name" title="{{ item.name }}">{{ item.name }}</div>
+                </div>
+                <div class="upload-history__meta">{{ item.uploaded_at }}</div>
+                <form class="upload-history__remove" action="{{ url_for('standard_updates_bp.delete_input_file', task_id=task.id) }}" method="post" onsubmit="return confirm('確定移除此檔案？')">
+                  <input type="hidden" name="kind" value="excel">
+                  <input type="hidden" name="file_name" value="{{ item.name }}">
+                  <button class="btn-action-icon text-danger" type="submit" title="移除" aria-label="移除">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+              {% else %}
+              <div class="small text-muted">目前沒有 Excel 上傳紀錄。</div>
+              {% endfor %}
+            </div>
+          </div>
         </div>
       </div>
     </div>

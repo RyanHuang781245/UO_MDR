@@ -39,6 +39,7 @@ from app.services.standard_update_service import (
     STATUS_READY,
     available_input_files,
     create_standard_update,
+    delete_input_file,
     delete_standard_update,
     get_active_harmonised_release,
     get_locked_harmonised_release,
@@ -264,6 +265,23 @@ def upload_standard_excel(task_id: str):
         save_standard_update(task_id, task)
         flash("Excel 標準總表已上傳", "success")
     except ValueError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
+
+
+@standard_updates_bp.post("/standards/<task_id>/files/delete", endpoint="delete_input_file")
+def delete_uploaded_input_file(task_id: str):
+    if not load_standard_update(task_id):
+        abort(404)
+    kind = (request.form.get("kind") or "").strip().lower()
+    rel_path = (request.form.get("file_name") or "").strip()
+    if kind not in {"word", "excel"} or not rel_path:
+        flash("缺少要刪除的檔案資訊", "danger")
+        return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
+    try:
+        delete_input_file(task_id, kind=kind, rel_path=rel_path)
+        flash("已移除檔案", "success")
+    except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")
     return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
 

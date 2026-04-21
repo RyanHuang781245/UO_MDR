@@ -166,6 +166,77 @@ def load_harmonised_reference_index(reference_path: str | os.PathLike | None = N
         wb.close()
 
 
+def normalize_regulation_lookup_key(text: str) -> str:
+    normalized = normalize_text(text).upper()
+    if not normalized:
+        return ""
+    normalized = normalized.replace("–", "-").replace("—", "-").replace("：", ":").replace("／", "/")
+    normalized = re.sub(r"\bREVISION\b", "REV", normalized)
+    normalized = re.sub(r"\bREV\.\b", "REV", normalized)
+    normalized = re.sub(r"\bREV\.\s*", "REV ", normalized)
+    return re.sub(r"[^A-Z0-9]+", "", normalized)
+
+
+def is_regulation_lookup_target(text: str) -> bool:
+    normalized_key = normalize_regulation_lookup_key(text)
+    return normalized_key.startswith(("MEDDEV", "MDCG"))
+
+
+def extract_year_from_regulation_date(value) -> int | None:
+    if value is None:
+        return None
+    if hasattr(value, "year") and getattr(value, "year", None):
+        try:
+            return int(value.year)
+        except Exception:
+            return None
+    years = re.findall(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", normalize_text(value))
+    if years:
+        return max(int(year) for year in years)
+    return None
+
+
+def load_regulation_reference_index(reference_path: str | os.PathLike | None = None) -> dict[str, list[dict]]:
+    path = Path(reference_path or "")
+    if not path.is_file():
+        return {}
+    wb = load_workbook(path, data_only=True, read_only=True)
+    try:
+        index: dict[str, list[dict]] = {}
+        for ws in wb.worksheets:
+            for row_idx, row in enumerate(ws.iter_rows(min_row=4, values_only=True), start=4):
+                values = list(row or [])
+                key_text = normalize_text(values[4] if len(values) > 4 else "")
+                if not key_text:
+                    continue
+                normalized_key = normalize_regulation_lookup_key(key_text)
+                if not normalized_key:
+                    continue
+                date_value = values[6] if len(values) > 6 else None
+                latest_year = extract_year_from_regulation_date(date_value)
+                title_text = normalize_text(values[5] if len(values) > 5 else "")
+                index.setdefault(normalized_key, []).append({
+                    "sheet_name": ws.title,
+                    "excel_col_letter": "E",
+                    "excel_row_index": row_idx,
+                    "matched_standard_no": key_text,
+                    "matched_display_standard_no": key_text,
+                    "matched_title": title_text,
+                    "candidate_harmonised": "",
+                    "latest_year": latest_year,
+                    "standard_level": "REGULATION",
+                    "standard_level_rank": 0,
+                    "search_family": "REGULATION",
+                    "apply_year_comparison": True,
+                    "decision": "kept",
+                    "decision_reason": "命中國家法規條文登記表候選",
+                    "candidate_id": "",
+                })
+        return index
+    finally:
+        wb.close()
+
+
 def is_harmonised_standard(std_no: str, title: str, harmonised_reference_index: set[str] | None) -> bool:
     if not harmonised_reference_index:
         return False
@@ -253,28 +324,28 @@ def detect_search_family(standard_name: str) -> str | None:
         return "ASTM"
     if re.match(r"^(?:IEC)\b", s):
         return "IEC_FAMILY"
-    if re.match(r"^(?:BS\s+EN\s+ISO|DIN\s+EN\s+ISO|EN\s+ISO|BS\s+ISO|ISO|BS\s+EN|DIN\s+EN|EN|BS)\b", s):
+    if re.match(r"^(?:BS\s*EN\s*ISO|DIN\s*EN\s*ISO|EN\s*ISO|BS\s*ISO|ISO|BS\s*EN|DIN\s*EN|EN|BS)(?=\s|\d|\b)", s):
         return "ISO_FAMILY"
     return None
 
 
 def classify_standard_level(std_no: str) -> tuple[str, int]:
     s = normalize_key_for_search(std_no)
-    if s.startswith("BS EN ISO "):
+    if re.match(r"^BS\s*EN\s*ISO(?=\s|\d|\b)", s):
         return "BS EN ISO", 7
-    if s.startswith("BS EN ") or s.startswith("DIN EN "):
+    if re.match(r"^(?:BS\s*EN|DIN\s*EN)(?=\s|\d|\b)", s):
         return "BS EN", 6
-    if s.startswith("EN "):
+    if re.match(r"^EN(?=\s|\d|\b)", s):
         return "EN", 5
-    if s.startswith("DIN EN ISO ") or s.startswith("EN ISO "):
+    if re.match(r"^(?:DIN\s*EN\s*ISO|EN\s*ISO)(?=\s|\d|\b)", s):
         return "EN ISO", 4
-    if s.startswith("BS ISO "):
+    if re.match(r"^BS\s*ISO(?=\s|\d|\b)", s):
         return "BS ISO", 3
-    if s.startswith("ISO "):
+    if re.match(r"^ISO(?=\s|\d|\b)", s):
         return "ISO", 2
-    if s.startswith("BS "):
+    if re.match(r"^BS(?=\s|\d|\b)", s):
         return "BS", 1
-    if s.startswith("IEC "):
+    if re.match(r"^IEC(?=\s|\d|\b)", s):
         return "IEC", 1
     return "OTHER", 0
 
@@ -400,7 +471,7 @@ def extract_iso_family_core(std_no: str) -> str:
         return ""
     s = re.sub(r"/A\d+(?::\s*(19\d{2}|20\d{2}))?.*$", "", s).strip()
     s = re.sub(r":\s*(19\d{2}|20\d{2}).*$", "", s).strip()
-    return re.sub(r"^(?:BS\s+EN\s+ISO|DIN\s+EN\s+ISO|EN\s+ISO|BS\s+EN|DIN\s+EN|EN|BS\s+ISO|ISO|BS|IEC)\s+", "", s).strip()
+    return re.sub(r"^(?:BS\s*EN\s*ISO|DIN\s*EN\s*ISO|EN\s*ISO|BS\s*EN|DIN\s*EN|EN|BS\s*ISO|ISO|BS|IEC)\s*", "", s).strip()
 
 
 def extract_display_standard_no(std_no: str) -> str:
@@ -804,38 +875,75 @@ def find_latest_year_from_excel(
         return None
 
     all_candidates = [dict(item) for item in candidates]
+
+    def same_type_sort_key(candidate: dict) -> tuple:
+        return (candidate.get("latest_year") or 0, -len(candidate.get("matched_standard_no", "")))
+
     if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         priority_index = {label: idx for idx, label in enumerate(normalized_iso_priority)}
-        candidates = list(all_candidates)
+        best_by_level: dict[str, dict] = {}
         for candidate in all_candidates:
-            if candidate["standard_level"] not in normalized_iso_priority:
+          level = candidate["standard_level"]
+          current = best_by_level.get(level)
+          if current is None or same_type_sort_key(candidate) > same_type_sort_key(current):
+              best_by_level[level] = candidate
+
+        checked_candidates = [
+            candidate
+            for candidate in best_by_level.values()
+            if candidate["standard_level"] in normalized_iso_priority and candidate.get("apply_year_comparison")
+        ]
+        fallback_candidates = [
+            candidate
+            for candidate in best_by_level.values()
+            if candidate["standard_level"] in normalized_iso_priority and not candidate.get("apply_year_comparison")
+        ]
+        prioritized_best_candidates = [
+            candidate for candidate in best_by_level.values() if candidate["standard_level"] in normalized_iso_priority
+        ]
+
+        if checked_candidates:
+            candidates = checked_candidates
+        elif prioritized_best_candidates:
+            candidates = prioritized_best_candidates
+        else:
+            candidates = list(best_by_level.values())
+        has_checked_candidates = bool(checked_candidates)
+
+        for candidate in all_candidates:
+            level = candidate["standard_level"]
+            if level not in normalized_iso_priority:
                 candidate["decision_reason"] = "不在優先級清單內，僅在無更高優先候選時作為後備"
-            elif candidate["apply_year_comparison"]:
+            elif best_by_level.get(level) is not candidate:
+                candidate["decision_reason"] = "同類型已有較新年份候選，未納入最終決選"
+            elif has_checked_candidates and candidate.get("apply_year_comparison"):
                 candidate["decision_reason"] = "此類型已勾選，會納入年份比較，再依優先級決選"
+            elif has_checked_candidates:
+                candidate["decision_reason"] = "已有勾選類型候選，此類型不參與年份比較，僅作後備"
             else:
-                candidate["decision_reason"] = "此類型未勾選，不做年份比較，僅依優先級決選"
+                candidate["decision_reason"] = "目前沒有勾選候選命中，改依優先級決選"
+
+        def candidate_sort_key(candidate: dict) -> tuple:
+            latest_year = candidate.get("latest_year") or 0
+            name_length = len(candidate.get("matched_standard_no", ""))
+            priority_rank = len(normalized_iso_priority) - priority_index.get(candidate["standard_level"], len(normalized_iso_priority))
+            prioritized = 1 if candidate["standard_level"] in normalized_iso_priority else 0
+            if has_checked_candidates:
+                return (latest_year, priority_rank, prioritized, -name_length)
+            return (priority_rank, prioritized, -name_length, latest_year)
     else:
         for candidate in all_candidates:
             candidate["decision_reason"] = "符合查詢條件，進入最終排序"
 
+        def candidate_sort_key(candidate: dict) -> tuple:
+            latest_year = candidate.get("latest_year") or 0
+            name_length = len(candidate.get("matched_standard_no", ""))
+            return (1, 0, latest_year, name_length)
+
     if not candidates:
         return None
 
-    def candidate_sort_key(candidate: dict) -> tuple:
-        latest_year = candidate["latest_year"]
-        name_length = len(candidate["matched_standard_no"])
-        if family in {"ISO_FAMILY", "IEC_FAMILY"}:
-            priority_rank = -priority_index.get(candidate["standard_level"], len(normalized_iso_priority))
-            prioritized = 1 if candidate["standard_level"] in normalized_iso_priority else 0
-            compare_flag = 1 if candidate.get("apply_year_comparison") else 0
-            year_rank = (latest_year or 0) if compare_flag else 0
-            return (prioritized, compare_flag, year_rank, priority_rank, -name_length)
-        return (1, 0, latest_year, name_length)
-
-    candidates.sort(
-        key=candidate_sort_key,
-        reverse=True,
-    )
+    candidates.sort(key=candidate_sort_key, reverse=True)
     selected = candidates[0]
     for candidate in candidates[1:]:
         if candidate.get("decision") != "excluded":
@@ -873,6 +981,44 @@ def find_latest_year_from_excel(
     result["iso_priority"] = list(normalized_iso_priority)
     result["enabled_standard_levels"] = list(normalized_enabled_levels)
     result["prefer_latest_en_variants"] = prefer_latest_en_variants
+    return result
+
+
+def find_latest_year_from_regulation_reference(
+    standard_name: str,
+    regulation_index: dict[str, list[dict]] | None,
+) -> dict | None:
+    if not regulation_index:
+        return None
+    query_key = normalize_regulation_lookup_key(standard_name)
+    if not query_key:
+        return None
+    candidates = [dict(item) for item in regulation_index.get(query_key, [])]
+    if not candidates:
+        return None
+
+    def candidate_sort_key(candidate: dict) -> tuple:
+        return (candidate.get("latest_year") or 0, -len(candidate.get("matched_standard_no", "")))
+
+    candidates.sort(key=candidate_sort_key, reverse=True)
+    selected = candidates[0]
+    for candidate in candidates[1:]:
+        candidate["decision"] = "kept"
+        candidate["decision_reason"] = "條文號相符，但公告年份較舊，未被選用"
+    selected["decision"] = "selected"
+    selected["decision_reason"] = "最終採用：命中國家法規條文登記表，依公告年份排序後選中"
+
+    for candidate in candidates:
+        candidate["candidate_id"] = make_candidate_id(candidate)
+
+    result = dict(selected)
+    result["all_candidates"] = candidates
+    result["selected_candidate_id"] = selected["candidate_id"]
+    result["auto_selected_candidate_id"] = selected["candidate_id"]
+    result["matched_harmonised"] = ""
+    result["iso_priority"] = []
+    result["enabled_standard_levels"] = []
+    result["prefer_latest_en_variants"] = False
     return result
 
 
@@ -1586,6 +1732,7 @@ def process_document(
     word_path: str,
     excel_path: str,
     harmonised_reference_path: str | None = None,
+    regulation_reference_path: str | None = None,
     override_map: dict | None = None,
     output_path: str | None = None,
     iso_priority: list[str] | tuple[str, ...] | None = None,
@@ -1603,6 +1750,7 @@ def process_document(
     normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
     excel_index = load_excel_index(excel_path)
     harmonised_reference_index = load_harmonised_reference_index(harmonised_reference_path)
+    regulation_reference_index = load_regulation_reference_index(regulation_reference_path)
     with tempfile.TemporaryDirectory() as tmpdir:
         unzip_docx(word_path, tmpdir)
         document_xml_path = os.path.join(tmpdir, "word", "document.xml")
@@ -1634,14 +1782,21 @@ def process_document(
             word_year_text = normalize_text(rec["issued_year"])
             word_harmonised_text = normalize_text(rec["harmonised"])
             word_title_text = normalize_text(rec["title"])
-            match_info = find_latest_year_from_excel(
-                standards,
-                excel_index,
-                normalized_iso_priority,
-                normalized_enabled_levels,
-                harmonised_reference_index=harmonised_reference_index,
-                prefer_latest_en_variants=prefer_latest_en_variants,
-            )
+            match_info = None
+            if is_regulation_lookup_target(standards):
+                match_info = find_latest_year_from_regulation_reference(
+                    standards,
+                    regulation_reference_index,
+                )
+            if not match_info:
+                match_info = find_latest_year_from_excel(
+                    standards,
+                    excel_index,
+                    normalized_iso_priority,
+                    normalized_enabled_levels,
+                    harmonised_reference_index=harmonised_reference_index,
+                    prefer_latest_en_variants=prefer_latest_en_variants,
+                )
             if match_info:
                 match_info = apply_candidate_override(match_info, override_map.get(row_key))
 
@@ -1681,13 +1836,13 @@ def process_document(
                 continue
 
             apply_year_comparison = bool(match_info.get("apply_year_comparison"))
-            latest_year = "" if (not apply_year_comparison or match_info.get("latest_year") in {None, ""}) else str(match_info["latest_year"])
+            latest_year = "" if match_info.get("latest_year") in {None, ""} else str(match_info["latest_year"])
             matched_standard_no = match_info["matched_standard_no"]
             matched_display_standard_no = match_info["matched_display_standard_no"]
             matched_harmonised = normalize_text(match_info.get("matched_harmonised", ""))
             matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(matched_display_standard_no)
-            year_needs_update = apply_year_comparison and word_year_text != latest_year
+            year_needs_update = bool(latest_year) and word_year_text != latest_year
             harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(matched_harmonised)
             title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(matched_title)
 
@@ -1752,6 +1907,7 @@ def process_document(
             "preview_tables": preview_tables,
             "reference_payload": reference_payload,
             "harmonised_reference_path": normalize_text(harmonised_reference_path or ""),
+            "regulation_reference_path": normalize_text(regulation_reference_path or ""),
             "iso_priority": list(normalized_iso_priority),
             "enabled_standard_levels": list(normalized_enabled_levels),
             "prefer_latest_en_variants": prefer_latest_en_variants,

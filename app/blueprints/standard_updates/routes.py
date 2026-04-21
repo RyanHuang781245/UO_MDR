@@ -18,6 +18,7 @@ from app.blueprints.tasks.standard_mapping_routes import (
     _parse_manual_header_mappings,
     _parse_override_map,
     _parse_required_headers,
+    _resolve_regulation_reference_path,
     _parse_target_chapter_ref,
     _parse_target_table_index,
 )
@@ -401,10 +402,12 @@ def mapping(task_id: str):
                     manual_header_mappings=manual_header_mappings,
                 )
             excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS)
+            regulation_reference_path = _resolve_regulation_reference_path()
             result = process_document(
                 word_path,
                 excel_path,
                 harmonised_reference_path=harmonised_reference_path,
+                regulation_reference_path=regulation_reference_path,
                 iso_priority=iso_priority,
                 enabled_standard_levels=enabled_standard_levels,
                 required_headers=required_headers,
@@ -488,6 +491,7 @@ def download_result(task_id: str):
         excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS)
         locked_harmonised_release = get_locked_harmonised_release(task)
         harmonised_reference_path = locked_harmonised_release.get("path")
+        regulation_reference_path = _resolve_regulation_reference_path()
         if not harmonised_reference_path:
             raise FileNotFoundError("目前任務鎖定的 harmonised Excel 不存在，請先改用最新版本")
         inspection_result = inspect_document_tables(
@@ -527,6 +531,7 @@ def download_result(task_id: str):
             word_path=word_path,
             excel_path=excel_path,
             harmonised_reference_path=harmonised_reference_path,
+            regulation_reference_path=regulation_reference_path,
             override_map=override_map,
             output_path=output_path,
             iso_priority=iso_priority,

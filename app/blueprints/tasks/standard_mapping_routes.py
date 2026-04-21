@@ -42,6 +42,17 @@ _STANDARD_PRIORITY_FIELDS = {
 }
 
 
+def _resolve_regulation_reference_path(files_dir: str | None = None) -> str | None:
+    configured = str(current_app.config.get("REGULATION_REFERENCE_PATH") or "").strip()
+    if configured and os.path.isfile(configured):
+        return configured
+    if files_dir:
+        candidate = os.path.join(files_dir, "各國法規條文登記表_20250801.xlsx")
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
 def _task_files_dir(task_id: str) -> str:
     task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     files_dir = os.path.join(task_dir, "files")
@@ -405,10 +416,12 @@ def task_standard_mapping(task_id):
                 )
             excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
             harmonised_reference_path = _safe_task_file(files_dir, selected_harmonised_excel, _ALLOWED_EXCEL_EXTENSIONS) if selected_harmonised_excel else None
+            regulation_reference_path = _resolve_regulation_reference_path(files_dir)
             result = process_document(
                 word_path,
                 excel_path,
                 harmonised_reference_path=harmonised_reference_path,
+                regulation_reference_path=regulation_reference_path,
                 iso_priority=iso_priority,
                 enabled_standard_levels=enabled_standard_levels,
                 required_headers=required_headers,
@@ -488,6 +501,7 @@ def task_standard_mapping_download(task_id):
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
         harmonised_reference_path = _safe_task_file(files_dir, selected_harmonised_excel, _ALLOWED_EXCEL_EXTENSIONS) if selected_harmonised_excel else None
+        regulation_reference_path = _resolve_regulation_reference_path(files_dir)
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
         inspection_result = inspect_document_tables(
             word_path,
@@ -523,6 +537,7 @@ def task_standard_mapping_download(task_id):
             word_path=word_path,
             excel_path=excel_path,
             harmonised_reference_path=harmonised_reference_path,
+            regulation_reference_path=regulation_reference_path,
             override_map=override_map,
             output_path=output_path,
             iso_priority=iso_priority,

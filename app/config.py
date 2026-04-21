@@ -23,6 +23,7 @@ class BaseConfig:
     TASK_FOLDER = str(BASE_DIR / "task_store")
     STANDARD_UPDATE_FOLDER = str(BASE_DIR / "standard_update_store")
     HARMONISED_REFERENCE_FOLDER = str(BASE_DIR / "harmonised_store")
+    REGULATION_REFERENCE_PATH = str(BASE_DIR / "各國法規條文登記表_20250801.xlsx")
     LIBREOFFICE_BIN = (os.environ.get("LIBREOFFICE_BIN") or "").strip()
     ALLOWED_SOURCE_ROOTS = []
     APP_ENV = os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or "development"

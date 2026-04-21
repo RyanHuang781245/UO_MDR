@@ -246,6 +246,29 @@ def available_input_files(task_id: str) -> tuple[list[str], list[str]]:
     return word_options, excel_options
 
 
+def input_file_history(task_id: str, *, kind: str, current_file: str = "") -> list[dict]:
+    input_dir = standard_update_input_dir(task_id)
+    if not os.path.isdir(input_dir):
+        return []
+    allowed_exts = ALLOWED_WORD_EXTENSIONS if kind == "word" else ALLOWED_EXCEL_EXTENSIONS
+    items: list[dict] = []
+    for rel_path in list_files(input_dir):
+        abs_path = os.path.join(input_dir, rel_path.replace("/", os.sep))
+        if Path(rel_path).suffix.lower() not in allowed_exts or not os.path.isfile(abs_path):
+            continue
+        stat = os.stat(abs_path)
+        items.append(
+            {
+                "name": rel_path,
+                "uploaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                "is_current": rel_path == (current_file or ""),
+            }
+        )
+    items.sort(key=lambda item: (not item["is_current"], item["uploaded_at"]), reverse=False)
+    items.sort(key=lambda item: item["uploaded_at"], reverse=True)
+    return items
+
+
 def safe_standard_update_file(task_id: str, rel_path: str, allowed_exts: set[str]) -> str:
     normalized = os.path.normpath((rel_path or "").replace("/", os.sep))
     if not normalized or normalized.startswith("..") or os.path.isabs(normalized):

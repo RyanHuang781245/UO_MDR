@@ -107,6 +107,43 @@
   .version-notice-row form {
     margin: 0;
   }
+  .upload-history {
+    border-top: 1px solid var(--app-border);
+    padding-top: 0.875rem;
+  }
+  .upload-history__title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--bs-gray-500);
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .upload-history__list {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .upload-history__item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--app-border);
+    border-radius: 0.625rem;
+    background: var(--app-card-bg);
+  }
+  .upload-history__name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--app-text);
+    word-break: break-word;
+  }
+  .upload-history__meta {
+    font-size: 0.8125rem;
+    color: var(--bs-gray-500);
+    white-space: nowrap;
+  }
   @media (max-width: 991.98px) {
     .detail-grid {
       grid-template-columns: 1fr;
@@ -203,20 +240,54 @@
       </div>
       <div class="detail-grid">
         <div class="border rounded-3 p-3">
-          <h6 class="fw-bold mb-3">Word 文件</h6>
+          <label class="form-label fw-bold">
+            <i class="bi bi-file-earmark-word text-primary flex-shrink-0"></i>
+            Word 文件
+          </label>
           <form action="{{ url_for('standard_updates_bp.upload_word', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-3">
             <input class="form-control form-control-custom" type="file" name="word_file" accept=".docx" required>
-            <div class="small text-muted">目前檔案：{{ task.word_file_path or '尚未上傳' }}</div>
             <button class="btn btn-primary align-self-start" type="submit">上傳 Word</button>
+            <div class="upload-history">
+              <div class="upload-history__title">上傳歷史</div>
+              <div class="upload-history__list">
+                {% for item in word_history %}
+                <div class="upload-history__item">
+                  <div>
+                    <div class="upload-history__name">{{ item.name }}</div>
+                  </div>
+                  <div class="upload-history__meta">{{ item.uploaded_at }}</div>
+                </div>
+                {% else %}
+                <div class="small text-muted">目前沒有 Word 上傳紀錄。</div>
+                {% endfor %}
+              </div>
+            </div>
           </form>
         </div>
 
         <div class="border rounded-3 p-3">
-          <h6 class="fw-bold mb-3">標準 Excel</h6>
+          <label class="form-label fw-bold">
+            <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
+            Excel 標準總表
+          </label>
           <form action="{{ url_for('standard_updates_bp.upload_standard_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-3">
             <input class="form-control form-control-custom" type="file" name="standard_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
-            <div class="small text-muted">目前檔案：{{ task.standard_excel_path or '尚未上傳' }}</div>
-            <button class="btn btn-primary align-self-start" type="submit">上傳 Excel</button>
+            <button class="btn btn-success align-self-start" type="submit">上傳 Excel</button>
+            <div class="upload-history">
+              <div class="upload-history__title">上傳歷史</div>
+              <div class="upload-history__list">
+                {% for item in standard_excel_history %}
+                <div class="upload-history__item">
+                  <div>
+                    <div class="upload-history__name">{{ item.name }}</div>
+                  </div>
+                  <div class="upload-history__meta">{{ item.uploaded_at }}</div>
+                </div>
+                {% else %}
+                <div class="small text-muted">目前沒有 Excel 上傳紀錄。</div>
+                {% endfor %}
+              </div>
+            </div>
           </form>
         </div>
       </div>

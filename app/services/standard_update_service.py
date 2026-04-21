@@ -73,6 +73,7 @@ def create_standard_update(name: str, description: str = "") -> str:
 
     work_id, creator_name = get_actor_info()
     now = datetime.now()
+    harmonised_release = sync_harmonised_release_snapshot()
     meta = {
         "id": task_id,
         "name": name,
@@ -84,8 +85,8 @@ def create_standard_update(name: str, description: str = "") -> str:
         "status": STATUS_DRAFT,
         "word_file_path": "",
         "standard_excel_path": "",
-        "harmonised_snapshot_path": "",
-        "harmonised_snapshot_version": "",
+        "harmonised_snapshot_path": harmonised_release.get("path", ""),
+        "harmonised_snapshot_version": harmonised_release.get("version_label", ""),
         "last_output_path": "",
         "last_run_at": "",
         "last_run_status": "",
@@ -101,6 +102,8 @@ def create_standard_update(name: str, description: str = "") -> str:
             creator_name=creator_name or None,
             creator_work_id=work_id or None,
             status=STATUS_DRAFT,
+            harmonised_snapshot_path=harmonised_release.get("path") or None,
+            harmonised_snapshot_version=harmonised_release.get("version_label") or None,
             created_at=now,
             updated_at=now,
         )
@@ -156,6 +159,7 @@ def load_standard_update(task_id: str) -> dict:
     meta.setdefault("last_run_status", "")
     meta["input_dir"] = standard_update_input_dir(task_id)
     meta["output_dir"] = standard_update_output_dir(task_id)
+    meta["has_locked_harmonised"] = bool(meta.get("harmonised_snapshot_path") and os.path.isfile(meta["harmonised_snapshot_path"]))
     return meta
 
 
@@ -300,6 +304,19 @@ def get_active_harmonised_release() -> dict:
     }
 
 
+def get_locked_harmonised_release(meta: dict) -> dict:
+    path = (meta or {}).get("harmonised_snapshot_path", "") or ""
+    if not path or not os.path.isfile(path):
+        return {}
+    stat = os.stat(path)
+    return {
+        "file_name": os.path.basename(path),
+        "path": path,
+        "version_label": (meta or {}).get("harmonised_snapshot_version", "") or datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M"),
+        "downloaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+    }
+
+
 def sync_harmonised_release_snapshot() -> dict:
     active = get_active_harmonised_release()
     if not active.get("path"):
@@ -343,3 +360,16 @@ def _sha1_file(path: str) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def lock_standard_update_to_latest_harmonised(task_id: str) -> dict:
+    meta = load_standard_update(task_id)
+    if not meta:
+        return {}
+    latest = sync_harmonised_release_snapshot()
+    if not latest.get("path"):
+        return {}
+    meta["harmonised_snapshot_path"] = latest.get("path", "")
+    meta["harmonised_snapshot_version"] = latest.get("version_label", "")
+    save_standard_update(task_id, meta)
+    return meta

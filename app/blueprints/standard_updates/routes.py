@@ -41,6 +41,8 @@ from app.services.standard_update_service import (
     create_standard_update,
     delete_standard_update,
     get_active_harmonised_release,
+    get_locked_harmonised_release,
+    lock_standard_update_to_latest_harmonised,
     list_standard_updates,
     load_standard_update,
     safe_standard_update_file,
@@ -104,7 +106,7 @@ def _render_mapping_page(
         abort(404)
     word_options, excel_options = available_input_files(task_id)
     chapter_options, chapter_options_error = _load_chapter_options(task_id, selected_word)
-    harmonised_release = sync_harmonised_release_snapshot()
+    harmonised_release = get_locked_harmonised_release(task)
     reference_payload = (preview_result or {}).get("reference_payload", {})
     active_iso_priority = tuple((preview_result or {}).get("iso_priority") or normalize_iso_priority(iso_priority))
     active_required_headers = tuple((preview_result or {}).get("required_headers") or normalize_required_headers(required_headers))
@@ -192,15 +194,34 @@ def detail(task_id: str):
         abort(404)
     word_options, excel_options = available_input_files(task_id)
     harmonised_release = sync_harmonised_release_snapshot()
-    is_ready = bool(task.get("word_file_path") and task.get("standard_excel_path") and harmonised_release.get("path"))
+    locked_harmonised_release = get_locked_harmonised_release(task)
+    has_newer_harmonised = bool(
+        harmonised_release.get("path")
+        and harmonised_release.get("path") != task.get("harmonised_snapshot_path", "")
+    )
+    is_ready = bool(task.get("word_file_path") and task.get("standard_excel_path") and locked_harmonised_release.get("path"))
     return render_template(
         "standard_updates/detail.html",
         task=task,
         word_options=word_options,
         excel_options=excel_options,
         harmonised_release=harmonised_release,
+        locked_harmonised_release=locked_harmonised_release,
+        has_newer_harmonised=has_newer_harmonised,
         is_ready=is_ready,
     )
+
+
+@standard_updates_bp.post("/standards/<task_id>/use-latest-harmonised", endpoint="use_latest_harmonised")
+def use_latest_harmonised(task_id: str):
+    task = lock_standard_update_to_latest_harmonised(task_id)
+    if not task:
+        abort(404)
+    if task.get("harmonised_snapshot_path"):
+        flash("已改用最新 harmonised 版本", "success")
+    else:
+        flash("目前找不到可用的 harmonised 版本", "warning")
+    return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
 
 
 @standard_updates_bp.post("/standards/<task_id>/delete", endpoint="delete")
@@ -307,8 +328,10 @@ def mapping(task_id: str):
 
     try:
         word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS)
-        harmonised_release = sync_harmonised_release_snapshot()
-        harmonised_reference_path = harmonised_release.get("path")
+        locked_harmonised_release = get_locked_harmonised_release(task)
+        harmonised_reference_path = locked_harmonised_release.get("path")
+        if not harmonised_reference_path:
+            raise FileNotFoundError("目前任務鎖定的 harmonised Excel 不存在，請先改用最新版本")
         if action == "inspect_headers":
             result = inspect_document_tables(
                 word_path,
@@ -351,8 +374,6 @@ def mapping(task_id: str):
                 manual_header_mappings=manual_header_mappings,
             )
             task["status"] = STATUS_PREVIEWED
-            task["harmonised_snapshot_path"] = harmonised_release.get("path", "")
-            task["harmonised_snapshot_version"] = harmonised_release.get("version_label", "")
             save_standard_update(task_id, task)
         if limit_to_chapter and not result.get("table_checks"):
             flash("指定章節下找不到可辨識的表格", "warning")
@@ -422,8 +443,10 @@ def download_result(task_id: str):
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
         word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS)
         excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS)
-        harmonised_release = sync_harmonised_release_snapshot()
-        harmonised_reference_path = harmonised_release.get("path")
+        locked_harmonised_release = get_locked_harmonised_release(task)
+        harmonised_reference_path = locked_harmonised_release.get("path")
+        if not harmonised_reference_path:
+            raise FileNotFoundError("目前任務鎖定的 harmonised Excel 不存在，請先改用最新版本")
         inspection_result = inspect_document_tables(
             word_path,
             target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
@@ -469,8 +492,6 @@ def download_result(task_id: str):
             manual_header_mappings=manual_header_mappings,
         )
         task["status"] = STATUS_COMPLETED
-        task["harmonised_snapshot_path"] = harmonised_release.get("path", "")
-        task["harmonised_snapshot_version"] = harmonised_release.get("version_label", "")
         task["last_output_path"] = output_path
         task["last_run_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         task["last_run_status"] = STATUS_COMPLETED

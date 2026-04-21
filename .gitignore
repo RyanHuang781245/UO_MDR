@@ -5,6 +5,8 @@ task_store/
 word_all_images/
 images/
 test_file/
+standard_update_store
+harmonised_store
 test.ipynb
 test.py
 uv.lock

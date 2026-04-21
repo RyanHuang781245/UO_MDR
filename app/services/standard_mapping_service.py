@@ -34,6 +34,7 @@ BLUE_COLOR = "2563EB"
 STANDARD_LEVELS = ("BS EN ISO", "BS EN", "EN", "EN ISO", "BS ISO", "ISO", "BS")
 EN_PRIORITY_LEVELS = ("BS EN ISO", "BS EN", "EN", "EN ISO")
 DEFAULT_ISO_PRIORITY = STANDARD_LEVELS
+DEFAULT_ENABLED_STANDARD_LEVELS = EN_PRIORITY_LEVELS
 DEFAULT_PREFER_LATEST_EN_VARIANTS = True
 AVAILABLE_HEADER_OPTIONS = (
     "Standards",
@@ -308,6 +309,35 @@ def normalize_iso_priority(priority_order: list[str] | tuple[str, ...] | None) -
         if label not in seen:
             normalized.append(label)
     return tuple(normalized[: len(DEFAULT_ISO_PRIORITY)])
+
+
+def normalize_enabled_standard_levels(levels: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if levels is None:
+        return DEFAULT_ENABLED_STANDARD_LEVELS
+    normalized = []
+    seen = set()
+    for item in levels:
+        value = normalize_key_for_search(item)
+        if value == "BS EN ISO":
+            label = "BS EN ISO"
+        elif value == "BS EN":
+            label = "BS EN"
+        elif value == "EN":
+            label = "EN"
+        elif value == "EN ISO":
+            label = "EN ISO"
+        elif value == "BS ISO":
+            label = "BS ISO"
+        elif value == "ISO":
+            label = "ISO"
+        elif value == "BS":
+            label = "BS"
+        else:
+            continue
+        if label not in seen:
+            normalized.append(label)
+            seen.add(label)
+    return tuple(normalized)
 
 
 def normalize_required_headers(required_headers: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
@@ -715,6 +745,7 @@ def find_latest_year_from_excel(
     standard_name: str,
     excel_index: dict,
     iso_priority: list[str] | tuple[str, ...] | None = None,
+    enabled_standard_levels: list[str] | tuple[str, ...] | None = None,
     harmonised_reference_index: set[str] | None = None,
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
 ) -> dict | None:
@@ -727,7 +758,7 @@ def find_latest_year_from_excel(
 
     candidates = []
     normalized_iso_priority = normalize_iso_priority(iso_priority)
-
+    normalized_enabled_levels = normalize_enabled_standard_levels(enabled_standard_levels)
     if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         target_sheets = ISO_FAMILY_SHEETS
     elif family == "ASTM":
@@ -747,8 +778,6 @@ def find_latest_year_from_excel(
                 if family == "ASTM"
                 else extract_latest_year_from_en_iso_style(rec["standard_no"])
             )
-            if year is None:
-                continue
             candidates.append({
                 "sheet_name": sheet_name,
                 "excel_col_letter": "F",
@@ -761,6 +790,11 @@ def find_latest_year_from_excel(
                 "standard_level": rec["standard_level"],
                 "standard_level_rank": rec["standard_level_rank"],
                 "search_family": rec["search_family"],
+                "apply_year_comparison": (
+                    rec["standard_level"] in normalized_enabled_levels
+                    if family in {"ISO_FAMILY", "IEC_FAMILY"}
+                    else True
+                ),
                 "decision": "kept",
                 "decision_reason": "納入初始候選",
                 "candidate_id": "",
@@ -772,21 +806,14 @@ def find_latest_year_from_excel(
     all_candidates = [dict(item) for item in candidates]
     if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         priority_index = {label: idx for idx, label in enumerate(normalized_iso_priority)}
-        has_en_candidates = any(candidate["standard_level"] in EN_PRIORITY_LEVELS for candidate in all_candidates)
-        if has_en_candidates:
-            candidates = [candidate for candidate in all_candidates if candidate["standard_level"] in EN_PRIORITY_LEVELS]
-        else:
-            candidates = list(all_candidates)
+        candidates = list(all_candidates)
         for candidate in all_candidates:
-            if has_en_candidates and candidate["standard_level"] not in EN_PRIORITY_LEVELS:
-                candidate["decision"] = "excluded"
-                candidate["decision_reason"] = "同核心編號已有 EN 系列候選，非 EN 候選不參與決選"
-            elif candidate["standard_level"] not in normalized_iso_priority:
+            if candidate["standard_level"] not in normalized_iso_priority:
                 candidate["decision_reason"] = "不在優先級清單內，僅在無更高優先候選時作為後備"
-            elif has_en_candidates:
-                candidate["decision_reason"] = "同核心編號已有 EN 系列候選，先在 EN 系列中比年份，再比優先級"
+            elif candidate["apply_year_comparison"]:
+                candidate["decision_reason"] = "此類型已勾選，會納入年份比較，再依優先級決選"
             else:
-                candidate["decision_reason"] = "納入同核心編號候選，先依年份、再依優先級排序"
+                candidate["decision_reason"] = "此類型未勾選，不做年份比較，僅依優先級決選"
     else:
         for candidate in all_candidates:
             candidate["decision_reason"] = "符合查詢條件，進入最終排序"
@@ -800,7 +827,9 @@ def find_latest_year_from_excel(
         if family in {"ISO_FAMILY", "IEC_FAMILY"}:
             priority_rank = -priority_index.get(candidate["standard_level"], len(normalized_iso_priority))
             prioritized = 1 if candidate["standard_level"] in normalized_iso_priority else 0
-            return (latest_year, prioritized, priority_rank, -name_length)
+            compare_flag = 1 if candidate.get("apply_year_comparison") else 0
+            year_rank = (latest_year or 0) if compare_flag else 0
+            return (prioritized, compare_flag, year_rank, priority_rank, -name_length)
         return (1, 0, latest_year, name_length)
 
     candidates.sort(
@@ -814,10 +843,10 @@ def find_latest_year_from_excel(
             candidate["decision_reason"] = "通過篩選，但排序結果未被選用"
     selected["decision"] = "selected"
     if family in {"ISO_FAMILY", "IEC_FAMILY"}:
-        if any(candidate["standard_level"] in EN_PRIORITY_LEVELS for candidate in all_candidates):
-            selected["decision_reason"] = "最終採用：同核心編號已有 EN 系列候選，先在 EN 系列中比年份，再比優先級後選中"
+        if selected.get("apply_year_comparison"):
+            selected["decision_reason"] = "最終採用：此類型已勾選，依年份比較後再按優先級選中"
         else:
-            selected["decision_reason"] = "最終採用：同核心編號中先依年份、再依優先級排序後選中"
+            selected["decision_reason"] = "最終採用：此類型未勾選，因此僅依優先級選中"
     else:
         selected["decision_reason"] = "最終採用：依優先級與年份排序後選中"
 
@@ -842,6 +871,7 @@ def find_latest_year_from_excel(
         harmonised_reference_index,
     ) else "No"
     result["iso_priority"] = list(normalized_iso_priority)
+    result["enabled_standard_levels"] = list(normalized_enabled_levels)
     result["prefer_latest_en_variants"] = prefer_latest_en_variants
     return result
 
@@ -878,6 +908,10 @@ def apply_candidate_override(match_info: dict, override_candidate_id: str | None
     for key, value in selected.items():
         if key != "all_candidates":
             result[key] = value
+    result["matched_harmonised"] = selected.get("candidate_harmonised", result.get("matched_harmonised", ""))
+    result["matched_title"] = selected.get("matched_title", result.get("matched_title", ""))
+    result["latest_year"] = selected.get("latest_year", result.get("latest_year"))
+    result["apply_year_comparison"] = selected.get("latest_year") not in {None, ""}
     result["all_candidates"] = candidates
     result["selected_candidate_id"] = selected["candidate_id"]
     result["auto_selected_candidate_id"] = auto_selected_id
@@ -1555,6 +1589,7 @@ def process_document(
     override_map: dict | None = None,
     output_path: str | None = None,
     iso_priority: list[str] | tuple[str, ...] | None = None,
+    enabled_standard_levels: list[str] | tuple[str, ...] | None = None,
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
     required_headers: list[str] | tuple[str, ...] | None = None,
     target_chapter_ref: str = "",
@@ -1563,6 +1598,7 @@ def process_document(
 ) -> dict:
     override_map = override_map or {}
     normalized_iso_priority = normalize_iso_priority(iso_priority)
+    normalized_enabled_levels = normalize_enabled_standard_levels(enabled_standard_levels)
     normalized_required_headers = normalize_required_headers(required_headers)
     normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
     excel_index = load_excel_index(excel_path)
@@ -1602,6 +1638,7 @@ def process_document(
                 standards,
                 excel_index,
                 normalized_iso_priority,
+                normalized_enabled_levels,
                 harmonised_reference_index=harmonised_reference_index,
                 prefer_latest_en_variants=prefer_latest_en_variants,
             )
@@ -1643,13 +1680,14 @@ def process_document(
                 })
                 continue
 
-            latest_year = str(match_info["latest_year"])
+            apply_year_comparison = bool(match_info.get("apply_year_comparison"))
+            latest_year = "" if (not apply_year_comparison or match_info.get("latest_year") in {None, ""}) else str(match_info["latest_year"])
             matched_standard_no = match_info["matched_standard_no"]
             matched_display_standard_no = match_info["matched_display_standard_no"]
             matched_harmonised = normalize_text(match_info.get("matched_harmonised", ""))
             matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(matched_display_standard_no)
-            year_needs_update = word_year_text != latest_year
+            year_needs_update = apply_year_comparison and word_year_text != latest_year
             harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(matched_harmonised)
             title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(matched_title)
 
@@ -1715,6 +1753,7 @@ def process_document(
             "reference_payload": reference_payload,
             "harmonised_reference_path": normalize_text(harmonised_reference_path or ""),
             "iso_priority": list(normalized_iso_priority),
+            "enabled_standard_levels": list(normalized_enabled_levels),
             "prefer_latest_en_variants": prefer_latest_en_variants,
             "required_headers": list(normalized_required_headers),
             "manual_header_mappings": {

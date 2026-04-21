@@ -11,6 +11,7 @@ from app.blueprints.tasks.standard_mapping_routes import (
     _MANUAL_HEADER_FIELD_ORDER,
     _STANDARD_PRIORITY_FIELDS,
     _build_stats,
+    _parse_enabled_standard_levels,
     _has_unresolved_manual_mapping,
     _parse_iso_priority,
     _parse_limit_to_chapter,
@@ -21,11 +22,13 @@ from app.blueprints.tasks.standard_mapping_routes import (
     _parse_target_table_index,
 )
 from app.services.standard_mapping_service import (
+    DEFAULT_ENABLED_STANDARD_LEVELS,
     DEFAULT_ISO_PRIORITY,
     DEFAULT_REQUIRED_HEADERS,
     inspect_document_sections,
     inspect_document_tables,
     normalize_iso_priority,
+    normalize_enabled_standard_levels,
     normalize_manual_header_mappings,
     normalize_required_headers,
     process_document,
@@ -96,6 +99,7 @@ def _render_mapping_page(
     selected_word: str = "",
     selected_excel: str = "",
     iso_priority: tuple[str, ...] | list[str] | None = None,
+    enabled_standard_levels: tuple[str, ...] | list[str] | None = None,
     required_headers: tuple[str, ...] | list[str] | None = None,
     limit_to_chapter: bool = False,
     target_chapter_ref: str = "",
@@ -111,6 +115,12 @@ def _render_mapping_page(
     harmonised_release = get_locked_harmonised_release(task)
     reference_payload = (preview_result or {}).get("reference_payload", {})
     active_iso_priority = tuple((preview_result or {}).get("iso_priority") or normalize_iso_priority(iso_priority))
+    preview_enabled_levels = (preview_result or {}).get("enabled_standard_levels")
+    active_enabled_standard_levels = tuple(
+        normalize_enabled_standard_levels(enabled_standard_levels)
+        if preview_enabled_levels is None
+        else preview_enabled_levels
+    )
     active_required_headers = tuple((preview_result or {}).get("required_headers") or normalize_required_headers(required_headers))
     active_manual_header_mappings = normalize_manual_header_mappings(
         (preview_result or {}).get("manual_header_mappings") or manual_header_mappings
@@ -140,6 +150,7 @@ def _render_mapping_page(
         has_preview=bool(preview_result and (preview_result.get("preview_tables") or [])),
         last_generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if preview_result else "",
         iso_priority=active_iso_priority,
+        enabled_standard_levels=active_enabled_standard_levels,
         iso_priority_positions=iso_priority_positions,
         standard_priority_fields=_STANDARD_PRIORITY_FIELDS,
         required_headers=active_required_headers,
@@ -297,6 +308,7 @@ def mapping(task_id: str):
     if request.method == "GET":
         try:
             iso_priority = _parse_iso_priority(request.values)
+            enabled_standard_levels = _parse_enabled_standard_levels(request.values)
             required_headers = _parse_required_headers(request.values)
             manual_header_mappings = _parse_manual_header_mappings(request.values)
             limit_to_chapter = _parse_limit_to_chapter(request.values)
@@ -306,6 +318,7 @@ def mapping(task_id: str):
         except ValueError as exc:
             flash(str(exc), "danger")
             iso_priority = DEFAULT_ISO_PRIORITY
+            enabled_standard_levels = DEFAULT_ENABLED_STANDARD_LEVELS
             required_headers = DEFAULT_REQUIRED_HEADERS
             limit_to_chapter = False
             target_chapter_ref = ""
@@ -317,6 +330,7 @@ def mapping(task_id: str):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=iso_priority,
+            enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
@@ -331,6 +345,7 @@ def mapping(task_id: str):
 
     try:
         iso_priority = _parse_iso_priority(request.form)
+        enabled_standard_levels = _parse_enabled_standard_levels(request.form)
         required_headers = _parse_required_headers(request.form)
         manual_header_mappings = _parse_manual_header_mappings(request.form)
         limit_to_chapter = _parse_limit_to_chapter(request.form)
@@ -344,6 +359,7 @@ def mapping(task_id: str):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=DEFAULT_ISO_PRIORITY,
+            enabled_standard_levels=DEFAULT_ENABLED_STANDARD_LEVELS,
             required_headers=DEFAULT_REQUIRED_HEADERS,
         )
 
@@ -376,6 +392,7 @@ def mapping(task_id: str):
                     selected_word=selected_word,
                     selected_excel=selected_excel,
                     iso_priority=iso_priority,
+                    enabled_standard_levels=enabled_standard_levels,
                     required_headers=required_headers,
                     limit_to_chapter=limit_to_chapter,
                     target_chapter_ref=target_chapter_ref,
@@ -389,6 +406,7 @@ def mapping(task_id: str):
                 excel_path,
                 harmonised_reference_path=harmonised_reference_path,
                 iso_priority=iso_priority,
+                enabled_standard_levels=enabled_standard_levels,
                 required_headers=required_headers,
                 target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
                 target_table_index=target_table_index if limit_to_chapter else None,
@@ -405,6 +423,7 @@ def mapping(task_id: str):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=iso_priority,
+            enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
@@ -422,6 +441,7 @@ def mapping(task_id: str):
             selected_word=selected_word,
             selected_excel=selected_excel,
             iso_priority=iso_priority,
+            enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
@@ -436,6 +456,7 @@ def mapping(task_id: str):
         selected_word=selected_word,
         selected_excel=selected_excel,
         iso_priority=iso_priority,
+        enabled_standard_levels=enabled_standard_levels,
         required_headers=required_headers,
         limit_to_chapter=limit_to_chapter,
         target_chapter_ref=target_chapter_ref,
@@ -455,6 +476,7 @@ def download_result(task_id: str):
 
     try:
         iso_priority = _parse_iso_priority(request.form)
+        enabled_standard_levels = _parse_enabled_standard_levels(request.form)
         required_headers = _parse_required_headers(request.form)
         manual_header_mappings = _parse_manual_header_mappings(request.form)
         limit_to_chapter = _parse_limit_to_chapter(request.form)
@@ -482,6 +504,7 @@ def download_result(task_id: str):
                 selected_word=selected_word,
                 selected_excel=selected_excel,
                 iso_priority=iso_priority,
+                enabled_standard_levels=enabled_standard_levels,
                 required_headers=required_headers,
                 limit_to_chapter=limit_to_chapter,
                 target_chapter_ref=target_chapter_ref,
@@ -507,6 +530,7 @@ def download_result(task_id: str):
             override_map=override_map,
             output_path=output_path,
             iso_priority=iso_priority,
+            enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
             target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
             target_table_index=target_table_index if limit_to_chapter else None,

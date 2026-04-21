@@ -287,7 +287,7 @@
       <div class="section-head">
         <div>
           <h5 class="fw-bold mb-1">輸入檔案</h5>
-          <div class="small text-muted">上傳 Word 與標準 Excel，完成後即可進入預覽。</div>
+          <div class="small text-muted">上傳 Word 與 UOC 標準規範總表_現行標準 Excel，完成後即可進入預覽。</div>
         </div>
       </div>
       <div class="detail-grid">
@@ -327,7 +327,7 @@
         <div class="border rounded-3 p-3">
           <label class="form-label fw-bold">
             <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
-            Excel 標準總表
+            UOC 標準規範總表_現行標準
           </label>
           <form action="{{ url_for('standard_updates_bp.upload_standard_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
             <input class="form-control form-control-custom" type="file" name="standard_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>

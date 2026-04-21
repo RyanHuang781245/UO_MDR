@@ -122,7 +122,7 @@ def _render_mapping_page(
         "tasks/standard_mapping.html",
         task_id=task_id,
         task={"id": task_id, "name": task.get("name", task_id)},
-        page_title="標準更新預覽",
+        page_title="標準更新",
         page_description="使用獨立標準更新任務的上傳檔案與系統 harmonised 參照表產生預覽或下載結果。",
         task_label="標準更新任務",
         missing_file_hint="請先上傳 Word 與 Excel 檔案。",

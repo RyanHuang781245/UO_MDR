@@ -204,7 +204,7 @@
       </a>
       <a class="btn btn-primary d-inline-flex align-items-center gap-2 {% if not is_ready %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
         <i class="bi bi-arrow-repeat"></i>
-        進入預覽
+        進入標準更新
       </a>
     </div>
   </div>
@@ -279,7 +279,7 @@
           </label>
           <form action="{{ url_for('standard_updates_bp.upload_word', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
             <input class="form-control form-control-custom" type="file" name="word_file" accept=".docx" required>
-            <button class="btn btn-primary align-self-start" type="submit">上傳 Word</button>
+            <button class="btn btn-primary align-self-start mt-1" type="submit">上傳 Word</button>
           </form>
           <div class="upload-history mt-3">
             <div class="upload-history__title">上傳歷史</div>
@@ -312,7 +312,7 @@
           </label>
           <form action="{{ url_for('standard_updates_bp.upload_standard_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
             <input class="form-control form-control-custom" type="file" name="standard_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
-            <button class="btn btn-success align-self-start" type="submit">上傳 Excel</button>
+            <button class="btn btn-success align-self-start mt-1" type="submit">上傳 Excel</button>
           </form>
           <div class="upload-history mt-3">
             <div class="upload-history__title">上傳歷史</div>

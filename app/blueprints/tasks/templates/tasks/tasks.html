@@ -176,10 +176,16 @@
             <h1 class="h3 mb-1 fw-bold">任務管理</h1>
             <p class="text-muted mb-0 small">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑</p>
         </div>
-        <a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('global_batch_bp.global_batch_page') }}">
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('tasks_bp.launcher') }}">
+            <i class="bi bi-grid"></i>
+            功能入口
+          </a>
+          <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('global_batch_bp.global_batch_page') }}">
             <i class="bi bi-calendar2-week"></i>
             排程中心
-        </a>
+          </a>
+        </div>
     </div>
 
     <!-- 建立任務表單 -->

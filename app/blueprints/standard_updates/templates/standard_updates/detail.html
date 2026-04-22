@@ -217,13 +217,13 @@
       <p class="text-muted mb-0 small">{{ task.description or '尚未填寫描述' }}</p>
     </div>
     <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('standard_updates_bp.list') }}">
+      <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('standard_updates_bp.list') }}">
         <i class="bi bi-arrow-left"></i>
-        返回列表
+        返回任務清單
       </a>
-      <a class="btn btn-primary d-inline-flex align-items-center gap-2 {% if not is_ready %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
-        <i class="bi bi-arrow-repeat"></i>
+      <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2 {% if not is_ready %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
         進入標準更新
+        <i class="bi bi-arrow-right"></i>
       </a>
     </div>
   </div>

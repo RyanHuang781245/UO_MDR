@@ -29,6 +29,7 @@ XML_NS = "http://www.w3.org/XML/1998/namespace"
 
 EXCEL_STANDARD_COL_INDEX = 5
 ISO_FAMILY_SHEETS = ["ISO", "BS-EN-DIN(歐洲國家標準)"]
+IEC_REFERENCE_SHEET = "其他國際標準-文件"
 RED_COLOR = "FF0000"
 BLUE_COLOR = "2563EB"
 STANDARD_LEVELS = ("BS EN ISO", "BS EN", "EN", "EN ISO", "BS ISO", "ISO", "BS")
@@ -474,6 +475,17 @@ def extract_iso_family_core(std_no: str) -> str:
     return re.sub(r"^(?:BS\s*EN\s*ISO|DIN\s*EN\s*ISO|EN\s*ISO|BS\s*EN|DIN\s*EN|EN|BS\s*ISO|ISO|BS|IEC)\s*", "", s).strip()
 
 
+def extract_iec_family_core(std_no: str) -> str:
+    s = normalize_key_for_search(std_no)
+    if not s:
+        return ""
+    s = re.sub(r"^(?:IEC)\s*", "", s).strip()
+    s = re.sub(r"\+\s*AMD\s*\d+\s*:\s*(19\d{2}|20\d{2})", "", s, flags=re.IGNORECASE).strip()
+    s = re.sub(r":\s*(19\d{2}|20\d{2}).*$", "", s).strip()
+    s = re.sub(r"\(\s*(19\d{2}|20\d{2})\s*\)", "", s).strip()
+    return s
+
+
 def extract_display_standard_no(std_no: str) -> str:
     family = detect_search_family(std_no)
     s = normalize_text(std_no)
@@ -698,7 +710,7 @@ def detect_sheet_type(standard_name: str) -> str | None:
     if "ASTM" in s:
         return "ASTM"
     if "IEC" in s:
-        return "ISO"
+        return IEC_REFERENCE_SHEET
     if "EN ISO" in s or "BS EN" in s or re.search(r"\bEN\b", s) or "BS ISO" in s or re.search(r"^BS\b", s):
         return "BS-EN-DIN(歐洲國家標準)"
     if re.search(r"\bISO\b", s):
@@ -735,6 +747,20 @@ def extract_latest_year_from_astm_style(std_no: str) -> int | None:
     return max(years) if years else None
 
 
+def extract_latest_year_from_iec_style(std_no: str) -> int | None:
+    normalized = normalize_standard_text(std_no).upper()
+    amd_years = re.findall(r"\+\s*AMD\s*\d+\s*:\s*(19\d{2}|20\d{2})", normalized)
+    if amd_years:
+        return max(int(year) for year in amd_years)
+    colon_years = re.findall(r":\s*(19\d{2}|20\d{2})(?!\d)", normalized)
+    if colon_years:
+        return max(int(year) for year in colon_years)
+    bracket_years = re.findall(r"\(\s*(19\d{2}|20\d{2})\s*\)", normalized)
+    if bracket_years:
+        return max(int(year) for year in bracket_years)
+    return None
+
+
 def extract_amendment_number(std_no: str) -> str:
     normalized = normalize_standard_text(std_no)
     match = re.search(r"(?:\+|/)\s*A(?:MD)?\s*(\d+)\b", normalized, flags=re.IGNORECASE)
@@ -757,7 +783,9 @@ def extract_standard_match_key(std_no: str, sheet_name: str) -> str:
     s = normalize_key_for_search(std_no)
     if not s:
         return ""
-    if family in {"ISO_FAMILY", "IEC_FAMILY"}:
+    if family == "IEC_FAMILY":
+        return extract_iec_family_core(std_no)
+    if family == "ISO_FAMILY":
         return extract_iso_family_core(std_no)
     if family == "ASTM":
         return re.sub(r"\s*-\s*(\d{2}[A-Z]?)(?!\d).*$", "", s).strip()
@@ -809,6 +837,8 @@ def load_excel_index(excel_path: str) -> dict:
         if sheet_name not in wb.sheetnames:
             raise ValueError(f"Excel 缺少工作表: {sheet_name}")
         index[sheet_name] = build_sheet_records(wb[sheet_name], EXCEL_STANDARD_COL_INDEX)
+    if IEC_REFERENCE_SHEET in wb.sheetnames:
+        index[IEC_REFERENCE_SHEET] = build_sheet_records(wb[IEC_REFERENCE_SHEET], EXCEL_STANDARD_COL_INDEX)
     return index
 
 
@@ -830,8 +860,10 @@ def find_latest_year_from_excel(
     candidates = []
     normalized_iso_priority = normalize_iso_priority(iso_priority)
     normalized_enabled_levels = normalize_enabled_standard_levels(enabled_standard_levels)
-    if family in {"ISO_FAMILY", "IEC_FAMILY"}:
+    if family == "ISO_FAMILY":
         target_sheets = ISO_FAMILY_SHEETS
+    elif family == "IEC_FAMILY":
+        target_sheets = [IEC_REFERENCE_SHEET] if IEC_REFERENCE_SHEET in excel_index else []
     elif family == "ASTM":
         target_sheets = ["ASTM"]
     else:
@@ -847,6 +879,8 @@ def find_latest_year_from_excel(
             year = (
                 extract_latest_year_from_astm_style(rec["standard_no"])
                 if family == "ASTM"
+                else extract_latest_year_from_iec_style(rec["standard_no"])
+                if family == "IEC_FAMILY"
                 else extract_latest_year_from_en_iso_style(rec["standard_no"])
             )
             candidates.append({

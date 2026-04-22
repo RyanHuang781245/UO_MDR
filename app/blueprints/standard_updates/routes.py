@@ -100,6 +100,7 @@ def _render_mapping_page(
     preview_result: dict | None = None,
     selected_word: str = "",
     selected_excel: str = "",
+    selected_regulation_excel: str = "",
     iso_priority: tuple[str, ...] | list[str] | None = None,
     enabled_standard_levels: tuple[str, ...] | list[str] | None = None,
     required_headers: tuple[str, ...] | list[str] | None = None,
@@ -113,6 +114,7 @@ def _render_mapping_page(
     if not task:
         abort(404)
     word_options, excel_options = available_input_files(task_id)
+    regulation_excel_options = [item["name"] for item in input_file_history(task_id, kind="regulation", current_file=task.get("regulation_excel_path", ""))]
     chapter_options, chapter_options_error = _load_chapter_options(task_id, selected_word)
     harmonised_release = get_locked_harmonised_release(task)
     reference_payload = (preview_result or {}).get("reference_payload", {})
@@ -140,8 +142,10 @@ def _render_mapping_page(
         missing_file_hint="請先上傳 Word 與 Excel 檔案。",
         word_options=word_options,
         excel_options=excel_options,
+        regulation_excel_options=regulation_excel_options,
         selected_word=selected_word,
         selected_excel=selected_excel,
+        selected_regulation_excel=selected_regulation_excel,
         selected_harmonised_excel=harmonised_release.get("file_name", ""),
         preview_tables=(preview_result or {}).get("preview_tables", []),
         table_checks=table_checks,
@@ -152,7 +156,9 @@ def _render_mapping_page(
         has_preview=bool(preview_result and (preview_result.get("preview_tables") or [])),
         last_generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if preview_result else "",
         iso_priority=active_iso_priority,
+        default_iso_priority=DEFAULT_ISO_PRIORITY,
         enabled_standard_levels=active_enabled_standard_levels,
+        default_enabled_standard_levels=DEFAULT_ENABLED_STANDARD_LEVELS,
         iso_priority_positions=iso_priority_positions,
         standard_priority_fields=_STANDARD_PRIORITY_FIELDS,
         required_headers=active_required_headers,
@@ -228,6 +234,27 @@ def detail(task_id: str):
         has_newer_harmonised=has_newer_harmonised,
         is_ready=is_ready,
     )
+
+
+@standard_updates_bp.post("/standards/<task_id>/rename", endpoint="rename")
+def rename(task_id: str):
+    task = load_standard_update(task_id)
+    if not task:
+        abort(404)
+    next_url = (request.form.get("next") or request.referrer or "").strip()
+    if not next_url:
+        next_url = url_for("standard_updates_bp.list")
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        flash("請輸入標準更新任務名稱", "danger")
+        return redirect(next_url)
+    if standard_update_name_exists(name, exclude_id=task_id):
+        flash("標準更新任務名稱已存在", "danger")
+        return redirect(next_url)
+    task["name"] = name
+    save_standard_update(task_id, task)
+    flash("已更新標準更新任務名稱", "success")
+    return redirect(next_url)
 
 
 @standard_updates_bp.post("/standards/<task_id>/use-latest-harmonised", endpoint="use_latest_harmonised")
@@ -322,6 +349,7 @@ def mapping(task_id: str):
         abort(404)
     selected_word = (request.values.get("word_path") or task.get("word_file_path") or "").strip()
     selected_excel = (request.values.get("excel_path") or task.get("standard_excel_path") or "").strip()
+    selected_regulation_excel = (request.values.get("regulation_excel_path") or task.get("regulation_excel_path") or "").strip()
 
     if request.method == "GET":
         try:
@@ -347,6 +375,7 @@ def mapping(task_id: str):
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
+            selected_regulation_excel=selected_regulation_excel,
             iso_priority=iso_priority,
             enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
@@ -406,10 +435,11 @@ def mapping(task_id: str):
                 flash("尚有表格未符合預設四欄格式，請先完成手動對應欄位設定後再更新標準清單。", "warning")
                 return _render_mapping_page(
                     task_id,
-                    preview_result=inspection_result,
-                    selected_word=selected_word,
-                    selected_excel=selected_excel,
-                    iso_priority=iso_priority,
+            preview_result=inspection_result,
+            selected_word=selected_word,
+            selected_excel=selected_excel,
+            selected_regulation_excel=selected_regulation_excel,
+            iso_priority=iso_priority,
                     enabled_standard_levels=enabled_standard_levels,
                     required_headers=required_headers,
                     limit_to_chapter=limit_to_chapter,
@@ -420,8 +450,8 @@ def mapping(task_id: str):
                 )
             excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS, kind="standard_excel")
             regulation_reference_path = _resolve_regulation_reference_path()
-            if task.get("regulation_excel_path"):
-                regulation_reference_path = safe_standard_update_file(task_id, task.get("regulation_excel_path", ""), ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
+            if selected_regulation_excel:
+                regulation_reference_path = safe_standard_update_file(task_id, selected_regulation_excel, ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
             result = process_document(
                 word_path,
                 excel_path,
@@ -477,6 +507,7 @@ def mapping(task_id: str):
         preview_result=result,
         selected_word=selected_word,
         selected_excel=selected_excel,
+        selected_regulation_excel=selected_regulation_excel,
         iso_priority=iso_priority,
         enabled_standard_levels=enabled_standard_levels,
         required_headers=required_headers,
@@ -495,6 +526,7 @@ def download_result(task_id: str):
         abort(404)
     selected_word = (request.form.get("word_path") or task.get("word_file_path") or "").strip()
     selected_excel = (request.form.get("excel_path") or task.get("standard_excel_path") or "").strip()
+    selected_regulation_excel = (request.form.get("regulation_excel_path") or task.get("regulation_excel_path") or "").strip()
 
     try:
         iso_priority = _parse_iso_priority(request.form)
@@ -512,8 +544,8 @@ def download_result(task_id: str):
         locked_harmonised_release = get_locked_harmonised_release(task)
         harmonised_reference_path = locked_harmonised_release.get("path")
         regulation_reference_path = _resolve_regulation_reference_path()
-        if task.get("regulation_excel_path"):
-            regulation_reference_path = safe_standard_update_file(task_id, task.get("regulation_excel_path", ""), ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
+        if selected_regulation_excel:
+            regulation_reference_path = safe_standard_update_file(task_id, selected_regulation_excel, ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
         if not harmonised_reference_path:
             raise FileNotFoundError("目前任務鎖定的 harmonised Excel 不存在，請先改用最新版本")
         inspection_result = inspect_document_tables(
@@ -529,6 +561,7 @@ def download_result(task_id: str):
                 preview_result=inspection_result,
                 selected_word=selected_word,
                 selected_excel=selected_excel,
+                selected_regulation_excel=selected_regulation_excel,
                 iso_priority=iso_priority,
                 enabled_standard_levels=enabled_standard_levels,
                 required_headers=required_headers,

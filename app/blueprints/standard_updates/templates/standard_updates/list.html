@@ -92,6 +92,9 @@
             <td class="text-muted small"><code>{{ item.harmonised_snapshot_version or '-' }}</code></td>
             <td>
               <div class="d-flex justify-content-center gap-1">
+                <button class="btn-action-icon text-primary" type="button" title="重新命名" data-rename-standard-update data-task-id="{{ item.id }}" data-task-name="{{ item.name }}">
+                  <i class="bi bi-input-cursor-text"></i>
+                </button>
                 <form action="{{ url_for('standard_updates_bp.delete', task_id=item.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除標準更新任務「{{ item.name }}」?')">
                   <button class="btn-action-icon text-danger" type="submit" title="刪除任務">
                     <i class="bi bi-trash"></i>
@@ -134,4 +137,92 @@
     {% endif %}
   </div>
 </div>
+<div class="modal fade" id="renameStandardUpdateModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title">重新命名標準更新任務</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-2">
+        <input type="hidden" id="renameStandardUpdateTaskId">
+        <div>
+          <label for="renameStandardUpdateInput" class="form-label small fw-bold text-uppercase text-muted">新任務名稱 (最多 50 字)</label>
+          <input type="text" class="form-control form-control-custom" id="renameStandardUpdateInput" maxlength="50" required>
+          <div class="form-text text-end small" id="renameStandardUpdateCount">0/50</div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-light fw-bold" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary fw-bold" id="renameStandardUpdateSubmitBtn">確定</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  let renameStandardUpdateModalInstance = null;
+
+  function submitPostForm(action, payload) {
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = action;
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = String(value ?? "");
+      form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  function openRenameStandardUpdateModal(taskId, currentName) {
+    const modalEl = document.getElementById("renameStandardUpdateModal");
+    const idInput = document.getElementById("renameStandardUpdateTaskId");
+    const nameInput = document.getElementById("renameStandardUpdateInput");
+    const countEl = document.getElementById("renameStandardUpdateCount");
+    if (!modalEl || !idInput || !nameInput || typeof bootstrap === "undefined") return;
+    idInput.value = taskId || "";
+    nameInput.value = currentName || "";
+    if (countEl) {
+      const max = nameInput.getAttribute("maxlength") || "50";
+      countEl.textContent = `${nameInput.value.length}/${max}`;
+    }
+    renameStandardUpdateModalInstance = renameStandardUpdateModalInstance || new bootstrap.Modal(modalEl);
+    renameStandardUpdateModalInstance.show();
+    setTimeout(() => {
+      nameInput.focus();
+      nameInput.select();
+    }, 120);
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const nameInput = document.getElementById("renameStandardUpdateInput");
+    const countEl = document.getElementById("renameStandardUpdateCount");
+    const submitBtn = document.getElementById("renameStandardUpdateSubmitBtn");
+    const idInput = document.getElementById("renameStandardUpdateTaskId");
+    document.querySelectorAll("[data-rename-standard-update]").forEach((button) => {
+      button.addEventListener("click", () => {
+        openRenameStandardUpdateModal(
+          button.getAttribute("data-task-id") || "",
+          button.getAttribute("data-task-name") || "",
+        );
+      });
+    });
+    if (nameInput && countEl) {
+      nameInput.addEventListener("input", () => {
+        const max = nameInput.getAttribute("maxlength") || "50";
+        countEl.textContent = `${nameInput.value.length}/${max}`;
+      });
+    }
+    submitBtn?.addEventListener("click", () => {
+      const taskId = (idInput?.value || "").trim();
+      const name = (nameInput?.value || "").trim();
+      if (!taskId || !name) return;
+      submitPostForm(`/standards/${encodeURIComponent(taskId)}/rename`, { name, next: window.location.href });
+      renameStandardUpdateModalInstance?.hide();
+    });
+  });
+</script>
 {% endblock %}

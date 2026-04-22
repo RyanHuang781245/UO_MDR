@@ -1170,6 +1170,20 @@
                 {% endfor %}
               </select>
             </div>
+            {% if mapping_route_endpoint == 'standard_updates_bp.mapping' %}
+            <div>
+              <label class="form-label fw-bold">
+                <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
+                各國法規條文登記表
+              </label>
+              <select class="form-select form-control-custom rounded-2" name="regulation_excel_path" id="regulationExcelPathSelect">
+                <option value="">使用系統預設法規條文登記表</option>
+                {% for item in regulation_excel_options %}
+                  <option value="{{ item }}" {% if item == selected_regulation_excel %}selected{% endif %}>{{ item }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endif %}
             <div>
               <label class="form-label fw-bold">
                 <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
@@ -1206,8 +1220,13 @@
                 <div>
                   <div class="priority-sort-list" id="prioritySortList" aria-label="標準優先級排序">
                     <input type="hidden" name="enabled_standard_levels_present" value="1">
-                    <div class="standard-priority-summary">
-                      勾選的類型才會參與抓最新版年份；預設勾選 EN 系列。由上到下表示優先順序，若需調整可直接拖拉排序。
+                    <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap pt-2">
+                      <div class="standard-priority-summary mt-0">
+                        勾選的類型才會參與抓最新版年份；預設勾選 EN 系列。由上到下表示優先順序，若需調整可直接拖拉排序。
+                      </div>
+                      <button class="btn btn-outline-secondary btn-sm" type="button" id="resetPriorityDefaultsBtn">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>回復預設設定
+                      </button>
                     </div>
                     {% for label in iso_priority %}
                       <div class="priority-sort-item" draggable="true" data-priority-item data-label="{{ label }}">
@@ -1593,6 +1612,9 @@
     <form id="downloadForm" action="{{ url_for(mapping_download_endpoint or 'tasks_bp.task_standard_mapping_download', task_id=task_id) }}" method="post">
       <input type="hidden" name="word_path" value="{{ selected_word }}">
       <input type="hidden" name="excel_path" value="{{ selected_excel }}">
+      {% if mapping_route_endpoint == 'standard_updates_bp.mapping' %}
+      <input type="hidden" name="regulation_excel_path" value="{{ selected_regulation_excel or '' }}">
+      {% endif %}
       <input type="hidden" name="enabled_standard_levels_present" value="1">
       {% if not use_system_harmonised %}
       <input type="hidden" name="harmonised_excel_path" value="{{ selected_harmonised_excel }}">
@@ -1675,6 +1697,9 @@
 <script>
   const prioritySortList = document.getElementById("prioritySortList");
   const downloadForm = document.getElementById("downloadForm");
+  const resetPriorityDefaultsBtn = document.getElementById("resetPriorityDefaultsBtn");
+  const defaultIsoPriority = {{ default_iso_priority | tojson }};
+  const defaultEnabledStandardLevels = new Set({{ default_enabled_standard_levels | tojson }});
 
   const syncDownloadPriorityState = () => {
     if (!downloadForm || !prioritySortList) return;
@@ -1690,6 +1715,11 @@
       hidden.value = checkbox.value;
       downloadForm.appendChild(hidden);
     });
+    const regulationSelect = document.querySelector('select[name="regulation_excel_path"]');
+    const regulationMirror = downloadForm.querySelector('input[name="regulation_excel_path"]');
+    if (regulationMirror && regulationSelect) {
+      regulationMirror.value = (regulationSelect.value || "").trim();
+    }
   };
 
   if (downloadForm) {
@@ -1762,6 +1792,27 @@
     refreshPriorityRanks();
   }
 
+  if (resetPriorityDefaultsBtn && prioritySortList) {
+    resetPriorityDefaultsBtn.addEventListener("click", () => {
+      const itemsByLabel = new Map(
+        Array.from(prioritySortList.querySelectorAll("[data-priority-item]")).map((item) => [item.dataset.label || "", item])
+      );
+      defaultIsoPriority.forEach((label) => {
+        const item = itemsByLabel.get(label);
+        if (item) {
+          prioritySortList.appendChild(item);
+        }
+      });
+      prioritySortList.querySelectorAll("[data-priority-item]").forEach((item) => {
+        const checkbox = item.querySelector("[data-priority-checkbox]");
+        if (checkbox) {
+          checkbox.checked = defaultEnabledStandardLevels.has(item.dataset.label || "");
+        }
+      });
+      refreshPriorityRanks();
+    });
+  }
+
   const wordPathSelect = document.getElementById("wordPathSelect");
   if (wordPathSelect) {
     wordPathSelect.addEventListener("change", () => {
@@ -1772,6 +1823,9 @@
       const excelSelect = document.querySelector('select[name="excel_path"]');
       const excelPath = (excelSelect?.value || "").trim();
       if (excelPath) params.set("excel_path", excelPath);
+      const regulationExcelSelect = document.querySelector('select[name="regulation_excel_path"]');
+      const regulationExcelPath = (regulationExcelSelect?.value || "").trim();
+      if (regulationExcelPath) params.set("regulation_excel_path", regulationExcelPath);
       const harmonisedExcelSelect = document.querySelector('select[name="harmonised_excel_path"]');
       const harmonisedExcelPath = (harmonisedExcelSelect?.value || "").trim();
       if (harmonisedExcelPath) params.set("harmonised_excel_path", harmonisedExcelPath);

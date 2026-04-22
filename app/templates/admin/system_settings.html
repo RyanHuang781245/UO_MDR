@@ -82,8 +82,60 @@
             </div>
           </div>
         </div>
+
+        <div class="col-12 mb-1">
+          <div class="card card-outline collapsed-card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa fa-refresh mr-1"></i> Regulation (EU) 2017/745 採認標準
+              </h3>
+              <div class="card-tools">
+                <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                  <i class="fas fa-plus"></i>
+                </button>
+              </div>
+            </div>
+            <div class="card-body" style="display: none;">
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="form-group mb-3">
+                    <label class="mb-1">目前 active 版本</label>
+                    <div class="form-control bg-white">{{ active_release.version_label or '-' }}</div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="form-group mb-3">
+                    <label class="mb-1">最後同步時間</label>
+                    <div class="form-control bg-white">{{ active_release.downloaded_at or '-' }}</div>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="form-group mb-3">
+                    <label class="mb-1">目前檔名</label>
+                    <div class="form-control bg-white">{{ active_release.file_name or '-' }}</div>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="form-group mb-3">
+                    <label class="mb-1">資料夾路徑</label>
+                    <div class="form-control bg-white">{{ regulation_reference_root }}</div>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" form="regulation-resync-form" class="btn btn-primary">
+                <i class="fa fa-refresh mr-1"></i> 重新同步採認標準版本
+              </button>
+              <small class="form-text text-muted mt-2">
+                會從目前設定的資料夾重新掃描最新 Excel，並將其設為前端顯示的 active 版本。
+              </small>
+            </div>
+          </div>
+        </div>
       </div>
 
+    </form>
+    <form method="post" id="regulation-resync-form" class="d-none">
+      <input type="hidden" name="action" value="resync_regulation_release">
     </form>
   </div>
 </section>

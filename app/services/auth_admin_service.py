@@ -31,6 +31,11 @@ from app.models.auth import (
 from app.models.settings import SystemSetting
 from app.services.authn_service import search_ad_users
 from app.services.authz_service import sanitize_next_url, user_is_admin
+from app.services.standard_update_service import (
+    get_active_harmonised_release,
+    harmonised_reference_root,
+    sync_latest_harmonised_release_from_store,
+)
 from app.services.task_service import list_tasks
 from app.utils import TAIWAN_TZ, format_tw_datetime
 
@@ -340,16 +345,24 @@ class SystemSettingView(BaseView):
             db.session.commit()
 
         if request.method == "POST":
+            action = (request.form.get("action") or "save_settings").strip()
             try:
-                setting.email_batch_notify_enabled = request.form.get("email_batch_notify_enabled") == "on"
-                nas_limit = request.form.get("nas_max_copy_file_size_mb")
-                if nas_limit and nas_limit.strip():
-                    setting.nas_max_copy_file_size_mb = int(nas_limit)
+                if action == "resync_regulation_release":
+                    result = sync_latest_harmonised_release_from_store()
+                    if result:
+                        flash("已重新同步採認標準版本", "success")
+                    else:
+                        flash("同步失敗：資料夾內找不到可用的 Excel 檔案", "warning")
                 else:
-                    setting.nas_max_copy_file_size_mb = None
+                    setting.email_batch_notify_enabled = request.form.get("email_batch_notify_enabled") == "on"
+                    nas_limit = request.form.get("nas_max_copy_file_size_mb")
+                    if nas_limit and nas_limit.strip():
+                        setting.nas_max_copy_file_size_mb = int(nas_limit)
+                    else:
+                        setting.nas_max_copy_file_size_mb = None
 
-                commit_session()
-                flash("系統設定已更新", "success")
+                    commit_session()
+                    flash("系統設定已更新", "success")
             except ValueError:
                 flash("數值格式錯誤", "danger")
             except Exception as exc:
@@ -358,7 +371,15 @@ class SystemSettingView(BaseView):
             return redirect(url_for("system_settings.index"))
 
         last_updated = format_tw_datetime(setting.updated_at, assume_tz=TAIWAN_TZ) if setting.updated_at else "-"
-        return self.render("admin/system_settings.html", setting=setting, last_updated=last_updated)
+        active_release = get_active_harmonised_release()
+        reference_root = harmonised_reference_root()
+        return self.render(
+            "admin/system_settings.html",
+            setting=setting,
+            last_updated=last_updated,
+            active_release=active_release,
+            regulation_reference_root=reference_root,
+        )
 
 
 class AuditLogView(BaseView):

@@ -2367,6 +2367,13 @@
     const matchedNo = meta.matched_standard_no || "無";
     const excelYear = meta.excel_year || "無";
     const fieldLabel = meta.field_label || "";
+    const rowKeys = referenceKeysByRow[meta.row_key || ""] || {};
+    const availableFields = {
+      standards: Boolean(rowKeys.standards),
+      issued_year: Boolean(rowKeys.issuedYear),
+      harmonised: Boolean(rowKeys.harmonised),
+      title: Boolean(rowKeys.title),
+    };
     const currentValues = {
       standards: meta.matched_display_standard_no || meta.matched_standard_no || meta.word_standard || "",
       issued_year: String(meta.excel_year || meta.word_year || ""),
@@ -2442,22 +2449,26 @@
       <div class="reference-tooltip-section">
         <div class="reference-tooltip-section__title">編輯此列</div>
         <div class="reference-edit-grid">
+          ${availableFields.standards ? `
           <div class="reference-edit-field reference-edit-field--full">
             <label>Standards</label>
             <input class="form-control form-control-sm" type="text" data-edit-field="standards" value="${escapeHtml(currentValues.standards)}">
-          </div>
+          </div>` : ""}
+          ${availableFields.issued_year ? `
           <div class="reference-edit-field">
             <label>Issued Year</label>
             <input class="form-control form-control-sm" type="text" data-edit-field="issued_year" value="${escapeHtml(currentValues.issued_year)}">
-          </div>
+          </div>` : ""}
+          ${availableFields.harmonised ? `
           <div class="reference-edit-field">
             <label>EU Harmonised</label>
             <input class="form-control form-control-sm" type="text" data-edit-field="harmonised" value="${escapeHtml(currentValues.harmonised)}">
-          </div>
+          </div>` : ""}
+          ${availableFields.title ? `
           <div class="reference-edit-field reference-edit-field--full">
             <label>Title</label>
             <textarea class="form-control form-control-sm" rows="3" data-edit-field="title">${escapeHtml(currentValues.title)}</textarea>
-          </div>
+          </div>` : ""}
         </div>
         <div class="reference-edit-actions">
           <button class="btn btn-sm btn-outline-secondary" type="button" data-action="reset-edit" data-row-key="${escapeHtml(meta.row_key || "")}" data-reference-key="${escapeHtml(meta.reference_key || "")}">還原此列</button>
@@ -2470,6 +2481,13 @@
   function buildNormalizedRowEdits(referenceKey, nextValues) {
     const baseMeta = getEffectiveMeta(referenceKey, { includeEdits: false });
     if (!baseMeta) return {};
+    const rowKeys = referenceKeysByRow[baseMeta.row_key || ""] || {};
+    const allowedFields = {
+      standards: Boolean(rowKeys.standards),
+      issued_year: Boolean(rowKeys.issuedYear),
+      harmonised: Boolean(rowKeys.harmonised),
+      title: Boolean(rowKeys.title),
+    };
     const baseline = {
       standards: baseMeta.matched_display_standard_no || baseMeta.matched_standard_no || baseMeta.word_standard || "",
       issued_year: String(baseMeta.excel_year || baseMeta.word_year || ""),
@@ -2478,6 +2496,7 @@
     };
     const normalized = {};
     Object.entries(nextValues || {}).forEach(([field, value]) => {
+      if (!allowedFields[field]) return;
       const nextValue = String(value ?? "");
       if (nextValue !== String(baseline[field] ?? "")) {
         normalized[field] = nextValue;

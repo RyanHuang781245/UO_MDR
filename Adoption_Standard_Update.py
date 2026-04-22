@@ -20,6 +20,9 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
+_LAST_DOWNLOADED_FILE: Path | None = None
+_LAST_DOWNLOAD_SOURCE_URL = ""
+
 load_dotenv_if_present(str(BASE_DIR))
 
 # ======================
@@ -132,11 +135,14 @@ def sync_frontend_active_release():
         return {}
 
     from app import create_app
-    from app.services.standard_update_service import sync_latest_harmonised_release_from_store
+    from app.services.standard_update_service import activate_harmonised_release
 
     app = create_app()
     with app.app_context():
-        result = sync_latest_harmonised_release_from_store()
+        result = activate_harmonised_release(
+            str(_LAST_DOWNLOADED_FILE or ""),
+            source_url=_LAST_DOWNLOAD_SOURCE_URL,
+        )
     if result:
         print("已同步前端顯示版本:", result.get("file_name"))
         print("Active 路徑:", result.get("path"))
@@ -148,6 +154,8 @@ def sync_frontend_active_release():
 # 主流程
 # ======================
 def main():
+    global _LAST_DOWNLOADED_FILE, _LAST_DOWNLOAD_SOURCE_URL
+
     print("開始檢查更新...")
     save_dir = resolve_save_dir()
     print("下載目錄:", save_dir)
@@ -168,7 +176,9 @@ def main():
     if is_updated(current, last):
         print("發現新版本，開始下載...")
 
-        download_file(current["url"], current["filename"], save_dir)
+        downloaded_path = download_file(current["url"], current["filename"], save_dir)
+        _LAST_DOWNLOADED_FILE = downloaded_path
+        _LAST_DOWNLOAD_SOURCE_URL = current["url"]
 
         save_state(current)
         print("已更新狀態紀錄")

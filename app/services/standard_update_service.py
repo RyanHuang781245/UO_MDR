@@ -432,6 +432,71 @@ def get_active_harmonised_release() -> dict:
     }
 
 
+def activate_harmonised_release(
+    file_path: str,
+    *,
+    source_url: str = "",
+    downloaded_at: datetime | None = None,
+    version_label: str = "",
+) -> dict:
+    abs_path = os.path.abspath(file_path or "")
+    if not abs_path or not os.path.isfile(abs_path):
+        return {}
+    if Path(abs_path).suffix.lower() not in ALLOWED_EXCEL_EXTENSIONS:
+        return {}
+
+    try:
+        stat = os.stat(abs_path)
+    except OSError:
+        return {}
+
+    resolved_downloaded_at = downloaded_at or datetime.fromtimestamp(stat.st_mtime)
+    resolved_version = version_label or resolved_downloaded_at.strftime("%Y%m%d-%H%M")
+    try:
+        checksum = _sha1_file(abs_path)
+    except OSError:
+        checksum = ""
+
+    try:
+        HarmonisedReleaseRecord.query.update({"is_active": False})
+        record = HarmonisedReleaseRecord.query.filter_by(nas_path=abs_path).first()
+        if not record:
+            record = HarmonisedReleaseRecord(
+                source_url=source_url or None,
+                file_name=os.path.basename(abs_path),
+                nas_path=abs_path,
+                version_label=resolved_version,
+                checksum=checksum or None,
+                is_active=True,
+                download_status="available",
+                downloaded_at=resolved_downloaded_at,
+            )
+            db.session.add(record)
+        else:
+            record.source_url = source_url or record.source_url
+            record.file_name = os.path.basename(abs_path)
+            record.nas_path = abs_path
+            record.version_label = resolved_version
+            record.checksum = checksum or record.checksum
+            record.is_active = True
+            record.download_status = "available"
+            record.error_message = None
+            record.downloaded_at = resolved_downloaded_at
+        commit_session()
+        return {
+            "id": record.id,
+            "file_name": record.file_name or os.path.basename(abs_path),
+            "path": record.nas_path,
+            "version_label": record.version_label or resolved_version,
+            "downloaded_at": record.downloaded_at.strftime("%Y-%m-%d %H:%M") if record.downloaded_at else resolved_downloaded_at.strftime("%Y-%m-%d %H:%M"),
+            "source_url": record.source_url or "",
+        }
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to activate harmonised release")
+        return {}
+
+
 def sync_latest_harmonised_release_from_store() -> dict:
     folder = harmonised_reference_root()
     os.makedirs(folder, exist_ok=True)
@@ -445,48 +510,7 @@ def sync_latest_harmonised_release_from_store() -> dict:
         return {}
 
     latest = max(candidates, key=os.path.getmtime)
-    stat = os.stat(latest)
-    version = datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M")
-    try:
-        checksum = _sha1_file(latest)
-    except OSError:
-        checksum = ""
-
-    try:
-        HarmonisedReleaseRecord.query.update({"is_active": False})
-        record = HarmonisedReleaseRecord.query.filter_by(nas_path=latest).first()
-        if not record:
-            record = HarmonisedReleaseRecord(
-                file_name=os.path.basename(latest),
-                nas_path=latest,
-                version_label=version,
-                checksum=checksum or None,
-                is_active=True,
-                download_status="available",
-                downloaded_at=datetime.fromtimestamp(stat.st_mtime),
-            )
-            db.session.add(record)
-        else:
-            record.file_name = os.path.basename(latest)
-            record.nas_path = latest
-            record.version_label = version
-            record.checksum = checksum or record.checksum
-            record.is_active = True
-            record.download_status = "available"
-            record.downloaded_at = datetime.fromtimestamp(stat.st_mtime)
-        commit_session()
-        return {
-            "id": record.id,
-            "file_name": record.file_name or os.path.basename(latest),
-            "path": record.nas_path,
-            "version_label": record.version_label or version,
-            "downloaded_at": record.downloaded_at.strftime("%Y-%m-%d %H:%M") if record.downloaded_at else datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-            "source_url": record.source_url or "",
-        }
-    except Exception:
-        db.session.rollback()
-        current_app.logger.exception("Failed to sync latest harmonised release from store")
-        return {}
+    return activate_harmonised_release(latest)
 
 
 def get_locked_harmonised_release(meta: dict) -> dict:
@@ -506,37 +530,19 @@ def sync_harmonised_release_snapshot() -> dict:
     active = get_active_harmonised_release()
     if not active.get("path"):
         return {}
-    path = active["path"]
-    try:
-        checksum = _sha1_file(path)
-    except OSError:
-        checksum = ""
-    try:
-        record = HarmonisedReleaseRecord.query.filter_by(nas_path=path).first()
-        if not record:
-            record = HarmonisedReleaseRecord(
-                source_url=active.get("source_url") or None,
-                file_name=active.get("file_name") or os.path.basename(path),
-                nas_path=path,
-                version_label=active.get("version_label") or None,
-                checksum=checksum or None,
-                is_active=True,
-                download_status="available",
-            )
-            db.session.add(record)
-            commit_session()
-        return {
-            "id": record.id,
-            "file_name": record.file_name,
-            "path": record.nas_path,
-            "version_label": record.version_label or "",
-            "downloaded_at": record.downloaded_at.strftime("%Y-%m-%d %H:%M") if record.downloaded_at else active.get("downloaded_at", ""),
-            "source_url": record.source_url or "",
-        }
-    except Exception:
-        db.session.rollback()
-        current_app.logger.exception("Failed to sync harmonised release snapshot")
-        return active
+    downloaded_at = None
+    if active.get("downloaded_at"):
+        try:
+            downloaded_at = datetime.strptime(active["downloaded_at"], "%Y-%m-%d %H:%M")
+        except ValueError:
+            downloaded_at = None
+    result = activate_harmonised_release(
+        active["path"],
+        source_url=active.get("source_url", ""),
+        downloaded_at=downloaded_at,
+        version_label=active.get("version_label", ""),
+    )
+    return result or active
 
 
 def _sha1_file(path: str) -> str:

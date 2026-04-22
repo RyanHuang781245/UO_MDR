@@ -55,6 +55,15 @@ def standard_update_input_dir(task_id: str) -> str:
     return os.path.join(standard_update_dir(task_id), "input")
 
 
+def standard_update_input_kind_dir(task_id: str, kind: str) -> str:
+    folder = {
+        "word": "word",
+        "standard_excel": "standard_excel",
+        "regulation": "regulation",
+    }.get(kind, kind)
+    return os.path.join(standard_update_input_dir(task_id), folder)
+
+
 def standard_update_output_dir(task_id: str) -> str:
     return os.path.join(standard_update_dir(task_id), "output")
 
@@ -69,6 +78,9 @@ def create_standard_update(name: str, description: str = "") -> str:
     input_dir = standard_update_input_dir(task_id)
     output_dir = standard_update_output_dir(task_id)
     os.makedirs(input_dir, exist_ok=False)
+    os.makedirs(standard_update_input_kind_dir(task_id, "word"), exist_ok=True)
+    os.makedirs(standard_update_input_kind_dir(task_id, "standard_excel"), exist_ok=True)
+    os.makedirs(standard_update_input_kind_dir(task_id, "regulation"), exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
     work_id, creator_name = get_actor_info()
@@ -85,6 +97,7 @@ def create_standard_update(name: str, description: str = "") -> str:
         "status": STATUS_DRAFT,
         "word_file_path": "",
         "standard_excel_path": "",
+        "regulation_excel_path": "",
         "harmonised_snapshot_path": harmonised_release.get("path", ""),
         "harmonised_snapshot_version": harmonised_release.get("version_label", ""),
         "last_output_path": "",
@@ -152,6 +165,7 @@ def load_standard_update(task_id: str) -> dict:
     meta.setdefault("status", STATUS_DRAFT)
     meta.setdefault("word_file_path", "")
     meta.setdefault("standard_excel_path", "")
+    meta.setdefault("regulation_excel_path", "")
     meta.setdefault("harmonised_snapshot_path", "")
     meta.setdefault("harmonised_snapshot_version", "")
     meta.setdefault("last_output_path", "")
@@ -227,7 +241,8 @@ def save_uploaded_input(task_id: str, upload, *, kind: str) -> str:
     allowed_exts = ALLOWED_WORD_EXTENSIONS if kind == "word" else ALLOWED_EXCEL_EXTENSIONS
     if ext not in allowed_exts:
         raise ValueError("檔案類型不支援")
-    input_dir = standard_update_input_dir(task_id)
+    normalized_kind = "word" if kind == "word" else ("regulation" if kind == "regulation" else "standard_excel")
+    input_dir = standard_update_input_kind_dir(task_id, normalized_kind)
     os.makedirs(input_dir, exist_ok=True)
     safe_name = secure_filename(upload.filename) or ("upload" + ext)
     final_name = deduplicate_name(input_dir, safe_name)
@@ -237,33 +252,44 @@ def save_uploaded_input(task_id: str, upload, *, kind: str) -> str:
 
 
 def available_input_files(task_id: str) -> tuple[list[str], list[str]]:
-    input_dir = standard_update_input_dir(task_id)
-    if not os.path.isdir(input_dir):
-        return [], []
-    all_files = list_files(input_dir)
-    word_options = [rel for rel in all_files if Path(rel).suffix.lower() in ALLOWED_WORD_EXTENSIONS]
-    excel_options = [rel for rel in all_files if Path(rel).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS]
+    word_dir = standard_update_input_kind_dir(task_id, "word")
+    excel_dir = standard_update_input_kind_dir(task_id, "standard_excel")
+    word_options = list_files(word_dir) if os.path.isdir(word_dir) else []
+    excel_options = list_files(excel_dir) if os.path.isdir(excel_dir) else []
+    word_options = [rel for rel in word_options if Path(rel).suffix.lower() in ALLOWED_WORD_EXTENSIONS]
+    excel_options = [rel for rel in excel_options if Path(rel).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS]
     return word_options, excel_options
 
 
 def input_file_history(task_id: str, *, kind: str, current_file: str = "") -> list[dict]:
-    input_dir = standard_update_input_dir(task_id)
-    if not os.path.isdir(input_dir):
-        return []
-    allowed_exts = ALLOWED_WORD_EXTENSIONS if kind == "word" else ALLOWED_EXCEL_EXTENSIONS
+    normalized_kind = "word" if kind == "word" else ("regulation" if kind == "regulation" else "standard_excel")
+    input_dir = standard_update_input_kind_dir(task_id, normalized_kind)
+    allowed_exts = ALLOWED_WORD_EXTENSIONS if normalized_kind == "word" else ALLOWED_EXCEL_EXTENSIONS
     items: list[dict] = []
-    for rel_path in list_files(input_dir):
-        abs_path = os.path.join(input_dir, rel_path.replace("/", os.sep))
-        if Path(rel_path).suffix.lower() not in allowed_exts or not os.path.isfile(abs_path):
-            continue
-        stat = os.stat(abs_path)
-        items.append(
-            {
-                "name": rel_path,
-                "uploaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                "is_current": rel_path == (current_file or ""),
-            }
-        )
+    if os.path.isdir(input_dir):
+        for rel_path in list_files(input_dir):
+            abs_path = os.path.join(input_dir, rel_path.replace("/", os.sep))
+            if Path(rel_path).suffix.lower() not in allowed_exts or not os.path.isfile(abs_path):
+                continue
+            stat = os.stat(abs_path)
+            items.append(
+                {
+                    "name": rel_path,
+                    "uploaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                    "is_current": rel_path == (current_file or ""),
+                }
+            )
+    elif current_file:
+        legacy_path = os.path.join(standard_update_input_dir(task_id), current_file.replace("/", os.sep))
+        if os.path.isfile(legacy_path):
+            stat = os.stat(legacy_path)
+            items.append(
+                {
+                    "name": current_file,
+                    "uploaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                    "is_current": True,
+                }
+            )
     items.sort(key=lambda item: (not item["is_current"], item["uploaded_at"]), reverse=False)
     items.sort(key=lambda item: item["uploaded_at"], reverse=True)
     return items
@@ -274,22 +300,26 @@ def delete_input_file(task_id: str, *, kind: str, rel_path: str) -> dict:
     if not meta:
         raise FileNotFoundError("找不到標準更新任務")
 
-    allowed_exts = ALLOWED_WORD_EXTENSIONS if kind == "word" else ALLOWED_EXCEL_EXTENSIONS
-    target_path = safe_standard_update_file(task_id, rel_path, allowed_exts)
+    normalized_kind = "word" if kind == "word" else ("regulation" if kind == "regulation" else "standard_excel")
+    allowed_exts = ALLOWED_WORD_EXTENSIONS if normalized_kind == "word" else ALLOWED_EXCEL_EXTENSIONS
+    target_path = safe_standard_update_file(task_id, rel_path, allowed_exts, kind=normalized_kind)
     os.remove(target_path)
 
     remaining = input_file_history(
         task_id,
-        kind=kind,
+        kind=normalized_kind,
         current_file="",
     )
     replacement = remaining[0]["name"] if remaining else ""
-    if kind == "word":
+    if normalized_kind == "word":
         if meta.get("word_file_path") == rel_path:
             meta["word_file_path"] = replacement
-    else:
+    elif normalized_kind == "standard_excel":
         if meta.get("standard_excel_path") == rel_path:
             meta["standard_excel_path"] = replacement
+    else:
+        if meta.get("regulation_excel_path") == rel_path:
+            meta["regulation_excel_path"] = replacement
 
     if meta.get("word_file_path") and meta.get("standard_excel_path"):
         meta["status"] = STATUS_READY
@@ -299,23 +329,27 @@ def delete_input_file(task_id: str, *, kind: str, rel_path: str) -> dict:
     return meta
 
 
-def safe_standard_update_file(task_id: str, rel_path: str, allowed_exts: set[str]) -> str:
+def safe_standard_update_file(task_id: str, rel_path: str, allowed_exts: set[str], *, kind: str | None = None) -> str:
     normalized = os.path.normpath((rel_path or "").replace("/", os.sep))
     if not normalized or normalized.startswith("..") or os.path.isabs(normalized):
         raise ValueError("檔案路徑不合法")
-    base_dir = os.path.abspath(standard_update_input_dir(task_id))
-    abs_path = os.path.abspath(os.path.join(base_dir, normalized))
-    try:
-        if os.path.commonpath([base_dir, abs_path]) != base_dir:
-            raise ValueError("檔案路徑不合法")
-    except ValueError as exc:
-        raise ValueError("檔案路徑不合法") from exc
-    ext = Path(abs_path).suffix.lower()
-    if ext not in allowed_exts:
-        raise ValueError("檔案類型不支援")
-    if not os.path.isfile(abs_path):
-        raise FileNotFoundError("找不到指定檔案")
-    return abs_path
+    candidate_dirs = []
+    if kind:
+        candidate_dirs.append(os.path.abspath(standard_update_input_kind_dir(task_id, kind)))
+    candidate_dirs.append(os.path.abspath(standard_update_input_dir(task_id)))
+    for base_dir in candidate_dirs:
+        abs_path = os.path.abspath(os.path.join(base_dir, normalized))
+        try:
+            if os.path.commonpath([base_dir, abs_path]) != base_dir:
+                continue
+        except ValueError:
+            continue
+        ext = Path(abs_path).suffix.lower()
+        if ext not in allowed_exts:
+            continue
+        if os.path.isfile(abs_path):
+            return abs_path
+    raise FileNotFoundError("找不到指定檔案")
 
 
 def get_active_harmonised_release() -> dict:

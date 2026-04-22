@@ -356,6 +356,39 @@
             </div>
           </div>
         </div>
+
+        <div class="border rounded-3 p-3">
+          <label class="form-label fw-bold">
+            <i class="bi bi-file-earmark-spreadsheet text-success flex-shrink-0"></i>
+            各國法規條文登記表
+          </label>
+          <form action="{{ url_for('standard_updates_bp.upload_regulation_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
+            <input class="form-control form-control-custom" type="file" name="regulation_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
+            <button class="btn btn-outline-success align-self-start mt-1" type="submit">上傳 Excel</button>
+          </form>
+          <div class="upload-history mt-3">
+            <div class="upload-history__title">上傳歷史</div>
+            <div class="upload-history__list">
+              {% for item in regulation_excel_history %}
+              <div class="upload-history__item">
+                <div class="upload-history__primary">
+                  <div class="upload-history__name" title="{{ item.name }}">{{ item.name }}</div>
+                </div>
+                <div class="upload-history__meta">{{ item.uploaded_at }}</div>
+                <form class="upload-history__remove" action="{{ url_for('standard_updates_bp.delete_input_file', task_id=task.id) }}" method="post" onsubmit="return confirm('確定移除此檔案？')">
+                  <input type="hidden" name="kind" value="regulation">
+                  <input type="hidden" name="file_name" value="{{ item.name }}">
+                  <button class="btn-action-icon text-danger" type="submit" title="移除" aria-label="移除">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+              {% else %}
+              <div class="small text-muted">目前沒有法規條文登記表上傳紀錄。</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

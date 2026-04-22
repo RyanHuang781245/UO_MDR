@@ -12,6 +12,7 @@ from app.blueprints.tasks.standard_mapping_routes import (
     _STANDARD_PRIORITY_FIELDS,
     _build_stats,
     _parse_enabled_standard_levels,
+    _parse_edit_map,
     _has_unresolved_manual_mapping,
     _parse_iso_priority,
     _parse_limit_to_chapter,
@@ -80,7 +81,7 @@ def _load_chapter_options(task_id: str, selected_word: str) -> tuple[list[dict],
     if not selected_word:
         return [], ""
     try:
-        word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS)
+        word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS, kind="word")
     except (ValueError, FileNotFoundError):
         return [], ""
     try:
@@ -221,6 +222,7 @@ def detail(task_id: str):
         excel_options=excel_options,
         word_history=input_file_history(task_id, kind="word", current_file=task.get("word_file_path", "")),
         standard_excel_history=input_file_history(task_id, kind="excel", current_file=task.get("standard_excel_path", "")),
+        regulation_excel_history=input_file_history(task_id, kind="regulation", current_file=task.get("regulation_excel_path", "")),
         harmonised_release=harmonised_release,
         locked_harmonised_release=locked_harmonised_release,
         has_newer_harmonised=has_newer_harmonised,
@@ -281,13 +283,28 @@ def upload_standard_excel(task_id: str):
     return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
 
 
+@standard_updates_bp.post("/standards/<task_id>/upload-regulation-excel", endpoint="upload_regulation_excel")
+def upload_regulation_excel(task_id: str):
+    task = load_standard_update(task_id)
+    if not task:
+        abort(404)
+    try:
+        filename = save_uploaded_input(task_id, request.files.get("regulation_excel_file"), kind="regulation")
+        task["regulation_excel_path"] = filename
+        save_standard_update(task_id, task)
+        flash("法規條文登記表已上傳", "success")
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
+
+
 @standard_updates_bp.post("/standards/<task_id>/files/delete", endpoint="delete_input_file")
 def delete_uploaded_input_file(task_id: str):
     if not load_standard_update(task_id):
         abort(404)
     kind = (request.form.get("kind") or "").strip().lower()
     rel_path = (request.form.get("file_name") or "").strip()
-    if kind not in {"word", "excel"} or not rel_path:
+    if kind not in {"word", "excel", "regulation"} or not rel_path:
         flash("缺少要刪除的檔案資訊", "danger")
         return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
     try:
@@ -365,7 +382,7 @@ def mapping(task_id: str):
         )
 
     try:
-        word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS)
+        word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS, kind="word")
         locked_harmonised_release = get_locked_harmonised_release(task)
         harmonised_reference_path = locked_harmonised_release.get("path")
         if not harmonised_reference_path:
@@ -401,8 +418,10 @@ def mapping(task_id: str):
                     manual_target_chapter_ref=manual_target_chapter_ref,
                     manual_header_mappings=manual_header_mappings,
                 )
-            excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS)
+            excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS, kind="standard_excel")
             regulation_reference_path = _resolve_regulation_reference_path()
+            if task.get("regulation_excel_path"):
+                regulation_reference_path = safe_standard_update_file(task_id, task.get("regulation_excel_path", ""), ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
             result = process_document(
                 word_path,
                 excel_path,
@@ -487,11 +506,14 @@ def download_result(task_id: str):
         target_chapter_ref = _parse_target_chapter_ref(request.form, limit_to_chapter=limit_to_chapter)
         target_table_index = _parse_target_table_index(request.form, limit_to_chapter=limit_to_chapter)
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
-        word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS)
-        excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS)
+        edit_map = _parse_edit_map(request.form.get("edits_json", ""))
+        word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS, kind="word")
+        excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS, kind="standard_excel")
         locked_harmonised_release = get_locked_harmonised_release(task)
         harmonised_reference_path = locked_harmonised_release.get("path")
         regulation_reference_path = _resolve_regulation_reference_path()
+        if task.get("regulation_excel_path"):
+            regulation_reference_path = safe_standard_update_file(task_id, task.get("regulation_excel_path", ""), ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
         if not harmonised_reference_path:
             raise FileNotFoundError("目前任務鎖定的 harmonised Excel 不存在，請先改用最新版本")
         inspection_result = inspect_document_tables(
@@ -533,6 +555,7 @@ def download_result(task_id: str):
             harmonised_reference_path=harmonised_reference_path,
             regulation_reference_path=regulation_reference_path,
             override_map=override_map,
+            edit_map=edit_map,
             output_path=output_path,
             iso_priority=iso_priority,
             enabled_standard_levels=enabled_standard_levels,

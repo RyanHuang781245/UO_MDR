@@ -3,7 +3,7 @@
 <style>
   .standard-mapping-summary {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0.875rem;
   }
   .standard-summary-card {
@@ -40,6 +40,13 @@
   }
   .standard-summary-card--override .standard-summary-card__value {
     color: #b45309;
+  }
+  .standard-summary-card--edit {
+    background: linear-gradient(180deg, #f5f3ff 0%, #ffffff 100%);
+    border-color: #ddd6fe;
+  }
+  .standard-summary-card--edit .standard-summary-card__value {
+    color: #6d28d9;
   }
   .standard-summary-card__label {
     font-size: 0.8125rem;
@@ -727,6 +734,10 @@
     display: flex;
     flex-direction: column;
   }
+  .reference-tooltip-scroll {
+    min-height: 0;
+    overflow-y: auto;
+  }
   .reference-tooltip-header {
     display: flex;
     align-items: flex-start;
@@ -865,6 +876,30 @@
     font-size: 0.75rem;
     line-height: 1.55;
   }
+  .reference-edit-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  .reference-edit-field {
+    display: grid;
+    gap: 0.35rem;
+  }
+  .reference-edit-field--full {
+    grid-column: 1 / -1;
+  }
+  .reference-edit-field label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--bs-gray-500);
+  }
+  .reference-edit-actions {
+    margin-top: 0.875rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
   .tooltip-close {
     border: 0;
     background: transparent;
@@ -879,7 +914,8 @@
   }
   @media (max-width: 991.98px) {
     .standard-form-grid,
-    .reference-candidate__row {
+    .reference-candidate__row,
+    .reference-edit-grid {
       grid-template-columns: 1fr;
       flex-direction: column;
     }
@@ -1498,6 +1534,11 @@
         <div class="standard-summary-card__value" id="overrideCount">0</div>
         <div class="standard-summary-card__depiction">依目前改選結果輸出至新的 Word</div>
       </div>
+      <div class="standard-summary-card standard-summary-card--edit">
+        <div class="standard-summary-card__label">人工編輯列數</div>
+        <div class="standard-summary-card__value" id="editCount">0</div>
+        <div class="standard-summary-card__depiction">直接編輯欄位值，下載時會一併寫入 Word</div>
+      </div>
     </div>
 
     <div class="main-card mb-3">
@@ -1513,11 +1554,11 @@
             </div>
             <div id="actionBar" class="standard-preview-note" aria-hidden="true">
               <div class="d-flex align-items-center gap-2 flex-wrap">
-                <i class="bi bi-info-circle"></i><span class="fw-semibold text-primary">已選取 <span id="actionOverrideCount">0</span> 筆人工改選</span>
+                <i class="bi bi-info-circle"></i><span class="fw-semibold text-primary">人工改選 <span id="actionOverrideCount">0</span> 筆，人工編輯 <span id="actionEditCount">0</span> 列</span>
                 <button class="btn btn-sm btn-link p-0 text-primary fw-semibold" id="clearSelectionBtn" type="button">
-                  <i class="bi bi-x-lg me-1"></i>清除改選
+                  <i class="bi bi-x-lg me-1"></i>清除人工調整
                 </button>
-                <div class="fw-semibold text-primary">預覽與下載會使用目前改選結果</div>
+                <div class="fw-semibold text-primary">預覽與下載會使用目前人工改選與編輯結果</div>
               </div>
             </div>
           </div>
@@ -1577,6 +1618,7 @@
         {% endfor %}
       {% endfor %}
       <input id="overridesJsonInput" type="hidden" name="overrides_json" value="{}">
+      <input id="editsJsonInput" type="hidden" name="edits_json" value="{}">
     </form>
 
     {% for table in preview_tables %}
@@ -1624,7 +1666,9 @@
 
 <div class="reference-tooltip" id="referenceTooltip" hidden>
   <div class="reference-tooltip-card">
-    <div id="referenceTooltipContent"></div>
+    <div class="reference-tooltip-scroll">
+      <div id="referenceTooltipContent"></div>
+    </div>
   </div>
 </div>
 
@@ -1647,6 +1691,15 @@
       downloadForm.appendChild(hidden);
     });
   };
+
+  if (downloadForm) {
+    downloadForm.addEventListener("submit", () => {
+      syncDownloadPriorityState();
+      if (typeof syncInteractiveState === "function") {
+        syncInteractiveState();
+      }
+    });
+  }
 
   const refreshPriorityRanks = () => {
     if (!prioritySortList) return;
@@ -1964,8 +2017,11 @@
   const tooltip = document.getElementById("referenceTooltip");
   const tooltipContent = document.getElementById("referenceTooltipContent");
   const overrideCount = document.getElementById("overrideCount");
+  const editCount = document.getElementById("editCount");
   const actionOverrideCount = document.getElementById("actionOverrideCount");
+  const actionEditCount = document.getElementById("actionEditCount");
   const overridesJsonInput = document.getElementById("overridesJsonInput");
+  const editsJsonInput = document.getElementById("editsJsonInput");
   const filterBar = document.getElementById("filterBar");
   const actionBar = document.getElementById("actionBar");
   const exportOverridesBtns = Array.from(document.querySelectorAll(".export-overrides-btn"));
@@ -1974,6 +2030,7 @@
   const standardStatusFilter = document.getElementById("standardStatusFilter");
   const standardPreviewEmpty = document.getElementById("standardPreviewEmpty");
   const overrideSelections = {};
+  const editSelections = {};
   const originalCellHtml = {};
   const referenceKeysByRow = Object.entries(referencePayload).reduce((acc, [referenceKey, meta]) => {
     const rowKey = meta?.row_key || "";
@@ -1998,6 +2055,13 @@
     }
   });
 
+  Object.values(referencePayload).forEach((meta) => {
+    const rowKey = meta?.row_key || "";
+    const manualEdits = meta?.manual_edits;
+    if (!rowKey || !manualEdits || typeof manualEdits !== "object" || editSelections[rowKey]) return;
+    editSelections[rowKey] = { ...manualEdits };
+  });
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -2011,7 +2075,7 @@
     return JSON.parse(JSON.stringify(meta || {}));
   }
 
-  function getEffectiveMeta(referenceKey) {
+  function getEffectiveMeta(referenceKey, { includeEdits = true } = {}) {
     const source = referencePayload[referenceKey];
     if (!source) return null;
     const meta = cloneMeta(source);
@@ -2029,6 +2093,24 @@
       meta.matched_harmonised = selectedCandidate.candidate_harmonised || meta.matched_harmonised || "";
       meta.matched_title = selectedCandidate.matched_title || meta.matched_title || "";
       meta.excel_year = selectedCandidate.latest_year || "";
+    }
+
+    if (includeEdits) {
+      const rowEdits = editSelections[rowKey] || {};
+      if (Object.prototype.hasOwnProperty.call(rowEdits, "standards")) {
+        meta.matched_standard_no = rowEdits.standards;
+        meta.matched_display_standard_no = rowEdits.standards;
+      }
+      if (Object.prototype.hasOwnProperty.call(rowEdits, "issued_year")) {
+        meta.excel_year = rowEdits.issued_year;
+      }
+      if (Object.prototype.hasOwnProperty.call(rowEdits, "harmonised")) {
+        meta.matched_harmonised = rowEdits.harmonised;
+      }
+      if (Object.prototype.hasOwnProperty.call(rowEdits, "title")) {
+        meta.matched_title = rowEdits.title;
+      }
+      meta.manual_edits = { ...rowEdits };
     }
 
     meta.all_candidates = (meta.all_candidates || []).map((candidate) => {
@@ -2166,8 +2248,9 @@
     const keys = referenceKeysByRow[rowKey];
     if (!keys) return;
     const hasManualOverride = Boolean(overrideSelections[rowKey]);
+    const hasManualEdit = Boolean(editSelections[rowKey] && Object.keys(editSelections[rowKey]).length > 0);
     const row = document.querySelector(`tr[data-row-key="${CSS.escape(rowKey)}"]`);
-    if (!hasManualOverride) {
+    if (!hasManualOverride && !hasManualEdit) {
       if (keys.standards) {
         const standardsCell = document.querySelector(`[data-reference-key="${CSS.escape(keys.standards)}"]`);
         if (standardsCell && Object.prototype.hasOwnProperty.call(originalCellHtml, keys.standards)) {
@@ -2284,6 +2367,12 @@
     const matchedNo = meta.matched_standard_no || "無";
     const excelYear = meta.excel_year || "無";
     const fieldLabel = meta.field_label || "";
+    const currentValues = {
+      standards: meta.matched_display_standard_no || meta.matched_standard_no || meta.word_standard || "",
+      issued_year: String(meta.excel_year || meta.word_year || ""),
+      harmonised: meta.matched_harmonised || meta.word_harmonised || "",
+      title: meta.matched_title || meta.word_title || "",
+    };
     const candidates = (meta.all_candidates || []).map((candidate) => {
       let decisionLabel = "已排除";
       let decisionClass = "is-excluded";
@@ -2350,18 +2439,72 @@
           <div class="reference-candidate-list">${candidates}</div>
         </div>
       ` : ""}
+      <div class="reference-tooltip-section">
+        <div class="reference-tooltip-section__title">編輯此列</div>
+        <div class="reference-edit-grid">
+          <div class="reference-edit-field reference-edit-field--full">
+            <label>Standards</label>
+            <input class="form-control form-control-sm" type="text" data-edit-field="standards" value="${escapeHtml(currentValues.standards)}">
+          </div>
+          <div class="reference-edit-field">
+            <label>Issued Year</label>
+            <input class="form-control form-control-sm" type="text" data-edit-field="issued_year" value="${escapeHtml(currentValues.issued_year)}">
+          </div>
+          <div class="reference-edit-field">
+            <label>EU Harmonised</label>
+            <input class="form-control form-control-sm" type="text" data-edit-field="harmonised" value="${escapeHtml(currentValues.harmonised)}">
+          </div>
+          <div class="reference-edit-field reference-edit-field--full">
+            <label>Title</label>
+            <textarea class="form-control form-control-sm" rows="3" data-edit-field="title">${escapeHtml(currentValues.title)}</textarea>
+          </div>
+        </div>
+        <div class="reference-edit-actions">
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-action="reset-edit" data-row-key="${escapeHtml(meta.row_key || "")}" data-reference-key="${escapeHtml(meta.reference_key || "")}">還原此列</button>
+          <button class="btn btn-sm btn-primary" type="button" data-action="save-edit" data-row-key="${escapeHtml(meta.row_key || "")}" data-reference-key="${escapeHtml(meta.reference_key || "")}">保存此列</button>
+        </div>
+      </div>
     `;
   }
 
-  function syncOverrideState() {
-    const payload = { generated_at: new Date().toISOString(), overrides: overrideSelections };
-    const count = Object.keys(overrideSelections).length;
-    overrideCount.textContent = String(count);
-    actionOverrideCount.textContent = String(count);
-    overridesJsonInput.value = JSON.stringify(payload);
-    const hasOverrides = count > 0;
-    filterBar.setAttribute("aria-hidden", hasOverrides ? "true" : "false");
-    actionBar.setAttribute("aria-hidden", hasOverrides ? "false" : "true");
+  function buildNormalizedRowEdits(referenceKey, nextValues) {
+    const baseMeta = getEffectiveMeta(referenceKey, { includeEdits: false });
+    if (!baseMeta) return {};
+    const baseline = {
+      standards: baseMeta.matched_display_standard_no || baseMeta.matched_standard_no || baseMeta.word_standard || "",
+      issued_year: String(baseMeta.excel_year || baseMeta.word_year || ""),
+      harmonised: baseMeta.matched_harmonised || baseMeta.word_harmonised || "",
+      title: baseMeta.matched_title || baseMeta.word_title || "",
+    };
+    const normalized = {};
+    Object.entries(nextValues || {}).forEach(([field, value]) => {
+      const nextValue = String(value ?? "");
+      if (nextValue !== String(baseline[field] ?? "")) {
+        normalized[field] = nextValue;
+      }
+    });
+    return normalized;
+  }
+
+  function getEditSelectionCount() {
+    return Object.values(editSelections).filter((fields) => fields && Object.keys(fields).length > 0).length;
+  }
+
+  function syncInteractiveState() {
+    const generatedAt = new Date().toISOString();
+    const overridePayload = { generated_at: generatedAt, overrides: overrideSelections };
+    const editPayload = { generated_at: generatedAt, edits: editSelections };
+    const overrideSelectionCount = Object.keys(overrideSelections).length;
+    const editSelectionCount = getEditSelectionCount();
+    overrideCount.textContent = String(overrideSelectionCount);
+    if (editCount) editCount.textContent = String(editSelectionCount);
+    actionOverrideCount.textContent = String(overrideSelectionCount);
+    if (actionEditCount) actionEditCount.textContent = String(editSelectionCount);
+    overridesJsonInput.value = JSON.stringify(overridePayload);
+    if (editsJsonInput) editsJsonInput.value = JSON.stringify(editPayload);
+    const hasInteractiveChanges = overrideSelectionCount > 0 || editSelectionCount > 0;
+    filterBar.setAttribute("aria-hidden", hasInteractiveChanges ? "true" : "false");
+    actionBar.setAttribute("aria-hidden", hasInteractiveChanges ? "false" : "true");
     Object.keys(referenceKeysByRow).forEach((rowKey) => updateRowPreview(rowKey));
     applyPreviewFilters();
   }
@@ -2519,22 +2662,60 @@
   });
   tooltipContent.addEventListener("click", (event) => {
     const button = event.target.closest(".candidate-select-btn");
-    if (!button) return;
-    event.stopPropagation();
-    const rowKey = button.dataset.rowKey || "";
-    const referenceKey = button.dataset.referenceKey || "";
-    const candidateId = button.dataset.candidateId || "";
-    if (!rowKey || !referenceKey || !candidateId) return;
-    const meta = getEffectiveMeta(referenceKey);
-    const autoSelectedId = meta?.auto_selected_candidate_id || "";
-    if (candidateId === autoSelectedId) {
-      delete overrideSelections[rowKey];
-    } else {
-      overrideSelections[rowKey] = candidateId;
+    if (button) {
+      event.stopPropagation();
+      const rowKey = button.dataset.rowKey || "";
+      const referenceKey = button.dataset.referenceKey || "";
+      const candidateId = button.dataset.candidateId || "";
+      if (!rowKey || !referenceKey || !candidateId) return;
+      const meta = getEffectiveMeta(referenceKey);
+      const autoSelectedId = meta?.auto_selected_candidate_id || "";
+      if (candidateId === autoSelectedId) {
+        delete overrideSelections[rowKey];
+      } else {
+        overrideSelections[rowKey] = candidateId;
+      }
+      activeReferenceKey = referenceKey;
+      syncInteractiveState();
+      renderActiveTooltip();
+      return;
     }
-    activeReferenceKey = referenceKey;
-    syncOverrideState();
-    renderActiveTooltip();
+    const saveEditButton = event.target.closest("[data-action='save-edit']");
+    if (saveEditButton) {
+      event.stopPropagation();
+      const rowKey = saveEditButton.dataset.rowKey || "";
+      const referenceKey = saveEditButton.dataset.referenceKey || "";
+      if (!rowKey || !referenceKey) return;
+      const card = saveEditButton.closest(".reference-tooltip-section");
+      if (!card) return;
+      const nextValues = {
+        standards: card.querySelector('[data-edit-field="standards"]')?.value ?? "",
+        issued_year: card.querySelector('[data-edit-field="issued_year"]')?.value ?? "",
+        harmonised: card.querySelector('[data-edit-field="harmonised"]')?.value ?? "",
+        title: card.querySelector('[data-edit-field="title"]')?.value ?? "",
+      };
+      const normalizedEdits = buildNormalizedRowEdits(referenceKey, nextValues);
+      if (Object.keys(normalizedEdits).length) {
+        editSelections[rowKey] = normalizedEdits;
+      } else {
+        delete editSelections[rowKey];
+      }
+      activeReferenceKey = referenceKey;
+      syncInteractiveState();
+      renderActiveTooltip();
+      return;
+    }
+    const resetEditButton = event.target.closest("[data-action='reset-edit']");
+    if (resetEditButton) {
+      event.stopPropagation();
+      const rowKey = resetEditButton.dataset.rowKey || "";
+      const referenceKey = resetEditButton.dataset.referenceKey || "";
+      if (!rowKey || !referenceKey) return;
+      delete editSelections[rowKey];
+      activeReferenceKey = referenceKey;
+      syncInteractiveState();
+      renderActiveTooltip();
+    }
   });
   exportOverridesBtns.forEach((button) => {
     button.addEventListener("click", () => {
@@ -2552,7 +2733,8 @@
   });
   clearSelectionBtn.addEventListener("click", () => {
     Object.keys(overrideSelections).forEach((key) => delete overrideSelections[key]);
-    syncOverrideState();
+    Object.keys(editSelections).forEach((key) => delete editSelections[key]);
+    syncInteractiveState();
     if (activeReferenceKey) renderActiveTooltip();
   });
   document.addEventListener("click", (event) => {
@@ -2574,7 +2756,7 @@
   refreshAllCellOverflows();
   standardSearchInput?.addEventListener("input", applyPreviewFilters);
   standardStatusFilter?.addEventListener("change", applyPreviewFilters);
-  syncOverrideState();
+  syncInteractiveState();
 </script>
 {% endif %}
 {% endblock %}

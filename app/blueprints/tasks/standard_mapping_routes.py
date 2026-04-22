@@ -98,6 +98,29 @@ def _parse_override_map(raw_value: str) -> dict[str, str]:
     return {}
 
 
+def _parse_edit_map(raw_value: str) -> dict[str, dict[str, str]]:
+    if not (raw_value or "").strip():
+        return {}
+    payload = json.loads(raw_value)
+    if isinstance(payload, dict) and isinstance(payload.get("edits"), dict):
+        payload = payload["edits"]
+    if not isinstance(payload, dict):
+        return {}
+    normalized: dict[str, dict[str, str]] = {}
+    allowed_fields = {"standards", "issued_year", "harmonised", "title"}
+    for row_key, value in payload.items():
+        if not isinstance(value, dict):
+            continue
+        fields = {
+            str(field): str(field_value)
+            for field, field_value in value.items()
+            if str(field) in allowed_fields
+        }
+        if fields:
+            normalized[str(row_key)] = fields
+    return normalized
+
+
 def _parse_iso_priority(values) -> tuple[str, ...]:
     raw_positions = {
         label: (values.get(field_name) or "").strip()
@@ -503,6 +526,7 @@ def task_standard_mapping_download(task_id):
         harmonised_reference_path = _safe_task_file(files_dir, selected_harmonised_excel, _ALLOWED_EXCEL_EXTENSIONS) if selected_harmonised_excel else None
         regulation_reference_path = _resolve_regulation_reference_path(files_dir)
         override_map = _parse_override_map(request.form.get("overrides_json", ""))
+        edit_map = _parse_edit_map(request.form.get("edits_json", ""))
         inspection_result = inspect_document_tables(
             word_path,
             target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
@@ -539,6 +563,7 @@ def task_standard_mapping_download(task_id):
             harmonised_reference_path=harmonised_reference_path,
             regulation_reference_path=regulation_reference_path,
             override_map=override_map,
+            edit_map=edit_map,
             output_path=output_path,
             iso_priority=iso_priority,
             enabled_standard_levels=enabled_standard_levels,

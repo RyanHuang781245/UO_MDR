@@ -6,8 +6,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from app import create_app
-from app.services.standard_update_service import sync_latest_harmonised_release_from_store
+from modules.env_loader import load_dotenv_if_present
 
 # ======================
 # 設定
@@ -20,6 +19,8 @@ STATE_FILE = BASE_DIR / "last_state.json"
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
+
+load_dotenv_if_present(str(BASE_DIR))
 
 # ======================
 # 取得下載連結
@@ -89,9 +90,10 @@ def is_updated(current, last):
 # 下載檔案
 # ======================
 def resolve_save_dir():
-    app = create_app()
-    with app.app_context():
-        save_dir = Path(app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"])
+    save_dir = Path(
+        os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER")
+        or (BASE_DIR / "harmonised_store")
+    )
     save_dir.mkdir(parents=True, exist_ok=True)
     return save_dir
 
@@ -114,6 +116,24 @@ def download_file(url, filename, save_dir: Path):
 
 
 def sync_frontend_active_release():
+    database_url = (
+        os.environ.get("DATABASE_URL") or os.environ.get("RBAC_DATABASE_URL") or ""
+    ).strip()
+    if not database_url:
+        print("未設定 DATABASE_URL，略過前端 active 版本同步")
+        return {}
+
+    try:
+        from sqlalchemy.engine.url import make_url
+
+        make_url(database_url)
+    except Exception:
+        print("DATABASE_URL 格式無法被 SQLAlchemy 解析，略過前端 active 版本同步")
+        return {}
+
+    from app import create_app
+    from app.services.standard_update_service import sync_latest_harmonised_release_from_store
+
     app = create_app()
     with app.app_context():
         result = sync_latest_harmonised_release_from_store()

@@ -1,16 +1,21 @@
-import os
 import json
+import os
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
+
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse, parse_qs, unquote
+
+from app import create_app
+from app.services.standard_update_service import sync_latest_harmonised_release_from_store
 
 # ======================
 # 設定
 # ======================
+BASE_DIR = Path(__file__).resolve().parent
 PAGE_URL = "https://single-market-economy.ec.europa.eu/single-market/goods/european-standards/harmonised-standards/medical-devices_en"
 LINK_TEXT = "Summary list as xls file"
-SAVE_DIR = r"C:\Users\ne025\Desktop\UO_MDR"
-STATE_FILE = "last_state.json"
+STATE_FILE = BASE_DIR / "last_state.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
@@ -57,14 +62,14 @@ def parse_download_info(url):
 # 讀取 / 儲存狀態
 # ======================
 def load_last_state():
-    if not os.path.exists(STATE_FILE):
+    if not STATE_FILE.exists():
         return None
 
-    with open(STATE_FILE, "r", encoding="utf-8") as f:
+    with STATE_FILE.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 def save_state(state):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
+    with STATE_FILE.open("w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 # ======================
@@ -83,26 +88,49 @@ def is_updated(current, last):
 # ======================
 # 下載檔案
 # ======================
-def download_file(url, filename):
-    os.makedirs(SAVE_DIR, exist_ok=True)
+def resolve_save_dir():
+    app = create_app()
+    with app.app_context():
+        save_dir = Path(app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"])
+    save_dir.mkdir(parents=True, exist_ok=True)
+    return save_dir
 
-    path = os.path.join(SAVE_DIR, filename)
+
+def download_file(url, filename, save_dir: Path):
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    path = save_dir / filename
 
     resp = requests.get(url, headers=HEADERS, stream=True, timeout=60)
     resp.raise_for_status()
 
-    with open(path, "wb") as f:
+    with path.open("wb") as f:
         for chunk in resp.iter_content(8192):
             if chunk:
                 f.write(chunk)
 
     print("下載完成:", path)
+    return path
+
+
+def sync_frontend_active_release():
+    app = create_app()
+    with app.app_context():
+        result = sync_latest_harmonised_release_from_store()
+    if result:
+        print("已同步前端顯示版本:", result.get("file_name"))
+        print("Active 路徑:", result.get("path"))
+    else:
+        print("沒有可同步的 harmonised 版本")
+    return result
 
 # ======================
 # 主流程
 # ======================
 def main():
     print("開始檢查更新...")
+    save_dir = resolve_save_dir()
+    print("下載目錄:", save_dir)
 
     # 1. 抓最新下載連結
     url = get_download_link()
@@ -120,10 +148,11 @@ def main():
     if is_updated(current, last):
         print("發現新版本，開始下載...")
 
-        download_file(current["url"], current["filename"])
+        download_file(current["url"], current["filename"], save_dir)
 
         save_state(current)
         print("已更新狀態紀錄")
+        sync_frontend_active_release()
 
     else:
         print("沒有更新，跳過")

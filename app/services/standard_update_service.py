@@ -85,7 +85,7 @@ def standard_update_root() -> str:
 
 
 def harmonised_reference_root() -> str:
-    return current_app.config["HARMONISED_REFERENCE_FOLDER"]
+    return current_app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"]
 
 
 def standard_update_dir(task_id: str) -> str:
@@ -430,6 +430,63 @@ def get_active_harmonised_release() -> dict:
         "downloaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
         "source_url": "",
     }
+
+
+def sync_latest_harmonised_release_from_store() -> dict:
+    folder = harmonised_reference_root()
+    os.makedirs(folder, exist_ok=True)
+
+    candidates = []
+    for entry in os.listdir(folder):
+        abs_path = os.path.join(folder, entry)
+        if os.path.isfile(abs_path) and Path(entry).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS:
+            candidates.append(abs_path)
+    if not candidates:
+        return {}
+
+    latest = max(candidates, key=os.path.getmtime)
+    stat = os.stat(latest)
+    version = datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M")
+    try:
+        checksum = _sha1_file(latest)
+    except OSError:
+        checksum = ""
+
+    try:
+        HarmonisedReleaseRecord.query.update({"is_active": False})
+        record = HarmonisedReleaseRecord.query.filter_by(nas_path=latest).first()
+        if not record:
+            record = HarmonisedReleaseRecord(
+                file_name=os.path.basename(latest),
+                nas_path=latest,
+                version_label=version,
+                checksum=checksum or None,
+                is_active=True,
+                download_status="available",
+                downloaded_at=datetime.fromtimestamp(stat.st_mtime),
+            )
+            db.session.add(record)
+        else:
+            record.file_name = os.path.basename(latest)
+            record.nas_path = latest
+            record.version_label = version
+            record.checksum = checksum or record.checksum
+            record.is_active = True
+            record.download_status = "available"
+            record.downloaded_at = datetime.fromtimestamp(stat.st_mtime)
+        commit_session()
+        return {
+            "id": record.id,
+            "file_name": record.file_name or os.path.basename(latest),
+            "path": record.nas_path,
+            "version_label": record.version_label or version,
+            "downloaded_at": record.downloaded_at.strftime("%Y-%m-%d %H:%M") if record.downloaded_at else datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            "source_url": record.source_url or "",
+        }
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to sync latest harmonised release from store")
+        return {}
 
 
 def get_locked_harmonised_release(meta: dict) -> dict:

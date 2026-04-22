@@ -55,7 +55,7 @@ def create_app(config_name: str | None = None) -> Flask:
     os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
     os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
     os.makedirs(app.config["STANDARD_UPDATE_FOLDER"], exist_ok=True)
-    os.makedirs(app.config["HARMONISED_REFERENCE_FOLDER"], exist_ok=True)
+    os.makedirs(app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"], exist_ok=True)
 
     auth_service.init_auth(app)
     execution_service.register_execution_cli(app)

@@ -8,8 +8,6 @@ import uuid
 from datetime import datetime
 
 from flask import abort, current_app, flash, jsonify, redirect, render_template, request, url_for
-from werkzeug.utils import secure_filename
-
 from app.services.audit_service import record_audit
 from app.services.flow_service import parse_template_paragraphs
 from app.services.nas_service import get_configured_nas_roots, resolve_nas_path
@@ -27,6 +25,7 @@ from app.services.task_service import (
 )
 from app.services.user_context_service import get_actor_info as _get_actor_info
 from .blueprint import tasks_bp
+from .mapping_routes import _safe_uploaded_filename
 
 
 def _build_task_listing_context() -> dict:
@@ -457,7 +456,7 @@ def parse_template_doc(task_id):
     if upload and upload.filename:
         if not upload.filename.lower().endswith(".docx"):
             return jsonify({"ok": False, "error": "僅支援 .docx 模板"}), 400
-        safe_name = deduplicate_name(files_dir, secure_filename(upload.filename))
+        safe_name = deduplicate_name(files_dir, _safe_uploaded_filename(upload.filename))
         save_path = os.path.join(files_dir, safe_name)
         upload.save(save_path)
         template_rel = safe_name

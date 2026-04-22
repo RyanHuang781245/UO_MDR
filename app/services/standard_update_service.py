@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import current_app
-from werkzeug.utils import secure_filename
 
 from app.extensions import db
 from app.models.auth import commit_session
@@ -28,6 +27,48 @@ STATUS_READY = "ready"
 STATUS_PREVIEWED = "previewed"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
+_INVALID_UPLOAD_FILENAME_CHARS = '\\/:*?"<>|'
+_WINDOWS_RESERVED_FILE_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
+
+
+def _safe_uploaded_filename(filename: str, default_stem: str = "upload") -> str:
+    raw_name = os.path.basename((filename or "").replace("\\", "/")).strip()
+    cleaned = "".join(
+        "_" if (ord(ch) < 32 or ch in _INVALID_UPLOAD_FILENAME_CHARS) else ch
+        for ch in raw_name
+    ).strip().strip(".")
+    if cleaned in {"", ".", ".."}:
+        cleaned = default_stem
+
+    stem, ext = os.path.splitext(cleaned)
+    if not stem:
+        stem = default_stem
+    if stem.upper() in _WINDOWS_RESERVED_FILE_NAMES:
+        stem = f"_{stem}"
+    return f"{stem}{ext}" if ext else stem
 
 
 def init_standard_update_store(app) -> None:
@@ -244,7 +285,7 @@ def save_uploaded_input(task_id: str, upload, *, kind: str) -> str:
     normalized_kind = "word" if kind == "word" else ("regulation" if kind == "regulation" else "standard_excel")
     input_dir = standard_update_input_kind_dir(task_id, normalized_kind)
     os.makedirs(input_dir, exist_ok=True)
-    safe_name = secure_filename(upload.filename) or ("upload" + ext)
+    safe_name = _safe_uploaded_filename(upload.filename, default_stem="upload") or ("upload" + ext)
     final_name = deduplicate_name(input_dir, safe_name)
     output_path = os.path.join(input_dir, final_name)
     upload.save(output_path)

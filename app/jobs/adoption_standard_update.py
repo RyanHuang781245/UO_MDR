@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
@@ -10,9 +10,12 @@ import requests
 from bs4 import BeautifulSoup
 from flask import has_app_context
 
+BASE_DIR = Path(__file__).resolve().parents[2]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
 from modules.env_loader import load_dotenv_if_present
 
-BASE_DIR = Path(__file__).resolve().parents[2]
 STATE_FILE = BASE_DIR / "harmonised_store" / "last_state.json"
 
 HEADERS = {
@@ -182,32 +185,38 @@ def is_updated(current, last):
     )
 
 
-def _ensure_storage_available(path: Path) -> bool:
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(dir=path, prefix=".write-test-", delete=True):
-            pass
-        return True
-    except Exception:
-        return False
-
-
 def resolve_save_dir() -> tuple[Path, str]:
-    configured_root = (os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or "").strip()
-    fallback_dir = BASE_DIR / "harmonised_store"
+    from app import create_app
 
-    if configured_root:
-        primary_dir = Path(configured_root)
-        if _ensure_storage_available(primary_dir):
-            return primary_dir, "primary"
-        print(f"主要儲存路徑不可用，改用本機備援目錄。主路徑: {primary_dir}")
-        if _ensure_storage_available(fallback_dir):
-            return fallback_dir, "fallback"
-        raise RuntimeError(f"主要與備援儲存路徑都不可用: {primary_dir}, {fallback_dir}")
+    if has_app_context():
+        from app.services.standard_update_service import (
+            harmonised_reference_root,
+            harmonised_reference_status_message,
+            harmonised_reference_storage_mode,
+        )
 
-    if _ensure_storage_available(fallback_dir):
-        return fallback_dir, "default"
-    raise RuntimeError(f"本機備援目錄不可用: {fallback_dir}")
+        save_dir = Path(harmonised_reference_root())
+        storage_mode = harmonised_reference_storage_mode() or "default"
+        status_message = harmonised_reference_status_message()
+    else:
+        app = create_app()
+        with app.app_context():
+            from app.services.standard_update_service import (
+                harmonised_reference_root,
+                harmonised_reference_status_message,
+                harmonised_reference_storage_mode,
+            )
+
+            save_dir = Path(harmonised_reference_root())
+            storage_mode = harmonised_reference_storage_mode() or "default"
+            status_message = harmonised_reference_status_message()
+
+    if storage_mode == "fallback":
+        print(f"主要儲存路徑不可用，改用本機備援目錄。原因: {status_message}")
+    elif storage_mode == "default":
+        print("未設定主要存取路徑，使用本機預設儲存目錄。")
+
+    return save_dir, storage_mode
 
 
 def download_file(url, filename, save_dir: Path):

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -84,8 +85,88 @@ def standard_update_root() -> str:
     return current_app.config["STANDARD_UPDATE_FOLDER"]
 
 
+def _ensure_storage_available(path: str | os.PathLike) -> tuple[bool, str]:
+    target = Path(path)
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=target, prefix=".write-test-", delete=True):
+            pass
+        return True, "主要存取路徑可讀寫"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def resolve_harmonised_reference_storage(base_dir: str | os.PathLike, configured_path: str) -> dict:
+    fallback_root = str(Path(base_dir) / "harmonised_store")
+    configured_root = (configured_path or "").strip()
+
+    if configured_root:
+        ok, detail = _ensure_storage_available(configured_root)
+        if ok:
+            return {
+                "configured_root": configured_root,
+                "effective_root": configured_root,
+                "fallback_root": fallback_root,
+                "storage_mode": "primary",
+                "primary_storage_ok": True,
+                "status_message": "主要存取路徑可讀寫",
+            }
+
+        fallback_ok, fallback_detail = _ensure_storage_available(fallback_root)
+        if fallback_ok:
+            return {
+                "configured_root": configured_root,
+                "effective_root": fallback_root,
+                "fallback_root": fallback_root,
+                "storage_mode": "fallback",
+                "primary_storage_ok": False,
+                "status_message": f"主要存取路徑不可用：{detail}",
+            }
+        raise RuntimeError(
+            f"主要與備援儲存路徑都不可用: {configured_root}, {fallback_root} ({fallback_detail})"
+        )
+
+    ok, detail = _ensure_storage_available(fallback_root)
+    if ok:
+        return {
+            "configured_root": "",
+            "effective_root": fallback_root,
+            "fallback_root": fallback_root,
+            "storage_mode": "default",
+            "primary_storage_ok": False,
+            "status_message": "未設定主要存取路徑",
+        }
+    raise RuntimeError(f"本機備援目錄不可用: {fallback_root} ({detail})")
+
+
 def harmonised_reference_root() -> str:
     return current_app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"]
+
+
+def harmonised_reference_configured_root() -> str:
+    return (current_app.config.get("REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED") or "").strip()
+
+
+def harmonised_reference_fallback_root() -> str:
+    return current_app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER_FALLBACK"]
+
+
+def harmonised_reference_storage_mode() -> str:
+    return (current_app.config.get("REGULATION_EU_2017_745_REFERENCE_STORAGE_MODE") or "").strip()
+
+
+def harmonised_reference_status_message() -> str:
+    return (current_app.config.get("REGULATION_EU_2017_745_REFERENCE_STATUS_MESSAGE") or "").strip()
+
+
+def test_harmonised_reference_storage(path: str) -> tuple[bool, str]:
+    target = (path or "").strip()
+    if not target:
+        return False, "未設定主要存取路徑"
+    ok, detail = _ensure_storage_available(target)
+    if ok:
+        return True, "主要存取路徑可讀寫"
+    return False, f"主要存取路徑不可用：{detail}"
 
 
 def standard_update_dir(task_id: str) -> str:

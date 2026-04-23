@@ -1,7 +1,6 @@
 ﻿from __future__ import annotations
 
 import os
-import tempfile
 from pathlib import Path
 
 from flask import Flask, render_template
@@ -21,29 +20,6 @@ from app.services import (
 from modules.env_loader import load_dotenv_if_present
 
 
-def _ensure_storage_available(path: str | os.PathLike) -> bool:
-    target = Path(path)
-    try:
-        target.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(dir=target, prefix=".write-test-", delete=True):
-            pass
-        return True
-    except Exception:
-        return False
-
-
-def _resolve_regulation_reference_root(base_dir: Path, configured_path: str) -> str:
-    fallback_dir = base_dir / "harmonised_store"
-    candidate = (configured_path or "").strip()
-    if candidate and _ensure_storage_available(candidate):
-        return candidate
-    if candidate:
-        fallback = str(fallback_dir)
-        if _ensure_storage_available(fallback):
-            return fallback
-    return str(fallback_dir)
-
-
 def create_app(config_name: str | None = None) -> Flask:
     base_dir = Path(__file__).resolve().parents[1]
     load_dotenv_if_present(str(base_dir))
@@ -58,10 +34,26 @@ def create_app(config_name: str | None = None) -> Flask:
     config_key = (config_name or "default").lower()
     config_cls = CONFIG_MAP.get(config_key, BaseConfig)
     app.config.from_object(config_cls)
-    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = _resolve_regulation_reference_root(
+    reference_storage = standard_update_service.resolve_harmonised_reference_storage(
         base_dir,
-        app.config.get("REGULATION_EU_2017_745_REFERENCE_FOLDER", ""),
+        app.config.get("REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED", ""),
     )
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = reference_storage["effective_root"]
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER_FALLBACK"] = reference_storage["fallback_root"]
+    app.config["REGULATION_EU_2017_745_REFERENCE_STORAGE_MODE"] = reference_storage["storage_mode"]
+    app.config["REGULATION_EU_2017_745_REFERENCE_STATUS_MESSAGE"] = reference_storage["status_message"]
+    if reference_storage["storage_mode"] == "fallback":
+        app.logger.warning(
+            "Primary harmonised reference storage unavailable; using fallback. primary=%s fallback=%s reason=%s",
+            reference_storage["configured_root"],
+            reference_storage["effective_root"],
+            reference_storage["status_message"],
+        )
+    elif reference_storage["storage_mode"] == "default":
+        app.logger.info(
+            "Primary harmonised reference storage is not configured; using default local storage. path=%s",
+            reference_storage["effective_root"],
+        )
 
     if not app.config.get("SQLALCHEMY_DATABASE_URI") and not app.config.get("TESTING"):
         raise RuntimeError("DATABASE_URL is required for MSSQL configuration.")

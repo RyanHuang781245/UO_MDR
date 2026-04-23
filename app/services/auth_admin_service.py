@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -37,29 +36,17 @@ from app.services.authz_service import sanitize_next_url, user_is_admin
 from app.services.standard_update_service import (
     activate_harmonised_release,
     get_active_harmonised_release,
+    harmonised_reference_configured_root,
+    harmonised_reference_fallback_root,
     harmonised_reference_root,
+    harmonised_reference_status_message,
     sync_latest_harmonised_release_from_store,
+    test_harmonised_reference_storage,
 )
 from app.services.task_service import list_tasks
 from app.utils import TAIWAN_TZ, format_tw_datetime
 
 ADMIN_CUSTOM_CSS = ["/static/admin-custom.css"]
-
-
-def _test_storage_access(path: str) -> tuple[bool, str]:
-    target = (path or "").strip()
-    if not target:
-        return False, "未設定主路徑"
-    candidate = Path(target)
-    try:
-        candidate.mkdir(parents=True, exist_ok=True)
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(dir=candidate, prefix=".write-test-", delete=True):
-            pass
-        return True, "主路徑可讀寫"
-    except Exception as exc:
-        return False, f"主路徑不可用：{exc}"
 
 
 def _is_within_path(target: str, base: str) -> bool:
@@ -387,21 +374,21 @@ class SystemSettingView(BaseView):
                     else:
                         flash("同步失敗：資料夾內找不到可用的 Excel 檔案", "warning")
                 elif action == "test_regulation_primary_storage":
-                    configured_reference_root = (os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or "").strip()
-                    ok, message = _test_storage_access(configured_reference_root)
+                    configured_reference_root = harmonised_reference_configured_root()
+                    ok, message = test_harmonised_reference_storage(configured_reference_root)
                     flash(message, "success" if ok else "warning")
                 elif action == "switch_regulation_release_to_primary":
-                    configured_reference_root = (os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or "").strip()
-                    ok, message = _test_storage_access(configured_reference_root)
+                    configured_reference_root = harmonised_reference_configured_root()
+                    ok, message = test_harmonised_reference_storage(configured_reference_root)
                     if not ok:
                         flash(message, "warning")
                     else:
                         active_release = get_active_harmonised_release()
                         active_path = (active_release.get("path") or "").strip()
                         if not active_path or not os.path.isfile(active_path):
-                            flash("找不到目前 active 檔案，無法切回主路徑", "warning")
+                            flash("找不到目前 active 檔案，無法切回主要存取路徑", "warning")
                         elif _is_within_path(active_path, configured_reference_root):
-                            flash("目前 active 版本已經位於主路徑", "info")
+                            flash("目前 active 版本已經位於主要存取路徑", "info")
                         else:
                             target_path = os.path.join(configured_reference_root, os.path.basename(active_path))
                             os.makedirs(configured_reference_root, exist_ok=True)
@@ -419,9 +406,9 @@ class SystemSettingView(BaseView):
                                 version_label=active_release.get("version_label", ""),
                             )
                             if result:
-                                flash("已切回主路徑並更新 active 版本", "success")
+                                flash("已切回主要存取路徑並更新 active 版本", "success")
                             else:
-                                flash("切回主路徑失敗", "danger")
+                                flash("切回主要存取路徑失敗", "danger")
                 elif action == "download_regulation_release_now":
                     from app.jobs.adoption_standard_update import run_update
 
@@ -469,8 +456,7 @@ class SystemSettingView(BaseView):
         last_updated = format_tw_datetime(setting.updated_at, assume_tz=TAIWAN_TZ) if setting.updated_at else "-"
         active_release = get_active_harmonised_release()
         reference_root = harmonised_reference_root()
-        base_dir = Path(current_app.config["BASE_DIR"])
-        configured_reference_root = (os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or "").strip()
+        configured_reference_root = harmonised_reference_configured_root()
         effective_download_page_url = (
             (setting.regulation_download_page_url or "").strip()
             or (current_app.config.get("REGULATION_DOWNLOAD_PAGE_URL") or "").strip()
@@ -479,10 +465,10 @@ class SystemSettingView(BaseView):
             (setting.regulation_download_link_text or "").strip()
             or (current_app.config.get("REGULATION_DOWNLOAD_LINK_TEXT") or "").strip()
         )
-        local_reference_root = str(base_dir / "harmonised_store")
+        local_reference_root = harmonised_reference_fallback_root()
         primary_reference_root = configured_reference_root or local_reference_root
         primary_storage_ok = None
-        primary_storage_message = "尚未測試，請按「測試 NAS 連線」確認主路徑是否可用"
+        primary_storage_message = harmonised_reference_status_message() or "尚未測試，請按「測試 NAS 連線」確認主要存取路徑是否可用"
         active_release_on_fallback = bool(
             configured_reference_root
             and _is_within_path(active_release.get("path", ""), local_reference_root)

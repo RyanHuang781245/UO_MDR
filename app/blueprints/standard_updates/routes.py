@@ -137,7 +137,7 @@ def _render_mapping_page(
         task_id=task_id,
         task={"id": task_id, "name": task.get("name", task_id)},
         page_title="標準更新",
-        page_description="使用獨立標準更新任務的上傳檔案與系統 harmonised 參照表產生預覽或下載結果。",
+        page_description="使用獨立標準更新任務的上傳檔案與任務鎖定的 Regulation (EU) 2017/745 snapshot 產生預覽或下載結果。",
         task_label="標準更新任務",
         missing_file_hint="請先上傳 Word 與 Excel 檔案。",
         word_options=word_options,
@@ -217,8 +217,8 @@ def detail(task_id: str):
     harmonised_release = sync_harmonised_release_snapshot()
     locked_harmonised_release = get_locked_harmonised_release(task)
     has_newer_harmonised = bool(
-        harmonised_release.get("path")
-        and harmonised_release.get("path") != task.get("harmonised_snapshot_path", "")
+        harmonised_release.get("version_label")
+        and harmonised_release.get("version_label") != locked_harmonised_release.get("version_label", "")
     )
     is_ready = bool(task.get("word_file_path") and task.get("standard_excel_path") and locked_harmonised_release.get("path"))
     return render_template(

@@ -26,6 +26,54 @@ def _list_empty_dirs(base: str) -> set[str]:
     return empties
 
 
+def _build_nas_diff(files_dir: str, nas_path: str) -> dict:
+    task_files_map = {p.replace("\\", "/"): os.path.join(files_dir, p) for p in list_files(files_dir)}
+    nas_files_map = {p.replace("\\", "/"): os.path.join(nas_path, p) for p in list_files(nas_path)}
+    task_entries = set(task_files_map.keys()) | _list_empty_dirs(files_dir)
+    nas_entries = set(nas_files_map.keys()) | _list_empty_dirs(nas_path)
+
+    added = sorted(nas_entries - task_entries)
+    removed = sorted(task_entries - nas_entries)
+    updated = []
+
+    for rel in set(task_files_map.keys()) & set(nas_files_map.keys()):
+        try:
+            t_stat = os.stat(task_files_map[rel])
+            n_stat = os.stat(nas_files_map[rel])
+            if n_stat.st_size != t_stat.st_size or int(n_stat.st_mtime) > int(t_stat.st_mtime):
+                updated.append(rel)
+        except Exception:
+            continue
+    updated.sort()
+
+    return {
+        "task_files_map": task_files_map,
+        "nas_files_map": nas_files_map,
+        "added": added,
+        "removed": removed,
+        "updated": updated,
+    }
+
+
+def _remove_empty_parent_dirs(base_dir: str, rel_path: str, missing_dirs: set[str]) -> int:
+    removed = 0
+    current_rel = os.path.dirname(rel_path.rstrip("/")).replace("\\", "/").strip("/")
+    while current_rel:
+        current_key = f"{current_rel}/"
+        if current_key not in missing_dirs:
+            break
+        current_path = os.path.join(base_dir, current_rel)
+        try:
+            os.rmdir(current_path)
+            removed += 1
+        except FileNotFoundError:
+            removed += 1
+        except OSError:
+            break
+        current_rel = os.path.dirname(current_rel).replace("\\", "/").strip("/")
+    return removed
+
+
 @tasks_bp.get("/tasks/<task_id>/nas-diff", endpoint="task_nas_diff")
 def task_nas_diff(task_id):
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
@@ -43,24 +91,10 @@ def task_nas_diff(task_id):
         return jsonify({"ok": True, "diff": None, "message": "NAS 路徑不存在或不是資料夾"}), 200
 
     try:
-        task_files_map = {p.replace("\\", "/"): os.path.join(files_dir, p) for p in list_files(files_dir)}
-        nas_files_map = {p.replace("\\", "/"): os.path.join(nas_path, p) for p in list_files(nas_path)}
-        task_entries = set(task_files_map.keys()) | _list_empty_dirs(files_dir)
-        nas_entries = set(nas_files_map.keys()) | _list_empty_dirs(nas_path)
-
-        added = sorted(nas_entries - task_entries)
-        removed = sorted(task_entries - nas_entries)
-        updated = []
-
-        for rel in set(task_files_map.keys()) & set(nas_files_map.keys()):
-            try:
-                t_stat = os.stat(task_files_map[rel])
-                n_stat = os.stat(nas_files_map[rel])
-                if n_stat.st_size != t_stat.st_size or int(n_stat.st_mtime) > int(t_stat.st_mtime):
-                    updated.append(rel)
-            except Exception:
-                continue
-        updated.sort()
+        diff_result = _build_nas_diff(files_dir, nas_path)
+        added = diff_result["added"]
+        removed = diff_result["removed"]
+        updated = diff_result["updated"]
 
         if not added and not removed and not updated:
             return jsonify({"ok": True, "diff": None, "message": "未偵測到變更"}), 200
@@ -125,6 +159,8 @@ def sync_task_nas(task_id):
     try:
         src_dir = ensure_windows_long_path(abs_path)
         dst_dir = ensure_windows_long_path(files_dir)
+        diff_result = _build_nas_diff(dst_dir, src_dir)
+        missing_dirs = {rel for rel in diff_result["removed"] if rel.endswith("/")}
         os.makedirs(dst_dir, exist_ok=True)
         copied = 0
         updated = 0
@@ -155,24 +191,22 @@ def sync_task_nas(task_id):
                         updated += 1
                 except FileNotFoundError:
                     continue
-        for root, dirs, files in os.walk(dst_dir, topdown=False):
-            rel = os.path.relpath(root, dst_dir)
-            src_root = src_dir if rel == "." else os.path.join(src_dir, rel)
-            for fname in files:
-                dst_file = os.path.join(root, fname)
-                src_file = os.path.join(src_root, fname)
-                if not os.path.exists(src_file):
-                    try:
-                        os.remove(dst_file)
-                        deleted += 1
-                    except FileNotFoundError:
-                        continue
-            if rel != "." and not os.path.exists(src_root):
+        # Use the same removed list as nas-diff so detection and sync stay consistent.
+        for rel in reversed(diff_result["removed"]):
+            target_path = os.path.join(dst_dir, rel.rstrip("/"))
+            if rel.endswith("/"):
                 try:
-                    shutil.rmtree(root)
+                    shutil.rmtree(target_path)
                     deleted_dirs += 1
                 except FileNotFoundError:
-                    pass
+                    continue
+            else:
+                try:
+                    os.remove(target_path)
+                    deleted += 1
+                    deleted_dirs += _remove_empty_parent_dirs(dst_dir, rel, missing_dirs)
+                except FileNotFoundError:
+                    continue
         _apply_last_edit(meta)
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)

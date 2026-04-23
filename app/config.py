@@ -23,6 +23,8 @@ class BaseConfig:
     TASK_FOLDER = str(BASE_DIR / "task_store")
     STANDARD_UPDATE_FOLDER = str(BASE_DIR / "standard_update_store")
     REGULATION_EU_2017_745_REFERENCE_FOLDER = os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or str(BASE_DIR / "harmonised_store")
+    REGULATION_DOWNLOAD_PAGE_URL = "https://single-market-economy.ec.europa.eu/single-market/goods/european-standards/harmonised-standards/medical-devices_en"
+    REGULATION_DOWNLOAD_LINK_TEXT = "Summary list as xls file"
     REGULATION_REFERENCE_PATH = str(BASE_DIR / "各國法規條文登記表_20250801.xlsx")
     LIBREOFFICE_BIN = (os.environ.get("LIBREOFFICE_BIN") or "").strip()
     ALLOWED_SOURCE_ROOTS = []

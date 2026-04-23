@@ -96,46 +96,145 @@
               </div>
             </div>
             <div class="card-body" style="display: none;">
-              <div class="row">
-                <div class="col-md-6">
-                  <div class="form-group mb-3">
-                    <label class="mb-1">目前 active 版本</label>
-                    <div class="form-control bg-white">{{ active_release.version_label or '-' }}</div>
-                  </div>
+              {% if using_fallback_reference %}
+              <div class="alert alert-warning">
+                <div class="font-weight-bold mb-1">
+                  <i class="fa fa-exclamation-triangle mr-1"></i> 目前正在使用系統備援路徑
                 </div>
-                <div class="col-md-6">
-                  <div class="form-group mb-3">
-                    <label class="mb-1">最後同步時間</label>
-                    <div class="form-control bg-white">{{ active_release.downloaded_at or '-' }}</div>
-                  </div>
+                <div class="small mb-0">
+                  主要存取路徑 <code>{{ configured_reference_root }}</code> 不可用，系統目前已切換到 <code>{{ regulation_reference_root }}</code> 存放採認標準資料
                 </div>
-                <div class="col-12">
-                  <div class="form-group mb-3">
-                    <label class="mb-1">目前檔名</label>
-                    <div class="form-control bg-white">{{ active_release.file_name or '-' }}</div>
-                  </div>
+                <div class="small mb-0">
+                  1. 檢查 NAS 連線狀態 
                 </div>
-                <div class="col-12">
-                  <div class="form-group mb-3">
-                    <label class="mb-1">資料夾路徑</label>
+                <div class="small mb-0">
+                  2. 檢查 NAS 資料夾路徑是否存在
+                </div>
+                <div class="small mb-0">
+                  3. 檢查 NAS 資料夾路徑是否有存取權限
+                </div>
+                <div class="small mb-0">
+                  如果要調整 NAS 路徑，請到 .env 檔案中的 Regulation_EU_2017_745_REFERENCE_FOLDER 調整，調整後請重新啟動系統
+                </div>
+              </div>
+              {% endif %}
+              <div class="card card-light mb-3">
+                <div class="card-header py-2">
+                  <h3 class="card-title font-weight-bold">路徑狀態</h3>
+                </div>
+                <div class="card-body">
+                  <label><code>點擊「測試 NAS 連線」按鈕可檢查 NAS 路徑狀態</code></label>
+                  <div class="form-group mb-2">
+                    <label class="mb-1">主要存取路徑</label>
+                    <div class="form-control bg-white">{{ primary_reference_root }}</div>
+                  </div>
+                  <div class="form-group mb-2">
+                    <label class="mb-1">備援存取路徑</label>
+                    <div class="form-control bg-white">{{ fallback_reference_root }}</div>
+                  </div>
+                  <div class="form-group mb-0">
+                    <label class="mb-1">目前使用路徑 (如果不是主要存取路徑，代表 NAS 路徑有問題)</label>
                     <div class="form-control bg-white">{{ regulation_reference_root }}</div>
                   </div>
                 </div>
               </div>
-              <button type="submit" form="regulation-resync-form" class="btn btn-primary">
-                <i class="fa fa-refresh mr-1"></i> 重新同步採認標準版本
-              </button>
-              <small class="form-text text-muted mt-2">
-                會從目前設定的資料夾重新掃描最新 Excel，並將其設為前端顯示的 active 版本。
-              </small>
+
+              <div class="card card-light mb-3">
+                <div class="card-header py-2">
+                  <h3 class="card-title font-weight-bold">來源設定</h3>
+                </div>
+                <div class="card-body">
+                  <div class="form-group mb-3">
+                    <label class="mb-1">下載頁面網址 (PAGE_URL)</label>
+                    <input
+                      type="text"
+                      class="form-control"
+                      name="regulation_download_page_url"
+                      value="{{ effective_download_page_url }}"
+                      placeholder="預設歐盟採認標準頁面網址"
+                    >
+                  </div>
+                  <div class="form-group mb-0">
+                    <label class="mb-1">下載連結文字 (LINK_TEXT)</label>
+                    <input
+                      type="text"
+                      class="form-control"
+                      name="regulation_download_link_text"
+                      value="{{ effective_download_link_text }}"
+                      placeholder="例如：Summary list as xls file"
+                    >
+                  </div>
+                </div>
+              </div>
+
+              <div class="card card-light mb-3">
+                <div class="card-header py-2">
+                  <h3 class="card-title font-weight-bold">版本狀態</h3>
+                </div>
+                <div class="card-body">
+                  <div class="row">
+                    <div class="col-md-6">
+                      <div class="form-group mb-3">
+                        <label class="mb-1">目前 active 版本</label>
+                        <div class="form-control bg-white">{{ active_release.version_label or '-' }}</div>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="form-group mb-3">
+                        <label class="mb-1">最後同步時間</label>
+                        <div class="form-control bg-white">{{ active_release.downloaded_at or '-' }}</div>
+                      </div>
+                    </div>
+                    <div class="col-12">
+                      <div class="form-group mb-0">
+                        <label class="mb-1">目前檔名</label>
+                        <div class="form-control bg-white">{{ active_release.file_name or '-' }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card card-light mb-0">
+                <div class="card-header py-2">
+                  <h3 class="card-title font-weight-bold">維護操作</h3>
+                </div>
+                <div class="card-body">
+                  <div class="d-flex flex-wrap">
+                    <button type="submit" form="regulation-test-form" class="btn btn-outline-secondary mr-2 mb-2">
+                      <i class="fa fa-plug mr-1"></i> 測試 NAS 連線
+                    </button>
+                    <button type="submit" form="regulation-resync-form" class="btn btn-primary mr-2 mb-2">
+                      <i class="fa fa-refresh mr-1"></i> 重新同步採認標準版本
+                    </button>
+                    {% if can_switch_to_primary %}
+                    <button type="submit" form="regulation-switch-primary-form" class="btn btn-success mr-2 mb-2">
+                      <i class="fa fa-exchange mr-1"></i> 備援路徑同步至主要路徑
+                    </button>
+                    {% endif %}
+                    <button type="submit" form="settings-form" name="action" value="download_regulation_release_now" class="btn btn-info mb-2">
+                      <i class="fa fa-download mr-1"></i> 手動下載最新採認標準
+                    </button>
+                  </div>
+                  <small class="form-text text-muted mt-2">
+                    可在「來源設定」調整下載來源網址與 LINK_TEXT，並在這裡執行測試、同步、切回主路徑或手動下載。
+                  </small>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
     </form>
+    <form method="post" id="regulation-test-form" class="d-none">
+      <input type="hidden" name="action" value="test_regulation_primary_storage">
+    </form>
     <form method="post" id="regulation-resync-form" class="d-none">
       <input type="hidden" name="action" value="resync_regulation_release">
+    </form>
+    <form method="post" id="regulation-switch-primary-form" class="d-none">
+      <input type="hidden" name="action" value="switch_regulation_release_to_primary">
     </form>
   </div>
 </section>

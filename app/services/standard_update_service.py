@@ -113,6 +113,45 @@ def standard_update_meta_path(task_id: str) -> str:
     return os.path.join(standard_update_dir(task_id), "meta.json")
 
 
+def standard_update_reference_dir(task_id: str) -> str:
+    return os.path.join(standard_update_dir(task_id), "reference")
+
+
+def _snapshot_harmonised_release_for_task(task_id: str, release: dict) -> dict:
+    source_path = os.path.abspath((release or {}).get("path", "") or "")
+    if not source_path or not os.path.isfile(source_path):
+        return {}
+    ext = Path(source_path).suffix.lower()
+    if ext not in ALLOWED_EXCEL_EXTENSIONS:
+        return {}
+
+    reference_dir = standard_update_reference_dir(task_id)
+    os.makedirs(reference_dir, exist_ok=True)
+    target_name = os.path.basename(source_path)
+    target_path = os.path.join(reference_dir, target_name)
+
+    shutil.copy2(source_path, target_path)
+    for entry in os.listdir(reference_dir):
+        candidate = os.path.join(reference_dir, entry)
+        if candidate == target_path or not os.path.isfile(candidate):
+            continue
+        if Path(candidate).suffix.lower() not in ALLOWED_EXCEL_EXTENSIONS:
+            continue
+        try:
+            os.remove(candidate)
+        except OSError:
+            current_app.logger.warning("Failed to remove stale harmonised snapshot: %s", candidate)
+
+    stat = os.stat(target_path)
+    return {
+        "file_name": os.path.basename(target_path),
+        "path": target_path,
+        "version_label": (release or {}).get("version_label", "") or datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M"),
+        "downloaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+        "source_url": (release or {}).get("source_url", "") or "",
+    }
+
+
 def create_standard_update(name: str, description: str = "") -> str:
     task_id = str(uuid.uuid4())[:8]
     task_dir = standard_update_dir(task_id)
@@ -122,11 +161,15 @@ def create_standard_update(name: str, description: str = "") -> str:
     os.makedirs(standard_update_input_kind_dir(task_id, "word"), exist_ok=True)
     os.makedirs(standard_update_input_kind_dir(task_id, "standard_excel"), exist_ok=True)
     os.makedirs(standard_update_input_kind_dir(task_id, "regulation"), exist_ok=True)
+    os.makedirs(standard_update_reference_dir(task_id), exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
     work_id, creator_name = get_actor_info()
     now = datetime.now()
-    harmonised_release = sync_harmonised_release_snapshot()
+    harmonised_release = _snapshot_harmonised_release_for_task(
+        task_id,
+        sync_harmonised_release_snapshot(),
+    )
     meta = {
         "id": task_id,
         "name": name,
@@ -557,7 +600,10 @@ def lock_standard_update_to_latest_harmonised(task_id: str) -> dict:
     meta = load_standard_update(task_id)
     if not meta:
         return {}
-    latest = sync_harmonised_release_snapshot()
+    latest = _snapshot_harmonised_release_for_task(
+        task_id,
+        sync_harmonised_release_snapshot(),
+    )
     if not latest.get("path"):
         return {}
     meta["harmonised_snapshot_path"] = latest.get("path", "")

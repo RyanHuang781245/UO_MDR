@@ -20,17 +20,16 @@ from app.services import (
 from modules.env_loader import load_dotenv_if_present
 
 
-def create_app(config_name: str | None = None) -> Flask:
-    base_dir = Path(__file__).resolve().parents[1]
-    load_dotenv_if_present(str(base_dir))
-
-    app = Flask(
+def _build_flask_app(base_dir: Path) -> Flask:
+    return Flask(
         __name__,
         instance_relative_config=True,
         template_folder=str(base_dir / "app" / "templates"),
         static_folder=str(base_dir / "static"),
     )
 
+
+def _configure_app(app: Flask, base_dir: Path, config_name: str | None = None) -> None:
     config_key = (config_name or "default").lower()
     config_cls = CONFIG_MAP.get(config_key, BaseConfig)
     app.config.from_object(config_cls)
@@ -60,10 +59,39 @@ def create_app(config_name: str | None = None) -> Flask:
 
     app.config.setdefault("ALLOWED_SOURCE_ROOTS", [])
 
+
+def _prepare_common_dirs(app: Flask) -> None:
+    os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
+    os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
+    os.makedirs(app.config["STANDARD_UPDATE_FOLDER"], exist_ok=True)
+    os.makedirs(app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"], exist_ok=True)
+
+
+def create_job_app(config_name: str | None = None) -> Flask:
+    base_dir = Path(__file__).resolve().parents[1]
+    load_dotenv_if_present(str(base_dir))
+
+    app = _build_flask_app(base_dir)
+    _configure_app(app, base_dir, config_name)
     db.init_app(app)
-    login_manager.init_app(app)
-    if app.config.get("AUTH_ENABLED", True):
-        ldap_manager.init_app(app)
+    standard_update_service.init_standard_update_store(app)
+    system_service.init_system_settings(app)
+    _prepare_common_dirs(app)
+    return app
+
+
+def create_app(config_name: str | None = None, *, init_auth: bool = True) -> Flask:
+    base_dir = Path(__file__).resolve().parents[1]
+    load_dotenv_if_present(str(base_dir))
+
+    app = _build_flask_app(base_dir)
+    _configure_app(app, base_dir, config_name)
+
+    db.init_app(app)
+    if init_auth:
+        login_manager.init_app(app)
+        if app.config.get("AUTH_ENABLED", True):
+            ldap_manager.init_app(app)
 
     nas_service.init_nas_config(app)
     task_service.init_task_store(app)
@@ -72,12 +100,10 @@ def create_app(config_name: str | None = None) -> Flask:
     mapping_metadata_service.init_mapping_metadata(app)
     execution_service.init_execution_metadata(app)
 
-    os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
-    os.makedirs(app.config["TASK_FOLDER"], exist_ok=True)
-    os.makedirs(app.config["STANDARD_UPDATE_FOLDER"], exist_ok=True)
-    os.makedirs(app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"], exist_ok=True)
+    _prepare_common_dirs(app)
 
-    auth_service.init_auth(app)
+    if init_auth:
+        auth_service.init_auth(app)
     execution_service.register_execution_cli(app)
     register_blueprints(app)
 

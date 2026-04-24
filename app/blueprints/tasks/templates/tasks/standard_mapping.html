@@ -1203,7 +1203,7 @@
                 <div class="text-truncate">{{ harmonised_system_release.file_name if harmonised_system_release else '尚未找到系統 harmonised Excel' }}</div>
                 <span class="badge text-bg-light border">{{ harmonised_system_release.version_label if harmonised_system_release and harmonised_system_release.version_label else 'system' }}</span>
               </div>
-              <div class="form-text">目前使用系統最新 Regulation (EU) 2017/745 採認標準</div>
+              <div class="form-text">{{ harmonised_source_message or '目前使用系統最新 Regulation (EU) 2017/745 採認標準' }}</div>
               {% else %}
               <select class="form-select form-control-custom rounded-2" name="harmonised_excel_path" id="harmonisedExcelPathSelect">
                 <option value="">請選擇 Excel 檔案</option>

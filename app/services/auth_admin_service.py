@@ -430,6 +430,26 @@ class SystemSettingView(BaseView):
                         )
                     else:
                         flash("手動下載未執行", "warning")
+                elif action == "check_regulation_release_update":
+                    from app.jobs.adoption_standard_update import check_for_update
+
+                    page_url = (request.form.get("regulation_download_page_url") or "").strip() or (
+                        (setting.regulation_download_page_url or "").strip() if setting else ""
+                    )
+                    link_text = (request.form.get("regulation_download_link_text") or "").strip() or (
+                        (setting.regulation_download_link_text or "").strip() if setting else ""
+                    )
+                    result = check_for_update(
+                        page_url=page_url or None,
+                        link_text=link_text or None,
+                    )
+                    current_name = ((result.get("current") or {}).get("filename") or "-").strip() or "-"
+                    reasons = result.get("reasons") or []
+                    if result.get("should_download"):
+                        reason_text = "；".join(reasons) if reasons else "偵測到版本差異"
+                        flash(f"偵測到可更新版本：{current_name}。原因：{reason_text}", "warning")
+                    else:
+                        flash(f"目前已是最新版本：{current_name}", "info")
                 else:
                     setting.email_batch_notify_enabled = request.form.get("email_batch_notify_enabled") == "on"
                     nas_limit = request.form.get("nas_max_copy_file_size_mb")

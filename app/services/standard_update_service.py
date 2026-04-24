@@ -28,6 +28,8 @@ STATUS_READY = "ready"
 STATUS_PREVIEWED = "previewed"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
+HARMONISED_SOURCE_SYSTEM = "system"
+HARMONISED_SOURCE_CUSTOM = "custom"
 _INVALID_UPLOAD_FILENAME_CHARS = '\\/:*?"<>|'
 _WINDOWS_RESERVED_FILE_NAMES = {
     "CON",
@@ -182,6 +184,7 @@ def standard_update_input_kind_dir(task_id: str, kind: str) -> str:
         "word": "word",
         "standard_excel": "standard_excel",
         "regulation": "regulation",
+        "harmonised": "harmonised",
     }.get(kind, kind)
     return os.path.join(standard_update_input_dir(task_id), folder)
 
@@ -196,6 +199,10 @@ def standard_update_meta_path(task_id: str) -> str:
 
 def standard_update_reference_dir(task_id: str) -> str:
     return os.path.join(standard_update_dir(task_id), "reference")
+
+
+def normalize_harmonised_source_mode(value: str | None) -> str:
+    return HARMONISED_SOURCE_CUSTOM if (value or "").strip().lower() == HARMONISED_SOURCE_CUSTOM else HARMONISED_SOURCE_SYSTEM
 
 
 def _snapshot_harmonised_release_for_task(task_id: str, release: dict) -> dict:
@@ -233,7 +240,7 @@ def _snapshot_harmonised_release_for_task(task_id: str, release: dict) -> dict:
     }
 
 
-def create_standard_update(name: str, description: str = "") -> str:
+def create_standard_update(name: str, description: str = "", *, harmonised_source_mode: str = HARMONISED_SOURCE_SYSTEM) -> str:
     task_id = str(uuid.uuid4())[:8]
     task_dir = standard_update_dir(task_id)
     input_dir = standard_update_input_dir(task_id)
@@ -242,14 +249,17 @@ def create_standard_update(name: str, description: str = "") -> str:
     os.makedirs(standard_update_input_kind_dir(task_id, "word"), exist_ok=True)
     os.makedirs(standard_update_input_kind_dir(task_id, "standard_excel"), exist_ok=True)
     os.makedirs(standard_update_input_kind_dir(task_id, "regulation"), exist_ok=True)
+    os.makedirs(standard_update_input_kind_dir(task_id, "harmonised"), exist_ok=True)
     os.makedirs(standard_update_reference_dir(task_id), exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
     work_id, creator_name = get_actor_info()
     now = datetime.now()
-    harmonised_release = _snapshot_harmonised_release_for_task(
-        task_id,
-        sync_harmonised_release_snapshot(),
+    resolved_harmonised_source_mode = normalize_harmonised_source_mode(harmonised_source_mode)
+    harmonised_release = (
+        _snapshot_harmonised_release_for_task(task_id, sync_harmonised_release_snapshot())
+        if resolved_harmonised_source_mode == HARMONISED_SOURCE_SYSTEM
+        else {}
     )
     meta = {
         "id": task_id,
@@ -260,11 +270,14 @@ def create_standard_update(name: str, description: str = "") -> str:
         "created": now.strftime("%Y-%m-%d %H:%M"),
         "updated": now.strftime("%Y-%m-%d %H:%M"),
         "status": STATUS_DRAFT,
+        "harmonised_source_mode": resolved_harmonised_source_mode,
         "word_file_path": "",
         "standard_excel_path": "",
         "regulation_excel_path": "",
         "harmonised_snapshot_path": harmonised_release.get("path", ""),
         "harmonised_snapshot_version": harmonised_release.get("version_label", ""),
+        "custom_harmonised_path": "",
+        "custom_harmonised_version": "",
         "last_output_path": "",
         "last_run_at": "",
         "last_run_status": "",
@@ -280,8 +293,11 @@ def create_standard_update(name: str, description: str = "") -> str:
             creator_name=creator_name or None,
             creator_work_id=work_id or None,
             status=STATUS_DRAFT,
+            harmonised_source_mode=resolved_harmonised_source_mode,
             harmonised_snapshot_path=harmonised_release.get("path") or None,
             harmonised_snapshot_version=harmonised_release.get("version_label") or None,
+            custom_harmonised_path=None,
+            custom_harmonised_version=None,
             created_at=now,
             updated_at=now,
         )
@@ -328,11 +344,14 @@ def load_standard_update(task_id: str) -> dict:
     meta.setdefault("created", "")
     meta.setdefault("updated", meta.get("created", ""))
     meta.setdefault("status", STATUS_DRAFT)
+    meta["harmonised_source_mode"] = normalize_harmonised_source_mode(meta.get("harmonised_source_mode"))
     meta.setdefault("word_file_path", "")
     meta.setdefault("standard_excel_path", "")
     meta.setdefault("regulation_excel_path", "")
     meta.setdefault("harmonised_snapshot_path", "")
     meta.setdefault("harmonised_snapshot_version", "")
+    meta.setdefault("custom_harmonised_path", "")
+    meta.setdefault("custom_harmonised_version", "")
     meta.setdefault("last_output_path", "")
     meta.setdefault("last_run_at", "")
     meta.setdefault("last_run_status", "")
@@ -357,10 +376,13 @@ def save_standard_update(task_id: str, meta: dict) -> None:
         record.creator_name = meta.get("creator_name") or None
         record.creator_work_id = meta.get("creator_work_id") or None
         record.status = meta.get("status") or STATUS_DRAFT
+        record.harmonised_source_mode = normalize_harmonised_source_mode(meta.get("harmonised_source_mode"))
         record.word_file_path = meta.get("word_file_path") or None
         record.standard_excel_path = meta.get("standard_excel_path") or None
         record.harmonised_snapshot_path = meta.get("harmonised_snapshot_path") or None
         record.harmonised_snapshot_version = meta.get("harmonised_snapshot_version") or None
+        record.custom_harmonised_path = meta.get("custom_harmonised_path") or None
+        record.custom_harmonised_version = meta.get("custom_harmonised_version") or None
         record.last_output_path = meta.get("last_output_path") or None
         record.last_run_status = meta.get("last_run_status") or None
         record.updated_at = datetime.now()
@@ -406,7 +428,11 @@ def save_uploaded_input(task_id: str, upload, *, kind: str) -> str:
     allowed_exts = ALLOWED_WORD_EXTENSIONS if kind == "word" else ALLOWED_EXCEL_EXTENSIONS
     if ext not in allowed_exts:
         raise ValueError("檔案類型不支援")
-    normalized_kind = "word" if kind == "word" else ("regulation" if kind == "regulation" else "standard_excel")
+    normalized_kind = (
+        "word"
+        if kind == "word"
+        else ("regulation" if kind == "regulation" else ("harmonised" if kind == "harmonised" else "standard_excel"))
+    )
     input_dir = standard_update_input_kind_dir(task_id, normalized_kind)
     os.makedirs(input_dir, exist_ok=True)
     safe_name = _safe_uploaded_filename(upload.filename, default_stem="upload") or ("upload" + ext)
@@ -427,7 +453,11 @@ def available_input_files(task_id: str) -> tuple[list[str], list[str]]:
 
 
 def input_file_history(task_id: str, *, kind: str, current_file: str = "") -> list[dict]:
-    normalized_kind = "word" if kind == "word" else ("regulation" if kind == "regulation" else "standard_excel")
+    normalized_kind = (
+        "word"
+        if kind == "word"
+        else ("regulation" if kind == "regulation" else ("harmonised" if kind == "harmonised" else "standard_excel"))
+    )
     input_dir = standard_update_input_kind_dir(task_id, normalized_kind)
     allowed_exts = ALLOWED_WORD_EXTENSIONS if normalized_kind == "word" else ALLOWED_EXCEL_EXTENSIONS
     items: list[dict] = []
@@ -482,6 +512,15 @@ def delete_input_file(task_id: str, *, kind: str, rel_path: str) -> dict:
     elif normalized_kind == "standard_excel":
         if meta.get("standard_excel_path") == rel_path:
             meta["standard_excel_path"] = replacement
+    elif normalized_kind == "harmonised":
+        if meta.get("custom_harmonised_path") == rel_path:
+            meta["custom_harmonised_path"] = replacement
+            if replacement:
+                replacement_abs = safe_standard_update_file(task_id, replacement, ALLOWED_EXCEL_EXTENSIONS, kind="harmonised")
+                replacement_stat = os.stat(replacement_abs)
+                meta["custom_harmonised_version"] = datetime.fromtimestamp(replacement_stat.st_mtime).strftime("%Y%m%d-%H%M")
+            else:
+                meta["custom_harmonised_version"] = ""
     else:
         if meta.get("regulation_excel_path") == rel_path:
             meta["regulation_excel_path"] = replacement
@@ -562,6 +601,7 @@ def activate_harmonised_release(
     source_url: str = "",
     downloaded_at: datetime | None = None,
     version_label: str = "",
+    reuse_existing: bool = True,
 ) -> dict:
     abs_path = os.path.abspath(file_path or "")
     if not abs_path or not os.path.isfile(abs_path):
@@ -583,8 +623,33 @@ def activate_harmonised_release(
 
     try:
         HarmonisedReleaseRecord.query.update({"is_active": False})
-        record = HarmonisedReleaseRecord.query.filter_by(nas_path=abs_path).first()
-        if not record:
+        record = None
+        if reuse_existing:
+            record = HarmonisedReleaseRecord.query.filter_by(nas_path=abs_path).first()
+        if record:
+            current_app.logger.info(
+                "Reusing harmonised release record id=%s path=%s reuse_existing=%s",
+                record.id,
+                abs_path,
+                reuse_existing,
+            )
+            record.source_url = source_url or record.source_url
+            record.file_name = os.path.basename(abs_path)
+            record.nas_path = abs_path
+            record.version_label = resolved_version
+            record.checksum = checksum or record.checksum
+            record.is_active = True
+            record.download_status = "available"
+            record.error_message = None
+            record.downloaded_at = resolved_downloaded_at
+        else:
+            current_app.logger.info(
+                "Creating harmonised release record path=%s version=%s checksum=%s reuse_existing=%s",
+                abs_path,
+                resolved_version,
+                checksum or "",
+                reuse_existing,
+            )
             record = HarmonisedReleaseRecord(
                 source_url=source_url or None,
                 file_name=os.path.basename(abs_path),
@@ -596,17 +661,14 @@ def activate_harmonised_release(
                 downloaded_at=resolved_downloaded_at,
             )
             db.session.add(record)
-        else:
-            record.source_url = source_url or record.source_url
-            record.file_name = os.path.basename(abs_path)
-            record.nas_path = abs_path
-            record.version_label = resolved_version
-            record.checksum = checksum or record.checksum
-            record.is_active = True
-            record.download_status = "available"
-            record.error_message = None
-            record.downloaded_at = resolved_downloaded_at
         commit_session()
+        current_app.logger.info(
+            "Activated harmonised release record id=%s active_path=%s version=%s downloaded_at=%s",
+            record.id,
+            record.nas_path,
+            record.version_label,
+            record.downloaded_at,
+        )
         return {
             "id": record.id,
             "file_name": record.file_name or os.path.basename(abs_path),
@@ -619,6 +681,22 @@ def activate_harmonised_release(
         db.session.rollback()
         current_app.logger.exception("Failed to activate harmonised release")
         return {}
+
+
+def register_downloaded_harmonised_release(
+    file_path: str,
+    *,
+    source_url: str = "",
+    downloaded_at: datetime | None = None,
+    version_label: str = "",
+) -> dict:
+    return activate_harmonised_release(
+        file_path,
+        source_url=source_url,
+        downloaded_at=downloaded_at,
+        version_label=version_label,
+        reuse_existing=False,
+    )
 
 
 def sync_latest_harmonised_release_from_store() -> dict:
@@ -647,26 +725,46 @@ def get_locked_harmonised_release(meta: dict) -> dict:
         "path": path,
         "version_label": (meta or {}).get("harmonised_snapshot_version", "") or datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M"),
         "downloaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+        "source_mode": "system_locked",
     }
 
 
-def sync_harmonised_release_snapshot() -> dict:
-    active = get_active_harmonised_release()
-    if not active.get("path"):
+def get_task_harmonised_release(task_id: str, meta: dict | None = None) -> dict:
+    payload = meta or load_standard_update(task_id)
+    if not payload:
         return {}
-    downloaded_at = None
-    if active.get("downloaded_at"):
+
+    source_mode = normalize_harmonised_source_mode(payload.get("harmonised_source_mode"))
+
+    custom_rel_path = (payload.get("custom_harmonised_path") or "").strip()
+    if source_mode == HARMONISED_SOURCE_CUSTOM and custom_rel_path:
         try:
-            downloaded_at = datetime.strptime(active["downloaded_at"], "%Y-%m-%d %H:%M")
-        except ValueError:
-            downloaded_at = None
-    result = activate_harmonised_release(
-        active["path"],
-        source_url=active.get("source_url", ""),
-        downloaded_at=downloaded_at,
-        version_label=active.get("version_label", ""),
-    )
-    return result or active
+            custom_path = safe_standard_update_file(task_id, custom_rel_path, ALLOWED_EXCEL_EXTENSIONS, kind="harmonised")
+            stat = os.stat(custom_path)
+            return {
+                "file_name": os.path.basename(custom_path),
+                "path": custom_path,
+                "version_label": (payload.get("custom_harmonised_version") or "").strip()
+                or datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M"),
+                "downloaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                "source_mode": "task_custom",
+            }
+        except (FileNotFoundError, OSError, ValueError):
+            payload["custom_harmonised_path"] = ""
+            payload["custom_harmonised_version"] = ""
+            save_standard_update(task_id, payload)
+
+    if source_mode == HARMONISED_SOURCE_CUSTOM:
+        return {}
+
+    release = get_locked_harmonised_release(payload)
+    if release:
+        release["source_mode"] = "system_locked"
+    return release
+
+
+def sync_harmonised_release_snapshot() -> dict:
+    return get_active_harmonised_release()
 
 
 def _sha1_file(path: str) -> str:
@@ -681,6 +779,7 @@ def lock_standard_update_to_latest_harmonised(task_id: str) -> dict:
     meta = load_standard_update(task_id)
     if not meta:
         return {}
+    meta["harmonised_source_mode"] = HARMONISED_SOURCE_SYSTEM
     latest = _snapshot_harmonised_release_for_task(
         task_id,
         sync_harmonised_release_snapshot(),
@@ -689,5 +788,7 @@ def lock_standard_update_to_latest_harmonised(task_id: str) -> dict:
         return {}
     meta["harmonised_snapshot_path"] = latest.get("path", "")
     meta["harmonised_snapshot_version"] = latest.get("version_label", "")
+    meta["custom_harmonised_path"] = ""
+    meta["custom_harmonised_version"] = ""
     save_standard_update(task_id, meta)
     return meta

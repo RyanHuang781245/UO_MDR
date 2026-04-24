@@ -14,10 +14,13 @@ class StandardUpdateRecord(db.Model):
     creator_name = db.Column(db.String(200))
     creator_work_id = db.Column(db.String(120))
     status = db.Column(db.String(40), nullable=False, server_default="draft")
+    harmonised_source_mode = db.Column(db.String(40), nullable=False, server_default="system")
     word_file_path = db.Column(db.Text)
     standard_excel_path = db.Column(db.Text)
     harmonised_snapshot_path = db.Column(db.Text)
     harmonised_snapshot_version = db.Column(db.String(120))
+    custom_harmonised_path = db.Column(db.Text)
+    custom_harmonised_version = db.Column(db.String(120))
     last_output_path = db.Column(db.Text)
     last_run_at = db.Column(db.DateTime)
     last_run_status = db.Column(db.String(40))
@@ -63,6 +66,8 @@ def _ensure_standard_update_columns(engine, inspector) -> None:
                             "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN creator_work_id TEXT;"},
         "status": {"mssql": "ALTER TABLE standard_update_tasks ADD status NVARCHAR(40) NOT NULL CONSTRAINT DF_standard_update_tasks_status DEFAULT('draft');",
                    "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN status TEXT DEFAULT 'draft';"},
+        "harmonised_source_mode": {"mssql": "ALTER TABLE standard_update_tasks ADD harmonised_source_mode NVARCHAR(40) NOT NULL CONSTRAINT DF_standard_update_tasks_harmonised_source_mode DEFAULT('system');",
+                                   "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN harmonised_source_mode TEXT DEFAULT 'system';"},
         "word_file_path": {"mssql": "ALTER TABLE standard_update_tasks ADD word_file_path NVARCHAR(MAX) NULL;",
                            "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN word_file_path TEXT;"},
         "standard_excel_path": {"mssql": "ALTER TABLE standard_update_tasks ADD standard_excel_path NVARCHAR(MAX) NULL;",
@@ -71,6 +76,10 @@ def _ensure_standard_update_columns(engine, inspector) -> None:
                                      "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN harmonised_snapshot_path TEXT;"},
         "harmonised_snapshot_version": {"mssql": "ALTER TABLE standard_update_tasks ADD harmonised_snapshot_version NVARCHAR(120) NULL;",
                                         "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN harmonised_snapshot_version TEXT;"},
+        "custom_harmonised_path": {"mssql": "ALTER TABLE standard_update_tasks ADD custom_harmonised_path NVARCHAR(MAX) NULL;",
+                                   "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN custom_harmonised_path TEXT;"},
+        "custom_harmonised_version": {"mssql": "ALTER TABLE standard_update_tasks ADD custom_harmonised_version NVARCHAR(120) NULL;",
+                                      "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN custom_harmonised_version TEXT;"},
         "last_output_path": {"mssql": "ALTER TABLE standard_update_tasks ADD last_output_path NVARCHAR(MAX) NULL;",
                              "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN last_output_path TEXT;"},
         "last_run_at": {"mssql": "ALTER TABLE standard_update_tasks ADD last_run_at DATETIME2 NULL;",

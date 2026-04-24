@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
+  .detail-summary-card {
+    padding-bottom: 0.8rem !important;
+  }
   .detail-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -19,7 +22,7 @@
     display: flex;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.75rem 0;
+    padding: 0.5rem 0;
     border-bottom: 1px solid var(--app-border);
   }
   .detail-meta-row:last-child {
@@ -36,6 +39,7 @@
     border-radius: 0.75rem;
     padding: 0.875rem 1rem;
     background: var(--app-card-bg);
+    min-width: 0;
   }
   .version-chip--locked {
     border-color: var(--bs-blue-100);
@@ -64,11 +68,22 @@
   .version-chip__value {
     font-weight: 700;
     color: var(--app-text);
+    min-width: 0;
+  }
+  .version-chip__value code {
+    display: block;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .version-chip__meta {
     margin-top: 0.25rem;
     font-size: 0.8125rem;
     color: var(--bs-gray-500);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .section-head {
     display: flex;
@@ -228,7 +243,7 @@
     </div>
   </div>
 
-  {% if has_newer_harmonised %}
+  {% if harmonised_source_mode == 'system' and has_newer_harmonised %}
   <div class="version-notice-row">
     <div class="version-notice">
       <div class="version-notice__body">
@@ -243,7 +258,7 @@
   {% endif %}
 
   <div class="detail-grid">
-    <div class="main-card p-4">
+    <div class="main-card p-4 detail-summary-card">
       <div class="section-head">
         <div>
           <h5 class="fw-bold mb-1">標準更新任務摘要</h5>
@@ -261,25 +276,31 @@
         <span class="text-muted">建立時間</span>
         <span class="font-monospace">{{ task.created or '-' }}</span>
       </div>
+      <div class="detail-meta-row">
+        <span class="text-muted">目前模式</span>
+        <span>{% if harmonised_source_mode == 'custom' %}自行上傳檔案{% else %}使用系統檔案{% endif %}</span>
+      </div>
     </div>
 
-    <div class="main-card p-4">
+  <div class="main-card p-4">
       <div class="section-head">
         <div>
-          <h5 class="fw-bold mb-1">Regulation (EU) 2017/745 採認標準版本</h5>
+          <h5 class="fw-bold mb-3">Regulation (EU) 2017/745 採認標準版本</h5>
         </div>
       </div>
       <div class="version-summary">
-        <div class="version-chip version-chip--locked">
-          <div class="version-chip__label">任務鎖定版本</div>
-          <div class="version-chip__value"><code>{{ locked_harmonised_release.version_label or task.harmonised_snapshot_version or '-' }}</code></div>
-          <div class="version-chip__meta">{{ locked_harmonised_release.file_name or '尚未鎖定檔案' }}</div>
+        <div class="version-chip {% if harmonised_source_mode == 'custom' %}version-chip--latest{% else %}version-chip--locked{% endif %}">
+          <div class="version-chip__label">任務目前使用版本</div>
+          <div class="version-chip__value"><code>{{ task_harmonised_release.version_label or '-' }}</code></div>
+          <div class="version-chip__meta">{{ task_harmonised_release.file_name or '尚未指定檔案' }}</div>
         </div>
+        {% if harmonised_source_mode == 'system' %}
         <div class="version-chip version-chip--latest">
           <div class="version-chip__label">系統最新版本</div>
           <div class="version-chip__value"><code>{{ harmonised_release.version_label or '-' }}</code></div>
           <div class="version-chip__meta">{{ harmonised_release.file_name or '尚未找到系統檔案' }}</div>
         </div>
+        {% endif %}
       </div>
     </div>
 
@@ -356,6 +377,45 @@
             </div>
           </div>
         </div>
+
+        {% if harmonised_source_mode == 'custom' %}
+        <div class="border rounded-3 p-3">
+          <label class="form-label fw-bold">
+            <i class="bi bi-file-earmark-spreadsheet text-success flex-shrink-0"></i>
+            任務自訂 Regulation (EU) 2017/745 採認標準
+          </label>
+          <form action="{{ url_for('standard_updates_bp.upload_harmonised_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
+            <input class="form-control form-control-custom" type="file" name="harmonised_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
+            <button class="btn btn-outline-primary align-self-start mt-1" type="submit">上傳任務自訂版本</button>
+          </form>
+          <div class="form-text mt-2">上傳後，此任務會優先使用自訂版本；若想回到系統版本，可按上方「改用最新版本」。</div>
+          <div class="upload-history mt-3">
+            <div class="upload-history__title">上傳歷史</div>
+            <div class="upload-history__list">
+              {% for item in custom_harmonised_history %}
+              <div class="upload-history__item">
+                <div class="upload-history__primary">
+                  <div class="upload-history__name" title="{{ item.name }}">{{ item.name }}</div>
+                </div>
+                <div class="upload-history__meta">
+                  {{ item.uploaded_at }}
+                  {% if item.is_current %}<span class="badge text-bg-light border ms-2">目前使用</span>{% endif %}
+                </div>
+                <form class="upload-history__remove" action="{{ url_for('standard_updates_bp.delete_input_file', task_id=task.id) }}" method="post" onsubmit="return confirm('確定移除此檔案？')">
+                  <input type="hidden" name="kind" value="harmonised">
+                  <input type="hidden" name="file_name" value="{{ item.name }}">
+                  <button class="btn-action-icon text-danger" type="submit" title="移除" aria-label="移除">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </div>
+              {% else %}
+              <div class="small text-muted">目前沒有任務自訂採認標準上傳紀錄。</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
 
         <div class="border rounded-3 p-3">
           <label class="form-label fw-bold">

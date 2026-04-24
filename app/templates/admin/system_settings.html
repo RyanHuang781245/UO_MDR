@@ -204,6 +204,9 @@
                     <button type="submit" form="regulation-test-form" class="btn btn-outline-secondary mr-2 mb-2">
                       <i class="fa fa-plug mr-1"></i> 測試 NAS 連線
                     </button>
+                    <button type="submit" form="regulation-check-update-form" class="btn btn-outline-info mr-2 mb-2">
+                      <i class="fa fa-search mr-1"></i> 檢查更新
+                    </button>
                     <button type="submit" form="regulation-resync-form" class="btn btn-primary mr-2 mb-2">
                       <i class="fa fa-refresh mr-1"></i> 重新同步採認標準版本
                     </button>
@@ -232,6 +235,9 @@
     </form>
     <form method="post" id="regulation-resync-form" class="d-none">
       <input type="hidden" name="action" value="resync_regulation_release">
+    </form>
+    <form method="post" id="regulation-check-update-form" class="d-none">
+      <input type="hidden" name="action" value="check_regulation_release_update">
     </form>
     <form method="post" id="regulation-switch-primary-form" class="d-none">
       <input type="hidden" name="action" value="switch_regulation_release_to_primary">

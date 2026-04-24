@@ -437,6 +437,7 @@
             <input class="form-control form-control-custom" type="file" name="harmonised_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
             <button class="btn btn-outline-primary align-self-start mt-1" type="submit">上傳任務自訂版本</button>
           </form>
+          <div class="form-text mt-2">上傳後會保留在檔案清單中；進入標準更新時可選擇要使用的版本，未特別選擇時預設使用最新上傳檔案。</div>
           <div class="upload-history mt-3">
             <div class="upload-history__title">上傳歷史</div>
             <div class="upload-history__list">
@@ -445,10 +446,7 @@
                 <div class="upload-history__primary">
                   <div class="upload-history__name" title="{{ item.name }}">{{ item.name }}</div>
                 </div>
-                <div class="upload-history__meta">
-                  {{ item.uploaded_at }}
-                  {% if item.is_current %}<span class="badge text-bg-light border ms-2">目前使用</span>{% endif %}
-                </div>
+                <div class="upload-history__meta">{{ item.uploaded_at }}</div>
                 <form class="upload-history__remove" action="{{ url_for('standard_updates_bp.delete_input_file', task_id=task.id) }}" method="post" onsubmit="return confirm('確定移除此檔案？')">
                   <input type="hidden" name="kind" value="harmonised">
                   <input type="hidden" name="file_name" value="{{ item.name }}">

@@ -490,12 +490,21 @@ def input_file_history(task_id: str, *, kind: str, current_file: str = "") -> li
     return items
 
 
+def get_latest_uploaded_input(task_id: str, *, kind: str) -> dict:
+    items = input_file_history(task_id, kind=kind, current_file="")
+    return dict(items[0]) if items else {}
+
+
 def delete_input_file(task_id: str, *, kind: str, rel_path: str) -> dict:
     meta = load_standard_update(task_id)
     if not meta:
         raise FileNotFoundError("找不到標準更新任務")
 
-    normalized_kind = "word" if kind == "word" else ("regulation" if kind == "regulation" else "standard_excel")
+    normalized_kind = (
+        "word"
+        if kind == "word"
+        else ("regulation" if kind == "regulation" else ("harmonised" if kind == "harmonised" else "standard_excel"))
+    )
     allowed_exts = ALLOWED_WORD_EXTENSIONS if normalized_kind == "word" else ALLOWED_EXCEL_EXTENSIONS
     target_path = safe_standard_update_file(task_id, rel_path, allowed_exts, kind=normalized_kind)
     os.remove(target_path)
@@ -514,13 +523,8 @@ def delete_input_file(task_id: str, *, kind: str, rel_path: str) -> dict:
             meta["standard_excel_path"] = replacement
     elif normalized_kind == "harmonised":
         if meta.get("custom_harmonised_path") == rel_path:
-            meta["custom_harmonised_path"] = replacement
-            if replacement:
-                replacement_abs = safe_standard_update_file(task_id, replacement, ALLOWED_EXCEL_EXTENSIONS, kind="harmonised")
-                replacement_stat = os.stat(replacement_abs)
-                meta["custom_harmonised_version"] = datetime.fromtimestamp(replacement_stat.st_mtime).strftime("%Y%m%d-%H%M")
-            else:
-                meta["custom_harmonised_version"] = ""
+            meta["custom_harmonised_path"] = ""
+            meta["custom_harmonised_version"] = ""
     else:
         if meta.get("regulation_excel_path") == rel_path:
             meta["regulation_excel_path"] = replacement
@@ -740,6 +744,8 @@ def get_task_harmonised_release(task_id: str, meta: dict | None = None) -> dict:
     source_mode = normalize_harmonised_source_mode(payload.get("harmonised_source_mode"))
 
     custom_rel_path = (payload.get("custom_harmonised_path") or "").strip()
+    if source_mode == HARMONISED_SOURCE_CUSTOM and not custom_rel_path:
+        custom_rel_path = str(get_latest_uploaded_input(task_id, kind="harmonised").get("name") or "").strip()
     if source_mode == HARMONISED_SOURCE_CUSTOM and custom_rel_path:
         try:
             custom_path = safe_standard_update_file(task_id, custom_rel_path, ALLOWED_EXCEL_EXTENSIONS, kind="harmonised")
@@ -747,8 +753,7 @@ def get_task_harmonised_release(task_id: str, meta: dict | None = None) -> dict:
             return {
                 "file_name": os.path.basename(custom_path),
                 "path": custom_path,
-                "version_label": (payload.get("custom_harmonised_version") or "").strip()
-                or datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M"),
+                "version_label": datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M"),
                 "downloaded_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
                 "source_mode": "task_custom",
             }
@@ -756,6 +761,9 @@ def get_task_harmonised_release(task_id: str, meta: dict | None = None) -> dict:
             payload["custom_harmonised_path"] = ""
             payload["custom_harmonised_version"] = ""
             save_standard_update(task_id, payload)
+            latest_custom = str(get_latest_uploaded_input(task_id, kind="harmonised").get("name") or "").strip()
+            if latest_custom and latest_custom != custom_rel_path:
+                return get_task_harmonised_release(task_id, payload)
 
     if source_mode == HARMONISED_SOURCE_CUSTOM:
         return {}

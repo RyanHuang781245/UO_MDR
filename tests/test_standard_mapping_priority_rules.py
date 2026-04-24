@@ -8,6 +8,7 @@ from app.services.standard_mapping_service import (
     build_preserve_original_segments,
     build_title_with_amendment,
     extract_harmonised_reference_entries,
+    extract_harmonised_reference_keys,
     extract_standard_match_key,
     extract_latest_year_from_astm_style,
     find_latest_year_from_excel,
@@ -70,11 +71,18 @@ def test_build_preserve_original_segments_keeps_old_and_marks_new_red():
     ]
 
 
-def test_harmonised_matching_uses_full_standards_value_only():
+def test_harmonised_matching_accepts_same_standard_match_key():
     lookup = {normalize_harmonised_standard_text("EN ISO 14971:2019\nApplication of risk management to medical devices")}
     assert is_harmonised_standard("EN ISO 14971:2019", "Different title", lookup) is True
     assert is_harmonised_standard("BS EN ISO 14971:2019", "Application of risk management to medical devices", lookup) is False
     assert is_harmonised_standard("ISO 14971:2019", "Application of risk management to medical devices", lookup) is False
+
+
+def test_harmonised_matching_accepts_same_standard_number_from_reference_key():
+    lookup = set(extract_harmonised_reference_keys("EN ISO 14971:2019\nApplication of risk management to medical devices"))
+    assert is_harmonised_standard("BS EN ISO 14971:2019", "Application of risk management to medical devices", lookup) is True
+    assert is_harmonised_standard("ISO 14971:2019", "Application of risk management to medical devices", lookup) is True
+    assert is_harmonised_standard("ISO 13485:2016", "Different standard", lookup) is False
 
 
 def test_extract_harmonised_reference_entries_collects_all_standard_lines():

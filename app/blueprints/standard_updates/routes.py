@@ -49,6 +49,7 @@ from app.services.standard_update_service import (
     delete_input_file,
     delete_standard_update,
     get_active_harmonised_release,
+    get_latest_uploaded_input,
     get_locked_harmonised_release,
     get_task_harmonised_release,
     input_file_history,
@@ -105,6 +106,7 @@ def _render_mapping_page(
     selected_word: str = "",
     selected_excel: str = "",
     selected_regulation_excel: str = "",
+    selected_harmonised_excel: str = "",
     iso_priority: tuple[str, ...] | list[str] | None = None,
     enabled_standard_levels: tuple[str, ...] | list[str] | None = None,
     required_headers: tuple[str, ...] | list[str] | None = None,
@@ -119,13 +121,20 @@ def _render_mapping_page(
         abort(404)
     word_options, excel_options = available_input_files(task_id)
     regulation_excel_options = [item["name"] for item in input_file_history(task_id, kind="regulation", current_file=task.get("regulation_excel_path", ""))]
+    harmonised_excel_options = [item["name"] for item in input_file_history(task_id, kind="harmonised", current_file="")]
     chapter_options, chapter_options_error = _load_chapter_options(task_id, selected_word)
     harmonised_release = get_task_harmonised_release(task_id, task)
-    harmonised_source_mode = harmonised_release.get("source_mode", "system_locked")
+    use_system_harmonised = normalize_harmonised_source_mode(task.get("harmonised_source_mode")) != HARMONISED_SOURCE_CUSTOM
+    effective_harmonised_selection = (selected_harmonised_excel or harmonised_release.get("file_name", "")).strip()
     harmonised_source_message = (
-        "目前使用任務自訂上傳的 Regulation (EU) 2017/745 採認標準"
-        if harmonised_source_mode == "task_custom"
-        else "目前使用任務鎖定的系統 Regulation (EU) 2017/745 採認標準"
+        "目前使用任務鎖定的系統 Regulation (EU) 2017/745 採認標準"
+        if use_system_harmonised
+        else "可選擇任務已上傳的 Regulation (EU) 2017/745 採認標準；未特別選擇時預設使用最新上傳檔案。"
+    )
+    page_description = (
+        "使用獨立標準更新任務的上傳檔案與任務鎖定的 Regulation (EU) 2017/745 snapshot 產生預覽或下載結果。"
+        if use_system_harmonised
+        else "使用獨立標準更新任務的上傳檔案與任務自訂採認標準檔案產生預覽或下載結果。"
     )
     reference_payload = (preview_result or {}).get("reference_payload", {})
     active_iso_priority = tuple((preview_result or {}).get("iso_priority") or normalize_iso_priority(iso_priority))
@@ -147,16 +156,17 @@ def _render_mapping_page(
         task_id=task_id,
         task={"id": task_id, "name": task.get("name", task_id)},
         page_title="標準更新",
-        page_description="使用獨立標準更新任務的上傳檔案與任務鎖定的 Regulation (EU) 2017/745 snapshot 產生預覽或下載結果。",
+        page_description=page_description,
         task_label="標準更新任務",
         missing_file_hint="請先上傳 Word 與 Excel 檔案。",
         word_options=word_options,
         excel_options=excel_options,
         regulation_excel_options=regulation_excel_options,
+        harmonised_excel_options=harmonised_excel_options,
         selected_word=selected_word,
         selected_excel=selected_excel,
         selected_regulation_excel=selected_regulation_excel,
-        selected_harmonised_excel=harmonised_release.get("file_name", ""),
+        selected_harmonised_excel=effective_harmonised_selection,
         preview_tables=(preview_result or {}).get("preview_tables", []),
         table_checks=table_checks,
         reference_payload=reference_payload,
@@ -186,7 +196,7 @@ def _render_mapping_page(
         mapping_route_endpoint="standard_updates_bp.mapping",
         mapping_download_endpoint="standard_updates_bp.download_result",
         mapping_detail_endpoint="standard_updates_bp.detail",
-        use_system_harmonised=True,
+        use_system_harmonised=use_system_harmonised,
         harmonised_system_release=harmonised_release,
         harmonised_source_message=harmonised_source_message,
     )
@@ -211,6 +221,8 @@ def list_page():
     items = list_standard_updates()
     for item in items:
         item["harmonised_source_mode"] = normalize_harmonised_source_mode(item.get("harmonised_source_mode"))
+        if item["harmonised_source_mode"] == HARMONISED_SOURCE_CUSTOM:
+            item["custom_harmonised_version"] = get_task_harmonised_release(item.get("id", ""), item).get("version_label", "")
     page = request.args.get("page", 1, type=int)
     paged_items, pagination = _paginate(items, page)
     harmonised_release = sync_harmonised_release_snapshot()
@@ -232,7 +244,7 @@ def detail(task_id: str):
     harmonised_release = sync_harmonised_release_snapshot()
     locked_harmonised_release = get_locked_harmonised_release(task)
     task_harmonised_release = get_task_harmonised_release(task_id, task)
-    custom_harmonised_history = input_file_history(task_id, kind="harmonised", current_file=task.get("custom_harmonised_path", ""))
+    custom_harmonised_history = input_file_history(task_id, kind="harmonised", current_file="")
     using_custom_harmonised = task.get("harmonised_source_mode") == HARMONISED_SOURCE_CUSTOM
     has_newer_harmonised = bool(
         task.get("harmonised_source_mode") == HARMONISED_SOURCE_SYSTEM
@@ -363,11 +375,9 @@ def upload_harmonised_excel(task_id: str):
         flash("此任務為系統檔案模式，不提供任務自訂採認標準上傳", "warning")
         return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
     try:
-        filename = save_uploaded_input(task_id, request.files.get("harmonised_excel_file"), kind="harmonised")
-        custom_path = safe_standard_update_file(task_id, filename, ALLOWED_EXCEL_EXTENSIONS, kind="harmonised")
-        stat = os.stat(custom_path)
-        task["custom_harmonised_path"] = filename
-        task["custom_harmonised_version"] = datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M")
+        save_uploaded_input(task_id, request.files.get("harmonised_excel_file"), kind="harmonised")
+        task["custom_harmonised_path"] = ""
+        task["custom_harmonised_version"] = ""
         save_standard_update(task_id, task)
         flash("任務自訂採認標準已上傳", "success")
     except ValueError as exc:
@@ -400,6 +410,9 @@ def mapping(task_id: str):
     selected_word = (request.values.get("word_path") or task.get("word_file_path") or "").strip()
     selected_excel = (request.values.get("excel_path") or task.get("standard_excel_path") or "").strip()
     selected_regulation_excel = (request.values.get("regulation_excel_path") or task.get("regulation_excel_path") or "").strip()
+    selected_harmonised_excel = (request.values.get("harmonised_excel_path") or "").strip()
+    if normalize_harmonised_source_mode(task.get("harmonised_source_mode")) == HARMONISED_SOURCE_CUSTOM and not selected_harmonised_excel:
+        selected_harmonised_excel = str(get_latest_uploaded_input(task_id, kind="harmonised").get("name") or "").strip()
 
     if request.method == "GET":
         try:
@@ -426,6 +439,7 @@ def mapping(task_id: str):
             selected_word=selected_word,
             selected_excel=selected_excel,
             selected_regulation_excel=selected_regulation_excel,
+            selected_harmonised_excel=selected_harmonised_excel,
             iso_priority=iso_priority,
             enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
@@ -455,6 +469,8 @@ def mapping(task_id: str):
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
+            selected_regulation_excel=selected_regulation_excel,
+            selected_harmonised_excel=selected_harmonised_excel,
             iso_priority=DEFAULT_ISO_PRIORITY,
             enabled_standard_levels=DEFAULT_ENABLED_STANDARD_LEVELS,
             required_headers=DEFAULT_REQUIRED_HEADERS,
@@ -462,8 +478,15 @@ def mapping(task_id: str):
 
     try:
         word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS, kind="word")
-        task_harmonised_release = get_task_harmonised_release(task_id, task)
-        harmonised_reference_path = task_harmonised_release.get("path")
+        if normalize_harmonised_source_mode(task.get("harmonised_source_mode")) == HARMONISED_SOURCE_CUSTOM:
+            harmonised_reference_path = (
+                safe_standard_update_file(task_id, selected_harmonised_excel, ALLOWED_EXCEL_EXTENSIONS, kind="harmonised")
+                if selected_harmonised_excel
+                else ""
+            )
+        else:
+            task_harmonised_release = get_task_harmonised_release(task_id, task)
+            harmonised_reference_path = task_harmonised_release.get("path")
         if not harmonised_reference_path:
             raise FileNotFoundError("目前任務沒有可用的 harmonised Excel，請先改用最新版本或上傳任務自訂檔案")
         if action == "inspect_headers":
@@ -485,11 +508,12 @@ def mapping(task_id: str):
                 flash("尚有表格未符合預設四欄格式，請先完成手動對應欄位設定後再更新標準清單。", "warning")
                 return _render_mapping_page(
                     task_id,
-            preview_result=inspection_result,
-            selected_word=selected_word,
-            selected_excel=selected_excel,
-            selected_regulation_excel=selected_regulation_excel,
-            iso_priority=iso_priority,
+                    preview_result=inspection_result,
+                    selected_word=selected_word,
+                    selected_excel=selected_excel,
+                    selected_regulation_excel=selected_regulation_excel,
+                    selected_harmonised_excel=selected_harmonised_excel,
+                    iso_priority=iso_priority,
                     enabled_standard_levels=enabled_standard_levels,
                     required_headers=required_headers,
                     limit_to_chapter=limit_to_chapter,
@@ -524,6 +548,8 @@ def mapping(task_id: str):
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
+            selected_regulation_excel=selected_regulation_excel,
+            selected_harmonised_excel=selected_harmonised_excel,
             iso_priority=iso_priority,
             enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
@@ -542,6 +568,8 @@ def mapping(task_id: str):
             task_id,
             selected_word=selected_word,
             selected_excel=selected_excel,
+            selected_regulation_excel=selected_regulation_excel,
+            selected_harmonised_excel=selected_harmonised_excel,
             iso_priority=iso_priority,
             enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
@@ -558,6 +586,7 @@ def mapping(task_id: str):
         selected_word=selected_word,
         selected_excel=selected_excel,
         selected_regulation_excel=selected_regulation_excel,
+        selected_harmonised_excel=selected_harmonised_excel,
         iso_priority=iso_priority,
         enabled_standard_levels=enabled_standard_levels,
         required_headers=required_headers,
@@ -577,6 +606,9 @@ def download_result(task_id: str):
     selected_word = (request.form.get("word_path") or task.get("word_file_path") or "").strip()
     selected_excel = (request.form.get("excel_path") or task.get("standard_excel_path") or "").strip()
     selected_regulation_excel = (request.form.get("regulation_excel_path") or task.get("regulation_excel_path") or "").strip()
+    selected_harmonised_excel = (request.form.get("harmonised_excel_path") or "").strip()
+    if normalize_harmonised_source_mode(task.get("harmonised_source_mode")) == HARMONISED_SOURCE_CUSTOM and not selected_harmonised_excel:
+        selected_harmonised_excel = str(get_latest_uploaded_input(task_id, kind="harmonised").get("name") or "").strip()
 
     try:
         iso_priority = _parse_iso_priority(request.form)
@@ -591,8 +623,15 @@ def download_result(task_id: str):
         edit_map = _parse_edit_map(request.form.get("edits_json", ""))
         word_path = safe_standard_update_file(task_id, selected_word, ALLOWED_WORD_EXTENSIONS, kind="word")
         excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS, kind="standard_excel")
-        task_harmonised_release = get_task_harmonised_release(task_id, task)
-        harmonised_reference_path = task_harmonised_release.get("path")
+        if normalize_harmonised_source_mode(task.get("harmonised_source_mode")) == HARMONISED_SOURCE_CUSTOM:
+            harmonised_reference_path = (
+                safe_standard_update_file(task_id, selected_harmonised_excel, ALLOWED_EXCEL_EXTENSIONS, kind="harmonised")
+                if selected_harmonised_excel
+                else ""
+            )
+        else:
+            task_harmonised_release = get_task_harmonised_release(task_id, task)
+            harmonised_reference_path = task_harmonised_release.get("path")
         regulation_reference_path = _resolve_regulation_reference_path()
         if selected_regulation_excel:
             regulation_reference_path = safe_standard_update_file(task_id, selected_regulation_excel, ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
@@ -612,6 +651,7 @@ def download_result(task_id: str):
                 selected_word=selected_word,
                 selected_excel=selected_excel,
                 selected_regulation_excel=selected_regulation_excel,
+                selected_harmonised_excel=selected_harmonised_excel,
                 iso_priority=iso_priority,
                 enabled_standard_levels=enabled_standard_levels,
                 required_headers=required_headers,

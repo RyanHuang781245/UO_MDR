@@ -144,6 +144,17 @@ def extract_harmonised_reference_entries(text: str) -> list[str]:
     return entries
 
 
+def extract_harmonised_reference_keys(text: str) -> list[str]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for entry in extract_harmonised_reference_entries(text):
+        key = extract_standard_match_key(entry, "")
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+
 def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> set[str]:
     path = Path(reference_path or "download.xlsx")
     if not path.is_file():
@@ -162,6 +173,8 @@ def load_harmonised_reference_index(reference_path: str | os.PathLike | None = N
                 for normalized in extract_harmonised_reference_entries(value):
                     if normalized != normalize_harmonised_standard_text(HARMONISED_REFERENCE_HEADERS[0]):
                         lookup.add(normalized)
+                for match_key in extract_harmonised_reference_keys(value):
+                    lookup.add(match_key)
         return lookup
     finally:
         wb.close()
@@ -242,7 +255,11 @@ def is_harmonised_standard(std_no: str, title: str, harmonised_reference_index: 
     if not harmonised_reference_index:
         return False
     normalized = normalize_harmonised_standard_text(std_no)
-    return bool(normalized and normalized in harmonised_reference_index)
+    match_key = extract_standard_match_key(std_no, "")
+    return bool(
+        (normalized and normalized in harmonised_reference_index)
+        or (match_key and match_key in harmonised_reference_index)
+    )
 
 
 def normalize_key_for_search(text: str) -> str:

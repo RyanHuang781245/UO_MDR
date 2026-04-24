@@ -1205,9 +1205,10 @@
               </div>
               <div class="form-text">{{ harmonised_source_message or '目前使用系統最新 Regulation (EU) 2017/745 採認標準' }}</div>
               {% else %}
+              {% set harmonised_options = harmonised_excel_options if harmonised_excel_options is defined else excel_options %}
               <select class="form-select form-control-custom rounded-2" name="harmonised_excel_path" id="harmonisedExcelPathSelect">
                 <option value="">請選擇 Excel 檔案</option>
-                {% for item in excel_options %}
+                {% for item in harmonised_options %}
                   <option value="{{ item }}" {% if item == selected_harmonised_excel %}selected{% endif %}>{{ item }}</option>
                 {% endfor %}
               </select>

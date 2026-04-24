@@ -664,7 +664,10 @@ class AuditLogView(BaseView):
                 {
                     "ts": log.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                     "action": log.action,
-                    "actor": {"work_id": log.work_id},
+                    "actor": {
+                        "work_id": log.work_id,
+                        "label": (detail.get("_actor_label") or "").strip(),
+                    },
                     "detail": detail,
                     "task_id": log.task_id,
                 }

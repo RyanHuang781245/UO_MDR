@@ -15,10 +15,16 @@ def record_audit(
     task_id: Optional[str] = None,
 ) -> None:
     work_id = None
+    actor_label = ""
     if actor:
         work_id = actor.get("work_id") or actor.get("username")
+        actor_label = (actor.get("label") or "").strip()
 
-    detail_json = json.dumps(detail or {}, ensure_ascii=False)
+    detail_payload = dict(detail or {})
+    if actor_label and "_actor_label" not in detail_payload:
+        detail_payload["_actor_label"] = actor_label
+
+    detail_json = json.dumps(detail_payload, ensure_ascii=False)
     
     # 1. Primary: Record to Database
     db_success = False
@@ -57,7 +63,8 @@ def record_audit(
                 "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "action": action,
                 "work_id": work_id,
-                "detail": detail or {},
+                "actor_label": actor_label,
+                "detail": detail_payload,
                 "task_id": task_id,
                 "fallback": True
             }

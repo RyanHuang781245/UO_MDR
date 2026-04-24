@@ -1185,8 +1185,8 @@
                 <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
                 各國法規條文登記表
               </label>
-              <select class="form-select form-control-custom rounded-2" name="regulation_excel_path" id="regulationExcelPathSelect">
-                <option value="">使用系統預設法規條文登記表</option>
+              <select class="form-select form-control-custom rounded-2" name="regulation_excel_path" id="regulationExcelPathSelect" required>
+                <option value="">請選擇 Excel 檔案</option>
                 {% for item in regulation_excel_options %}
                   <option value="{{ item }}" {% if item == selected_regulation_excel %}selected{% endif %}>{{ item }}</option>
                 {% endfor %}

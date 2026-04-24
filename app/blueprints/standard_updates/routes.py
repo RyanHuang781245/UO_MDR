@@ -19,7 +19,6 @@ from app.blueprints.tasks.standard_mapping_routes import (
     _parse_manual_header_mappings,
     _parse_override_map,
     _parse_required_headers,
-    _resolve_regulation_reference_path,
     _parse_target_chapter_ref,
     _parse_target_table_index,
 )
@@ -99,6 +98,22 @@ def _load_chapter_options(task_id: str, selected_word: str) -> tuple[list[dict],
     return options, ""
 
 
+def _apply_ready_status(task_id: str, task: dict) -> dict:
+    task_harmonised_release = get_task_harmonised_release(task_id, task)
+    harmonised_required = normalize_harmonised_source_mode(task.get("harmonised_source_mode")) == HARMONISED_SOURCE_SYSTEM
+    is_ready = bool(
+        task.get("word_file_path")
+        and task.get("standard_excel_path")
+        and task.get("regulation_excel_path")
+        and (task_harmonised_release.get("path") if harmonised_required else True)
+    )
+    if is_ready:
+        task["status"] = STATUS_READY
+    elif task.get("status") != STATUS_FAILED:
+        task["status"] = "draft"
+    return task
+
+
 def _render_mapping_page(
     task_id: str,
     *,
@@ -129,7 +144,7 @@ def _render_mapping_page(
     harmonised_source_message = (
         "目前使用任務鎖定的系統 Regulation (EU) 2017/745 採認標準"
         if use_system_harmonised
-        else "可選擇任務已上傳的 Regulation (EU) 2017/745 採認標準；未特別選擇時預設使用最新上傳檔案。"
+        else "可選擇任務已上傳的 Regulation (EU) 2017/745 採認標準；未上傳時會略過 harmonised 比對。"
     )
     page_description = (
         "使用獨立標準更新任務的上傳檔案與任務鎖定的 Regulation (EU) 2017/745 snapshot 產生預覽或下載結果。"
@@ -158,7 +173,7 @@ def _render_mapping_page(
         page_title="標準更新",
         page_description=page_description,
         task_label="標準更新任務",
-        missing_file_hint="請先上傳 Word 與 Excel 檔案。",
+        missing_file_hint="請先上傳 Word、UOC 標準規範總表_現行標準與各國法規條文登記表。",
         word_options=word_options,
         excel_options=excel_options,
         regulation_excel_options=regulation_excel_options,
@@ -251,7 +266,12 @@ def detail(task_id: str):
         and harmonised_release.get("version_label")
         and harmonised_release.get("version_label") != locked_harmonised_release.get("version_label", "")
     )
-    is_ready = bool(task.get("word_file_path") and task.get("standard_excel_path") and task_harmonised_release.get("path"))
+    is_ready = bool(
+        task.get("word_file_path")
+        and task.get("standard_excel_path")
+        and task.get("regulation_excel_path")
+        and (task_harmonised_release.get("path") if task.get("harmonised_source_mode") == HARMONISED_SOURCE_SYSTEM else True)
+    )
     return render_template(
         "standard_updates/detail.html",
         task=task,
@@ -303,6 +323,8 @@ def use_latest_harmonised(task_id: str):
     task = lock_standard_update_to_latest_harmonised(task_id)
     if not task:
         abort(404)
+    task = _apply_ready_status(task_id, task)
+    save_standard_update(task_id, task)
     if task.get("harmonised_snapshot_path"):
         flash("已改用最新 harmonised 版本", "success")
     else:
@@ -327,7 +349,7 @@ def upload_word(task_id: str):
     try:
         filename = save_uploaded_input(task_id, request.files.get("word_file"), kind="word")
         task["word_file_path"] = filename
-        task["status"] = STATUS_READY if task.get("standard_excel_path") else task.get("status", STATUS_READY)
+        task = _apply_ready_status(task_id, task)
         save_standard_update(task_id, task)
         flash("Word 檔案已上傳", "success")
     except ValueError as exc:
@@ -343,7 +365,7 @@ def upload_standard_excel(task_id: str):
     try:
         filename = save_uploaded_input(task_id, request.files.get("standard_excel_file"), kind="excel")
         task["standard_excel_path"] = filename
-        task["status"] = STATUS_READY if task.get("word_file_path") else task.get("status", STATUS_READY)
+        task = _apply_ready_status(task_id, task)
         save_standard_update(task_id, task)
         flash("Excel 標準總表已上傳", "success")
     except ValueError as exc:
@@ -359,6 +381,7 @@ def upload_regulation_excel(task_id: str):
     try:
         filename = save_uploaded_input(task_id, request.files.get("regulation_excel_file"), kind="regulation")
         task["regulation_excel_path"] = filename
+        task = _apply_ready_status(task_id, task)
         save_standard_update(task_id, task)
         flash("法規條文登記表已上傳", "success")
     except ValueError as exc:
@@ -378,6 +401,7 @@ def upload_harmonised_excel(task_id: str):
         save_uploaded_input(task_id, request.files.get("harmonised_excel_file"), kind="harmonised")
         task["custom_harmonised_path"] = ""
         task["custom_harmonised_version"] = ""
+        task = _apply_ready_status(task_id, task)
         save_standard_update(task_id, task)
         flash("任務自訂採認標準已上傳", "success")
     except ValueError as exc:
@@ -487,7 +511,7 @@ def mapping(task_id: str):
         else:
             task_harmonised_release = get_task_harmonised_release(task_id, task)
             harmonised_reference_path = task_harmonised_release.get("path")
-        if not harmonised_reference_path:
+        if not harmonised_reference_path and normalize_harmonised_source_mode(task.get("harmonised_source_mode")) == HARMONISED_SOURCE_SYSTEM:
             raise FileNotFoundError("目前任務沒有可用的 harmonised Excel，請先改用最新版本或上傳任務自訂檔案")
         if action == "inspect_headers":
             result = inspect_document_tables(
@@ -523,9 +547,14 @@ def mapping(task_id: str):
                     manual_header_mappings=manual_header_mappings,
                 )
             excel_path = safe_standard_update_file(task_id, selected_excel, ALLOWED_EXCEL_EXTENSIONS, kind="standard_excel")
-            regulation_reference_path = _resolve_regulation_reference_path()
-            if selected_regulation_excel:
-                regulation_reference_path = safe_standard_update_file(task_id, selected_regulation_excel, ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
+            if not selected_regulation_excel:
+                raise FileNotFoundError("請先上傳並選擇各國法規條文登記表")
+            regulation_reference_path = safe_standard_update_file(
+                task_id,
+                selected_regulation_excel,
+                ALLOWED_EXCEL_EXTENSIONS,
+                kind="regulation",
+            )
             result = process_document(
                 word_path,
                 excel_path,
@@ -632,10 +661,15 @@ def download_result(task_id: str):
         else:
             task_harmonised_release = get_task_harmonised_release(task_id, task)
             harmonised_reference_path = task_harmonised_release.get("path")
-        regulation_reference_path = _resolve_regulation_reference_path()
-        if selected_regulation_excel:
-            regulation_reference_path = safe_standard_update_file(task_id, selected_regulation_excel, ALLOWED_EXCEL_EXTENSIONS, kind="regulation")
-        if not harmonised_reference_path:
+        if not selected_regulation_excel:
+            raise FileNotFoundError("請先上傳並選擇各國法規條文登記表")
+        regulation_reference_path = safe_standard_update_file(
+            task_id,
+            selected_regulation_excel,
+            ALLOWED_EXCEL_EXTENSIONS,
+            kind="regulation",
+        )
+        if not harmonised_reference_path and normalize_harmonised_source_mode(task.get("harmonised_source_mode")) == HARMONISED_SOURCE_SYSTEM:
             raise FileNotFoundError("目前任務沒有可用的 harmonised Excel，請先改用最新版本或上傳任務自訂檔案")
         inspection_result = inspect_document_tables(
             word_path,

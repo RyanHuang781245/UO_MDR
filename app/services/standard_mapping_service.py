@@ -155,10 +155,10 @@ def extract_harmonised_reference_keys(text: str) -> list[str]:
     return keys
 
 
-def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> set[str]:
-    path = Path(reference_path or "download.xlsx")
+def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> set[str] | None:
+    path = Path(reference_path or "")
     if not path.is_file():
-        return set()
+        return None
     wb = load_workbook(path, data_only=True, read_only=True)
     try:
         lookup: set[str] = set()
@@ -907,7 +907,11 @@ def find_latest_year_from_excel(
                 "matched_standard_no": rec["standard_no"],
                 "matched_display_standard_no": rec["standard_display_no"],
                 "matched_title": build_title_with_amendment(rec.get("standard_title", ""), rec["standard_no"]),
-                "candidate_harmonised": "Yes" if is_harmonised_standard(rec["standard_no"], rec.get("standard_title", ""), harmonised_reference_index) else "No",
+                "candidate_harmonised": (
+                    ""
+                    if harmonised_reference_index is None
+                    else ("Yes" if is_harmonised_standard(rec["standard_no"], rec.get("standard_title", ""), harmonised_reference_index) else "No")
+                ),
                 "latest_year": year,
                 "standard_level": rec["standard_level"],
                 "standard_level_rank": rec["standard_level_rank"],
@@ -1024,11 +1028,19 @@ def find_latest_year_from_excel(
     result["all_candidates"] = ordered_candidates
     result["selected_candidate_id"] = make_candidate_id(selected)
     result["auto_selected_candidate_id"] = make_candidate_id(selected)
-    result["matched_harmonised"] = "Yes" if is_harmonised_standard(
-        selected["matched_standard_no"],
-        selected.get("matched_title", ""),
-        harmonised_reference_index,
-    ) else "No"
+    result["matched_harmonised"] = (
+        ""
+        if harmonised_reference_index is None
+        else (
+            "Yes"
+            if is_harmonised_standard(
+                selected["matched_standard_no"],
+                selected.get("matched_title", ""),
+                harmonised_reference_index,
+            )
+            else "No"
+        )
+    )
     result["iso_priority"] = list(normalized_iso_priority)
     result["enabled_standard_levels"] = list(normalized_enabled_levels)
     result["prefer_latest_en_variants"] = prefer_latest_en_variants
@@ -1969,7 +1981,10 @@ def process_document(
             matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
             final_standard = row_edits.get("standards", matched_display_standard_no)
             final_year = row_edits.get("issued_year", latest_year)
-            final_harmonised = row_edits.get("harmonised", matched_harmonised)
+            final_harmonised = row_edits.get(
+                "harmonised",
+                word_harmonised_text if harmonised_reference_index is None else matched_harmonised,
+            )
             final_title = row_edits.get("title", matched_title)
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(final_standard)
             year_needs_update = (("issued_year" in row_edits) and word_year_text != final_year) or (bool(final_year) and "issued_year" not in row_edits and word_year_text != final_year)

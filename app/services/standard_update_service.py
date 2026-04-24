@@ -529,7 +529,13 @@ def delete_input_file(task_id: str, *, kind: str, rel_path: str) -> dict:
         if meta.get("regulation_excel_path") == rel_path:
             meta["regulation_excel_path"] = replacement
 
-    if meta.get("word_file_path") and meta.get("standard_excel_path"):
+    task_harmonised_release = get_task_harmonised_release(task_id, meta)
+    if (
+        meta.get("word_file_path")
+        and meta.get("standard_excel_path")
+        and meta.get("regulation_excel_path")
+        and task_harmonised_release.get("path")
+    ):
         meta["status"] = STATUS_READY
     elif meta.get("status") != STATUS_FAILED:
         meta["status"] = STATUS_DRAFT

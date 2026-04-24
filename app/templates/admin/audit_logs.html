@@ -118,8 +118,8 @@
       <table class="table table-hover mb-0 audit-table">
         <thead>
           <tr>
-            <th class="ps-4">時間</th>
-            <th class="text-center">任務 ID</th>
+            <th class="text-left" style="width: 15%;">時間</th>
+            <th class="text-center" style="width: 5%;">任務 ID</th>
             <th class="text-center">動作</th>
             <th class="text-center">操作者</th>
             <th>詳細摘要</th>
@@ -136,7 +136,7 @@
           {% set batch_id = detail.get('batch_id', '') %}
           {% set results = detail.get('results', []) %}
           <tr>
-            <td class="ps-4 text-muted font-monospace">{{ e.get('ts', '') }}</td>
+            <td class="text-left text-muted font-monospace">{{ e.get('ts', '') }}</td>
             <td class="text-center">
               <code class="text-primary font-weight-bold font-monospace">{{ e.get('task_id', '-') }}</code>
             </td>

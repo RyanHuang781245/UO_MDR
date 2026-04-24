@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
+import logging
 import os
 import sys
 from functools import lru_cache
@@ -12,6 +13,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+from flask import has_app_context
 from sqlalchemy import MetaData, Table, create_engine, insert, select, update
 from sqlalchemy.exc import IntegrityError, NoSuchTableError, SQLAlchemyError
 
@@ -31,6 +33,7 @@ ALLOWED_EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm", ".xls"}
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -40,6 +43,67 @@ class UpdateDecision:
     last_source: str
     should_download: bool
     reasons: list[str]
+
+
+def _configure_default_logging() -> None:
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        return
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
+
+def _normalize_actor(actor: dict | None) -> dict[str, str]:
+    work_id = ((actor or {}).get("work_id") or "").strip()
+    label = ((actor or {}).get("label") or "").strip()
+    if work_id or label:
+        return {"work_id": work_id, "label": label or work_id}
+    return {"work_id": "system", "label": "system"}
+
+
+def _record_regulation_audit(action: str, detail: dict, *, actor: dict | None = None) -> None:
+    normalized_actor = _normalize_actor(actor)
+    try:
+        from app.services.audit_service import record_audit
+
+        if has_app_context():
+            record_audit(action=action, actor=normalized_actor, detail=detail)
+            return
+
+        if not can_use_database():
+            LOGGER.warning("Audit skipped because DATABASE_URL is not configured. action=%s", action)
+            return
+
+        from app import create_job_app
+
+        app = create_job_app()
+        with app.app_context():
+            record_audit(action=action, actor=normalized_actor, detail=detail)
+    except Exception:
+        LOGGER.exception("Failed to record regulation audit. action=%s", action)
+
+
+def _build_current_summary(current: dict | None) -> dict:
+    payload = current or {}
+    return {
+        "filename": payload.get("filename", ""),
+        "uuid": payload.get("uuid", ""),
+        "url": payload.get("url", ""),
+    }
+
+
+def _build_sync_summary(sync_result: dict | None) -> dict:
+    payload = sync_result or {}
+    return {
+        "id": payload.get("id"),
+        "file_name": payload.get("file_name", ""),
+        "path": payload.get("path", ""),
+        "version_label": payload.get("version_label", ""),
+        "downloaded_at": payload.get("downloaded_at", ""),
+        "source_url": payload.get("source_url", ""),
+    }
 
 
 def get_database_url() -> str:
@@ -93,12 +157,12 @@ def resolve_save_dir() -> tuple[Path, str]:
         if _is_writable(primary):
             return primary, "primary"
         if _is_writable(fallback_root):
-            print(f"主要存取路徑不可用，改用本機備援目錄。主路徑: {primary}")
+            LOGGER.warning("主要存取路徑不可用，改用本機備援目錄。主路徑: %s", primary)
             return fallback_root, "fallback"
         raise RuntimeError(f"主要與備援儲存路徑都不可用: {primary}, {fallback_root}")
 
     if _is_writable(fallback_root):
-        print("未設定主要存取路徑，使用本機預設儲存目錄。")
+        LOGGER.info("未設定主要存取路徑，使用本機預設儲存目錄。")
         return fallback_root, "default"
     raise RuntimeError(f"本機預設儲存目錄不可用: {fallback_root}")
 
@@ -121,7 +185,7 @@ def load_download_source_settings() -> tuple[str, str]:
             page_url = (row.get("regulation_download_page_url") or "").strip()
             link_text = (row.get("regulation_download_link_text") or "").strip()
     except (NoSuchTableError, SQLAlchemyError) as exc:
-        print(f"讀取下載來源設定失敗，改用預設值: {exc}")
+        LOGGER.warning("讀取下載來源設定失敗，改用預設值: %s", exc)
 
     return page_url or DEFAULT_PAGE_URL, link_text or DEFAULT_LINK_TEXT
 
@@ -175,7 +239,7 @@ def load_last_state_from_db() -> dict | None:
             "url": (row.get("last_url") or "").strip(),
         }
     except (NoSuchTableError, SQLAlchemyError) as exc:
-        print(f"讀取資料庫 last_state 失敗，改用檔案: {exc}")
+        LOGGER.warning("讀取資料庫 last_state 失敗，改用檔案: %s", exc)
         return None
 
 
@@ -223,7 +287,7 @@ def save_last_state(state: dict) -> None:
                             .values(**values)
                         )
         except (NoSuchTableError, SQLAlchemyError) as exc:
-            print(f"寫入資料庫 last_state 失敗，改用檔案: {exc}")
+            LOGGER.warning("寫入資料庫 last_state 失敗，改用檔案: %s", exc)
 
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with STATE_FILE.open("w", encoding="utf-8") as fh:
@@ -282,7 +346,7 @@ def download_file(url: str, filename: str, save_dir: Path) -> Path:
             if chunk:
                 fh.write(chunk)
 
-    print("下載完成:", path)
+    LOGGER.info("下載完成: %s", path)
     return path
 
 
@@ -296,7 +360,7 @@ def _sha1_file(path: Path) -> str:
 
 def register_downloaded_release(file_path: str, source_url: str = "") -> dict:
     if not can_use_database():
-        print("未設定 DATABASE_URL，略過 active release 註冊")
+        LOGGER.warning("未設定 DATABASE_URL，略過 active release 註冊")
         return {}
 
     path = Path(file_path)
@@ -333,38 +397,38 @@ def register_downloaded_release(file_path: str, source_url: str = "") -> dict:
             "downloaded_at": downloaded_at.strftime("%Y-%m-%d %H:%M"),
             "source_url": source_url or "",
         }
-    except (NoSuchTableError, SQLAlchemyError, OSError) as exc:
-        print(f"註冊 active release 失敗: {exc}")
+    except (NoSuchTableError, SQLAlchemyError, OSError):
+        LOGGER.exception("註冊 active release 失敗")
         return {}
 
 
 def log_update_decision(decision: UpdateDecision) -> None:
-    print("目前檔案:", decision.current["filename"])
-    print("UUID:", decision.current["uuid"])
-    print("last_state 來源:", decision.last_source)
+    LOGGER.info("目前檔案: %s", decision.current["filename"])
+    LOGGER.info("UUID: %s", decision.current["uuid"])
+    LOGGER.info("last_state 來源: %s", decision.last_source)
     if decision.last:
-        print("上次檔案:", decision.last.get("filename"))
-        print("上次 UUID:", decision.last.get("uuid"))
+        LOGGER.info("上次檔案: %s", decision.last.get("filename"))
+        LOGGER.info("上次 UUID: %s", decision.last.get("uuid"))
     else:
-        print("上次狀態: 無")
-    print("是否需要下載:", decision.should_download)
+        LOGGER.info("上次狀態: 無")
+    LOGGER.info("是否需要下載: %s", decision.should_download)
     if decision.reasons:
-        print("更新判斷依據:", " | ".join(decision.reasons))
+        LOGGER.info("更新判斷依據: %s", " | ".join(decision.reasons))
 
 
 def perform_download(current: dict, save_dir: Path) -> dict:
     downloaded_path = download_file(current["url"], current["filename"], save_dir)
     save_last_state(current)
-    print("已更新狀態紀錄")
+    LOGGER.info("已更新狀態紀錄")
 
     sync_result = register_downloaded_release(str(downloaded_path), current["url"])
-    print("同步結果:", json.dumps(sync_result, ensure_ascii=False))
+    LOGGER.info("同步結果: %s", json.dumps(sync_result, ensure_ascii=False))
     if sync_result:
-        print("已同步前端顯示版本:", sync_result.get("file_name"))
-        print("Active 路徑:", sync_result.get("path"))
-        print("Active record id:", sync_result.get("id"))
+        LOGGER.info("已同步前端顯示版本: %s", sync_result.get("file_name"))
+        LOGGER.info("Active 路徑: %s", sync_result.get("path"))
+        LOGGER.info("Active record id: %s", sync_result.get("id"))
     else:
-        print("沒有可同步的 harmonised 版本")
+        LOGGER.info("沒有可同步的 harmonised 版本")
 
     return {
         "downloaded": True,
@@ -374,7 +438,12 @@ def perform_download(current: dict, save_dir: Path) -> dict:
     }
 
 
-def check_for_update(*, page_url: str | None = None, link_text: str | None = None) -> dict:
+def check_for_update(
+    *,
+    page_url: str | None = None,
+    link_text: str | None = None,
+    actor: dict | None = None,
+) -> dict:
     effective_page_url = (page_url or "").strip()
     effective_link_text = (link_text or "").strip()
     if not effective_page_url or not effective_link_text:
@@ -382,74 +451,158 @@ def check_for_update(*, page_url: str | None = None, link_text: str | None = Non
         effective_page_url = effective_page_url or loaded_page_url
         effective_link_text = effective_link_text or loaded_link_text
 
-    print("開始檢查更新（不下載）...")
-    print("來源網址:", effective_page_url)
-    print("LINK_TEXT:", effective_link_text)
+    LOGGER.info("開始檢查更新（不下載）...")
+    LOGGER.info("來源網址: %s", effective_page_url)
+    LOGGER.info("LINK_TEXT: %s", effective_link_text)
 
-    url = get_download_link(effective_page_url, effective_link_text)
-    print("抓到連結:", url)
+    try:
+        url = get_download_link(effective_page_url, effective_link_text)
+        LOGGER.info("抓到連結: %s", url)
 
-    current = parse_download_info(url)
-    decision = build_update_decision(current, force_download=False)
-    log_update_decision(decision)
-    return {
-        "checked": True,
-        "should_download": decision.should_download,
-        "current": decision.current,
-        "last": decision.last or {},
-        "last_source": decision.last_source,
-        "reasons": decision.reasons,
-    }
-
-
-def run_update(*, force_download: bool = False, page_url: str | None = None, link_text: str | None = None) -> dict:
-    print("開始檢查更新...")
-    save_dir, storage_mode = resolve_save_dir()
-    print("下載目錄:", save_dir)
-    print("儲存模式:", storage_mode)
-
-    effective_page_url = (page_url or "").strip()
-    effective_link_text = (link_text or "").strip()
-    if not effective_page_url or not effective_link_text:
-        loaded_page_url, loaded_link_text = load_download_source_settings()
-        effective_page_url = effective_page_url or loaded_page_url
-        effective_link_text = effective_link_text or loaded_link_text
-
-    print("來源網址:", effective_page_url)
-    print("LINK_TEXT:", effective_link_text)
-
-    url = get_download_link(effective_page_url, effective_link_text)
-    print("抓到連結:", url)
-
-    current = parse_download_info(url)
-    decision = build_update_decision(current, force_download=force_download)
-    log_update_decision(decision)
-
-    if not decision.should_download:
-        print("沒有更新，跳過")
-        print("目前狀態與上次狀態一致")
-        return {
-            "downloaded": False,
-            "forced": force_download,
-            "path": "",
-            "storage_mode": storage_mode,
-            "sync_result": {},
-            "current": current,
+        current = parse_download_info(url)
+        decision = build_update_decision(current, force_download=False)
+        log_update_decision(decision)
+        result = {
+            "checked": True,
+            "should_download": decision.should_download,
+            "current": decision.current,
+            "last": decision.last or {},
+            "last_source": decision.last_source,
+            "reasons": decision.reasons,
         }
+        _record_regulation_audit(
+            "regulation_release_update_check",
+            {
+                "status": "completed",
+                "page_url": effective_page_url,
+                "link_text": effective_link_text,
+                "should_download": decision.should_download,
+                "reasons": decision.reasons,
+                "last_source": decision.last_source,
+                "current": _build_current_summary(decision.current),
+            },
+            actor=actor,
+        )
+        return result
+    except Exception as exc:
+        _record_regulation_audit(
+            "regulation_release_update_check",
+            {
+                "status": "failed",
+                "page_url": effective_page_url,
+                "link_text": effective_link_text,
+                "error": str(exc),
+            },
+            actor=actor,
+        )
+        raise
 
-    print("開始下載新版本...")
-    result = perform_download(decision.current, save_dir)
-    return {
-        "downloaded": result["downloaded"],
-        "forced": force_download,
-        "path": result["path"],
-        "storage_mode": storage_mode,
-        "sync_result": result["sync_result"],
-        "current": decision.current,
-    }
+
+def run_update(
+    *,
+    force_download: bool = False,
+    page_url: str | None = None,
+    link_text: str | None = None,
+    actor: dict | None = None,
+) -> dict:
+    audit_action = "regulation_release_manual_download" if force_download else "regulation_release_update_run"
+    LOGGER.info("開始檢查更新...")
+    save_dir, storage_mode = resolve_save_dir()
+    LOGGER.info("下載目錄: %s", save_dir)
+    LOGGER.info("儲存模式: %s", storage_mode)
+
+    effective_page_url = (page_url or "").strip()
+    effective_link_text = (link_text or "").strip()
+    if not effective_page_url or not effective_link_text:
+        loaded_page_url, loaded_link_text = load_download_source_settings()
+        effective_page_url = effective_page_url or loaded_page_url
+        effective_link_text = effective_link_text or loaded_link_text
+
+    LOGGER.info("來源網址: %s", effective_page_url)
+    LOGGER.info("LINK_TEXT: %s", effective_link_text)
+
+    try:
+        url = get_download_link(effective_page_url, effective_link_text)
+        LOGGER.info("抓到連結: %s", url)
+
+        current = parse_download_info(url)
+        decision = build_update_decision(current, force_download=force_download)
+        log_update_decision(decision)
+
+        if not decision.should_download:
+            LOGGER.info("沒有更新，跳過")
+            LOGGER.info("目前狀態與上次狀態一致")
+            result = {
+                "downloaded": False,
+                "forced": force_download,
+                "path": "",
+                "storage_mode": storage_mode,
+                "sync_result": {},
+                "current": current,
+            }
+            _record_regulation_audit(
+                audit_action,
+                {
+                    "status": "completed",
+                    "forced": force_download,
+                    "downloaded": False,
+                    "storage_mode": storage_mode,
+                    "page_url": effective_page_url,
+                    "link_text": effective_link_text,
+                    "reasons": decision.reasons,
+                    "last_source": decision.last_source,
+                    "current": _build_current_summary(current),
+                },
+                actor=actor,
+            )
+            return result
+
+        LOGGER.info("開始下載新版本...")
+        download_result = perform_download(decision.current, save_dir)
+        result = {
+            "downloaded": download_result["downloaded"],
+            "forced": force_download,
+            "path": download_result["path"],
+            "storage_mode": storage_mode,
+            "sync_result": download_result["sync_result"],
+            "current": decision.current,
+        }
+        _record_regulation_audit(
+            audit_action,
+            {
+                "status": "completed",
+                "forced": force_download,
+                "downloaded": True,
+                "storage_mode": storage_mode,
+                "path": download_result["path"],
+                "page_url": effective_page_url,
+                "link_text": effective_link_text,
+                "reasons": decision.reasons,
+                "last_source": decision.last_source,
+                "current": _build_current_summary(decision.current),
+                "sync_result": _build_sync_summary(download_result["sync_result"]),
+            },
+            actor=actor,
+        )
+        return result
+    except Exception as exc:
+        _record_regulation_audit(
+            audit_action,
+            {
+                "status": "failed",
+                "forced": force_download,
+                "storage_mode": storage_mode,
+                "page_url": effective_page_url,
+                "link_text": effective_link_text,
+                "error": str(exc),
+            },
+            actor=actor,
+        )
+        raise
 
 
 def main() -> None:
+    _configure_default_logging()
     run_update()
 
 

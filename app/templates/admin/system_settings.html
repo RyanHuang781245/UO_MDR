@@ -123,7 +123,7 @@
                   <h3 class="card-title font-weight-bold">路徑狀態</h3>
                 </div>
                 <div class="card-body">
-                  <label><code>點擊「測試 NAS 連線」按鈕可檢查 NAS 路徑狀態</code></label>
+                  <label><code>點擊「測試 NAS 連線」按鈕可檢查 NAS 路徑狀態。若要調整主要存取路徑，請到 .env 檔案中的 Regulation_EU_2017_745_REFERENCE_FOLDER 調整，調整後請重新啟動系統</code></label>
                   <div class="form-group mb-2">
                     <label class="mb-1">主要存取路徑</label>
                     <div class="form-control bg-white">{{ primary_reference_root }}</div>
@@ -207,9 +207,6 @@
                     <button type="submit" form="regulation-check-update-form" class="btn btn-outline-info mr-2 mb-2">
                       <i class="fa fa-search mr-1"></i> 檢查更新
                     </button>
-                    <button type="submit" form="regulation-resync-form" class="btn btn-primary mr-2 mb-2">
-                      <i class="fa fa-refresh mr-1"></i> 重新同步採認標準版本
-                    </button>
                     {% if can_switch_to_primary %}
                     <button type="submit" form="regulation-switch-primary-form" class="btn btn-success mr-2 mb-2">
                       <i class="fa fa-exchange mr-1"></i> 備援路徑同步至主要路徑
@@ -220,7 +217,7 @@
                     </button>
                   </div>
                   <small class="form-text text-muted mt-2">
-                    可在「來源設定」調整下載來源網址與 LINK_TEXT，並在這裡執行測試、同步、切回主要存取路徑或手動下載。
+                    可在「來源設定」調整下載來源網址與 LINK_TEXT，並在這裡執行測試、檢查更新、切回主要存取路徑或手動下載。
                   </small>
                 </div>
               </div>
@@ -232,9 +229,6 @@
     </form>
     <form method="post" id="regulation-test-form" class="d-none">
       <input type="hidden" name="action" value="test_regulation_primary_storage">
-    </form>
-    <form method="post" id="regulation-resync-form" class="d-none">
-      <input type="hidden" name="action" value="resync_regulation_release">
     </form>
     <form method="post" id="regulation-check-update-form" class="d-none">
       <input type="hidden" name="action" value="check_regulation_release_update">

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,6 +13,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 STATE_FILE = BASE_DIR / "harmonised_store" / "last_state.json"
 DEFAULT_PAGE_URL = "https://single-market-economy.ec.europa.eu/single-market/goods/european-standards/harmonised-standards/medical-devices_en"
 DEFAULT_LINK_TEXT = "Summary list as xls file"
+LOGGER = logging.getLogger(__name__)
 
 
 def can_use_database() -> bool:
@@ -59,7 +61,7 @@ def load_download_source_settings() -> tuple[str, str]:
                     page_url = (setting.regulation_download_page_url or "").strip() or page_url
                     link_text = (setting.regulation_download_link_text or "").strip() or link_text
     except Exception as exc:
-        print(f"讀取下載來源設定失敗，改用預設值: {exc}")
+        LOGGER.warning("讀取下載來源設定失敗，改用預設值: %s", exc)
     return page_url or DEFAULT_PAGE_URL, link_text or DEFAULT_LINK_TEXT
 
 
@@ -100,7 +102,7 @@ def load_last_state_from_db() -> dict | None:
                 "url": (state.last_url or "").strip(),
             }
     except Exception as exc:
-        print(f"讀取資料庫 last_state 失敗，改用檔案: {exc}")
+        LOGGER.warning("讀取資料庫 last_state 失敗，改用檔案: %s", exc)
         return None
 
 
@@ -128,7 +130,7 @@ def save_last_state(state: dict) -> None:
                         last_url=(state or {}).get("url") or None,
                     )
         except Exception as exc:
-            print(f"寫入資料庫 last_state 失敗，改用檔案: {exc}")
+            LOGGER.warning("寫入資料庫 last_state 失敗，改用檔案: %s", exc)
 
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with STATE_FILE.open("w", encoding="utf-8") as f:
@@ -137,7 +139,7 @@ def save_last_state(state: dict) -> None:
 
 def register_downloaded_release(file_path: str, source_url: str = "") -> dict:
     if not can_use_database():
-        print("未設定 DATABASE_URL，略過 active release 註冊")
+        LOGGER.warning("未設定 DATABASE_URL，略過 active release 註冊")
         return {}
 
     try:
@@ -150,6 +152,6 @@ def register_downloaded_release(file_path: str, source_url: str = "") -> dict:
                 file_path,
                 source_url=source_url,
             )
-    except Exception as exc:
-        print(f"註冊 active release 失敗: {exc}")
+    except Exception:
+        LOGGER.exception("註冊 active release 失敗")
         return {}

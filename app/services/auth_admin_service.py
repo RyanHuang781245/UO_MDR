@@ -40,10 +40,10 @@ from app.services.standard_update_service import (
     harmonised_reference_fallback_root,
     harmonised_reference_root,
     harmonised_reference_status_message,
-    sync_latest_harmonised_release_from_store,
     test_harmonised_reference_storage,
 )
 from app.services.task_service import list_tasks
+from app.services.user_context_service import get_actor_info
 from app.utils import TAIWAN_TZ, format_tw_datetime
 
 ADMIN_CUSTOM_CSS = ["/static/admin-custom.css"]
@@ -60,6 +60,11 @@ def _is_within_path(target: str, base: str) -> bool:
         ) == os.path.normcase(os.path.abspath(base_path))
     except Exception:
         return False
+
+
+def _current_actor() -> dict[str, str]:
+    work_id, label = get_actor_info()
+    return {"work_id": work_id, "label": label}
 
 
 class SecureAdminIndexView(AdminIndexView):
@@ -367,13 +372,7 @@ class SystemSettingView(BaseView):
         if request.method == "POST":
             action = (request.form.get("action") or "save_settings").strip()
             try:
-                if action == "resync_regulation_release":
-                    result = sync_latest_harmonised_release_from_store()
-                    if result:
-                        flash("已重新同步採認標準版本", "success")
-                    else:
-                        flash("同步失敗：資料夾內找不到可用的 Excel 檔案", "warning")
-                elif action == "test_regulation_primary_storage":
+                if action == "test_regulation_primary_storage":
                     configured_reference_root = harmonised_reference_configured_root()
                     ok, message = test_harmonised_reference_storage(configured_reference_root)
                     flash(message, "success" if ok else "warning")
@@ -422,6 +421,7 @@ class SystemSettingView(BaseView):
                         force_download=True,
                         page_url=page_url or None,
                         link_text=link_text or None,
+                        actor=_current_actor(),
                     )
                     if result.get("downloaded"):
                         flash(
@@ -442,6 +442,7 @@ class SystemSettingView(BaseView):
                     result = check_for_update(
                         page_url=page_url or None,
                         link_text=link_text or None,
+                        actor=_current_actor(),
                     )
                     current_name = ((result.get("current") or {}).get("filename") or "-").strip() or "-"
                     reasons = result.get("reasons") or []

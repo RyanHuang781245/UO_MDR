@@ -87,7 +87,7 @@
           <div class="card card-outline collapsed-card">
             <div class="card-header">
               <h3 class="card-title">
-                <i class="fa fa-refresh mr-1"></i> Regulation (EU) 2017/745 採認標準
+                <i class="fa fa-refresh mr-1"></i> Regulation (EU) 2017/745 採認標準更新設定
               </h3>
               <div class="card-tools">
                 <button type="button" class="btn btn-tool" data-card-widget="collapse">
@@ -120,7 +120,7 @@
               {% endif %}
               <div class="card card-light mb-3">
                 <div class="card-header py-2">
-                  <h3 class="card-title font-weight-bold">路徑狀態</h3>
+                  <h3 class="card-title font-weight-bold">存取路徑狀態</h3>
                 </div>
                 <div class="card-body">
                   <label><code>點擊「測試 NAS 連線」按鈕可檢查 NAS 路徑狀態。若要調整主要存取路徑，請到 .env 檔案中的 Regulation_EU_2017_745_REFERENCE_FOLDER 調整，調整後請重新啟動系統</code></label>
@@ -141,7 +141,7 @@
 
               <div class="card card-light mb-3">
                 <div class="card-header py-2">
-                  <h3 class="card-title font-weight-bold">來源設定</h3>
+                  <h3 class="card-title font-weight-bold">下載來源設定</h3>
                 </div>
                 <div class="card-body">
                   <div class="form-group mb-3">
@@ -217,7 +217,8 @@
                     </button>
                   </div>
                   <small class="form-text text-muted mt-2">
-                    可在「來源設定」調整下載來源網址與 LINK_TEXT，並在這裡執行測試、檢查更新、切回主要存取路徑或手動下載。
+                    可在「來源設定」調整下載來源網址與下載連結文字，並在這裡執行 NAS 連線測試、檢查更新、備援路徑同步至主要路徑或手動下載最新採認標準。<br>
+                    <span style="color: red;">注意!</span>「手動下載最新採認標準」會立即下載最新採認標準檔案，不受排程時間影響。若成功下載，系統會將該檔案更新為目前使用版本。
                   </small>
                 </div>
               </div>

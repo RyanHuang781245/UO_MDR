@@ -4,6 +4,33 @@
   .detail-summary-card {
     padding-bottom: 0.8rem !important;
   }
+  .detail-status-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .detail-task-id-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8125rem;
+    color: var(--bs-gray-600);
+  }
+  .detail-task-id-meta code {
+    font-size: 0.8125rem;
+  }
+  .detail-copy-id-btn {
+    border: 0;
+    background: transparent;
+    color: var(--bs-gray-500);
+    padding: 0;
+    line-height: 1;
+  }
+  .detail-copy-id-btn:hover {
+    color: var(--bs-blue-600);
+  }
   .detail-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -226,6 +253,13 @@
 </style>
 
 <div class="container-fluid px-0">
+  {% set status_labels = {
+    'draft': '草稿',
+    'ready': '已就緒',
+    'previewed': '已預覽',
+    'completed': '已完成',
+    'failed': '失敗'
+  } %}
   <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
     <div>
       <h1 class="h3 mb-1 fw-bold">{{ task.name }}</h1>
@@ -263,10 +297,25 @@
         <div>
           <h5 class="fw-bold mb-1">標準更新任務摘要</h5>
         </div>
-        <span class="status-badge {% if task.status in ['completed'] %}status-badge-completed{% elif task.status in ['failed'] %}status-badge-failed{% else %}status-badge-running{% endif %}">
-          <i class="bi {% if task.status == 'completed' %}bi-check-circle{% elif task.status == 'failed' %}bi-exclamation-circle{% else %}bi-clock-history{% endif %}"></i>
-          {{ task.status or '-' }}
-        </span>
+        <div class="detail-status-group">
+          <div class="detail-task-id-meta">
+            <span class="status-badge {% if task.status in ['completed'] %}status-badge-completed{% elif task.status in ['failed'] %}status-badge-failed{% else %}status-badge-running{% endif %}">
+              <i class="bi {% if task.status == 'completed' %}bi-check-circle{% elif task.status == 'failed' %}bi-exclamation-circle{% else %}bi-clock-history{% endif %}"></i>
+              {{ status_labels.get(task.status, task.status or '-') }}
+            </span>
+            <span>任務 ID:</span>
+            <code>{{ task.id }}</code>
+            <button
+              class="detail-copy-id-btn"
+              type="button"
+              onclick="copyToClipboard('{{ task.id }}', this)"
+              title="複製 ID"
+              aria-label="複製任務 ID"
+            >
+              <i class="bi bi-files"></i>
+            </button>
+          </div>
+        </div>
       </div>
       <div class="detail-meta-row">
         <span class="text-muted">建立人員</span>
@@ -453,4 +502,20 @@
     </div>
   </div>
 </div>
+<script>
+  function copyToClipboard(text, btn) {
+    if (!navigator.clipboard) {
+      return;
+    }
+    navigator.clipboard.writeText(text).then(() => {
+      const icon = btn?.querySelector("i");
+      if (!icon) return;
+      const original = icon.className;
+      icon.className = "bi bi-check-lg text-success";
+      window.setTimeout(() => {
+        icon.className = original;
+      }, 2000);
+    });
+  }
+</script>
 {% endblock %}

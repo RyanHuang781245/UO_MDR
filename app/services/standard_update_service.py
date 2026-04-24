@@ -575,13 +575,24 @@ def get_active_harmonised_release() -> dict:
             "source_url": record.source_url or "",
         }
 
+    return get_latest_harmonised_release_in_dir(folder)
+
+
+def get_latest_harmonised_release_in_dir(folder: str) -> dict:
+    target_folder = (folder or "").strip()
+    if not target_folder:
+        return {}
+
+    os.makedirs(target_folder, exist_ok=True)
+
     candidates = []
-    for entry in os.listdir(folder):
-        abs_path = os.path.join(folder, entry)
+    for entry in os.listdir(target_folder):
+        abs_path = os.path.join(target_folder, entry)
         if os.path.isfile(abs_path) and Path(entry).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS:
             candidates.append(abs_path)
     if not candidates:
         return {}
+
     latest = max(candidates, key=os.path.getmtime)
     stat = os.stat(latest)
     version = datetime.fromtimestamp(stat.st_mtime).strftime("%Y%m%d-%H%M")
@@ -701,17 +712,9 @@ def register_downloaded_harmonised_release(
 
 def sync_latest_harmonised_release_from_store() -> dict:
     folder = harmonised_reference_root()
-    os.makedirs(folder, exist_ok=True)
-
-    candidates = []
-    for entry in os.listdir(folder):
-        abs_path = os.path.join(folder, entry)
-        if os.path.isfile(abs_path) and Path(entry).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS:
-            candidates.append(abs_path)
-    if not candidates:
+    latest = get_latest_harmonised_release_in_dir(folder).get("path", "")
+    if not latest:
         return {}
-
-    latest = max(candidates, key=os.path.getmtime)
     return activate_harmonised_release(latest)
 
 

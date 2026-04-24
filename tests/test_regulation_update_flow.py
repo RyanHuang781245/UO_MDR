@@ -1,3 +1,5 @@
+import os
+
 from app.jobs import adoption_standard_update as update_job
 from app.models.settings import (
     REGULATION_SYNC_SOURCE_KEY,
@@ -5,6 +7,7 @@ from app.models.settings import (
     get_regulation_sync_state,
     upsert_regulation_sync_state,
 )
+from app.services.standard_update_service import get_latest_harmonised_release_in_dir
 
 
 def test_upsert_regulation_sync_state_updates_existing_row(app):
@@ -187,3 +190,25 @@ def test_run_update_force_download_records_manual_download_audit(monkeypatch, tm
     assert detail["current"]["filename"] == "same.xlsx"
     assert detail["sync_result"]["id"] == 1
     assert actor == {"work_id": "A123", "label": "Admin"}
+
+
+def test_get_latest_harmonised_release_in_dir_returns_latest_excel(tmp_path):
+    older = tmp_path / "older.xlsx"
+    newer = tmp_path / "newer.xlsx"
+    ignored = tmp_path / "notes.txt"
+
+    older.write_text("old", encoding="utf-8")
+    newer.write_text("new", encoding="utf-8")
+    ignored.write_text("ignore", encoding="utf-8")
+
+    older_ts = 1_700_000_000
+    newer_ts = 1_700_000_100
+    os.utime(older, (older_ts, older_ts))
+    os.utime(newer, (newer_ts, newer_ts))
+
+    result = get_latest_harmonised_release_in_dir(str(tmp_path))
+
+    assert result["file_name"] == "newer.xlsx"
+    assert result["path"] == str(newer)
+    assert result["version_label"]
+    assert result["downloaded_at"]

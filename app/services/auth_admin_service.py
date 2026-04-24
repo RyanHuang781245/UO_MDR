@@ -31,11 +31,13 @@ from app.models.auth import (
     user_has_role,
 )
 from app.models.settings import SystemSetting
+from app.services.audit_service import record_audit
 from app.services.authn_service import search_ad_users
 from app.services.authz_service import sanitize_next_url, user_is_admin
 from app.services.standard_update_service import (
     activate_harmonised_release,
     get_active_harmonised_release,
+    get_latest_harmonised_release_in_dir,
     harmonised_reference_configured_root,
     harmonised_reference_fallback_root,
     harmonised_reference_root,
@@ -65,6 +67,34 @@ def _is_within_path(target: str, base: str) -> bool:
 def _current_actor() -> dict[str, str]:
     work_id, label = get_actor_info()
     return {"work_id": work_id, "label": label}
+
+
+def _record_regulation_primary_switch_audit(
+    *,
+    actor: dict[str, str],
+    status: str,
+    source_release: dict | None = None,
+    source_path: str = "",
+    target_path: str = "",
+    error: str = "",
+) -> None:
+    release = source_release or {}
+    detail = {
+        "status": status,
+        "source_path": source_path,
+        "target_path": target_path,
+        "file_name": release.get("file_name", ""),
+        "version_label": release.get("version_label", ""),
+        "downloaded_at": release.get("downloaded_at", ""),
+        "source_url": release.get("source_url", ""),
+    }
+    if error:
+        detail["error"] = error
+    record_audit(
+        action="regulation_release_switch_to_primary",
+        actor=actor,
+        detail=detail,
+    )
 
 
 class SecureAdminIndexView(AdminIndexView):
@@ -382,32 +412,82 @@ class SystemSettingView(BaseView):
                     if not ok:
                         flash(message, "warning")
                     else:
+                        actor = _current_actor()
                         active_release = get_active_harmonised_release()
-                        active_path = (active_release.get("path") or "").strip()
-                        if not active_path or not os.path.isfile(active_path):
-                            flash("找不到目前 active 檔案，無法切回主要存取路徑", "warning")
-                        elif _is_within_path(active_path, configured_reference_root):
-                            flash("目前 active 版本已經位於主要存取路徑", "info")
-                        else:
-                            target_path = os.path.join(configured_reference_root, os.path.basename(active_path))
-                            os.makedirs(configured_reference_root, exist_ok=True)
-                            shutil.copy2(active_path, target_path)
-                            downloaded_at = None
-                            if active_release.get("downloaded_at"):
-                                try:
-                                    downloaded_at = datetime.strptime(active_release["downloaded_at"], "%Y-%m-%d %H:%M")
-                                except ValueError:
-                                    downloaded_at = None
-                            result = activate_harmonised_release(
-                                target_path,
-                                source_url=active_release.get("source_url", ""),
-                                downloaded_at=downloaded_at,
-                                version_label=active_release.get("version_label", ""),
-                            )
-                            if result:
-                                flash("已切回主要存取路徑並更新 active 版本", "success")
+                        fallback_reference_root = harmonised_reference_fallback_root()
+                        fallback_release = get_latest_harmonised_release_in_dir(fallback_reference_root)
+                        source_release = (
+                            active_release
+                            if _is_within_path(active_release.get("path", ""), fallback_reference_root)
+                            else fallback_release
+                        )
+                        source_path = (source_release.get("path") or "").strip()
+                        target_path = ""
+                        try:
+                            if not source_path or not os.path.isfile(source_path):
+                                _record_regulation_primary_switch_audit(
+                                    actor=actor,
+                                    status="failed",
+                                    source_release=source_release,
+                                    error="找不到備援路徑中的可用檔案",
+                                )
+                                flash("找不到備援路徑中的可用檔案，無法同步至主要存取路徑", "warning")
+                            elif _is_within_path(source_path, configured_reference_root):
+                                target_path = source_path
+                                _record_regulation_primary_switch_audit(
+                                    actor=actor,
+                                    status="skipped",
+                                    source_release=source_release,
+                                    source_path=source_path,
+                                    target_path=target_path,
+                                    error="目前 active 版本已經位於主要存取路徑",
+                                )
+                                flash("目前 active 版本已經位於主要存取路徑", "info")
                             else:
-                                flash("切回主要存取路徑失敗", "danger")
+                                target_path = os.path.join(configured_reference_root, os.path.basename(source_path))
+                                os.makedirs(configured_reference_root, exist_ok=True)
+                                shutil.copy2(source_path, target_path)
+                                downloaded_at = None
+                                if source_release.get("downloaded_at"):
+                                    try:
+                                        downloaded_at = datetime.strptime(source_release["downloaded_at"], "%Y-%m-%d %H:%M")
+                                    except ValueError:
+                                        downloaded_at = None
+                                result = activate_harmonised_release(
+                                    target_path,
+                                    source_url=source_release.get("source_url", ""),
+                                    downloaded_at=downloaded_at,
+                                    version_label=source_release.get("version_label", ""),
+                                )
+                                if result:
+                                    _record_regulation_primary_switch_audit(
+                                        actor=actor,
+                                        status="completed",
+                                        source_release=result,
+                                        source_path=source_path,
+                                        target_path=target_path,
+                                    )
+                                    flash("已切回主要存取路徑並更新 active 版本", "success")
+                                else:
+                                    _record_regulation_primary_switch_audit(
+                                        actor=actor,
+                                        status="failed",
+                                        source_release=source_release,
+                                        source_path=source_path,
+                                        target_path=target_path,
+                                        error="activate_harmonised_release 回傳空結果",
+                                    )
+                                    flash("切回主要存取路徑失敗", "danger")
+                        except Exception as exc:
+                            _record_regulation_primary_switch_audit(
+                                actor=actor,
+                                status="failed",
+                                source_release=source_release,
+                                source_path=source_path,
+                                target_path=target_path,
+                                error=str(exc),
+                            )
+                            raise
                 elif action == "download_regulation_release_now":
                     from app.jobs.adoption_standard_update import run_update
 
@@ -487,6 +567,7 @@ class SystemSettingView(BaseView):
             or (current_app.config.get("REGULATION_DOWNLOAD_LINK_TEXT") or "").strip()
         )
         local_reference_root = harmonised_reference_fallback_root()
+        fallback_release = get_latest_harmonised_release_in_dir(local_reference_root)
         primary_reference_root = configured_reference_root or local_reference_root
         primary_storage_ok = None
         primary_storage_message = harmonised_reference_status_message() or "尚未測試，請按「測試 NAS 連線」確認主要存取路徑是否可用"
@@ -496,7 +577,11 @@ class SystemSettingView(BaseView):
             and not _is_within_path(active_release.get("path", ""), configured_reference_root)
         )
         using_fallback_reference = active_release_on_fallback
-        can_switch_to_primary = bool(configured_reference_root and active_release_on_fallback)
+        can_switch_to_primary = bool(
+            configured_reference_root
+            and fallback_release.get("path")
+            and not _is_within_path(fallback_release.get("path", ""), configured_reference_root)
+        )
         return self.render(
             "admin/system_settings.html",
             setting=setting,

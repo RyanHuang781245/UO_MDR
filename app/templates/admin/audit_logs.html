@@ -130,10 +130,16 @@
         {% for e in entries %}
           {% set actor = e.get('actor', {}) %}
           {% set detail = e.get('detail', {}) %}
+          {% set action_name = e.get('action', '') %}
+          {% set action_label = '手動檢查更新' if action_name == 'regulation_release_update_check' else '手動下載採認標準' if action_name == 'regulation_release_manual_download' else '排程偵測更新' if action_name == 'regulation_release_update_run' else '備援同步至主要路徑' if action_name == 'regulation_release_switch_to_primary' else action_name %}
           {% set status = detail.get('status', '') %}
           {% set flow = detail.get('flow', '') %}
           {% set job_id = detail.get('job_id', '') %}
           {% set batch_id = detail.get('batch_id', '') %}
+          {% set storage_mode = detail.get('storage_mode', '') %}
+          {% set storage_mode_label = '主要路徑' if storage_mode == 'primary' else '備援路徑' if storage_mode == 'fallback' else '本機預設路徑' if storage_mode == 'default' else '' %}
+          {% set should_download = detail.get('should_download') %}
+          {% set downloaded = detail.get('downloaded') %}
           {% set results = detail.get('results', []) %}
           <tr>
             <td class="text-left text-muted font-monospace">{{ e.get('ts', '') }}</td>
@@ -141,7 +147,7 @@
               <code class="text-primary font-weight-bold font-monospace">{{ e.get('task_id', '-') }}</code>
             </td>
             <td class="text-center">
-              <span class="badge badge-light border px-2 py-1 text-uppercase x-small font-weight-bold">{{ e.get('action', '') }}</span>
+              <span class="badge badge-light border px-2 py-1 x-small font-weight-bold">{{ action_label }}</span>
             </td>
             <td class="text-center font-weight-bold text-dark">{{ actor.get('label') or actor.get('work_id') }}</td>
             <td>
@@ -154,15 +160,53 @@
                 {% endif %}
                 {% if flow %}
                   <span class="audit-pill shadow-sm">
-                    <i class="fas fa-wind mr-1 opacity-50"></i>
                     <a href="{{ url_for('flow_builder_bp.flow_builder', task_id=e.get('task_id'), flow=flow) }}" class="text-decoration-none text-inherit">{{ flow }}</a>
                   </span>
                 {% endif %}
                 {% if job_id %}
-                  <span class="audit-pill border-secondary font-monospace"><i class="fas fa-tasks mr-1 opacity-50"></i>{{ job_id }}</span>
+                  <span class="audit-pill border-primary font-monospace">
+                    {{ job_id }}
+                  </span>
                 {% endif %}
                 {% if batch_id %}
                   <span class="audit-pill border-info font-monospace" style="color: #6f42c1; background: #f5f3ff;"><i class="fas fa-layer-group mr-1 opacity-50"></i>{{ batch_id }}</span>
+                {% endif %}
+                {% if should_download is sameas true %}
+                  <span class="audit-pill border-success" style="background: #ecfdf5; color: #047857;">
+                    <i class="fas fa-check mr-0 opacity-50"></i>有更新
+                  </span>
+                {% elif should_download is sameas false %}
+                  <span class="audit-pill border-secondary" style="background: #f8fafc; color: #475569;">
+                    <i class="fas fa-times mr-0 opacity-50"></i>無更新
+                  </span>
+                {% endif %}
+                {% if downloaded is sameas true %}
+                  <span class="audit-pill" style="background: #eff6ff; color: #1d4ed8;">
+                    <i class="fas fa-sync-alt mr-0 opacity-50"></i>偵測到更新
+                  </span>
+                  <span class="audit-pill border-primary" style="background: #eff6ff; color: #1d4ed8;">
+                    <i class="fas fa-download mr-0 opacity-50"></i>已下載
+                  </span>
+                {% elif downloaded is sameas false %}
+                  <span class="audit-pill" style="background: #f8fafc; color: #475569;">
+                    <i class="fas fa-sync-alt mr-0 opacity-50"></i>未偵測到更新
+                  </span>
+                  <span class="audit-pill border-secondary" style="background: #f8fafc; color: #475569;">
+                    <i class="fas fa-minus-circle mr-0 opacity-50"></i>未下載
+                  </span>
+                {% endif %}
+                {% if storage_mode_label == '主要路徑' %}
+                  <span class="audit-pill border-warning" style="background: #fff8e1; color: #8a5a00;">
+                    <i class="fas fa-folder-open mr-0 opacity-50"></i>{{ storage_mode_label }}
+                  </span>
+                {% elif storage_mode_label == '備援路徑' %}
+                  <span class="audit-pill border-danger" style="background: #ffe1e1; color: #8a0000;">
+                    <i class="fas fa-folder-open mr-0 opacity-50"></i>{{ storage_mode_label }}
+                  </span>
+                {% elif storage_mode_label == '本機預設路徑' %}
+                  <span class="audit-pill border-danger" style="background: #ffe1e1; color: #8a0000;">
+                    <i class="fas fa-folder-open mr-0 opacity-50"></i>{{ storage_mode_label }}
+                  </span>
                 {% endif %}
               </div>
             </td>

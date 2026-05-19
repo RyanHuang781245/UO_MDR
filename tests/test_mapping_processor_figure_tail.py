@@ -141,6 +141,32 @@ def test_mapping_chapter_title_in_quotes_preserves_slash(tmp_path: Path) -> None
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_check_extract_requires_docx_extension_in_output_name(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "source.docx").write_text("dummy", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    _write_mapping(
+        mapping_path,
+        [["source.docx", "1.1 General description", "", "", "out", "result", "", ""]],
+    )
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_extract_only=True,
+    )
+
+    assert any("輸出文件檔名需包含 .docx 副檔名" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_chapter_range_with_start_and_end_titles_sets_both_titles(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(
         tmp_path,

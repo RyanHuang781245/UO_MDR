@@ -63,28 +63,26 @@
                 </div> 
                 {% endif %}     
                 <div class="row g-3">
-                    <div class="col-lg-8">
+                    <div class="col-12 col-xl-8">
                         <input class="form-control form-control-custom rounded-2" type="file" name="mapping_file" accept=".xlsx" {% if not last_mapping_file %}required{% endif %} {% if current_job_in_progress %}disabled{% endif %}>
                     </div>
-                    <div class="col-sm-6 col-lg-2 d-grid align-items-end">
-                        <button class="btn btn-outline-primary fw-bold px-2" name="action" value="check" type="submit" {% if current_job_in_progress %}disabled{% endif %}>
+                    <div class="col-12 col-sm-6 col-xl-2 d-grid align-items-end">
+                        <button class="btn btn-outline-primary fw-bold px-2 text-nowrap" name="action" value="check" type="submit" {% if current_job_in_progress %}disabled{% endif %}>
                             {% if current_job_in_progress and current_action == 'check' %}
                             <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
                             處理中
                             {% else %}
-                            <i class="bi bi-search me-1"></i>
-                            檢查引用文件
+                            步驟1.檢查引用文件
                             {% endif %}
                         </button>
                     </div>
-                    <div class="col-sm-6 col-lg-2 d-grid align-items-end">
-                        <button class="btn btn-primary fw-bold px-2" name="action" value="check_extract" type="submit" {% if current_job_in_progress or not allow_check_extract %}disabled{% endif %} {% if not current_job_in_progress and not allow_check_extract %}title="請先通過檢查引用文件"{% endif %}>
+                    <div class="col-12 col-sm-6 col-xl-2 d-grid align-items-end">
+                        <button class="btn btn-primary fw-bold px-2 text-nowrap" name="action" value="check_extract" type="submit" {% if current_job_in_progress or not allow_check_extract %}disabled{% endif %} {% if not current_job_in_progress and not allow_check_extract %}title="請先通過檢查引用文件"{% endif %}>
                             {% if current_job_in_progress and current_action == 'check_extract' %}
                             <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
                             處理中
                             {% else %}
-                            <i class="bi bi-sliders me-1"></i>
-                            檢查擷取條件
+                            步驟2.檢查擷取條件
                             {% endif %}
                         </button>
                     </div>

@@ -296,6 +296,61 @@ def test_create_provenance_preview_docx_inserts_labels_without_highlighting_body
         namespaces=_NS,
     )
     assert "C00000" in label_colors
+    label_fonts = root.xpath(
+        "//w:p[contains(string(.), '來源: ')]//w:rFonts/@w:eastAsia",
+        namespaces=_NS,
+    )
+    assert "微軟正黑體" in label_fonts
+
+
+def test_create_provenance_preview_docx_uses_configured_linux_friendly_font(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    first_fragment = tmp_path / "fragment_a.docx"
+    result_path = tmp_path / "result.docx"
+    preview_path = tmp_path / "preview.docx"
+
+    _create_docx(first_fragment, ["Alpha source paragraph"])
+
+    first_desc = build_provenance_descriptor(1)
+    merge_word_docs([str(first_fragment)], str(result_path))
+    apply_final_provenance(
+        str(result_path),
+        [
+            {
+                **first_desc,
+                "fragment_path": str(first_fragment),
+                "content_type": "paragraph",
+                "source_id": "src_000001",
+            },
+        ],
+    )
+
+    monkeypatch.setenv("PROVENANCE_PREVIEW_LABEL_EAST_ASIA_FONT", "Noto Sans CJK TC")
+
+    created = create_provenance_preview_docx(
+        str(result_path),
+        str(preview_path),
+        {
+            "src_000001": {
+                **first_desc,
+                "source_file": "中文檔名.docx",
+                "source_step": "extract_word_chapter",
+                "content_type": "paragraph",
+            },
+        },
+    )
+
+    assert created is True
+
+    with ZipFile(preview_path, "r") as zf:
+        root = etree.fromstring(zf.read("word/document.xml"))
+    label_fonts = root.xpath(
+        "//w:p[contains(string(.), '來源: 中文檔名.docx')]//w:rFonts/@w:eastAsia",
+        namespaces=_NS,
+    )
+    assert "Noto Sans CJK TC" in label_fonts
 
 
 def test_apply_final_provenance_covers_all_merged_fragments(tmp_path: Path) -> None:

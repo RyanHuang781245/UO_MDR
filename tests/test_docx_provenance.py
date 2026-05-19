@@ -8,8 +8,11 @@ from lxml import etree
 
 from modules.docx_merger import merge_word_docs
 from modules.docx_provenance import (
+    _installed_font_families,
+    _resolve_linux_east_asia_font,
     apply_final_provenance,
     build_provenance_descriptor,
+    copy_docx_with_preview_fonts,
     create_provenance_preview_docx,
     extract_provenance_block_trace,
 )
@@ -224,7 +227,15 @@ def test_extract_provenance_block_trace_uses_metadata_for_empty_figure_paragraph
     )
 
 
-def test_create_provenance_preview_docx_inserts_labels_without_highlighting_body_text(tmp_path: Path) -> None:
+def test_create_provenance_preview_docx_inserts_labels_without_highlighting_body_text(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _installed_font_families.cache_clear()
+    monkeypatch.setattr(
+        "modules.docx_provenance._installed_font_families",
+        lambda: {"calibri", "微軟正黑體"},
+    )
     first_fragment = tmp_path / "fragment_a.docx"
     second_fragment = tmp_path / "fragment_b.docx"
     result_path = tmp_path / "result.docx"
@@ -301,12 +312,32 @@ def test_create_provenance_preview_docx_inserts_labels_without_highlighting_body
         namespaces=_NS,
     )
     assert "微軟正黑體" in label_fonts
+    complex_script_fonts = root.xpath(
+        "//w:p[contains(string(.), '來源: ')]//w:rFonts/@w:cs",
+        namespaces=_NS,
+    )
+    assert "微軟正黑體" in complex_script_fonts
+    font_hints = root.xpath(
+        "//w:p[contains(string(.), '來源: ')]//w:rFonts/@w:hint",
+        namespaces=_NS,
+    )
+    assert "eastAsia" in font_hints
+    east_asia_langs = root.xpath(
+        "//w:p[contains(string(.), '來源: ')]//w:lang/@w:eastAsia",
+        namespaces=_NS,
+    )
+    assert "zh-TW" in east_asia_langs
 
 
 def test_create_provenance_preview_docx_uses_configured_linux_friendly_font(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    _installed_font_families.cache_clear()
+    monkeypatch.setattr(
+        "modules.docx_provenance._installed_font_families",
+        lambda: {"calibri", "noto sans cjk tc"},
+    )
     first_fragment = tmp_path / "fragment_a.docx"
     result_path = tmp_path / "result.docx"
     preview_path = tmp_path / "preview.docx"
@@ -351,6 +382,59 @@ def test_create_provenance_preview_docx_uses_configured_linux_friendly_font(
         namespaces=_NS,
     )
     assert "Noto Sans CJK TC" in label_fonts
+
+
+def test_resolve_linux_east_asia_font_falls_back_to_installed_cjk_font(monkeypatch) -> None:
+    _installed_font_families.cache_clear()
+    monkeypatch.setattr(
+        "modules.docx_provenance._installed_font_families",
+        lambda: {"wenquanyi zen hei"},
+    )
+
+    resolved = _resolve_linux_east_asia_font("Noto Sans CJK TC")
+
+    assert resolved == "WenQuanYi Zen Hei"
+
+
+def test_resolve_linux_east_asia_font_ignores_non_cjk_font_fallbacks(monkeypatch) -> None:
+    _installed_font_families.cache_clear()
+    monkeypatch.setattr(
+        "modules.docx_provenance._installed_font_families",
+        lambda: {"noto sans", "noto serif"},
+    )
+
+    resolved = _resolve_linux_east_asia_font("Noto Sans CJK TC")
+
+    assert resolved == ""
+
+
+def test_copy_docx_with_preview_fonts_applies_east_asia_font_to_runs_and_defaults(tmp_path: Path) -> None:
+    source_path = tmp_path / "source.docx"
+    output_path = tmp_path / "preview.docx"
+
+    doc = DocxDocument()
+    doc.add_paragraph("中文檔名來源")
+    doc.save(source_path)
+
+    copied = copy_docx_with_preview_fonts(str(source_path), str(output_path), east_asia_font="Noto Sans CJK TC")
+
+    assert copied is True
+
+    with ZipFile(output_path, "r") as zf:
+        document_root = etree.fromstring(zf.read("word/document.xml"))
+        styles_root = etree.fromstring(zf.read("word/styles.xml"))
+
+    run_fonts = document_root.xpath("//w:rPr/w:rFonts/@w:eastAsia", namespaces=_NS)
+    assert "Noto Sans CJK TC" in run_fonts
+    hints = document_root.xpath("//w:rPr/w:rFonts/@w:hint", namespaces=_NS)
+    assert "eastAsia" in hints
+    langs = document_root.xpath("//w:rPr/w:lang/@w:eastAsia", namespaces=_NS)
+    assert "zh-TW" in langs
+    default_fonts = styles_root.xpath(
+        "//w:docDefaults/w:rPrDefault/w:rPr/w:rFonts/@w:eastAsia",
+        namespaces=_NS,
+    )
+    assert "Noto Sans CJK TC" in default_fonts
 
 
 def test_apply_final_provenance_covers_all_merged_fragments(tmp_path: Path) -> None:

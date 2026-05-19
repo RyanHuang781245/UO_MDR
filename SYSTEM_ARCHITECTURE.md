@@ -65,3 +65,7 @@ Auth can be disabled for local testing/CI by setting:
 Comparison preview generation uses a local LibreOffice CLI process for DOCX->PDF/HTML conversion.
 - Optional: `LIBREOFFICE_BIN=/usr/bin/soffice`
 - If unset, the app falls back to `PATH` lookup (`soffice`, `libreoffice`) plus common Linux/Windows install paths.
+- Linux deployments should install a real Traditional Chinese CJK font for LibreOffice preview rendering. The repo includes an idempotent helper:
+  - `bash scripts/install_noto_cjk_fonts.sh`
+  - Recommended env: `PROVENANCE_PREVIEW_LABEL_EAST_ASIA_FONT=Noto Sans CJK TC`
+  - After installing fonts on an existing node, restart the web process and any worker that produces preview artifacts.

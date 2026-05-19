@@ -352,7 +352,11 @@ def task_view_file(task_id, job_id, filename):
     file_path = os.path.join(job_dir, safe_filename)
     if not os.path.isfile(file_path):
         abort(404)
-    return send_from_directory(job_dir, safe_filename)
+    response = send_from_directory(job_dir, safe_filename)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/restore/<version_id>", endpoint="task_compare_restore_version")

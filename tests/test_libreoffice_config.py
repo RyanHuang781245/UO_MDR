@@ -45,3 +45,19 @@ def test_build_libreoffice_env_keeps_windows_path_unchanged(monkeypatch) -> None
     env = compare_helpers._build_libreoffice_env()
 
     assert env["PATH"] == r"C:\Windows\System32"
+
+
+def test_build_preview_cache_meta_tracks_docx_preview_font(monkeypatch) -> None:
+    monkeypatch.setattr(compare_helpers, "resolve_preview_east_asia_font", lambda: "Noto Sans CJK TC")
+
+    meta = compare_helpers._build_preview_cache_meta(version=3, source_path="/tmp/sample.docx")
+
+    assert meta == {"version": 3, "preview_font": "Noto Sans CJK TC"}
+
+
+def test_build_preview_cache_meta_omits_font_for_non_docx(monkeypatch) -> None:
+    monkeypatch.setattr(compare_helpers, "resolve_preview_east_asia_font", lambda: "Noto Sans CJK TC")
+
+    meta = compare_helpers._build_preview_cache_meta(version=1, source_path="/tmp/sample.pdf")
+
+    assert meta == {"version": 1}

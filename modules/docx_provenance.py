@@ -2,7 +2,9 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import zipfile
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,25 @@ _PROVENANCE_PREFIX = "prov_src_"
 _PROVENANCE_CACHE_VERSION = 1
 PROVENANCE_PREVIEW_LABEL_PREFIX = "來源: "
 _PREVIEW_LABEL_TEXT_COLOR = "C00000"
+_LINUX_EAST_ASIA_FONT_CANDIDATES = (
+    "微軟正黑體",
+    "Microsoft JhengHei",
+    "Noto Sans CJK TC",
+    "Noto Serif CJK TC",
+    "Noto Sans TC",
+    "Source Han Sans TC",
+    "Source Han Serif TC",
+    "Noto Sans CJK SC",
+    "Noto Serif CJK SC",
+    "Source Han Sans SC",
+    "Noto Sans CJK JP",
+    "Noto Serif CJK JP",
+    "Source Han Sans",
+    "Source Han Serif",
+    "WenQuanYi Zen Hei",
+    "AR PL UMing CN",
+    "Droid Sans Fallback",
+)
 _PREVIEW_HIGHLIGHT_PALETTE = [
     {"highlight": "yellow", "fill": "FEF3C7", "text": "92400E"},
     {"highlight": "cyan", "fill": "DBEAFE", "text": "1D4ED8"},
@@ -46,6 +67,57 @@ def _default_preview_label_east_asia_font() -> str:
     return "Noto Sans CJK TC"
 
 
+@lru_cache(maxsize=1)
+def _installed_font_families() -> set[str]:
+    if os.name == "nt":
+        return set()
+
+    fc_list = shutil.which("fc-list")
+    if not fc_list:
+        return set()
+
+    try:
+        result = subprocess.run(
+            [fc_list, ":", "family"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        return set()
+
+    if result.returncode != 0:
+        return set()
+
+    families: set[str] = set()
+    for raw_line in (result.stdout or "").splitlines():
+        for family in raw_line.split(","):
+            normalized = family.strip().lower()
+            if normalized:
+                families.add(normalized)
+    return families
+
+
+def _resolve_linux_east_asia_font(preferred_font: str) -> str:
+    if os.name == "nt":
+        return preferred_font
+
+    installed = _installed_font_families()
+    if not installed:
+        return preferred_font
+
+    preferred = (preferred_font or "").strip()
+    if preferred and preferred.lower() in installed:
+        return preferred
+
+    for candidate in _LINUX_EAST_ASIA_FONT_CANDIDATES:
+        if candidate.lower() in installed:
+            return candidate
+
+    return ""
+
+
 def _get_preview_label_fonts() -> tuple[str, str]:
     ascii_font = ""
     east_asia_font = ""
@@ -59,10 +131,11 @@ def _get_preview_label_fonts() -> tuple[str, str]:
     if not east_asia_font:
         east_asia_font = str(os.environ.get("PROVENANCE_PREVIEW_LABEL_EAST_ASIA_FONT") or "").strip()
 
-    return (
-        ascii_font or _default_preview_label_ascii_font(),
-        east_asia_font or _default_preview_label_east_asia_font(),
-    )
+    ascii_font = ascii_font or _default_preview_label_ascii_font()
+    east_asia_font = east_asia_font or _default_preview_label_east_asia_font()
+    east_asia_font = _resolve_linux_east_asia_font(east_asia_font)
+
+    return (ascii_font, east_asia_font)
 
 
 def build_provenance_descriptor(sequence: int) -> dict[str, Any]:
@@ -207,6 +280,104 @@ def _set_run_fonts(run: etree._Element, *, ascii_font: str = "", east_asia_font:
         fonts.set(_qn("w:hAnsi"), ascii_font)
     if east_asia_font:
         fonts.set(_qn("w:eastAsia"), east_asia_font)
+        fonts.set(_qn("w:cs"), east_asia_font)
+        fonts.set(_qn("w:hint"), "eastAsia")
+
+
+def _set_run_languages(run: etree._Element, *, east_asia_lang: str = "") -> None:
+    if not east_asia_lang:
+        return
+    rpr = _ensure_run_properties(run)
+    _set_run_properties_languages(rpr, east_asia_lang=east_asia_lang)
+
+
+def _set_run_properties_languages(rpr: etree._Element, *, east_asia_lang: str = "") -> None:
+    if not east_asia_lang:
+        return
+    lang = rpr.find(_qn("w:lang"))
+    if lang is None:
+        lang = etree.Element(_qn("w:lang"))
+        rpr.append(lang)
+    lang.set(_qn("w:eastAsia"), east_asia_lang)
+
+
+def _set_run_properties_east_asia_font(rpr: etree._Element, east_asia_font: str) -> None:
+    if not east_asia_font:
+        return
+    fonts = rpr.find(_qn("w:rFonts"))
+    if fonts is None:
+        fonts = etree.Element(_qn("w:rFonts"))
+        rpr.append(fonts)
+    fonts.set(_qn("w:eastAsia"), east_asia_font)
+    fonts.set(_qn("w:cs"), east_asia_font)
+    fonts.set(_qn("w:hint"), "eastAsia")
+    _set_run_properties_languages(rpr, east_asia_lang="zh-TW")
+
+
+def resolve_preview_east_asia_font() -> str:
+    _, east_asia_font = _get_preview_label_fonts()
+    return east_asia_font
+
+
+def copy_docx_with_preview_fonts(input_docx: str, output_docx: str, *, east_asia_font: str = "") -> bool:
+    if not input_docx or not os.path.isfile(input_docx) or not output_docx:
+        return False
+
+    resolved_font = (east_asia_font or resolve_preview_east_asia_font()).strip()
+    if not resolved_font:
+        shutil.copyfile(input_docx, output_docx)
+        return True
+
+    output_dir = os.path.dirname(output_docx)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    shutil.copyfile(input_docx, output_docx)
+
+    parts = _load_docx_parts(output_docx)
+    changed = False
+    for part_name, xml_bytes in list(parts.items()):
+        if not part_name.startswith("word/") or not part_name.endswith(".xml"):
+            continue
+        try:
+            root = etree.fromstring(xml_bytes)
+        except Exception:
+            continue
+
+        part_changed = False
+        if part_name == "word/styles.xml":
+            doc_defaults = root.find("w:docDefaults", namespaces=_NS)
+            if doc_defaults is None:
+                doc_defaults = etree.Element(_qn("w:docDefaults"))
+                root.insert(0, doc_defaults)
+                part_changed = True
+            rpr_default = doc_defaults.find("w:rPrDefault", namespaces=_NS)
+            if rpr_default is None:
+                rpr_default = etree.Element(_qn("w:rPrDefault"))
+                doc_defaults.append(rpr_default)
+                part_changed = True
+            default_rpr = rpr_default.find("w:rPr", namespaces=_NS)
+            if default_rpr is None:
+                default_rpr = etree.Element(_qn("w:rPr"))
+                rpr_default.append(default_rpr)
+                part_changed = True
+            _set_run_properties_east_asia_font(default_rpr, resolved_font)
+
+        for rpr in root.xpath("//w:rPr", namespaces=_NS):
+            _set_run_properties_east_asia_font(rpr, resolved_font)
+            part_changed = True
+
+        for run in root.xpath("//w:r[not(w:rPr)]", namespaces=_NS):
+            rpr = _ensure_run_properties(run)
+            _set_run_properties_east_asia_font(rpr, resolved_font)
+            part_changed = True
+
+        if part_changed:
+            parts[part_name] = etree.tostring(root, encoding="UTF-8", xml_declaration=True, standalone="yes")
+            changed = True
+
+    if changed:
+        _write_docx_parts(output_docx, parts)
+    return True
 
 
 def _set_paragraph_shading(paragraph: etree._Element, fill: str) -> None:
@@ -252,6 +423,7 @@ def _make_preview_label_paragraph(source_label: str) -> etree._Element:
         ascii_font=ascii_font,
         east_asia_font=east_asia_font,
     )
+    _set_run_languages(label_run, east_asia_lang="zh-TW")
     paragraph.append(label_run)
     return paragraph
 

@@ -15,9 +15,11 @@ from werkzeug.utils import secure_filename
 from modules.docx_provenance import (
     PROVENANCE_PREVIEW_LABEL_PREFIX,
     build_provenance_cache_payload,
+    copy_docx_with_preview_fonts,
     create_provenance_preview_docx,
     extract_provenance_block_trace,
     load_cached_provenance_payload,
+    resolve_preview_east_asia_font,
 )
 
 _LIBREOFFICE_CANDIDATES = (
@@ -32,9 +34,10 @@ _LIBREOFFICE_CANDIDATES = (
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
 )
-_PROVENANCE_PREVIEW_DOCX_CACHE_VERSION = 7
+_PROVENANCE_PREVIEW_DOCX_CACHE_VERSION = 8
 _PAGE_SOURCE_MAP_CACHE_VERSION = 14
-_HTML_PREVIEW_CACHE_VERSION = 2
+_PDF_PREVIEW_CACHE_VERSION = 1
+_HTML_PREVIEW_CACHE_VERSION = 3
 _LIBREOFFICE_REQUIRED_PATHS = (
     "/usr/local/sbin",
     "/usr/local/bin",
@@ -88,6 +91,34 @@ def _build_preview_pdf_name(source_path: str) -> str:
     return f"{stem}_{digest}.pdf"
 
 
+def _preview_font_signature(source_path: str) -> str:
+    if not str(source_path or "").lower().endswith(".docx"):
+        return ""
+    return resolve_preview_east_asia_font()
+
+
+def _build_preview_cache_meta(*, version: int, source_path: str) -> dict[str, object]:
+    meta: dict[str, object] = {"version": version}
+    font_signature = _preview_font_signature(source_path)
+    if font_signature:
+        meta["preview_font"] = font_signature
+    return meta
+
+
+def _prepare_docx_for_office_preview(source_path: str, temp_dir: str) -> str:
+    if not source_path.lower().endswith(".docx"):
+        return source_path
+
+    prepared_dir = os.path.join(temp_dir, "_office_source")
+    prepared_path = os.path.join(prepared_dir, "preview_input.docx")
+    try:
+        if copy_docx_with_preview_fonts(source_path, prepared_path):
+            return prepared_path
+    except Exception:
+        current_app.logger.warning("Failed to normalize DOCX preview fonts for %s", source_path, exc_info=True)
+    return source_path
+
+
 def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[str | None, str | None]:
     if not source_path or not os.path.isfile(source_path):
         return None, "找不到要預覽的文件"
@@ -97,11 +128,23 @@ def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[st
     pdf_name = _build_preview_pdf_name(source_path)
     pdf_rel = os.path.join(subdir, pdf_name).replace("\\", "/")
     pdf_path = os.path.join(job_dir, pdf_rel)
+    pdf_meta_path = os.path.join(output_dir, f"{Path(pdf_name).stem}.meta.json")
+    expected_meta = _build_preview_cache_meta(version=_PDF_PREVIEW_CACHE_VERSION, source_path=source_path)
 
     try:
-        if os.path.exists(pdf_path) and os.path.getmtime(pdf_path) >= os.path.getmtime(source_path):
+        preview_meta = {}
+        if os.path.exists(pdf_meta_path):
+            with open(pdf_meta_path, "r", encoding="utf-8") as meta_file:
+                preview_meta = json.load(meta_file) or {}
+        if (
+            os.path.exists(pdf_path)
+            and os.path.getmtime(pdf_path) >= os.path.getmtime(source_path)
+            and preview_meta == expected_meta
+        ):
             return pdf_rel, None
     except OSError:
+        pass
+    except (ValueError, TypeError, json.JSONDecodeError):
         pass
 
     libreoffice_bin = _find_libreoffice_binary()
@@ -110,6 +153,9 @@ def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[st
 
     try:
         with tempfile.TemporaryDirectory(prefix="lo_pdf_") as temp_dir:
+            convert_output_dir = os.path.join(temp_dir, "_office_output")
+            os.makedirs(convert_output_dir, exist_ok=True)
+            prepared_source_path = _prepare_docx_for_office_preview(source_path, temp_dir)
             result = subprocess.run(
                 [
                     libreoffice_bin,
@@ -117,8 +163,8 @@ def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[st
                     "--convert-to",
                     "pdf:writer_pdf_Export",
                     "--outdir",
-                    temp_dir,
-                    source_path,
+                    convert_output_dir,
+                    prepared_source_path,
                 ],
                 capture_output=True,
                 env=_build_libreoffice_env(),
@@ -126,7 +172,7 @@ def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[st
                 timeout=180,
                 check=False,
             )
-            converted_pdf = os.path.join(temp_dir, f"{Path(source_path).stem}.pdf")
+            converted_pdf = os.path.join(convert_output_dir, f"{Path(prepared_source_path).stem}.pdf")
             if result.returncode != 0 or not os.path.exists(converted_pdf):
                 stdout = (result.stdout or "").strip()
                 stderr = (result.stderr or "").strip()
@@ -139,6 +185,8 @@ def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[st
                 )
                 return None, "LibreOffice 轉 PDF 失敗"
             shutil.copyfile(converted_pdf, pdf_path)
+            with open(pdf_meta_path, "w", encoding="utf-8") as meta_file:
+                json.dump(expected_meta, meta_file, ensure_ascii=False, indent=2)
             return pdf_rel, None
     except subprocess.TimeoutExpired:
         current_app.logger.warning("LibreOffice PDF conversion timed out for %s", source_path)
@@ -158,13 +206,14 @@ def _ensure_html_preview(source_path: str, job_dir: str, subdir: str, base_name:
     html_rel = os.path.join(subdir, html_name).replace("\\", "/")
     html_path = os.path.join(job_dir, html_rel)
     meta_path = os.path.join(output_dir, "_meta.json")
+    expected_meta = _build_preview_cache_meta(version=_HTML_PREVIEW_CACHE_VERSION, source_path=source_path)
 
     try:
         if os.path.exists(html_path) and os.path.exists(meta_path):
             with open(meta_path, "r", encoding="utf-8") as meta_file:
                 meta = json.load(meta_file)
             if (
-                meta.get("version") == _HTML_PREVIEW_CACHE_VERSION
+                meta == expected_meta
                 and os.path.getmtime(html_path) >= os.path.getmtime(source_path)
             ):
                 return html_rel, None
@@ -179,6 +228,9 @@ def _ensure_html_preview(source_path: str, job_dir: str, subdir: str, base_name:
 
     try:
         with tempfile.TemporaryDirectory(prefix="lo_html_") as temp_dir:
+            convert_output_dir = os.path.join(temp_dir, "_office_output")
+            os.makedirs(convert_output_dir, exist_ok=True)
+            prepared_source_path = _prepare_docx_for_office_preview(source_path, temp_dir)
             result = subprocess.run(
                 [
                     libreoffice_bin,
@@ -186,8 +238,8 @@ def _ensure_html_preview(source_path: str, job_dir: str, subdir: str, base_name:
                     "--convert-to",
                     "html",
                     "--outdir",
-                    temp_dir,
-                    source_path,
+                    convert_output_dir,
+                    prepared_source_path,
                 ],
                 capture_output=True,
                 env=_build_libreoffice_env(),
@@ -204,7 +256,7 @@ def _ensure_html_preview(source_path: str, job_dir: str, subdir: str, base_name:
                 )
                 return None, "LibreOffice 轉 HTML 失敗"
 
-            converted_html = os.path.join(temp_dir, f"{Path(source_path).stem}.html")
+            converted_html = os.path.join(convert_output_dir, f"{Path(prepared_source_path).stem}.html")
             if not os.path.isfile(converted_html):
                 current_app.logger.warning(
                     "LibreOffice HTML conversion did not produce %s for %s",
@@ -223,22 +275,22 @@ def _ensure_html_preview(source_path: str, job_dir: str, subdir: str, base_name:
                     except FileNotFoundError:
                         pass
 
-            for entry in os.listdir(temp_dir):
-                src_entry = os.path.join(temp_dir, entry)
+            for entry in os.listdir(convert_output_dir):
+                src_entry = os.path.join(convert_output_dir, entry)
                 dst_entry = os.path.join(output_dir, entry)
                 if os.path.isdir(src_entry):
                     shutil.copytree(src_entry, dst_entry, dirs_exist_ok=True)
                 else:
                     shutil.copy2(src_entry, dst_entry)
 
-            generated_html = os.path.join(output_dir, f"{Path(source_path).stem}.html")
+            generated_html = os.path.join(output_dir, f"{Path(prepared_source_path).stem}.html")
             if generated_html != html_path and os.path.exists(generated_html):
                 shutil.move(generated_html, html_path)
 
             _normalize_html_preview_alignment(html_path)
 
             with open(meta_path, "w", encoding="utf-8") as meta_file:
-                json.dump({"version": _HTML_PREVIEW_CACHE_VERSION}, meta_file, ensure_ascii=False, indent=2)
+                json.dump(expected_meta, meta_file, ensure_ascii=False, indent=2)
         return html_rel, None
     except subprocess.TimeoutExpired:
         current_app.logger.warning("LibreOffice HTML conversion timed out for %s", source_path)

@@ -89,7 +89,7 @@
                                 <div class="form-text text-end small" id="flowNameCount">0/50</div>
                             </div>
                             <div class="col-12 col-lg-7 col-xl-6">
-                                <label class="form-label small fw-bold text-uppercase text-muted">輸出路徑/檔名</label>
+                                <label class="form-label small fw-bold text-uppercase text-muted">輸出檔案路徑</label>
                                 <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="例 : Device Description/Annex 3_Device Description.docx" value="{{ output_filename or '' }}" maxlength="120" title='可輸入相對路徑與檔名，系統會自動補上 .docx' {% if is_version_preview %}disabled{% endif %}>
                                 <div class="form-text text-end small">完成後輸出至輸出存放空間。留白則不會，仍可從已保存流程下載輸出文件</div>
                             </div>

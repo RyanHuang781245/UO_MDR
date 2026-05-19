@@ -30,6 +30,11 @@ class BaseConfig:
     REGULATION_DOWNLOAD_LINK_TEXT = "Summary list as xls file"
     REGULATION_REFERENCE_PATH = str(BASE_DIR / "各國法規條文登記表_20250801.xlsx")
     LIBREOFFICE_BIN = (os.environ.get("LIBREOFFICE_BIN") or "").strip()
+    PROVENANCE_PREVIEW_LABEL_ASCII_FONT = (os.environ.get("PROVENANCE_PREVIEW_LABEL_ASCII_FONT") or "Calibri").strip()
+    PROVENANCE_PREVIEW_LABEL_EAST_ASIA_FONT = (
+        os.environ.get("PROVENANCE_PREVIEW_LABEL_EAST_ASIA_FONT")
+        or ("微軟正黑體" if os.name == "nt" else "Noto Sans CJK TC")
+    ).strip()
     ALLOWED_SOURCE_ROOTS = []
     APP_ENV = os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or "development"
     JOB_EXECUTOR_MODE = (os.environ.get("JOB_EXECUTOR_MODE") or "worker").strip().lower() or "worker"

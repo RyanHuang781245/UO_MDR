@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from lxml import etree
+from flask import current_app, has_app_context
 
 _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _NS = {"w": _W_NS}
 _PROVENANCE_PREFIX = "prov_src_"
 _PROVENANCE_CACHE_VERSION = 1
-PROVENANCE_PREVIEW_LABEL_PREFIX = "Source: "
+PROVENANCE_PREVIEW_LABEL_PREFIX = "來源: "
 _PREVIEW_LABEL_TEXT_COLOR = "C00000"
 _PREVIEW_HIGHLIGHT_PALETTE = [
     {"highlight": "yellow", "fill": "FEF3C7", "text": "92400E"},
@@ -33,6 +34,35 @@ def _qn(tag: str) -> str:
 
 def _normalize_trace_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").replace("\xa0", " ")).strip()
+
+
+def _default_preview_label_ascii_font() -> str:
+    return "Calibri"
+
+
+def _default_preview_label_east_asia_font() -> str:
+    if os.name == "nt":
+        return "微軟正黑體"
+    return "Noto Sans CJK TC"
+
+
+def _get_preview_label_fonts() -> tuple[str, str]:
+    ascii_font = ""
+    east_asia_font = ""
+
+    if has_app_context():
+        ascii_font = str(current_app.config.get("PROVENANCE_PREVIEW_LABEL_ASCII_FONT") or "").strip()
+        east_asia_font = str(current_app.config.get("PROVENANCE_PREVIEW_LABEL_EAST_ASIA_FONT") or "").strip()
+
+    if not ascii_font:
+        ascii_font = str(os.environ.get("PROVENANCE_PREVIEW_LABEL_ASCII_FONT") or "").strip()
+    if not east_asia_font:
+        east_asia_font = str(os.environ.get("PROVENANCE_PREVIEW_LABEL_EAST_ASIA_FONT") or "").strip()
+
+    return (
+        ascii_font or _default_preview_label_ascii_font(),
+        east_asia_font or _default_preview_label_east_asia_font(),
+    )
 
 
 def build_provenance_descriptor(sequence: int) -> dict[str, Any]:
@@ -164,6 +194,21 @@ def _set_run_font_size(run: etree._Element, size_half_points: int) -> None:
         node.set(_qn("w:val"), str(size_half_points))
 
 
+def _set_run_fonts(run: etree._Element, *, ascii_font: str = "", east_asia_font: str = "") -> None:
+    if not ascii_font and not east_asia_font:
+        return
+    rpr = _ensure_run_properties(run)
+    fonts = rpr.find(_qn("w:rFonts"))
+    if fonts is None:
+        fonts = etree.Element(_qn("w:rFonts"))
+        rpr.append(fonts)
+    if ascii_font:
+        fonts.set(_qn("w:ascii"), ascii_font)
+        fonts.set(_qn("w:hAnsi"), ascii_font)
+    if east_asia_font:
+        fonts.set(_qn("w:eastAsia"), east_asia_font)
+
+
 def _set_paragraph_shading(paragraph: etree._Element, fill: str) -> None:
     if not fill:
         return
@@ -195,14 +240,19 @@ def _make_text_run(text: str, *, bold: bool = False, color: str = "", size_half_
 
 def _make_preview_label_paragraph(source_label: str) -> etree._Element:
     paragraph = etree.Element(_qn("w:p"))
-    paragraph.append(
-        _make_text_run(
-            f"{PROVENANCE_PREVIEW_LABEL_PREFIX}{source_label}",
-            bold=True,
-            color=_PREVIEW_LABEL_TEXT_COLOR,
-            size_half_points=18,
-        )
+    ascii_font, east_asia_font = _get_preview_label_fonts()
+    label_run = _make_text_run(
+        f"{PROVENANCE_PREVIEW_LABEL_PREFIX}{source_label}",
+        bold=True,
+        color=_PREVIEW_LABEL_TEXT_COLOR,
+        size_half_points=18,
     )
+    _set_run_fonts(
+        label_run,
+        ascii_font=ascii_font,
+        east_asia_font=east_asia_font,
+    )
+    paragraph.append(label_run)
     return paragraph
 
 

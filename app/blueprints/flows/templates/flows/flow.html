@@ -44,6 +44,7 @@
                     <input type="hidden" name="save_as_name" id="saveAsNameInput" value="">
                     <input type="hidden" name="version_name" id="versionNameInput" value="">
                     <input type="hidden" name="enable_figure_reference" id="enableFigureReferenceInput" value="{{ 'true' if enable_figure_reference else 'false' }}">
+                    <input type="hidden" name="enable_output_filename" id="enableOutputFilenameHidden" value="{{ 'true' if output_filename else 'false' }}">
 
 
                     {% if is_version_preview and preview_version %}
@@ -89,9 +90,15 @@
                                 <div class="form-text text-end small" id="flowNameCount">0/50</div>
                             </div>
                             <div class="col-12 col-lg-7 col-xl-6">
-                                <label class="form-label small fw-bold text-uppercase text-muted">輸出檔案路徑</label>
-                                <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="例 : Device Description/Annex 3_Device Description.docx" value="{{ output_filename or '' }}" maxlength="120" title='可輸入相對路徑與檔名，系統會自動補上 .docx' {% if is_version_preview %}disabled{% endif %}>
-                                <div class="form-text text-end small">完成後輸出至輸出存放空間。留白則不會，仍可從已保存流程下載輸出文件</div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="enableOutputFilenameInput" {% if output_filename %}checked{% endif %} {% if is_version_preview %}disabled{% endif %}>
+                                    <label class="form-check-label small fw-bold text-uppercase text-muted" for="enableOutputFilenameInput">輸出檔案路徑</label>
+                                </div>
+                                <div id="outputFilenameField">
+                                    <!-- <label class="form-label small fw-bold text-uppercase text-muted">輸出檔案路徑</label> -->
+                                    <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="例 : Device Description/Annex 3_Device Description.docx" value="{{ output_filename or '' }}" maxlength="120" title='可輸入相對路徑與檔名，系統會自動補上 .docx' {% if is_version_preview %}disabled{% endif %}>
+                                    <div class="form-text text-end small">完成後輸出至輸出存放空間。留白則不會，仍可從已保存流程下載輸出文件</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2229,6 +2236,9 @@ window.addEventListener('beforeunload', function(e){
 });
 const flowForm = document.getElementById('flow_form');
 const flowNameInput = document.getElementById('flowNameInput');
+const enableOutputFilenameInput = document.getElementById('enableOutputFilenameInput');
+const enableOutputFilenameHidden = document.getElementById('enableOutputFilenameHidden');
+const outputFilenameField = document.getElementById('outputFilenameField');
 const outputFilenameInput = document.getElementById('outputFilenameInput');
 const enableFigureReferenceSwitch = document.getElementById('enableFigureReferenceSwitch');
 const enableFigureReferenceInput = document.getElementById('enableFigureReferenceInput');
@@ -2243,6 +2253,56 @@ const addStepDropdown = addStepDropdownBtn?.closest('.dropdown') || null;
 const openTemplateModalBtn = document.getElementById('openTemplateModalBtn');
 const saveFlowBtn = document.getElementById('saveFlowBtn');
 const runFlowBtn = document.getElementById('runFlowBtn');
+const NON_NEGATIVE_STEP_FIELDS = new Set(["target_figure_index", "target_table_index"]);
+function normalizeNonNegativeStepInput(input) {
+  if (!input) return true;
+  const rawValue = String(input.value ?? "").trim();
+  if (!rawValue) return true;
+  const parsedValue = Number(rawValue);
+  if (!Number.isFinite(parsedValue)) return true;
+  if (parsedValue < 0) {
+    input.value = "0";
+    return false;
+  }
+  return true;
+}
+function bindNonNegativeStepInputs(scope = document) {
+  NON_NEGATIVE_STEP_FIELDS.forEach((key) => {
+    scope.querySelectorAll(`input[name$="_${key}"]`).forEach((input) => {
+      input.setAttribute("min", "0");
+      if (input.dataset.nonNegativeBound === "true") return;
+      input.dataset.nonNegativeBound = "true";
+      input.addEventListener("input", () => {
+        normalizeNonNegativeStepInput(input);
+      });
+      input.addEventListener("change", () => {
+        normalizeNonNegativeStepInput(input);
+      });
+    });
+  });
+}
+function syncOutputFilenameField({ clearOnHide = false } = {}) {
+  const enabled = !!enableOutputFilenameInput?.checked;
+  if (enableOutputFilenameHidden) {
+    enableOutputFilenameHidden.value = enabled ? 'true' : 'false';
+  }
+  if (outputFilenameField) {
+    outputFilenameField.classList.toggle('d-none', !enabled);
+  }
+  if (outputFilenameInput) {
+    if (!enabled && clearOnHide) {
+      outputFilenameInput.value = '';
+    }
+    outputFilenameInput.disabled = IS_VERSION_PREVIEW || !enabled;
+  }
+}
+if (enableOutputFilenameInput) {
+  syncOutputFilenameField();
+  enableOutputFilenameInput.addEventListener('change', () => {
+    syncOutputFilenameField({ clearOnHide: !enableOutputFilenameInput.checked });
+    markDirty();
+  });
+}
 if (enableFigureReferenceSwitch && enableFigureReferenceInput) {
   const syncEnableFigureReference = () => {
     enableFigureReferenceInput.value = enableFigureReferenceSwitch.checked ? "true" : "false";
@@ -2261,10 +2321,29 @@ flowForm.addEventListener('submit', (e) => {
   }
   flowForm.querySelectorAll(".chapter-ref").forEach(syncChapterRefInput);
   flowForm.querySelectorAll(".continuous-end-ref").forEach(syncExplicitEndRefInput);
+  let hasNegativeIndex = false;
+  NON_NEGATIVE_STEP_FIELDS.forEach((key) => {
+    flowForm.querySelectorAll(`input[name$="_${key}"]`).forEach((input) => {
+      if (!normalizeNonNegativeStepInput(input)) {
+        hasNegativeIndex = true;
+      }
+    });
+  });
+  if (hasNegativeIndex) {
+    e.preventDefault();
+    alert('章節內圖片序號與章節內表格序號不可為負數');
+    return;
+  }
   const action = e.submitter?.value;
   if ((action === 'save' || action === 'run') && !flowForm.elements['flow_name'].value.trim()) {
     e.preventDefault();
     alert('請輸入流程名稱');
+    return;
+  }
+  if (['save', 'save_as', 'run'].includes(action) && enableOutputFilenameInput?.checked && !(outputFilenameInput?.value || '').trim()) {
+    e.preventDefault();
+    alert('已勾選輸出檔案路徑時，請輸入輸出檔案路徑');
+    outputFilenameInput?.focus();
     return;
   }
   if (action === 'run') {
@@ -2287,6 +2366,7 @@ flowForm.addEventListener('submit', (e) => {
 });
 flowForm.addEventListener('input', markDirty);
 flowForm.addEventListener('change', markDirty);
+bindNonNegativeStepInputs(flowForm);
 if (parseExistingBtn){
   parseExistingBtn.addEventListener('click', async () => {
     const chosen = existingTemplateSelect?.value || "";
@@ -3226,6 +3306,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         if (hidden) hidden.value = toggle.checked ? "true" : "false";
       });
     });
+    bindNonNegativeStepInputs(card);
     bindSubheadingToggle(card);
     const continuousExtractToggle = card.querySelector(".toggle-continuous-extract");
     const continuousCardWrap = card.querySelector(".continuous-card-wrap");
@@ -3493,8 +3574,9 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                    <option value="12" ${val==="12"?"selected": ""}>12 pt</option>
                  </select></div>`;
       }
+      const minAttr = NON_NEGATIVE_STEP_FIELDS.has(k) ? ' min="0"' : "";
       return `<div class="col-md-3"><label class="form-label">${label}</label>
-               <input class="form-control" type="number" step="any" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+               <input class="form-control" type="number" step="any"${minAttr} name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
     }
     if (accept.startsWith("file")){
       return renderTaskFilePickerField({
@@ -3709,6 +3791,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       if (hidden) hidden.value = toggle.checked ? "true" : "false";
     });
   });
+  bindNonNegativeStepInputs(card);
   bindSubheadingToggle(card);
   refreshTemplateSelects();
   updateOrder();

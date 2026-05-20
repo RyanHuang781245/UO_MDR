@@ -61,12 +61,15 @@ def run_flow(task_id):
             return "缺少版本名稱", 400
         if len(version_name) > 50:
             return "版本名稱最多 50 字", 400
+    enable_output_filename = parse_bool(request.form.get("enable_output_filename"), False)
     output_filename, output_filename_error = normalize_docx_output_path(
         request.form.get("output_filename", ""),
         default="",
     )
     if output_filename_error:
         return output_filename_error, 400
+    if action in {"save", "save_as", "run"} and enable_output_filename and not output_filename:
+        return "已勾選輸出檔案路徑時，請輸入輸出檔案路徑", 400
     template_file_raw = request.form.get("template_file", "").strip()
     template_file = ""
     if template_file_raw:

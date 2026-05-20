@@ -972,7 +972,7 @@ def process_mapping_excel(
 
             target_dir = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir
             if validate_only and out_rel_normalized and not os.path.isdir(target_dir):
-                _log("warn", f"輸出資料夾不存在: {out_rel}", row_num, action_label, detail_label)
+                _log("warn", f"輸出路徑不存在: {out_rel}", row_num, action_label, detail_label)
 
             if item_type == "copy_file":
                 if copy_keywords:
@@ -1143,7 +1143,7 @@ def process_mapping_excel(
         output_dir_full = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir
         output_path = os.path.join(output_dir_full, out_name)
         if validate_only and out_rel_normalized and not os.path.isdir(output_dir_full):
-            _log("warn", f"輸出資料夾不存在: {out_rel}", row_num, action_label, detail_label)
+            _log("warn", f"輸出路徑不存在: {out_rel}", row_num, action_label, detail_label)
         if output_path in output_template_map and output_template_map[output_path] != template_path:
             _log("error", f"output uses different templates: {out_name}", row_num, action_label, detail_label)
             continue

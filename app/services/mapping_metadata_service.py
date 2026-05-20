@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
 
-from flask import current_app
+from flask import current_app, url_for
 from sqlalchemy import or_
 
 from app.extensions import db
@@ -17,6 +18,25 @@ from app.models.mapping_metadata import (
     ensure_schema,
 )
 from app.services.execution_service import MAPPING_OPERATION_JOB, MAPPING_SCHEME_RUN_JOB, get_job_payload, get_job_result_payload
+
+
+def _load_mapping_run_meta(task_id: str, run_id: str) -> dict:
+    meta_path = os.path.join(
+        current_app.config["TASK_FOLDER"],
+        str(task_id or "").strip(),
+        "mapping_job",
+        str(run_id or "").strip(),
+        "meta.json",
+    )
+    if not os.path.isfile(meta_path):
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        current_app.logger.exception("Failed to load mapping run meta for %s/%s", task_id, run_id)
+        return {}
 
 
 def init_mapping_metadata(app) -> None:
@@ -289,6 +309,20 @@ def list_mapping_scheme_payloads(
             status_label = "有錯誤"
 
         source_path = str(row.source_path or "").strip()
+        scheme_dir = os.path.dirname(source_path) if source_path else ""
+        scheme_meta: dict[str, Any] = {}
+        if scheme_dir:
+            meta_path = os.path.join(scheme_dir, "meta.json")
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        scheme_meta = loaded
+                except Exception:
+                    current_app.logger.exception("Failed to load mapping scheme meta for %s", row.scheme_id)
+        check_log_file = str(scheme_meta.get("check_log_file") or "").strip()
+        check_extract_log_file = str(scheme_meta.get("check_extract_log_file") or "").strip()
         # 移除對磁碟檔案的即時檢查，信任資料庫
         source_exists = True if source_path else False
         items.append(
@@ -300,6 +334,11 @@ def list_mapping_scheme_payloads(
                 "mapping_display_name": str(row.mapping_display_name or row.mapping_file or ""),
                 "source_path": source_path,
                 "source_exists": source_exists,
+                "check_log_file": check_log_file,
+                "check_extract_log_file": check_extract_log_file,
+                "has_check_log": bool(check_log_file) and os.path.isfile(os.path.join(scheme_dir, check_log_file)),
+                "has_check_extract_log": bool(check_extract_log_file)
+                and os.path.isfile(os.path.join(scheme_dir, check_extract_log_file)),
                 "reference_ok": reference_ok,
                 "extract_ok": extract_ok,
                 "status_key": computed_status,
@@ -359,6 +398,8 @@ def list_mapping_run_payloads(
         if row.job_type == MAPPING_OPERATION_JOB and str(payload.get("action") or "").strip() != "run_cached":
             continue
         result_payload = get_job_result_payload(row)
+        if not result_payload:
+            result_payload = _load_mapping_run_meta(task_id, row.job_id)
         run_id = row.job_id
         started_dt = row.started_at or row.created_at
         if start_at and (not started_dt or started_dt < start_at):
@@ -371,7 +412,8 @@ def list_mapping_run_payloads(
 
         scheme_name = str(result_payload.get("scheme_name") or payload.get("scheme_name") or "").strip()
         mapping_file = str(
-            result_payload.get("mapping_file")
+            result_payload.get("mapping_display_name")
+            or result_payload.get("mapping_file")
             or row.target_name
             or payload.get("mapping_display_name")
             or payload.get("scheme_name")
@@ -399,6 +441,10 @@ def list_mapping_run_payloads(
                 "has_log": bool(log_name),
                 "zip_file": zip_rel,
                 "log_file": log_rel,
+                "zip_url": url_for("tasks_bp.task_download_output_query", task_id=task_id, filename=zip_rel) if zip_rel else "",
+                "log_url": url_for("tasks_bp.task_download_output_query", task_id=task_id, filename=log_rel) if log_rel else "",
+                "cancel_url": url_for("mapping_run_bp.cancel_mapping_run", task_id=task_id, run_id=run_id),
+                "retry_url": url_for("mapping_run_bp.retry_mapping_run", task_id=task_id, run_id=run_id),
                 "reference_ok": bool(result_payload.get("reference_ok")),
                 "extract_ok": bool(result_payload.get("extract_ok")),
                 "source": str(result_payload.get("source") or payload.get("source") or "").strip() or "manual",

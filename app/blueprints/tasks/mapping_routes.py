@@ -333,10 +333,81 @@ def _mapping_op_resume_url(task_id: str, op_id: str) -> str:
     return f"/tasks/{task_id}/mapping?{query}"
 
 
+def _localize_mapping_message(message: str) -> str:
+    text = str(message or "").strip()
+    if not text:
+        return ""
+    localized = text
+    localized = re.sub(r"^ERROR:\s*", "錯誤：", localized, flags=re.IGNORECASE)
+    localized = re.sub(r"^(WARN(?:ING)?):\s*", "警告：", localized, flags=re.IGNORECASE)
+    localized = re.sub(r"^CANCELED:\s*", "已取消：", localized, flags=re.IGNORECASE)
+    localized = re.sub(r"^WF_ERROR:\s*", "工作流程錯誤：", localized, flags=re.IGNORECASE)
+    localized = re.sub(r"^\(Row\s+(\d+)\)\s*", lambda m: f"(第 {m.group(1)} 列) ", localized, flags=re.IGNORECASE)
+    localized = re.sub(r"\bRow\s+(\d+)\b", lambda m: f"第 {m.group(1)} 列", localized, flags=re.IGNORECASE)
+
+    replacements = [
+        ("Invalid mapping operation payload", "Mapping 操作參數無效"),
+        ("failed to read log file", "讀取記錄檔失敗"),
+        ("Mapping operation not found", "找不到 Mapping 處理記錄"),
+        ("Mapping scheme metadata is invalid", "Mapping 文件資料格式無效"),
+        ("Mapping scheme source file not found", "找不到 Mapping 文件來源檔案"),
+        ("Mapping scheme requires revalidation", "Mapping 文件需要重新檢查"),
+        ("Mapping scheme is not validated", "Mapping 文件尚未通過檢查"),
+        ("Mapping scheme not found", "找不到 Mapping 文件"),
+        ("Canceled during execution", "執行期間已取消"),
+        ("empty input name", "未填寫輸入名稱"),
+        ("unsupported operation:", "不支援的操作："),
+        ("no Word file found in directory:", "資料夾中找不到 Word 檔案："),
+        ("file not found:", "找不到檔案："),
+        ("directory not found:", "找不到資料夾："),
+        ("folder not found", "找不到資料夾"),
+        ("missing source filename", "缺少來源檔名"),
+        ("unknown error", "未知錯誤"),
+        ("Copy File", "複製檔案"),
+        ("Copy Folder", "複製資料夾"),
+        ("Add Text", "插入純文字段落"),
+        ("Add Image", "插入圖片"),
+        ("extract_specific_table_from_word", "插入 Word 指定章節/標題的特定表格"),
+        ("extract_specific_figure_from_word", "插入 Word 指定章節/標題的特定圖片"),
+        ("extract_word_all_content", "擷取 Word 全文"),
+        ("extract_word_chapter", "擷取 Word 指定章節/標題"),
+        ("extract_pdf_pages_as_images", "擷取 PDF 標籤圖片"),
+        ("copy_file", "複製檔案"),
+        ("copy_folder", "複製資料夾"),
+        ("template_merge", "模版合併"),
+        ("insert_text", "插入純文字段落"),
+        ("title=", "標題="),
+        ("index=", "編號="),
+        ("pages=", "頁碼="),
+    ]
+    for src, dst in replacements:
+        localized = localized.replace(src, dst)
+    return localized
+
+
+def _localize_mapping_messages(messages: list[str]) -> list[str]:
+    return [_localize_mapping_message(item) for item in (messages or []) if str(item or "").strip()]
+
+
+def _mapping_message_is_error(message: str) -> bool:
+    text = str(message or "").strip()
+    return text.startswith(("ERROR:", "錯誤：", "WF_ERROR:", "工作流程錯誤："))
+
+
+def _mapping_message_is_warning(message: str) -> bool:
+    text = str(message or "").strip()
+    return text.startswith(("WARN:", "WARNING:", "警告："))
+
+
+def _mapping_message_is_workflow_error(message: str) -> bool:
+    text = str(message or "").strip()
+    return text.startswith(("WF_ERROR:", "工作流程錯誤："))
+
+
 def _first_mapping_error(messages: list[str]) -> str:
     for message in messages:
         text = str(message or "").strip()
-        if "ERROR" in text:
+        if _mapping_message_is_error(text):
             return text
     return ""
 
@@ -587,9 +658,9 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
     enable_figure_reference = bool(payload.get("enable_figure_reference"))
     manage_workspace_state = bool(workspace_dir)
     if not task_id or not action or not mapping_path:
-        raise RuntimeError("Invalid mapping operation payload")
+        raise RuntimeError("Mapping 操作參數無效")
     if not manage_workspace_state and action != "run_cached":
-        raise RuntimeError("Invalid mapping operation payload")
+        raise RuntimeError("Mapping 操作參數無效")
 
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     files_dir = os.path.join(tdir, "files")
@@ -635,7 +706,8 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
             run_out_dir,
             **process_kwargs,
         )
-        messages = [str(item) for item in (result.get("logs") or [])]
+        raw_messages = [str(item) for item in (result.get("logs") or [])]
+        messages = _localize_mapping_messages(raw_messages)
         outputs = [str(item) for item in (result.get("outputs") or [])]
         log_file_raw = _normalize_mapping_log_file(
             run_out_dir,
@@ -645,7 +717,7 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
         zip_file_raw = str(result.get("zip_file") or "").strip()
         log_file = f"{current_run_id}/{log_file_raw}" if log_file_raw else ""
         zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else ""
-        current_has_error = any("ERROR" in message for message in messages)
+        current_has_error = any(_mapping_message_is_error(message) for message in raw_messages + messages)
         current_mapping_name = (
             str(validation_state_snapshot.get("mapping_file") or "").strip()
             or os.path.basename(mapping_path)
@@ -770,7 +842,7 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
             "result_payload": run_result_payload,
         }
     except JobCanceledError as exc:
-        messages = [f"CANCELED: {exc}"]
+        messages = [_localize_mapping_message(f"CANCELED: {exc}")]
         ui_payload = {
             "current_action": action,
             "current_run_id": current_run_id,
@@ -840,7 +912,7 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
         raise
     except Exception as exc:
         current_app.logger.exception("Mapping operation failed")
-        messages = [f"ERROR: {exc}"]
+        messages = [_localize_mapping_message(f"ERROR: {exc}")]
         ui_payload = {
             "current_action": action,
             "current_run_id": current_run_id,
@@ -1069,11 +1141,11 @@ def task_mapping(task_id):
             return name
 
         row_no = params.get("mapping_row")
-        row_prefix = f"(Row {row_no}) " if row_no not in (None, "", "None") else ""
+        row_prefix = f"(第 {row_no} 列) " if row_no not in (None, "", "None") else ""
         preset_action = (params.get("mapping_action_label") or "").strip()
         preset_detail = (params.get("mapping_detail_label") or "").strip()
         if preset_action:
-            return f"{row_prefix}{preset_action}", preset_detail
+            return _localize_mapping_message(f"{row_prefix}{preset_action}"), _localize_mapping_message(preset_detail)
         if stype == "extract_word_chapter":
             src = _base(params.get("input_file", ""))
             chapter_start = (params.get("target_chapter_section") or "").strip()
@@ -1178,7 +1250,7 @@ def task_mapping(task_id):
         if stype == "template_merge":
             tpl = _base(entry.get("template_file", ""))
             return f"{row_prefix}模版合併", tpl.strip()
-        return f"{row_prefix}{stype or '步驟'}", ""
+        return _localize_mapping_message(f"{row_prefix}{stype or '步驟'}"), ""
 
     def _truncate_detail(text: str, limit: int = 160) -> tuple[str, bool]:
         if len(text) <= limit:
@@ -1253,7 +1325,7 @@ def task_mapping(task_id):
                     active_mapping_tab = "results"
                     messages = []
                 except Exception as e:
-                    messages = [str(e)]
+                    messages = [_localize_mapping_message(str(e))]
         elif action == "schedule_scheme":
             scheme_id = (request.form.get("scheme_id") or "").strip()
             active_scheme = load_mapping_scheme(task_id, scheme_id)
@@ -1266,7 +1338,7 @@ def task_mapping(task_id):
                     set_scheduled_mapping_scheme(task_id, scheme_id)
                     messages.append(f"已設為排程方案：{active_scheme.get('display_name') or scheme_id}")
                 except Exception as e:
-                    messages = [str(e)]
+                    messages = [_localize_mapping_message(str(e))]
         elif action == "save_scheme":
             active_workspace_op = _latest_active_mapping_op(workspace_dir)
             active_workspace_op_id = str(active_workspace_op.get("op_id") or "").strip()
@@ -1312,7 +1384,7 @@ def task_mapping(task_id):
                     zip_file_name = None
                     step_runs = []
                 except Exception as e:
-                    messages = [str(e)]
+                    messages = [_localize_mapping_message(str(e))]
         elif action == "delete_scheme":
             scheme_id = (request.form.get("scheme_id") or "").strip()
             active_scheme = load_mapping_scheme(task_id, scheme_id)
@@ -1326,7 +1398,7 @@ def task_mapping(task_id):
                     else:
                         messages.append("刪除失敗，請稍後再試。")
                 except Exception as e:
-                    messages = [str(e)]
+                    messages = [_localize_mapping_message(str(e))]
         elif action == "rename_scheme":
             scheme_id = (request.form.get("scheme_id") or "").strip()
             active_scheme = load_mapping_scheme(task_id, scheme_id)
@@ -1341,7 +1413,7 @@ def task_mapping(task_id):
                     )
                     messages.append(f"已重新命名方案：{renamed_scheme.get('display_name') or scheme_id}")
                 except Exception as e:
-                    messages = [str(e)]
+                    messages = [_localize_mapping_message(str(e))]
         else:
             active_mapping_tab = "create"
             active_workspace_op = _latest_active_mapping_op(workspace_dir)
@@ -1493,7 +1565,7 @@ def task_mapping(task_id):
                         )
                     )
                 except Exception as e:
-                    messages = [str(e)]
+                    messages = [_localize_mapping_message(str(e))]
         if action in {"save_scheme", "schedule_scheme"} and not log_file:
             preserved_run_id = str(validation_state.get("run_id") or "").strip()
             if preserved_run_id:
@@ -1542,35 +1614,39 @@ def task_mapping(task_id):
                             continue
                         action, detail = _format_step_label(entry)
                         row_no = (entry.get("params") or {}).get("mapping_row")
-                        detail_short, detail_long = _truncate_detail(detail) if detail else ("", False)
+                        localized_action = _localize_mapping_message(action)
+                        localized_detail = _localize_mapping_message(detail)
+                        localized_error = _localize_mapping_message(entry.get("error") or "")
+                        detail_short, detail_long = _truncate_detail(localized_detail) if localized_detail else ("", False)
                         step_runs.append(
                             {
-                                "action": action,
-                                "detail": detail,
+                                "action": localized_action,
+                                "detail": localized_detail,
                                 "detail_short": detail_short,
                                 "detail_long": detail_long,
                                 "row_no": row_no,
                                 "status": entry.get("status") or "ok",
-                                "error": entry.get("error") or "",
+                                "error": localized_error,
                             }
                         )
                 if step_runs:
-                    messages = [m for m in messages if not (m or "").startswith("WF_ERROR:")]
+                    messages = [m for m in messages if not _mapping_message_is_workflow_error(m)]
             except Exception as e:
-                messages.append(f"ERROR: failed to read log file ({e})")
-    has_error = any("ERROR" in (m or "") for m in messages) or any(
+                messages.append(_localize_mapping_message(f"ERROR: failed to read log file ({e})"))
+    messages = _localize_mapping_messages(messages)
+    has_error = any(_mapping_message_is_error(m) for m in messages) or any(
         step.get("status") == "error" for step in step_runs
     )
-    warning_messages = [m for m in messages if (m or "").startswith("WARN:") or (m or "").startswith("WARNING:")]
+    warning_messages = [m for m in messages if _mapping_message_is_warning(m)]
     has_warning = bool(warning_messages)
     warning_confirm = None
     if has_warning:
         trimmed = []
         for m in warning_messages[:3]:
-            trimmed.append(m.replace("WARN:", "").replace("WARNING:", "").strip())
-        warning_confirm = "Warnings found. Run anyway?\n" + "\n".join(trimmed)
+            trimmed.append(re.sub(r"^(警告：|WARN:|WARNING:)\s*", "", m, flags=re.IGNORECASE).strip())
+        warning_confirm = "發現警告，是否仍要繼續？\n" + "\n".join(trimmed)
 
-    error_messages = [m for m in messages if (m or "").startswith("ERROR:")]
+    error_messages = [m for m in messages if _mapping_message_is_error(m)]
     if error_messages:
         def _norm_error_text(text: str) -> str:
             return re.sub(r"\s+", " ", (text or "").strip())
@@ -1588,18 +1664,21 @@ def task_mapping(task_id):
 
         error_steps = []
         for msg in error_messages:
-            raw = (msg or "").replace("ERROR:", "", 1).strip()
-            raw = re.sub(r"^Row\s+\d+\s*:\s*", "", raw, flags=re.IGNORECASE)
+            raw = re.sub(r"^(錯誤：|ERROR:)\s*", "", msg or "", flags=re.IGNORECASE).strip()
+            raw = re.sub(r"^(第\s*\d+\s*列|Row\s+\d+)\s*:\s*", "", raw, flags=re.IGNORECASE)
             action = raw
             detail = ""
             error_text = raw
-            row_match = re.search(r"Row\s+(\d+)", msg or "", re.IGNORECASE)
-            row_prefix = f"(Row {row_match.group(1)}) " if row_match else ""
+            row_match = re.search(r"(?:第\s*(\d+)\s*列|Row\s+(\d+))", msg or "", re.IGNORECASE)
+            row_no_text = ""
+            if row_match:
+                row_no_text = row_match.group(1) or row_match.group(2) or ""
+            row_prefix = f"(第 {row_no_text} 列) " if row_no_text else ""
             if "::" in raw:
                 parts = [p.strip() for p in raw.split("::", 2)]
                 if len(parts) >= 2:
                     base_action = parts[0] or action
-                    if base_action.startswith("(Row "):
+                    if base_action.startswith("(第 "):
                         action = base_action
                     else:
                         action = f"{row_prefix}{base_action}".strip()
@@ -1609,29 +1688,30 @@ def task_mapping(task_id):
             elif ":" in raw:
                 head, tail = raw.split(":", 1)
                 base_action = head.strip() or raw
-                if base_action.startswith("(Row "):
+                if base_action.startswith("(第 "):
                     action = base_action
                 else:
                     action = f"{row_prefix}{base_action}".strip()
                 detail = tail.strip()
             display_detail = detail or error_text
-            parsed_row_no = int(row_match.group(1)) if row_match else None
+            parsed_row_no = int(row_no_text) if row_no_text else None
             norm_error_text = _norm_error_text(error_text)
             norm_display_detail = _norm_error_text(display_detail)
             existing_bucket = existing_row_errors.get(parsed_row_no, set())
             if norm_error_text in existing_bucket or norm_display_detail in existing_bucket:
                 continue
 
-            detail_short, detail_long = _truncate_detail(display_detail)
+            localized_display_detail = _localize_mapping_message(display_detail)
+            detail_short, detail_long = _truncate_detail(localized_display_detail)
             error_steps.append(
                 {
-                    "action": action,
-                    "detail": display_detail,
+                    "action": _localize_mapping_message(action),
+                    "detail": localized_display_detail,
                     "detail_short": detail_short,
                     "detail_long": detail_long,
                     "row_no": parsed_row_no,
                     "status": "error",
-                    "error": error_text,
+                    "error": _localize_mapping_message(error_text),
                 }
             )
         if error_steps:
@@ -1843,7 +1923,7 @@ def task_mapping_op_status(task_id, op_id):
     workspace_dir = _mapping_workspace_dir(tdir)
     payload = _read_mapping_op(workspace_dir, op_id)
     if not payload:
-        return {"ok": False, "error": "Mapping operation not found"}, 404
+        return {"ok": False, "error": _localize_mapping_message("Mapping operation not found")}, 404
     return {
         "ok": True,
         "op_id": op_id,
@@ -1851,7 +1931,7 @@ def task_mapping_op_status(task_id, op_id):
         "action": str(payload.get("action") or payload.get("current_action") or "").strip(),
         "mapping_display_name": str(payload.get("mapping_display_name") or "").strip(),
         "resume_url": str(payload.get("resume_url") or "").strip(),
-        "error": str(payload.get("error") or "").strip(),
+        "error": _localize_mapping_message(str(payload.get("error") or "").strip()),
     }
 
 

@@ -606,7 +606,7 @@ def test_mapping_blank_type_table_like_text_stays_chapter_extract(tmp_path: Path
 
 def test_mapping_blank_type_all_keyword_is_not_special_anymore(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "All")
-    assert any("unsupported operation: All" in msg for msg in result.get("logs", []))
+    assert any("不支援的操作：All" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
     assert all(not (run.get("workflow_log") or []) for run in runs)
@@ -619,7 +619,7 @@ def test_mapping_blank_type_add_text_keyword_is_not_special_anymore(tmp_path: Pa
         source_name="這是一段說明文字",
         source_files=[],
     )
-    assert any("unsupported operation: Add Text" in msg for msg in result.get("logs", []))
+    assert any("不支援的操作：Add Text" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
     assert all(not (run.get("workflow_log") or []) for run in runs)

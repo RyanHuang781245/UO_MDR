@@ -217,6 +217,49 @@ def test_mapping_route_preserves_unicode_uploaded_filename_in_workspace(app, cli
     assert upload_name in validation_state.read_text(encoding="utf-8")
 
 
+def test_mapping_route_localizes_english_error_messages(app, client, monkeypatch) -> None:
+    task_id = "mapping-localized-errors"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_process_mapping_excel(
+        mapping_path,
+        task_files_dir,
+        output_dir,
+        log_dir=None,
+        validate_only=False,
+        validate_extract_only=False,
+    ):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        Path(log_dir or output_dir).mkdir(parents=True, exist_ok=True)
+        (Path(log_dir or output_dir) / "mapping_log.json").write_text('{"messages":[],"runs":[]}', encoding="utf-8")
+        return {
+            "logs": ["ERROR: file not found: missing-source.docx"],
+            "outputs": [],
+            "log_file": "mapping_log.json",
+            "zip_file": None,
+        }
+
+    monkeypatch.setattr("modules.mapping_processor.process_mapping_excel", fake_process_mapping_excel)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={"action": "check", "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "找不到檔案： missing-source.docx" in html
+    assert "ERROR: file not found: missing-source.docx" not in html
+
+
 def test_mapping_route_blocks_workspace_reset_when_active_op_exists(app, client, monkeypatch) -> None:
     task_id = "mapping-workspace-active-op-lock"
     task_dir = Path(app.config["TASK_FOLDER"]) / task_id
@@ -653,7 +696,7 @@ def test_mapping_run_cached_does_not_show_processing_status(app, client, monkeyp
     assert "處理狀態" not in html
     assert "生成結果" in html
     assert "處理步驟" in html
-    assert "(Row 3) 複製檔案" in html
+    assert "(第 3 列) 複製檔案" in html
     assert "下載 ZIP" in html
     assert "下載 Log" in html
     assert "產出文件" in html

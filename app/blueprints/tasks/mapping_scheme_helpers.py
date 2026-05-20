@@ -287,7 +287,7 @@ def delete_mapping_scheme(task_id: str, scheme_id: str) -> bool:
 def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
     scheme = load_mapping_scheme(task_id, scheme_id)
     if not scheme:
-        raise FileNotFoundError("Mapping scheme not found")
+        raise FileNotFoundError("找不到 Mapping 方案")
 
     cleaned_name = str(new_name or "").strip()
     if not cleaned_name:
@@ -297,7 +297,7 @@ def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
     with open(meta_path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     if not isinstance(payload, dict):
-        raise ValueError("Mapping scheme metadata is invalid")
+        raise ValueError("Mapping 方案資料格式無效")
 
     payload["name"] = cleaned_name
     payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -315,13 +315,13 @@ def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
 def set_mapping_scheme_figure_reference(task_id: str, scheme_id: str, enabled: bool) -> dict:
     scheme = load_mapping_scheme(task_id, scheme_id)
     if not scheme:
-        raise FileNotFoundError("Mapping scheme not found")
+        raise FileNotFoundError("找不到 Mapping 方案")
 
     meta_path = mapping_scheme_meta_path(task_id, scheme_id)
     with open(meta_path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     if not isinstance(payload, dict):
-        raise ValueError("Mapping scheme metadata is invalid")
+        raise ValueError("Mapping 方案資料格式無效")
 
     payload["enable_figure_reference"] = bool(enabled)
     payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -348,13 +348,13 @@ def execute_saved_mapping_scheme(
     actor = actor or {}
     scheme = load_mapping_scheme(task_id, scheme_id)
     if not scheme:
-        raise FileNotFoundError("Mapping scheme not found")
+        raise FileNotFoundError("找不到 Mapping 方案")
     if not scheme.get("source_exists"):
-        raise FileNotFoundError("Mapping scheme source file not found")
+        raise FileNotFoundError("找不到 Mapping 方案來源檔案")
     if scheme.get("needs_review"):
-        raise RuntimeError("Mapping scheme requires revalidation")
+        raise RuntimeError("Mapping 方案需要重新檢查")
     if not scheme.get("reference_ok") or not scheme.get("extract_ok"):
-        raise RuntimeError("Mapping scheme is not validated")
+        raise RuntimeError("Mapping 方案尚未通過檢查")
 
     from modules.mapping_processor import process_mapping_excel
 
@@ -407,7 +407,7 @@ def execute_saved_mapping_scheme(
                 "output_count": 0,
                 "zip_file": "",
                 "log_file": "",
-                "error": "Canceled during execution",
+                "error": "執行期間已取消",
                 "actor_work_id": actor.get("work_id", ""),
                 "actor_label": actor.get("label", ""),
                 "source": source,
@@ -491,13 +491,13 @@ def enqueue_saved_mapping_scheme_run(
     actor = actor or {}
     scheme = load_mapping_scheme(task_id, scheme_id)
     if not scheme:
-        raise FileNotFoundError("Mapping scheme not found")
+        raise FileNotFoundError("找不到 Mapping 方案")
     if not scheme.get("source_exists"):
-        raise FileNotFoundError("Mapping scheme source file not found")
+        raise FileNotFoundError("找不到 Mapping 方案來源檔案")
     if scheme.get("needs_review"):
-        raise RuntimeError("Mapping scheme requires revalidation")
+        raise RuntimeError("Mapping 方案需要重新檢查")
     if not scheme.get("reference_ok") or not scheme.get("extract_ok"):
-        raise RuntimeError("Mapping scheme is not validated")
+        raise RuntimeError("Mapping 方案尚未通過檢查")
 
     effective_enable_figure_reference = bool(
         scheme.get("enable_figure_reference", True)

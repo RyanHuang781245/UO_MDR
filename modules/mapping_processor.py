@@ -126,17 +126,17 @@ def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
 
     raw_name = str(name or "").strip()
     if not raw_name:
-        return None, "empty input name"
+        return None, "未填寫輸入名稱"
 
     if "." in os.path.basename(raw_name):
         if "/" in raw_name or "\\" in raw_name:
             resolved = _resolve_relative_file(base, raw_name)
             if resolved:
                 return resolved, ""
-            return None, f"file not found: {raw_name}"
+            return None, f"找不到檔案：{raw_name}"
         matches = _find_files(base, raw_name)
         if not matches:
-            return None, f"file not found: {raw_name}"
+            return None, f"找不到檔案：{raw_name}"
         if len(matches) > 1:
             rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
             joined = "; ".join(rel_matches)
@@ -145,27 +145,27 @@ def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
 
     dir_path = _find_directory(base, raw_name)
     if not dir_path:
-        return None, f"directory not found: {raw_name}"
+        return None, f"找不到資料夾：{raw_name}"
     for fn in os.listdir(dir_path):
         if fn.lower().endswith((".docx", ".doc")):
             return os.path.join(dir_path, fn), ""
-    return None, f"no Word file found in directory: {raw_name}"
+    return None, f"資料夾中找不到 Word 檔案：{raw_name}"
 
 
 def _resolve_any_file(base: str, name: str) -> tuple[str | None, str]:
     raw_name = str(name or "").strip()
     if not raw_name:
-        return None, "empty input name"
+        return None, "未填寫輸入名稱"
 
     if "/" in raw_name or "\\" in raw_name:
         resolved = _resolve_relative_file(base, raw_name)
         if resolved:
             return resolved, ""
-        return None, f"file not found: {raw_name}"
+        return None, f"找不到檔案：{raw_name}"
 
     matches = _find_files(base, raw_name)
     if not matches:
-        return None, f"file not found: {raw_name}"
+        return None, f"找不到檔案：{raw_name}"
     if len(matches) > 1:
         rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
         joined = "; ".join(rel_matches)
@@ -176,7 +176,7 @@ def _resolve_any_file(base: str, name: str) -> tuple[str | None, str]:
 def _resolve_input_directory(base: str, name: str) -> tuple[str | None, str]:
     raw_name = str(name or "").strip()
     if not raw_name:
-        return None, "empty input name"
+        return None, "未填寫輸入名稱"
     if raw_name.replace("\\", "/") in {".", "./", "/"}:
         return base, ""
 
@@ -184,11 +184,11 @@ def _resolve_input_directory(base: str, name: str) -> tuple[str | None, str]:
         resolved = _find_directory(base, raw_name)
         if resolved:
             return resolved, ""
-        return None, f"directory not found: {raw_name}"
+        return None, f"找不到資料夾：{raw_name}"
 
     matches = _find_directories(base, raw_name)
     if not matches:
-        return None, f"directory not found: {raw_name}"
+        return None, f"找不到資料夾：{raw_name}"
     if len(matches) > 1:
         rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
         joined = "; ".join(rel_matches)
@@ -373,7 +373,7 @@ def process_mapping_excel(
                 if folder:
                     found_dir = _find_directory(task_files_dir, folder)
                     if not found_dir:
-                        logs.append(f"ERROR: {out_name or '?'} folder not found {folder}")
+                        logs.append(f"ERROR: {out_name or '?'} 找不到資料夾 {folder}")
                         continue
                     base_dir = found_dir
 
@@ -381,7 +381,7 @@ def process_mapping_excel(
                 chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
                 if is_all or chapter_match:
                     if not input_name:
-                        logs.append(f"ERROR: {out_name or '?'} missing source filename")
+                        logs.append(f"ERROR: {out_name or '?'} 缺少來源檔名")
                         continue
                     infile, resolve_error = _resolve_input_file(base_dir, input_name)
                     if not infile:
@@ -414,7 +414,7 @@ def process_mapping_excel(
             if folder:
                 found_dir = _find_directory(task_files_dir, folder)
                 if not found_dir:
-                    logs.append(f"{out_name or '?'}: folder not found {folder}")
+                    logs.append(f"{out_name or '?'}: 找不到資料夾 {folder}")
                     continue
                 base_dir = found_dir
 
@@ -423,7 +423,7 @@ def process_mapping_excel(
 
             if is_all or chapter_match:
                 if not input_name:
-                    logs.append(f"{out_name or '?'}: missing source filename")
+                    logs.append(f"{out_name or '?'}: 缺少來源檔名")
                     continue
                 infile, resolve_error = _resolve_input_file(base_dir, input_name)
                 if not infile:
@@ -1403,7 +1403,7 @@ def process_mapping_excel(
         is_all = False
         chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction_core)
         if not is_all and not chapter_match:
-            _log("error", f"unsupported operation: {instruction_core}", row_num, action_label, detail_label)
+            _log("error", f"不支援的操作：{instruction_core}", row_num, action_label, detail_label)
             continue
 
         infile, resolve_error = _resolve_input_file(task_files_dir, src_name)
@@ -1544,7 +1544,7 @@ def process_mapping_excel(
                 if entry.get("status") == "error":
                     step_type = entry.get("type") or "step"
                     logs.append(
-                        f"WF_ERROR: {os.path.basename(output_path)} {step_type}: {entry.get('error') or 'unknown error'}"
+                        f"WF_ERROR: {os.path.basename(output_path)} {step_type}: {entry.get('error') or '未知錯誤'}"
                     )
             result_path = workflow_result.get("result_docx") or os.path.join(workdir, "result.docx")
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))

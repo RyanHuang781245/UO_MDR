@@ -17,6 +17,7 @@ from app.services.flow_service import (
     normalize_document_format,
     parse_template_paragraphs,
 )
+from app.services.flow_validation_service import FLOW_VALIDATION_RULES
 from app.services.flow_version_service import (
     FLOW_VERSION_LIMIT,
     flow_version_display_name as _flow_version_display_name,
@@ -209,6 +210,7 @@ def build_flow_builder_context(task_id: str, args) -> dict:
         "flow_version_limit": FLOW_VERSION_LIMIT,
         "document_format_presets": DOCUMENT_FORMAT_PRESETS,
         "line_spacing_choices": LINE_SPACING_CHOICES,
+        "flow_validation_rules": FLOW_VALIDATION_RULES,
         "flow_pagination": flow_pagination,
         "active_flow_tab": active_flow_tab,
         "flow_results_runs": flow_results["runs"],

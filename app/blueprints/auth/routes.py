@@ -39,7 +39,7 @@ def login():
 
             ldap_user = form.user
             if not ldap_user:
-                error = "憑證無效"
+                error = "憑證無效，請確認工號和密碼是否正確"
                 return render_template("auth/login.html", error=error, form=form)
 
             if not is_allowed_group_member(ldap_user.dn):

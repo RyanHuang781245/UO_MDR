@@ -85,19 +85,18 @@
                     <div class="px-4 py-4 border-bottom">
                         <div class="row g-3">
                             <div class="col-12 col-lg-7 col-xl-6">
-                                <label class="form-label small fw-bold text-uppercase text-muted">流程名稱</label>
+                                <label class="form-label small fw-bold text-uppercase text-muted">流程名稱<span class="required-marker" aria-hidden="true">*</span></label>
                                 <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" pattern="[^/\\\\]+" title="流程名稱不可包含 / 或 \\" required {% if is_version_preview %}disabled{% endif %}>
                                 <div class="form-text text-end small" id="flowNameCount">0/50</div>
                             </div>
                             <div class="col-12 col-lg-7 col-xl-6">
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="checkbox" id="enableOutputFilenameInput" {% if output_filename %}checked{% endif %} {% if is_version_preview %}disabled{% endif %}>
-                                    <label class="form-check-label small fw-bold text-uppercase text-muted" for="enableOutputFilenameInput">輸出檔案路徑</label>
+                                    <label class="form-check-label small fw-bold text-uppercase text-muted" for="enableOutputFilenameInput">輸出檔案路徑<span class="required-marker {% if not output_filename %}d-none{% endif %}" id="outputFilenameRequiredMarker" aria-hidden="true">*</span></label>
                                 </div>
                                 <div id="outputFilenameField">
-                                    <!-- <label class="form-label small fw-bold text-uppercase text-muted">輸出檔案路徑</label> -->
                                     <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="例 : Device Description/Annex 3_Device Description.docx" value="{{ output_filename or '' }}" maxlength="120" title='可輸入相對路徑與檔名，系統會自動補上 .docx' {% if is_version_preview %}disabled{% endif %}>
-                                    <div class="form-text text-end small">完成後輸出至輸出存放空間。留白則不會，仍可從已保存流程下載輸出文件</div>
+                                    <div class="form-text text-end small">流程完成後輸出至輸出存放空間。仍可從已保存流程下載輸出文件</div>
                                 </div>
                             </div>
                         </div>
@@ -528,7 +527,7 @@
       </div>
       <div class="modal-body">
         <div class="mb-1">
-          <label for="saveAsFlowInput" class="form-label small fw-bold text-uppercase text-muted">新流程名稱 (最多 50 字)</label>
+          <label for="saveAsFlowInput" class="form-label small fw-bold text-uppercase text-muted">新流程名稱 (最多 50 字)<span class="required-marker" aria-hidden="true">*</span></label>
           <input type="text" class="form-control form-control-custom" id="saveAsFlowInput" maxlength="50" required>
           <div class="form-text text-end small" id="saveAsFlowCount">0/50</div>
         </div>
@@ -550,7 +549,7 @@
       </div>
       <div class="modal-body">
         <div class="mb-1">
-          <label for="saveVersionInput" class="form-label small fw-bold text-uppercase text-muted">版本名稱 (最多 50 字)</label>
+          <label for="saveVersionInput" class="form-label small fw-bold text-uppercase text-muted">版本名稱 (最多 50 字)<span class="required-marker" aria-hidden="true">*</span></label>
           <input type="text" class="form-control form-control-custom" id="saveVersionInput" maxlength="50" required>
           <div class="form-text text-end small" id="saveVersionCount">0/50</div>
         </div>
@@ -871,6 +870,68 @@
   display: inline-flex;
   align-items: center;
   line-height: 1.2;
+}
+.required-marker {
+  color: #dc2626;
+  font-weight: 700;
+  margin-left: 0.25rem;
+}
+.form-label,
+.form-check-label {
+  position: relative;
+}
+.flow-validation-feedback {
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: max-content;
+  max-width: min(320px, calc(100vw - 2rem));
+  margin-top: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 0.4rem;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  font-size: 0.875rem;
+  line-height: 1.3;
+  z-index: 20;
+  white-space: normal;
+}
+.flow-validation-feedback::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-top: 1px solid rgba(15, 23, 42, 0.18);
+  border-left: 1px solid rgba(15, 23, 42, 0.18);
+  transform: translateX(-50%) rotate(45deg);
+}
+.flow-validation-feedback-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.2rem;
+  background: #f97316;
+  color: #fff;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.flow-validation-feedback-text {
+  position: relative;
+  z-index: 1;
+  white-space: pre-line;
+}
+.validation-anchor {
+  position: relative;
 }
 @media (max-width: 1199.98px) {
   .flow-toolbar-main {
@@ -1212,6 +1273,7 @@ const PREVIEW_VERSION = {{ preview_version|tojson }};
 const TEMPLATE_PARSE_URL = "{{ url_for('tasks_bp.parse_template_doc', task_id=task.id) }}";
 const TEMPLATE_FILE = {{ template_file|tojson }};
 const TEMPLATE_PARAGRAPHS = {{ template_paragraphs|tojson }};
+const FLOW_VALIDATION_RULES = {{ flow_validation_rules|tojson }};
 const ACTIVE_RUNS_URL = "{{ url_for('flow_results_bp.flow_run_active', task_id=task.id) }}";
 const TASK_FILE_BROWSER_URL = "{{ url_for('flow_file_bp.api_flow_list_task_files', task_id=task.id) }}";
 const TASK_FILE_CREATE_FOLDER_URL = "{{ url_for('flow_file_bp.api_flow_create_task_folder', task_id=task.id) }}";
@@ -1872,6 +1934,305 @@ if (applyFormattingModal) {
 
 const { submitPostForm, escapeHtml } = window.UiUtils;
 
+function buildLabelHtml(label, required = false){
+  const safeLabel = escapeHtml(String(label ?? ""));
+  return required ? `${safeLabel}<span class="required-marker" aria-hidden="true">*</span>` : safeLabel;
+}
+
+function getStepValidationMeta(spec){
+  return spec?.validation || {};
+}
+
+function isStepFieldRequired(spec, fieldName){
+  return !!(getStepValidationMeta(spec).required || []).includes(fieldName);
+}
+
+function getStepHelpText(spec, fieldName){
+  const helpText = getStepValidationMeta(spec).help_text || {};
+  return String(helpText[fieldName] || "");
+}
+
+function getValidationFieldLabel(fieldName){
+  return FIELD_META[fieldName]?.label || fieldName;
+}
+
+function clearValidationFeedback(scope = document){
+  scope.querySelectorAll('.flow-validation-feedback').forEach((el) => el.remove());
+  scope.querySelectorAll('.validation-anchor').forEach((el) => el.classList.remove('validation-anchor'));
+  scope.querySelectorAll('.is-invalid').forEach((el) => {
+    el.classList.remove('is-invalid');
+    el.removeAttribute('aria-invalid');
+  });
+}
+
+function resolveValidationWrapper(field){
+  if (!field) return null;
+  return field.closest('.col-12, .col-md-3, .col-md-4, .col-md-5, .col-md-6, .col-md-9, .col-lg-7, .col-xl-6') || field.parentElement;
+}
+
+function resolveValidationAnchor(field){
+  if (!field) return null;
+  return field.closest('.input-group') || field;
+}
+
+function getValidationFieldKey(field){
+  if (!field) return '';
+  if (!field.dataset.validationKey) {
+    const rawKey = field.getAttribute('name') || field.id || `validation_${Math.random().toString(36).slice(2)}`;
+    field.dataset.validationKey = rawKey;
+  }
+  return field.dataset.validationKey;
+}
+
+function ensureValidationFeedback(field){
+  if (!field) return;
+  field.classList.add('is-invalid');
+  field.setAttribute('aria-invalid', 'true');
+  const wrapper = resolveValidationWrapper(field);
+  if (!wrapper) return null;
+  wrapper.classList.add('validation-anchor');
+  const anchor = resolveValidationAnchor(field);
+  if (!anchor || !anchor.parentNode) return null;
+  const validationKey = getValidationFieldKey(field);
+  const existing = Array.from(wrapper.querySelectorAll('.flow-validation-feedback')).find((node) => node.dataset.validationFor === validationKey);
+  if (existing) return existing;
+  const feedback = document.createElement('div');
+  feedback.className = 'invalid-feedback flow-validation-feedback';
+  feedback.dataset.validationFor = validationKey;
+  feedback.dataset.messages = '';
+  feedback.innerHTML = '<span class="flow-validation-feedback-icon">!</span><span class="flow-validation-feedback-text"></span>';
+  anchor.insertAdjacentElement('afterend', feedback);
+  return feedback;
+}
+
+function showValidationMessages(field, messages){
+  if (!field) return;
+  const feedback = ensureValidationFeedback(field);
+  if (!feedback) return;
+  const text = feedback.querySelector('.flow-validation-feedback-text');
+  if (!text) return;
+  const existingMessages = String(feedback.dataset.messages || '')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const mergedMessages = [...existingMessages];
+  messages
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .forEach((message) => {
+      if (!mergedMessages.includes(message)) {
+        mergedMessages.push(message);
+      }
+    });
+  feedback.dataset.messages = mergedMessages.join('\n');
+  text.textContent = mergedMessages.join('\n');
+}
+
+function showValidationError(field, message){
+  showValidationMessages(field, [message]);
+}
+
+function showValidationErrorForFields(fields, message){
+  const validFields = fields.filter(Boolean);
+  if (!validFields.length) return;
+  validFields.forEach((field) => {
+    showValidationMessages(field, [message]);
+  });
+}
+
+function readNamedFieldValue(scope, fieldName){
+  const el = scope?.querySelector?.(`[name="${fieldName}"]`);
+  if (!el) return '';
+  return String(el.value ?? '').trim();
+}
+
+function evaluateValidationCondition(values, condition){
+  const field = String(condition?.field || '').trim();
+  if (!field) return false;
+  const actual = String(values[field] ?? '').trim();
+  const expected = condition?.equals;
+  if (typeof expected === 'boolean') {
+    const normalized = ['1', 'true', 'yes', 'y', 'on'].includes(actual.toLowerCase());
+    return normalized === expected;
+  }
+  return actual === String(expected ?? '');
+}
+
+function validateStepCard(card){
+  const sid = card?.dataset?.sid || '';
+  const typeKey = readNamedFieldValue(card, `step_${sid}_type`);
+  const spec = SUPPORTED_STEPS[typeKey];
+  if (!sid || !spec) return [];
+
+  const validation = getStepValidationMeta(spec);
+  const values = {};
+  (spec.inputs || []).forEach((key) => {
+    values[key] = readNamedFieldValue(card, `step_${sid}_${key}`);
+  });
+  ['chapter_ref', 'continuous_extract', 'continuous_end_ref', 'use_chapter_title'].forEach((key) => {
+    values[key] = readNamedFieldValue(card, `step_${sid}_${key}`);
+  });
+
+  const errors = [];
+  (validation.required || []).forEach((field) => {
+    if (values[field]) return;
+    errors.push({
+      field,
+      target: `step_${sid}_${field}`,
+      message: `${getValidationFieldLabel(field)}為必填欄位`,
+    });
+  });
+
+  (validation.composite_required || []).forEach((rule) => {
+    const fields = Array.isArray(rule.fields) ? rule.fields : [];
+    if (fields.length && fields.every((field) => values[field])) return;
+    const proxyField = rule.proxy_field || fields[0];
+    errors.push({
+      field: proxyField,
+      target: `step_${sid}_${proxyField}`,
+      message: rule.message || '缺少必填欄位',
+    });
+  });
+
+  if ((spec.inputs || []).includes('target_chapter_section') && (spec.inputs || []).includes('target_chapter_title')) {
+    const chapterRefRaw = readNamedFieldValue(card, `step_${sid}_chapter_ref`);
+    const parsedChapterRef = parseChapterRef(chapterRefRaw);
+    const hasSection = !!values.target_chapter_section;
+    const hasTitle = !!values.target_chapter_title;
+    const hasCompleteChapterRef = !!parsedChapterRef.section && !!parsedChapterRef.title;
+    if (!hasSection || !hasTitle || !hasCompleteChapterRef) {
+      errors.push({
+        field: 'chapter_ref',
+        target: `step_${sid}_chapter_ref`,
+        message: '請輸入章節編號和章節標題',
+      });
+    }
+  }
+
+  (validation.conditional_required || []).forEach((rule) => {
+    if (!evaluateValidationCondition(values, rule.when || {})) return;
+    const fields = Array.isArray(rule.fields) ? rule.fields : [];
+    if (fields.length && fields.every((field) => values[field])) return;
+    const proxyField = rule.proxy_field || fields[0];
+    errors.push({
+      field: proxyField,
+      target: `step_${sid}_${proxyField}`,
+      message: rule.message || '缺少必填欄位',
+    });
+  });
+
+  (validation.at_least_one_of || []).forEach((rule) => {
+    const fields = Array.isArray(rule.fields) ? rule.fields : [];
+    if (fields.length && fields.some((field) => values[field])) return;
+    const proxyField = rule.proxy_field || fields[0];
+    errors.push({
+      field: proxyField,
+      target: `step_${sid}_${proxyField}`,
+      targets: fields.map((field) => `step_${sid}_${field}`),
+      message: rule.message || '缺少必填欄位',
+    });
+  });
+
+  const seen = new Set();
+  return errors.filter((error) => {
+    const key = `${error.target || ''}|${error.message || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function validateFlowForm(action){
+  clearValidationFeedback(flowForm);
+  const errors = [];
+
+  const requiredByAction = FLOW_VALIDATION_RULES?.required_by_action?.[action] || [];
+  requiredByAction.forEach((field) => {
+    const value = readNamedFieldValue(flowForm, field);
+    if (value) return;
+    const message = field === 'flow_name'
+      ? '請輸入流程名稱'
+      : field === 'save_as_name'
+        ? '請輸入流程名稱'
+        : field === 'version_name'
+          ? '請輸入版本名稱'
+          : '缺少必填欄位';
+    errors.push({ target: field, message });
+  });
+
+  const flowValues = {
+    enable_output_filename: enableOutputFilenameInput?.checked ? 'true' : 'false',
+    output_filename: String(outputFilenameInput?.value || '').trim(),
+    template_file: String(templateFileInput?.value || '').trim(),
+    _has_any_template_index: Array.from(flowForm.querySelectorAll('select[data-template-select="1"]')).some((sel) => String(sel.value || '').trim()) ? 'true' : 'false',
+  };
+
+  (FLOW_VALIDATION_RULES?.conditional_rules || []).forEach((rule) => {
+    if (!(rule.actions || []).includes(action)) return;
+    if (!evaluateValidationCondition(flowValues, rule.when || {})) return;
+    (rule.fields || []).forEach((field) => {
+      if (flowValues[field]) return;
+      errors.push({ target: field, message: rule.message || '缺少必填欄位' });
+    });
+  });
+
+  Array.from(document.querySelectorAll('#steps > .card')).forEach((card) => {
+    errors.push(...validateStepCard(card));
+  });
+  flowForm.querySelectorAll('.chapter-ref').forEach((input) => {
+    const rawValue = String(input.value || '').trim();
+    const parsed = parseChapterRef(rawValue);
+    if (parsed.section && parsed.title) return;
+    errors.push({
+      target: input.getAttribute('name') || '',
+      message: '請輸入章節編號和章節標題',
+    });
+  });
+
+  if (!errors.length) return [];
+
+  const renderedErrors = new Map();
+  let firstFocusField = null;
+  const registerFieldError = (targetField, message) => {
+    if (!targetField || !message) return;
+    const existingMessages = renderedErrors.get(targetField) || [];
+    if (!existingMessages.includes(message)) {
+      existingMessages.push(message);
+      renderedErrors.set(targetField, existingMessages);
+    }
+    if (!firstFocusField) {
+      firstFocusField = targetField;
+    }
+  };
+
+  errors.forEach((error) => {
+    let field = null;
+    let fields = [];
+    if (error.target === 'flow_name') field = flowNameInput;
+    else if (error.target === 'save_as_name') field = saveAsFlowInput || saveAsFlowBtn;
+    else if (error.target === 'version_name') field = saveVersionInput || openCreateVersionModalBtn;
+    else if (error.target === 'output_filename') field = outputFilenameInput;
+    else if (error.target === 'template_file') field = openTemplateModalBtn || currentTemplateLabel;
+    else field = flowForm.querySelector(`[name="${error.target}"]`);
+    if (Array.isArray(error.targets) && error.targets.length) {
+      fields = error.targets.map((target) => flowForm.querySelector(`[name="${target}"]`)).filter(Boolean);
+    }
+    if (fields.length) fields.forEach((targetField) => registerFieldError(targetField, error.message));
+    else registerFieldError(field, error.message);
+  });
+
+  renderedErrors.forEach((messages, field) => {
+    showValidationMessages(field, messages);
+  });
+
+  if (firstFocusField?.focus) firstFocusField.focus();
+  if (firstFocusField?.scrollIntoView) {
+    firstFocusField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  return errors;
+}
+
 function parseChapterRef(raw){
   const text = (raw || "").trim();
   const match = text.match(/^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$/);
@@ -2238,6 +2599,7 @@ const flowForm = document.getElementById('flow_form');
 const flowNameInput = document.getElementById('flowNameInput');
 const enableOutputFilenameInput = document.getElementById('enableOutputFilenameInput');
 const enableOutputFilenameHidden = document.getElementById('enableOutputFilenameHidden');
+const outputFilenameRequiredMarker = document.getElementById('outputFilenameRequiredMarker');
 const outputFilenameField = document.getElementById('outputFilenameField');
 const outputFilenameInput = document.getElementById('outputFilenameInput');
 const enableFigureReferenceSwitch = document.getElementById('enableFigureReferenceSwitch');
@@ -2285,6 +2647,9 @@ function syncOutputFilenameField({ clearOnHide = false } = {}) {
   const enabled = !!enableOutputFilenameInput?.checked;
   if (enableOutputFilenameHidden) {
     enableOutputFilenameHidden.value = enabled ? 'true' : 'false';
+  }
+  if (outputFilenameRequiredMarker) {
+    outputFilenameRequiredMarker.classList.toggle('d-none', !enabled);
   }
   if (outputFilenameField) {
     outputFilenameField.classList.toggle('d-none', !enabled);
@@ -2335,15 +2700,8 @@ flowForm.addEventListener('submit', (e) => {
     return;
   }
   const action = e.submitter?.value;
-  if ((action === 'save' || action === 'run') && !flowForm.elements['flow_name'].value.trim()) {
+  if (['save', 'save_as', 'run'].includes(action) && validateFlowForm(action).length) {
     e.preventDefault();
-    alert('請輸入流程名稱');
-    return;
-  }
-  if (['save', 'save_as', 'run'].includes(action) && enableOutputFilenameInput?.checked && !(outputFilenameInput?.value || '').trim()) {
-    e.preventDefault();
-    alert('已勾選輸出檔案路徑時，請輸入輸出檔案路徑');
-    outputFilenameInput?.focus();
     return;
   }
   if (action === 'run') {
@@ -2351,14 +2709,6 @@ flowForm.addEventListener('submit', (e) => {
       .some(el => ['copy_files', 'copy_directory'].includes(el.value));
     if (hasCopy && !confirm('此流程包含複製步驟，確定要執行嗎？')) {
       e.preventDefault();
-      return;
-    }
-    const wantsTemplate = Array.from(flowForm.querySelectorAll('select[data-template-select="1"]'))
-      .some(sel => sel.value);
-    const hasTemplate = (templateFileInput?.value || "").trim().length > 0;
-    if (wantsTemplate && !hasTemplate){
-      e.preventDefault();
-      alert('已選擇模板段落但尚未載入模板，請先解析模板');
       return;
     }
   }
@@ -2472,7 +2822,7 @@ function parseFileAccept(accept){
   };
 }
 
-function renderTaskFilePickerField({ sid, key, label, value, accept, colClass = "col-md-6", required = true }){
+function renderTaskFilePickerField({ sid, key, label, value, accept, colClass = "col-md-6", required = false, helpText = "" }){
   const parsed = parseFileAccept(accept);
   const placeholder = parsed.mode === "dir" ? "選擇資料夾" : parsed.mode === "mixed" ? "選擇檔案或資料夾" : "選擇檔案";
   const inputName = `step_${sid}_${key}`;
@@ -2485,7 +2835,7 @@ function renderTaskFilePickerField({ sid, key, label, value, accept, colClass = 
     .map((item) => `<option value="${escapeAttr(item)}" ${item === value ? "selected" : ""}>${escapeHtml(item)}</option>`)
     .join("");
   return `<div class="${colClass}">
-    <label class="form-label">${label}</label>
+    <label class="form-label">${buildLabelHtml(label, required)}</label>
     <div class="input-group">
       <select class="form-select step-file-select" name="${inputName}" ${required ? "required" : ""}>
         <option value="" disabled ${placeholderSelected}>${placeholder}</option>
@@ -2493,18 +2843,19 @@ function renderTaskFilePickerField({ sid, key, label, value, accept, colClass = 
       </select>
       <button class="btn btn-outline-secondary step-file-browse-btn" type="button" data-target="${inputName}" data-accept="${escapeAttr(parsed.raw)}">瀏覽</button>
     </div>
+    ${helpText ? `<div class="form-text">${escapeHtml(helpText)}</div>` : ""}
   </div>`;
 }
 
-function renderOutputFolderPickerField({ sid, key, label, value, placeholder, colClass = "col-md-6" }){
+function renderOutputFolderPickerField({ sid, key, label, value, placeholder, colClass = "col-md-6", helpText = "" }){
   const inputName = `step_${sid}_${key}`;
   return `<div class="${colClass}">
-    <label class="form-label">${label}</label>
+    <label class="form-label">${buildLabelHtml(label, false)}</label>
     <div class="input-group">
       <input class="form-control" name="${inputName}" value="${escapeAttr(value || "")}" placeholder="${escapeAttr(placeholder || "")}">
       <button class="btn btn-outline-secondary step-file-browse-btn" type="button" data-target="${inputName}" data-accept="file:dir" data-browser-scope="output">瀏覽</button>
     </div>
-    <div class="form-text">留白代表直接複製到輸出存放空間</div>
+    <div class="form-text">${escapeHtml(helpText || "留白代表直接複製到輸出存放空間")}</div>
   </div>`;
 }
 
@@ -3133,6 +3484,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const continuousExtractChecked = explicitCombinedVal.trim() !== "";
     const continuousExtractStyle = continuousExtractChecked ? "" : "display: none;";
     const continuousExtractDisabled = continuousExtractChecked ? "" : "disabled";
+    const continuousExtractHiddenValue = continuousExtractChecked ? "true" : "false";
 
     const tplIndexVal = getValue("template_index");
     const tplDisabled = templateParagraphs.length === 0 ? "disabled" : "";
@@ -3190,7 +3542,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
               ${renderTaskFilePickerField({ sid, key: "input_file", label: fileLabel, value: fileVal, accept: fileAccept, colClass: "col-12", required: true })}
               <div class="col-12">
                 <div class="form-label d-flex justify-content-between align-items-center">
-                  <span>${sectionLabel}</span>
+                  <span>${buildLabelHtml(sectionLabel, true)}</span>
                   <div class="d-flex align-items-center gap-3 m-0">
                     <div class="form-check d-flex align-items-center gap-1 m-0">
                       <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
@@ -3220,8 +3572,9 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             </div>
             <div class="row g-3">
               <div class="col-12 continuous-end-wrap">
-                <label class="form-label">${explicitLabel}</label>
-                <input class="form-control continuous-end-input continuous-end-ref" value="${explicitCombinedVal}" placeholder="${explicitPlaceholder}" data-number="step_${sid}_explicit_end_number" data-title="step_${sid}_explicit_end_title" ${continuousExtractDisabled}>
+                <label class="form-label">${buildLabelHtml(explicitLabel, true)}</label>
+                <input class="form-control continuous-end-input continuous-end-ref" name="step_${sid}_continuous_end_ref" value="${explicitCombinedVal}" placeholder="${explicitPlaceholder}" data-number="step_${sid}_explicit_end_number" data-title="step_${sid}_explicit_end_title" ${continuousExtractDisabled}>
+                <input type="hidden" name="step_${sid}_continuous_extract" value="${continuousExtractHiddenValue}">
                 <input type="hidden" name="step_${sid}_explicit_end_number" value="${explicitEndNumVal}">
                 <input type="hidden" name="step_${sid}_explicit_end_title" value="${explicitVal}">
                 <div class="form-text">可直接輸入完整章節參考，例如 <code>2. Materials</code> 或 <code>6.13.4 EO Sterilization validation</code>。</div>
@@ -3236,6 +3589,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                 <i class="bi bi-card-text"></i>
                 子標題
               </div>
+              <label class="form-label">${buildLabelHtml(subheadingLabel, true)}</label>
               <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
               <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
             </div>
@@ -3315,14 +3669,20 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const continuousEndNumberInput = card.querySelector(`input[name="step_${sid}_explicit_end_number"]`);
     const continuousEndTitleInput = card.querySelector(`input[name="step_${sid}_explicit_end_title"]`);
     if (continuousExtractToggle && continuousCardWrap && continuousEndWrap && continuousEndInput) {
+      const continuousExtractHidden = card.querySelector(`input[name="step_${sid}_continuous_extract"]`);
       const syncContinuousExtract = () => {
         const enabled = continuousExtractToggle.checked;
         continuousCardWrap.style.display = enabled ? "" : "none";
         continuousEndInput.disabled = !enabled;
+        if (continuousExtractHidden) continuousExtractHidden.value = enabled ? "true" : "false";
         if (continuousEndNumberInput) continuousEndNumberInput.disabled = !enabled;
         if (continuousEndTitleInput) continuousEndTitleInput.disabled = !enabled;
         if (enabled) {
           syncExplicitEndRefInput(continuousEndInput);
+        } else {
+          continuousEndInput.value = "";
+          if (continuousEndNumberInput) continuousEndNumberInput.value = "";
+          if (continuousEndTitleInput) continuousEndTitleInput.value = "";
         }
       };
       continuousExtractToggle.addEventListener("change", syncContinuousExtract);
@@ -3382,6 +3742,9 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     const placeholder = typeKey === "copy_files" && k === "source_dir"
       ? "選擇單一檔案，或選擇資料夾搭配關鍵字檢索"
       : (meta.placeholder || label);
+    const required = isStepFieldRequired(spec, k);
+    const labelHtml = buildLabelHtml(label, required);
+    const helpText = getStepHelpText(spec, k);
     const rawVal = preset[k];
     const val = rawVal === undefined || rawVal === null ? "" : String(rawVal);
     const copyFilesSourceKind = typeKey === "copy_files" ? getCopyFilesSourceKind(preset["source_dir"]) : "unknown";
@@ -3395,13 +3758,13 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         value: val,
         accept: acceptFile,
         colClass: "col-12",
-        required: true
+        required
       });
     }
 
     if (k === "template_index"){
       const disabled = templateParagraphs.length === 0 ? "disabled" : "";
-      return `<div class="col-md-6"><label class="form-label">${label}</label>
+      return `<div class="col-md-6"><label class="form-label">${labelHtml}</label>
                <select class="form-select" name="step_${sid}_template_index" data-template-select="1" ${disabled}>
                  ${buildTemplateOptions(val)}
                </select>
@@ -3410,7 +3773,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     }
     if (k === "template_mode") {
       const modeVal = val || "insert_after";
-      return `<div class="col-md-3"><label class="form-label">${label}</label>
+      return `<div class="col-md-3"><label class="form-label">${labelHtml}</label>
                <select class="form-select" name="step_${sid}_template_mode">
                  <option value="insert_after" ${modeVal==="insert_after"?"selected": ""}>段落後新增</option>
                  <option value="replace" ${modeVal==="replace"?"selected": ""}>取代該段落</option>
@@ -3425,16 +3788,17 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           value: val,
           placeholder,
           colClass: "col-md-6",
+          helpText,
         });
       }
       if (k === "target_subtitle" && !subtitleToggleSteps.includes(typeKey)) {
         const hideStyle = (spec.inputs.includes("use_chapter_title") && targetTitleVal === "false") ? "display: none;" : "";
-        return `<div class="col-md-9 subheading-input" style="${hideStyle}"><label class="form-label">${label}</label>
+        return `<div class="col-md-9 subheading-input" style="${hideStyle}"><label class="form-label">${buildLabelHtml(label, true)}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
       }
       if (k === "target_section" || k === "target_chapter_section") {
-        return `<div class="col-md-6"><label class="form-label">${label}</label>
-                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+        return `<div class="col-md-6"><label class="form-label">${labelHtml}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${required ? "required" : ""}></div>`;
       }
       if (k === "target_chapter_title") {
       return "";
@@ -3448,6 +3812,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                           <i class="bi bi-card-text"></i>
                           子標題
                         </div>
+                        <label class="form-label">${buildLabelHtml(label, true)}</label>
                         <input class="form-control subtitle-input" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}">
                         <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
                       </div>
@@ -3455,7 +3820,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                   </div>`;
         }
         if (k === "target_caption_label" && subtitleToggleSteps.includes(typeKey)) {
-          return `<div class="col-md-5"><label class="form-label">${label}</label>
+          return `<div class="col-md-5"><label class="form-label">${labelHtml}</label>
                    <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
         }
         if (k === "keywords" && (typeKey === "copy_files" || typeKey === "copy_directory")) {
@@ -3464,12 +3829,12 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           const disabled = typeKey === "copy_files"
             ? (copyFilesSourceKind === "dir" && !targetNameVal ? "" : "disabled")
             : (targetNameVal ? "disabled" : "");
-          const helpText = typeKey === "copy_files"
-            ? "選擇來源資料夾時可使用關鍵字檢索複製"
-            : "輸入關鍵字後，複製後名稱將不可再輸入";
-          return `<div class="col-md-6${hidden}" data-copy-sync-field="keywords"><label class="form-label">${label}</label>
+          const keywordHelpText = helpText || (typeKey === "copy_files"
+            ? "來源為資料夾時可留白；留白代表直接複製全部檔案，輸入關鍵字則只複製符合條件的檔案"
+            : "留白代表直接複製整個來源資料夾；輸入關鍵字則只複製符合條件的資料夾");
+          return `<div class="col-md-6${hidden}" data-copy-sync-field="keywords"><label class="form-label">${labelHtml}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
-                 <div class="form-text">${helpText}</div></div>`;
+                 <div class="form-text">${keywordHelpText}</div></div>`;
         }
         if (k === "target_name") {
           const keywordsVal = String(preset["keywords"] ?? "").trim();
@@ -3482,7 +3847,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             : (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱" : "輸入複製後名稱後，關鍵字將不可再輸入");
           const hidden = typeKey === "copy_files" && !showTargetName ? " d-none" : "";
           const dataAttr = ' data-copy-sync-field="target_name"';
-          return `<div class="col-md-6${hidden}"${dataAttr}><label class="form-label">${label}</label>
+          return `<div class="col-md-6${hidden}"${dataAttr}><label class="form-label">${labelHtml}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
                  <div class="form-text">${helpText}</div></div>`;
         }
@@ -3508,8 +3873,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                  </div>
                </div>`;
         }
-        return `<div class="col-md-6"><label class="form-label">${label}</label>
-                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
+        return `<div class="col-md-6"><label class="form-label">${labelHtml}</label>
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${required ? "required" : ""}></div>`;
       }
     if (accept === "bool"){
       const boolDefault = BOOL_DEFAULTS[k] || "true";
@@ -3575,7 +3940,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                  </select></div>`;
       }
       const minAttr = NON_NEGATIVE_STEP_FIELDS.has(k) ? ' min="0"' : "";
-      return `<div class="col-md-3"><label class="form-label">${label}</label>
+      return `<div class="col-md-3"><label class="form-label">${labelHtml}</label>
                <input class="form-control" type="number" step="any"${minAttr} name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
     }
     if (accept.startsWith("file")){
@@ -3586,7 +3951,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         value: val,
         accept,
         colClass: "col-md-6",
-        required: true
+        required,
+        helpText,
       });
     }
     if (k === "align"){
@@ -3611,16 +3977,36 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       handledKeys.add("input_file");
     }
     if (spec.inputs.includes("target_chapter_section")) {
-      const targetKey = "target_caption_label";
-      const targetMeta = FIELD_META[targetKey] || {};
-      const targetLabel = targetMeta.label || targetKey;
-      const targetPlaceholder = targetMeta.placeholder || targetLabel;
-      const targetRaw = preset[targetKey];
-      const targetVal = targetRaw === undefined || targetRaw === null ? "" : String(targetRaw);
+      const atLeastOneRule = (getStepValidationMeta(spec).at_least_one_of || [])[0] || {};
+      const atLeastOneGroupLabel = atLeastOneRule.group_label || "識別條件";
+      const captionKey = "target_caption_label";
+      const captionMeta = FIELD_META[captionKey] || {};
+      const captionLabel = captionMeta.label || captionKey;
+      const captionPlaceholder = captionMeta.placeholder || captionLabel;
+      const captionRaw = preset[captionKey];
+      const captionVal = captionRaw === undefined || captionRaw === null ? "" : String(captionRaw);
+      const titleKey = typeKey === "extract_specific_figure_from_word" ? "target_figure_title" : "target_table_title";
+      const titleMeta = FIELD_META[titleKey] || {};
+      const titleLabel = titleMeta.label || titleKey;
+      const titlePlaceholder = titleMeta.placeholder || titleLabel;
+      const titleRaw = preset[titleKey];
+      const titleFieldVal = titleRaw === undefined || titleRaw === null ? "" : String(titleRaw);
+      const indexKey = typeKey === "extract_specific_figure_from_word" ? "target_figure_index" : "target_table_index";
+      const indexMeta = FIELD_META[indexKey] || {};
+      const indexLabel = indexMeta.label || indexKey;
+      const indexPlaceholder = indexMeta.placeholder || indexLabel;
+      const indexRaw = preset[indexKey];
+      const indexFieldVal = indexRaw === undefined || indexRaw === null ? "" : String(indexRaw);
+      const subtitleMeta = FIELD_META["target_subtitle"] || {};
+      const subtitleLabel = subtitleMeta.label || "子標題";
+      const subtitlePlaceholder = subtitleMeta.placeholder || subtitleLabel;
+      const subtitleRaw = preset["target_subtitle"];
+      const subtitleVal = subtitleRaw === undefined || subtitleRaw === null ? "" : String(subtitleRaw);
       const sectionVal = getValue("target_chapter_section");
-      const titleVal = getValue("target_chapter_title");
+      const chapterTitleVal = getValue("target_chapter_title");
       const rawChapterRef = getValue("target_chapter_ref_raw");
-      const chapterRefVal = rawChapterRef || [sectionVal, titleVal].filter(Boolean).join(" ");
+      const chapterRefVal = rawChapterRef || [sectionVal, chapterTitleVal].filter(Boolean).join(" ");
+      const subtitleHideStyle = targetTitleVal === "false" ? "display: none;" : "";
       const checkboxHtml = `
         <div class="form-check d-flex align-items-center gap-1 m-0">
           <input type="hidden" name="step_${sid}_use_chapter_title" value="${targetTitleVal !== "false" ? "true" : "false"}">
@@ -3630,22 +4016,42 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
       basicFields.push(`
         <div class="col-md-6">
           <div class="form-label d-flex justify-content-between align-items-center">
-            <span>${FIELD_META.target_chapter_section?.label || "章節編號"}</span>
+            <span>${buildLabelHtml(FIELD_META.target_chapter_section?.label || "章節編號", true)}</span>
             ${checkboxHtml}
           </div>
           <input class="form-control chapter-ref" name="step_${sid}_chapter_ref" value="${chapterRefVal}" placeholder="${FIELD_META.target_chapter_section?.placeholder || "例如 6.12.1"} ${FIELD_META.target_chapter_title?.placeholder || ""}" data-section="step_${sid}_target_chapter_section" data-title="step_${sid}_target_chapter_title" data-raw="step_${sid}_target_chapter_ref_raw">
           <input type="hidden" name="step_${sid}_target_chapter_section" value="${sectionVal}">
-          <input type="hidden" name="step_${sid}_target_chapter_title" value="${titleVal}">
+          <input type="hidden" name="step_${sid}_target_chapter_title" value="${chapterTitleVal}">
           <input type="hidden" name="step_${sid}_target_chapter_ref_raw" value="${rawChapterRef}">
         </div>
-        <div class="col-md-6">
-          <label class="form-label">${targetLabel}</label>
-          <input class="form-control" name="step_${sid}_${targetKey}" value="${targetVal}" placeholder="${targetPlaceholder}">
+        <div class="col-md-6 subheading-input" style="${subtitleHideStyle}">
+          <label class="form-label">${buildLabelHtml(subtitleLabel, true)}</label>
+          <input class="form-control subtitle-input" name="step_${sid}_target_subtitle" value="${subtitleVal}" placeholder="${subtitlePlaceholder}">
+          <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
+        </div>
+        <div>
+          <div class="small text-muted">${buildLabelHtml(atLeastOneGroupLabel, true)}，以下至少填寫一項</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">${escapeHtml(captionLabel)}</label>
+          <input class="form-control" name="step_${sid}_${captionKey}" value="${captionVal}" placeholder="${captionPlaceholder}">
+        </div>
+        <div class="col-md-5">
+          <label class="form-label">${escapeHtml(titleLabel)}</label>
+          <input class="form-control" name="step_${sid}_${titleKey}" value="${titleFieldVal}" placeholder="${titlePlaceholder}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">${escapeHtml(indexLabel)}</label>
+          <input class="form-control" type="number" step="any" min="0" name="step_${sid}_${indexKey}" value="${indexFieldVal}" placeholder="${indexPlaceholder}">
         </div>
       `);
       handledKeys.add("target_chapter_section");
+      handledKeys.add("target_chapter_title");
       handledKeys.add("target_chapter_ref_raw");
-      handledKeys.add(targetKey);
+      handledKeys.add(captionKey);
+      handledKeys.add(titleKey);
+      handledKeys.add(indexKey);
+      handledKeys.add("target_subtitle");
       handledKeys.add("use_chapter_title");
     }
   }

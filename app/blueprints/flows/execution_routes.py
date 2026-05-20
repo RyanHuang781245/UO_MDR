@@ -21,6 +21,7 @@ from app.services.flow_service import (
     normalize_document_format,
     parse_template_paragraphs,
 )
+from app.services.flow_validation_service import validate_flow_submission, validate_saved_flow_run
 from app.services.flow_version_service import has_duplicate_manual_version_name as _has_duplicate_manual_version_name
 from app.services.flow_version_service import snapshot_flow_version as _snapshot_flow_version
 from app.services.user_context_service import get_actor_info as _get_actor_info
@@ -97,6 +98,9 @@ def run_flow(task_id):
         workflow = build_workflow_from_form(request.form, SUPPORTED_STEPS, _normalize_step_file_value)
     except ValueError as exc:
         return f"步驟檔案路徑不合法：{exc}", 400
+    validation_errors = validate_flow_submission(action, request.form, SUPPORTED_STEPS)
+    if validation_errors:
+        return str(validation_errors[0].get("message") or "缺少必填欄位"), 400
 
     flow_dir = os.path.join(tdir, "flows")
     os.makedirs(flow_dir, exist_ok=True)
@@ -188,6 +192,9 @@ def execute_flow(task_id, flow_name):
     if not os.path.exists(flow_path):
         abort(404)
     context = load_saved_flow_execution_context(flow_path)
+    saved_flow_errors = validate_saved_flow_run(context.get("raw_data"), SUPPORTED_STEPS)
+    if saved_flow_errors:
+        return str(saved_flow_errors[0].get("message") or "缺少必填欄位"), 400
     context = apply_execution_overrides(
         context,
         document_format_raw=request.form.get("document_format"),

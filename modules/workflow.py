@@ -476,6 +476,7 @@ SUPPORTED_STEPS = {
             "input_file",
             "target_chapter_section",
             "target_chapter_ref_raw",
+            "use_chapter_title",
             "target_chapter_title",
             "target_subtitle",
             "target_caption_label",
@@ -491,6 +492,7 @@ SUPPORTED_STEPS = {
             "input_file": "file:docx",
             "target_chapter_section": "text",
             "target_chapter_ref_raw": "text",
+            "use_chapter_title": "bool",
             "target_chapter_title": "text",
             "target_subtitle": "text",
             "target_caption_label": "text",
@@ -509,6 +511,7 @@ SUPPORTED_STEPS = {
             "input_file",
             "target_chapter_section",
             "target_chapter_ref_raw",
+            "use_chapter_title",
             "target_chapter_title",
             "target_caption_label",
             "target_table_title",
@@ -523,6 +526,7 @@ SUPPORTED_STEPS = {
             "input_file": "file:docx",
             "target_chapter_section": "text",
             "target_chapter_ref_raw": "text",
+            "use_chapter_title": "bool",
             "target_chapter_title": "text",
             "target_caption_label": "text",
             "target_table_title": "text",
@@ -624,6 +628,121 @@ SUPPORTED_STEPS = {
     #     }
     # }
 }
+
+STEP_VALIDATION_RULES = {
+    "extract_pdf_pages_as_images": {
+        "required": ["input_file"],
+    },
+    "extract_word_all_content": {
+        "required": ["input_file"],
+    },
+    "extract_word_chapter": {
+        "required": ["input_file"],
+        "composite_required": [
+            {
+                "fields": ["target_chapter_section", "target_chapter_title"],
+                "proxy_field": "chapter_ref",
+                "message": "請輸入章節編號和章節標題",
+            }
+        ],
+        "conditional_required": [
+            {
+                "when": {"field": "use_chapter_title", "equals": "true"},
+                "fields": ["target_subtitle"],
+                "message": "勾選指定子標題內容時，請輸入子標題",
+            },
+            {
+                "when": {"field": "continuous_extract", "equals": "true"},
+                "fields": ["explicit_end_number", "explicit_end_title"],
+                "proxy_field": "continuous_end_ref",
+                "message": "啟用連續擷取時，請輸入結束章節與標題",
+            },
+        ],
+    },
+    "extract_specific_figure_from_word": {
+        "required": ["input_file"],
+        "composite_required": [
+            {
+                "fields": ["target_chapter_section", "target_chapter_title"],
+                "proxy_field": "chapter_ref",
+                "message": "請輸入章節編號和章節標題",
+            }
+        ],
+        "conditional_required": [
+            {
+                "when": {"field": "use_chapter_title", "equals": "true"},
+                "fields": ["target_subtitle"],
+                "message": "勾選指定子標題內容時，請輸入子標題",
+            }
+        ],
+        "at_least_one_of": [
+            {
+                "fields": ["target_caption_label", "target_figure_title", "target_figure_index"],
+                "proxy_field": "target_caption_label",
+                "message": "圖片檢索條件至少需填寫一項",
+                "group_label": "圖片檢索條件",
+            }
+        ],
+    },
+    "extract_specific_table_from_word": {
+        "required": ["input_file"],
+        "composite_required": [
+            {
+                "fields": ["target_chapter_section", "target_chapter_title"],
+                "proxy_field": "chapter_ref",
+                "message": "請輸入章節編號和章節標題",
+            }
+        ],
+        "conditional_required": [
+            {
+                "when": {"field": "use_chapter_title", "equals": "true"},
+                "fields": ["target_subtitle"],
+                "message": "勾選指定子標題內容時，請輸入子標題",
+            }
+        ],
+        "at_least_one_of": [
+            {
+                "fields": ["target_caption_label", "target_table_title", "target_table_index"],
+                "proxy_field": "target_caption_label",
+                "message": "表格檢索條件至少需填寫一項",
+                "group_label": "表格檢索條件",
+            }
+        ],
+    },
+    "insert_text": {
+        "required": ["text"],
+    },
+    "insert_roman_heading": {
+        "required": ["text"],
+    },
+    "insert_bulleted_heading": {
+        "required": ["text"],
+    },
+    "insert_numbered_heading": {
+        "required": ["text"],
+    },
+    "insert_image": {
+        "required": ["input_file"],
+    },
+    "copy_files": {
+        "required": ["source_dir"],
+        "help_text": {
+            "dest_dir": "留白代表直接複製到輸出存放空間",
+            "keywords": "來源為資料夾時可留白；留白代表直接複製全部檔案，輸入關鍵字則只複製符合條件的檔案",
+        },
+    },
+    "copy_directory": {
+        "required": ["source_dir"],
+        "help_text": {
+            "dest_dir": "留白代表直接複製到輸出存放空間",
+            "keywords": "留白代表直接複製整個來源資料夾；輸入關鍵字則只複製符合條件的資料夾",
+        },
+    },
+}
+
+for _step_key, _validation_meta in STEP_VALIDATION_RULES.items():
+    if _step_key in SUPPORTED_STEPS:
+        SUPPORTED_STEPS[_step_key]["validation"] = _validation_meta
 
 def boolish(v:str)->bool:
     return str(v).lower() in ["1","true","yes","y","on"]

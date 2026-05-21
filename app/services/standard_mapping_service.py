@@ -164,13 +164,42 @@ def extract_harmonised_reference_keys(text: str) -> list[str]:
     return keys
 
 
-def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> set[str] | None:
+def coerce_year_value(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value if 1900 <= value <= 2099 else None
+    text = normalize_text(value)
+    if re.fullmatch(r"(19|20)\d{2}", text):
+        return int(text)
+    return None
+
+
+def extract_harmonised_reference_year(entry: str) -> int | None:
+    family = detect_search_family(entry)
+    if family == "ASTM":
+        return extract_latest_year_from_astm_style(entry)
+    if family == "IEC_FAMILY":
+        return extract_latest_year_from_iec_style(entry)
+    return extract_latest_year_from_en_iso_style(entry)
+
+
+def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> dict[str, set[int]] | None:
     path = Path(reference_path or "")
     if not path.is_file():
         return None
     wb = load_workbook(path, data_only=True, read_only=True)
     try:
-        lookup: set[str] = set()
+        lookup: dict[str, set[int]] = {}
+
+        def add_lookup(key: str, year: int | None) -> None:
+            normalized_key = normalize_text(key)
+            if not normalized_key:
+                return
+            bucket = lookup.setdefault(normalized_key, set())
+            if year is not None:
+                bucket.add(year)
+
         for ws in wb.worksheets:
             rows = list(ws.iter_rows(min_row=1, max_row=min(10, ws.max_row), values_only=True))
             col_index = find_excel_header_col_index(rows, HARMONISED_REFERENCE_HEADERS)
@@ -181,9 +210,10 @@ def load_harmonised_reference_index(reference_path: str | os.PathLike | None = N
                 value = values[col_index] if col_index < len(values) else None
                 for normalized in extract_harmonised_reference_entries(value):
                     if normalized != normalize_harmonised_standard_text(HARMONISED_REFERENCE_HEADERS[0]):
-                        lookup.add(normalized)
-                for match_key in extract_harmonised_reference_keys(value):
-                    lookup.add(match_key)
+                        year = extract_harmonised_reference_year(normalized)
+                        add_lookup(normalized, year)
+                        match_key = extract_standard_match_key(normalized, "")
+                        add_lookup(match_key, year)
         return lookup
     finally:
         wb.close()
@@ -260,14 +290,30 @@ def load_regulation_reference_index(reference_path: str | os.PathLike | None = N
         wb.close()
 
 
-def is_harmonised_standard(std_no: str, title: str, harmonised_reference_index: set[str] | None) -> bool:
+def is_harmonised_standard(std_no: str, title: str, harmonised_reference_index: dict[str, set[int]] | None, *, year=None) -> bool:
     if not harmonised_reference_index:
         return False
     normalized = normalize_harmonised_standard_text(std_no)
     match_key = extract_standard_match_key(std_no, "")
+    target_year = coerce_year_value(year)
+    if target_year is None:
+        family = detect_search_family(std_no)
+        if family == "ASTM":
+            target_year = extract_latest_year_from_astm_style(std_no)
+        elif family == "IEC_FAMILY":
+            target_year = extract_latest_year_from_iec_style(std_no)
+        else:
+            target_year = extract_latest_year_from_en_iso_style(std_no)
+    if target_year is None:
+        return False
+
+    def matches(key: str) -> bool:
+        years = harmonised_reference_index.get(key) or set()
+        return target_year in years
+
     return bool(
-        (normalized and normalized in harmonised_reference_index)
-        or (match_key and match_key in harmonised_reference_index)
+        (normalized and matches(normalized))
+        or (match_key and matches(match_key))
     )
 
 
@@ -932,7 +978,16 @@ def find_latest_year_from_excel(
                 "candidate_harmonised": (
                     ""
                     if harmonised_reference_index is None
-                    else ("YES" if is_harmonised_standard(rec["standard_no"], rec.get("standard_title", ""), harmonised_reference_index) else "NO")
+                    else (
+                        "YES"
+                        if is_harmonised_standard(
+                            rec["standard_no"],
+                            rec.get("standard_title", ""),
+                            harmonised_reference_index,
+                            year=year,
+                        )
+                        else "NO"
+                    )
                 ),
                 "latest_year": year,
                 "standard_level": rec["standard_level"],
@@ -1059,6 +1114,7 @@ def find_latest_year_from_excel(
                 selected["matched_standard_no"],
                 selected.get("matched_title", ""),
                 harmonised_reference_index,
+                year=selected.get("latest_year"),
             )
             else "NO"
         )
@@ -1913,7 +1969,17 @@ def process_document(
             if not match_info:
                 edited_standard = row_edits.get("standards", standards)
                 edited_year = row_edits.get("issued_year", word_year_text)
-                edited_harmonised = row_edits.get("harmonised", word_harmonised_text)
+                auto_harmonised = (
+                    "YES"
+                    if harmonised_reference_index and is_harmonised_standard(
+                        edited_standard,
+                        word_title_text,
+                        harmonised_reference_index,
+                        year=edited_year,
+                    )
+                    else "NO"
+                ) if harmonised_reference_index else word_harmonised_text
+                edited_harmonised = row_edits.get("harmonised", auto_harmonised)
                 edited_title = row_edits.get("title", word_title_text)
                 standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(edited_standard)
                 year_needs_update = ("issued_year" in row_edits and word_year_text != edited_year)
@@ -2007,11 +2073,18 @@ def process_document(
             matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
             final_standard = row_edits.get("standards", matched_display_standard_no)
             final_year = row_edits.get("issued_year", latest_year)
-            final_harmonised = row_edits.get(
-                "harmonised",
-                word_harmonised_text if harmonised_reference_index is None else matched_harmonised,
-            )
             final_title = row_edits.get("title", matched_title)
+            auto_harmonised = (
+                "YES"
+                if harmonised_reference_index and is_harmonised_standard(
+                    final_standard,
+                    final_title,
+                    harmonised_reference_index,
+                    year=final_year,
+                )
+                else "NO"
+            ) if harmonised_reference_index is not None else word_harmonised_text
+            final_harmonised = row_edits.get("harmonised", auto_harmonised)
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(final_standard)
             year_needs_update = (("issued_year" in row_edits) and word_year_text != final_year) or (bool(final_year) and "issued_year" not in row_edits and word_year_text != final_year)
             harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(final_harmonised)

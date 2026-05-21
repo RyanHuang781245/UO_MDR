@@ -376,9 +376,9 @@ def _localize_mapping_message(message: str) -> str:
         ("copy_folder", "複製資料夾"),
         ("template_merge", "模版合併"),
         ("insert_text", "插入純文字段落"),
-        ("title=", "標題="),
-        ("index=", "編號="),
-        ("pages=", "頁碼="),
+        # ("title=", "標題="),
+        # ("index=", "編號="),
+        # ("pages=", "頁碼="),
     ]
     for src, dst in replacements:
         localized = localized.replace(src, dst)
@@ -523,6 +523,7 @@ def _load_mapping_run_ui_snapshot(out_dir: str, run_id: str) -> dict:
         "current_action": "run_cached",
         "current_run_id": current_run_id,
         "current_mapping_display_name": str(payload.get("mapping_display_name") or payload.get("mapping_file") or "").strip(),
+        "status": str(payload.get("status") or "").strip().lower(),
         "messages": [],
         "outputs": outputs,
         "log_file": f"{current_run_id}/{log_file_name}" if log_file_name else "",
@@ -1088,6 +1089,9 @@ def task_mapping(task_id):
             elif current_mapping_job_id:
                 snapshot = _load_mapping_run_ui_snapshot(out_dir, current_mapping_job_id)
                 if snapshot:
+                    snapshot_status = str(snapshot.get("status") or "").strip().lower()
+                    if snapshot_status in {"completed", "failed", "canceled", "timeout"}:
+                        current_mapping_job_status = snapshot_status
                     current_action = str(snapshot.get("current_action") or "").strip()
                     current_run_id = str(snapshot.get("current_run_id") or "").strip() or None
                     current_mapping_display_name = (
@@ -1923,6 +1927,24 @@ def task_mapping_op_status(task_id, op_id):
     workspace_dir = _mapping_workspace_dir(tdir)
     payload = _read_mapping_op(workspace_dir, op_id)
     if not payload:
+        out_dir = os.path.join(tdir, "mapping_job")
+        snapshot = _load_mapping_run_ui_snapshot(out_dir, op_id)
+        if snapshot:
+            snapshot_status = str(snapshot.get("status") or "").strip().lower() or "unknown"
+            return {
+                "ok": True,
+                "op_id": op_id,
+                "status": snapshot_status,
+                "action": str(snapshot.get("current_action") or "run_cached").strip(),
+                "mapping_display_name": str(snapshot.get("current_mapping_display_name") or "").strip(),
+                "resume_url": url_for(
+                    "tasks_bp.task_mapping",
+                    task_id=task_id,
+                    mapping_tab="create",
+                    mapping_job=op_id,
+                ),
+                "error": "",
+            }
         return {"ok": False, "error": _localize_mapping_message("Mapping operation not found")}, 404
     return {
         "ok": True,

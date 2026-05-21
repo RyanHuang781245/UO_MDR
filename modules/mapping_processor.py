@@ -708,6 +708,30 @@ def process_mapping_excel(
             return raw[1:-1].strip()
         return raw
 
+    def _split_quoted_tokens(text: str, delimiter: str = "|") -> list[str]:
+        raw = str(text or "").strip()
+        if not raw:
+            return []
+
+        tokens: list[str] = []
+        current: list[str] = []
+        quote_char = ""
+        for ch in raw:
+            if ch in {'"', "'"}:
+                if not quote_char:
+                    quote_char = ch
+                elif quote_char == ch:
+                    quote_char = ""
+                current.append(ch)
+                continue
+            if ch == delimiter and not quote_char:
+                tokens.append("".join(current).strip())
+                current = []
+                continue
+            current.append(ch)
+        tokens.append("".join(current).strip())
+        return tokens
+
     def _split_mapping_subheading(text: str) -> tuple[str, str]:
         raw = str(text or "").strip()
         if not raw:
@@ -773,13 +797,12 @@ def process_mapping_excel(
         out_rel: str = "",
         out_name: str = "",
     ) -> str:
-        instruction_core = (instruction or "").split("|", 1)[0].strip()
-        tail_title_match = re.search(r"(?:^|\|)\s*title\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
-        tail_index_match = re.search(r"(?:^|\|)\s*index\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
-        tail_container_match = re.search(r"(?:^|\|)\s*container\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
-        tail_title = (tail_title_match.group(1) if tail_title_match else "").strip()
-        tail_index = (tail_index_match.group(1) if tail_index_match else "").strip()
-        tail_container = (tail_container_match.group(1) if tail_container_match else "").strip()
+        instruction_core, tail_options, _tail_error = _parse_instruction_tail_options(instruction)
+        if not instruction_core:
+            instruction_core = (instruction or "").strip()
+        tail_title = (tail_options.get("title") or "").strip()
+        tail_index = (tail_options.get("index") or "").strip()
+        tail_container = (tail_options.get("container") or "").strip()
         src_base = os.path.basename(src) if src else ""
         if action == "Append text":
             return src
@@ -855,7 +878,7 @@ def process_mapping_excel(
         raw = (raw_instruction or "").strip()
         if not raw:
             return "", {}, ""
-        parts = [p.strip() for p in raw.split("|")]
+        parts = _split_quoted_tokens(raw, delimiter="|")
         core = parts[0]
         options: dict[str, str] = {}
         for token in parts[1:]:
@@ -865,7 +888,7 @@ def process_mapping_excel(
                 return core, options, f"無效參數語法: {token}"
             key_raw, value_raw = token.split("=", 1)
             key = key_raw.strip().lower()
-            value = value_raw.strip()
+            value = _strip_matching_quotes(value_raw.strip())
             if key in {"title", "index", "container"}:
                 options[key] = value
         return core, options, ""
@@ -1228,25 +1251,28 @@ def process_mapping_excel(
             parsed_subtitle = None
             if not head_text:
                 return parsed_chapter, parsed_title, parsed_subtitle
-            # Accept "/", "\" and "|" as section delimiters for user convenience.
-            head_parts = [p.strip() for p in re.split(r"[\\/|]+", head_text) if p.strip()]
-            if not head_parts:
-                head_parts = [head_text.strip()]
-            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", head_parts[0])
-            if inline_match:
-                parsed_chapter = inline_match.group(1).rstrip(".")
-                inline_title = (inline_match.group(2) or "").strip()
-                if inline_title:
-                    parsed_title = inline_title
-                    if len(head_parts) > 1:
-                        parsed_subtitle = " ".join(head_parts[1:]).strip() or None
-                else:
-                    if len(head_parts) > 1:
-                        parsed_title = head_parts[1].strip() or None
-                    if len(head_parts) > 2:
-                        parsed_subtitle = " ".join(head_parts[2:]).strip() or None
-            else:
-                parsed_subtitle = " ".join(head_parts).strip() or None
+            # Keep "/" and "\" inside quoted titles intact.
+            primary_part = head_text.strip()
+            extra_subtitle_parts: list[str] = []
+            pipe_tokens = _split_quoted_tokens(primary_part, delimiter="|")
+            if pipe_tokens:
+                primary_part = pipe_tokens[0].strip()
+                extra_subtitle_parts = [token.strip() for token in pipe_tokens[1:] if token.strip()]
+
+            chapter_part, title_part, subtitle_part = _parse_chapter_parts(primary_part)
+            parsed_chapter = chapter_part
+            parsed_title = title_part or None
+            parsed_subtitle = subtitle_part or None
+
+            if extra_subtitle_parts:
+                merged_extra = " ".join(extra_subtitle_parts).strip()
+                if merged_extra:
+                    if parsed_subtitle:
+                        parsed_subtitle = f"{parsed_subtitle} {merged_extra}".strip()
+                    elif parsed_title:
+                        parsed_subtitle = merged_extra
+                    else:
+                        parsed_title = merged_extra
             return parsed_chapter, parsed_title, parsed_subtitle
 
         label_match, label_head = _find_object_label(instruction_core)

@@ -473,6 +473,15 @@ def test_mapping_figure_tail_title_and_index(tmp_path: Path) -> None:
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_figure_tail_quoted_title_with_pipe(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, '1.1 Figure 1|title="Overview | Figure"', item_type="Figure")
+    params = _first_step_params(log_data)
+    assert params.get("target_caption_label") == "Figure 1"
+    assert params.get("target_figure_title") == "Overview | Figure"
+    assert "target_figure_index" not in params
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_figure_table_type_sets_allow_table_flag(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 2", item_type="Figure Table")
     params = _first_step_params(log_data)
@@ -561,6 +570,15 @@ def test_mapping_table_tail_behavior_unchanged(tmp_path: Path) -> None:
     assert params.get("target_table_index") == 4
     assert "target_figure_title" not in params
     assert "target_figure_index" not in params
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_table_tail_quoted_title_with_pipe(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, '1.1 Table 1|title="Table | Name"|index=4', item_type="Table")
+    params = _first_step_params(log_data)
+    assert params.get("target_caption_label") == "Table 1"
+    assert params.get("target_table_title") == "Table | Name"
+    assert params.get("target_table_index") == 4
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 

@@ -702,6 +702,111 @@ def test_mapping_run_cached_does_not_show_processing_status(app, client, monkeyp
     assert "產出文件" in html
 
 
+def test_mapping_create_page_prefers_run_meta_over_stale_running_status(app, client) -> None:
+    task_id = "mapping-create-page-stale-running-status"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    run_dir = task_dir / "mapping_job" / "runmeta01"
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "mapping_outputs.zip").write_bytes(b"zip")
+    (run_dir / "mapping_run_log.json").write_text('{"messages":[],"runs":[]}', encoding="utf-8")
+    (run_dir / "pkg").mkdir(parents=True, exist_ok=True)
+    (run_dir / "pkg" / "result.docx").write_bytes(b"docx")
+    (run_dir / "meta.json").write_text(
+        __import__("json").dumps(
+            {
+                "record_type": "mapping_run",
+                "run_id": "runmeta01",
+                "mapping_file": "Mapping.xlsx",
+                "mapping_display_name": "Mapping.xlsx",
+                "status": "completed",
+                "started_at": "2026-05-20 10:00:00",
+                "completed_at": "2026-05-20 10:00:05",
+                "reference_ok": True,
+                "extract_ok": True,
+                "outputs": ["pkg/result.docx"],
+                "output_count": 1,
+                "zip_file": "mapping_outputs.zip",
+                "log_file": "mapping_run_log.json",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    db.session.add(
+        JobRecord(
+            job_id="runmeta01",
+            job_type="mapping_operation",
+            queue_name="heavy",
+            task_id=task_id,
+            target_name="Mapping.xlsx",
+            status="running",
+            payload_json='{"action":"run_cached"}',
+            result_json=None,
+            started_at=datetime(2026, 5, 20, 10, 0, 0),
+            completed_at=None,
+        )
+    )
+    db.session.commit()
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id, mapping_tab="create", mapping_job="runmeta01")
+
+    response = client.get(url)
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "生成結果" in html
+    assert "runmeta01/mapping_outputs.zip" in html
+    assert "runmeta01/mapping_run_log.json" in html
+    assert "pkg/result.docx" in html
+    assert "disabled" not in html.split('name="mapping_file"', 1)[1].split(">", 1)[0]
+
+
+def test_mapping_op_status_falls_back_to_run_meta_after_workspace_cleanup(app, client) -> None:
+    task_id = "mapping-op-status-meta-fallback"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    run_dir = task_dir / "mapping_job" / "runmeta02"
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "meta.json").write_text(
+        __import__("json").dumps(
+            {
+                "record_type": "mapping_run",
+                "run_id": "runmeta02",
+                "mapping_file": "Mapping.xlsx",
+                "mapping_display_name": "Mapping.xlsx",
+                "status": "completed",
+                "started_at": "2026-05-20 10:00:00",
+                "completed_at": "2026-05-20 10:00:05",
+                "reference_ok": True,
+                "extract_ok": True,
+                "outputs": ["pkg/result.docx"],
+                "output_count": 1,
+                "zip_file": "mapping_outputs.zip",
+                "log_file": "mapping_run_log.json",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping_op_status", task_id=task_id, op_id="runmeta02")
+
+    response = client.get(url)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["status"] == "completed"
+    assert payload["action"] == "run_cached"
+    assert payload["mapping_display_name"] == "Mapping.xlsx"
+    assert "mapping_job=runmeta02" in payload["resume_url"]
+
+
 def test_flow_results_mapping_tab_renders_mapping_runs(app, client) -> None:
     task_id = "mapping-results-tab"
     run_dir = Path(app.config["TASK_FOLDER"]) / task_id / "mapping_job" / "run12345"

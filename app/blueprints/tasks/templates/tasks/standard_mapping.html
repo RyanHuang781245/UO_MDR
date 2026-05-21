@@ -2142,6 +2142,13 @@
     return JSON.parse(JSON.stringify(meta || {}));
   }
 
+  function normalizeHarmonisedValue(value) {
+    const normalized = normalizeText(value).toUpperCase();
+    if (normalized === "Y" || normalized === "YES") return "YES";
+    if (normalized === "N" || normalized === "NO") return "NO";
+    return normalized;
+  }
+
   function getEffectiveMeta(referenceKey, { includeEdits = true } = {}) {
     const source = referencePayload[referenceKey];
     if (!source) return null;
@@ -2157,10 +2164,13 @@
       meta.excel_row_index = selectedCandidate.excel_row_index || "";
       meta.matched_standard_no = selectedCandidate.matched_standard_no || "";
       meta.matched_display_standard_no = selectedCandidate.matched_display_standard_no || selectedCandidate.matched_standard_no || "";
-      meta.matched_harmonised = selectedCandidate.candidate_harmonised || meta.matched_harmonised || "";
+      meta.matched_harmonised = normalizeHarmonisedValue(selectedCandidate.candidate_harmonised || meta.matched_harmonised || "");
       meta.matched_title = selectedCandidate.matched_title || meta.matched_title || "";
       meta.excel_year = selectedCandidate.latest_year || "";
     }
+
+    meta.word_harmonised = normalizeHarmonisedValue(meta.word_harmonised || "");
+    meta.matched_harmonised = normalizeHarmonisedValue(meta.matched_harmonised || "");
 
     if (includeEdits) {
       const rowEdits = editSelections[rowKey] || {};
@@ -2172,7 +2182,7 @@
         meta.excel_year = rowEdits.issued_year;
       }
       if (Object.prototype.hasOwnProperty.call(rowEdits, "harmonised")) {
-        meta.matched_harmonised = rowEdits.harmonised;
+        meta.matched_harmonised = normalizeHarmonisedValue(rowEdits.harmonised);
       }
       if (Object.prototype.hasOwnProperty.call(rowEdits, "title")) {
         meta.matched_title = rowEdits.title;
@@ -2266,17 +2276,11 @@
     return buildDiffSegments(source, target);
   }
 
-  function buildPreserveOriginalSegments(oldText, newText) {
+  function buildPlainReplacementSegments(oldText, newText) {
     const source = normalizeText(oldText);
     const target = normalizeText(newText);
     if (source === target) return [{ text: target, isRed: false }];
-    if (!source) return [{ text: target, isRed: true }];
-    if (!target) return [{ text: source, isRed: false }];
-    return mergeSegments([
-      { text: source, isRed: false },
-      { text: " ", isRed: false },
-      { text: target, isRed: true },
-    ]);
+    return [{ text: target, isRed: true }];
   }
 
   function renderSegmentsHtml(segments) {
@@ -2399,7 +2403,7 @@
         const newHarmonised = harmonisedMeta.matched_harmonised || oldHarmonised;
         const content = cell.querySelector(".preview-cell__content");
         if (content) {
-          content.innerHTML = renderSegmentsHtml(buildPreserveOriginalSegments(oldHarmonised, newHarmonised));
+          content.innerHTML = renderSegmentsHtml(buildPlainReplacementSegments(oldHarmonised, newHarmonised));
         }
         refreshCellOverflow(cell);
       }
@@ -2561,13 +2565,15 @@
     const baseline = {
       standards: baseMeta.matched_display_standard_no || baseMeta.matched_standard_no || baseMeta.word_standard || "",
       issued_year: String(baseMeta.excel_year || baseMeta.word_year || ""),
-      harmonised: baseMeta.matched_harmonised || baseMeta.word_harmonised || "",
+      harmonised: normalizeHarmonisedValue(baseMeta.matched_harmonised || baseMeta.word_harmonised || ""),
       title: baseMeta.matched_title || baseMeta.word_title || "",
     };
     const normalized = {};
     Object.entries(nextValues || {}).forEach(([field, value]) => {
       if (!allowedFields[field]) return;
-      const nextValue = String(value ?? "");
+      const nextValue = field === "harmonised"
+        ? normalizeHarmonisedValue(value)
+        : String(value ?? "");
       if (nextValue !== String(baseline[field] ?? "")) {
         normalized[field] = nextValue;
       }

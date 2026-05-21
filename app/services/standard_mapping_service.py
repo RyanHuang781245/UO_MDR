@@ -125,6 +125,15 @@ def normalize_harmonised_identifier(text: str) -> str:
     return collapsed.strip()
 
 
+def normalize_harmonised_yes_no(value: str) -> str:
+    normalized = normalize_text(value).upper()
+    if normalized in {"Y", "YES"}:
+        return "YES"
+    if normalized in {"N", "NO"}:
+        return "NO"
+    return normalized
+
+
 def normalize_harmonised_standard_text(text: str, title: str = "") -> str:
     raw_text = "" if text is None else str(text).replace("\r\n", "\n").replace("\r", "\n")
     lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
@@ -623,6 +632,14 @@ def build_word_diff_segments(old_text: str, new_text: str) -> list[tuple[str, bo
     return merge_text_segments(segments)
 
 
+def build_plain_replacement_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
+    normalized_old = normalize_text(old_text)
+    normalized_new = normalize_text(new_text)
+    if normalized_old == normalized_new:
+        return [(normalized_new, False)]
+    return [(normalized_new, True)]
+
+
 def get_first_run_properties(tc: etree._Element) -> etree._Element | None:
     rpr = tc.find(".//w:r/w:rPr", namespaces=NS)
     return copy.deepcopy(rpr) if rpr is not None else None
@@ -636,6 +653,8 @@ def set_run_color(run: etree._Element, color_hex: str):
     if color is None:
         color = etree.SubElement(rpr, qn("w:color"))
     color.set(qn("w:val"), color_hex)
+    for attr_name in ("themeColor", "themeTint", "themeShade"):
+        color.attrib.pop(qn(f"w:{attr_name}"), None)
 
 
 def rebuild_cell_with_segments(tc: etree._Element, segments: list[tuple[str, bool]]):
@@ -913,7 +932,7 @@ def find_latest_year_from_excel(
                 "candidate_harmonised": (
                     ""
                     if harmonised_reference_index is None
-                    else ("Yes" if is_harmonised_standard(rec["standard_no"], rec.get("standard_title", ""), harmonised_reference_index) else "No")
+                    else ("YES" if is_harmonised_standard(rec["standard_no"], rec.get("standard_title", ""), harmonised_reference_index) else "NO")
                 ),
                 "latest_year": year,
                 "standard_level": rec["standard_level"],
@@ -1035,13 +1054,13 @@ def find_latest_year_from_excel(
         ""
         if harmonised_reference_index is None
         else (
-            "Yes"
+            "YES"
             if is_harmonised_standard(
                 selected["matched_standard_no"],
                 selected.get("matched_title", ""),
                 harmonised_reference_index,
             )
-            else "No"
+            else "NO"
         )
     )
     result["iso_priority"] = list(normalized_iso_priority)
@@ -1140,7 +1159,11 @@ def normalize_edit_map(edit_map: dict | None) -> dict[str, dict[str, str]]:
         if not isinstance(value, dict):
             continue
         fields = {
-            str(field): str(field_value)
+            str(field): (
+                normalize_harmonised_yes_no(str(field_value))
+                if str(field) == "harmonised"
+                else str(field_value)
+            )
             for field, field_value in value.items()
             if str(field) in allowed_fields
         }
@@ -1867,7 +1890,7 @@ def process_document(
             row_edits = normalized_edit_map.get(row_key, {})
             standards = rec["standards"]
             word_year_text = normalize_text(rec["issued_year"])
-            word_harmonised_text = normalize_text(rec["harmonised"])
+            word_harmonised_text = normalize_harmonised_yes_no(rec["harmonised"])
             word_title_text = normalize_text(rec["title"])
             match_info = None
             if is_regulation_lookup_target(standards):
@@ -1902,7 +1925,7 @@ def process_document(
                     if year_needs_update and rec["issued_year_tc"] is not None:
                         rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, edited_year))
                     if harmonised_needs_update and rec["harmonised_tc"] is not None:
-                        rebuild_cell_with_segments(rec["harmonised_tc"], build_diff_segments(word_harmonised_text, edited_harmonised))
+                        rebuild_cell_with_segments(rec["harmonised_tc"], build_plain_replacement_segments(word_harmonised_text, edited_harmonised))
                     if title_needs_update and rec["title_tc"] is not None:
                         rebuild_cell_with_segments(rec["title_tc"], build_word_diff_segments(word_title_text, edited_title))
                     row_updated = standards_needs_update or year_needs_update or harmonised_needs_update or title_needs_update
@@ -1980,7 +2003,7 @@ def process_document(
             latest_year = "" if match_info.get("latest_year") in {None, ""} else str(match_info["latest_year"])
             matched_standard_no = match_info["matched_standard_no"]
             matched_display_standard_no = match_info["matched_display_standard_no"]
-            matched_harmonised = normalize_text(match_info.get("matched_harmonised", ""))
+            matched_harmonised = normalize_harmonised_yes_no(match_info.get("matched_harmonised", ""))
             matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
             final_standard = row_edits.get("standards", matched_display_standard_no)
             final_year = row_edits.get("issued_year", latest_year)
@@ -1999,7 +2022,7 @@ def process_document(
             if year_needs_update and rec["issued_year_tc"] is not None:
                 rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, final_year))
             if harmonised_needs_update and rec["harmonised_tc"] is not None:
-                rebuild_cell_with_segments(rec["harmonised_tc"], build_diff_segments(word_harmonised_text, final_harmonised))
+                rebuild_cell_with_segments(rec["harmonised_tc"], build_plain_replacement_segments(word_harmonised_text, final_harmonised))
             if title_needs_update and rec["title_tc"] is not None:
                 rebuild_cell_with_segments(rec["title_tc"], build_word_diff_segments(word_title_text, final_title))
 

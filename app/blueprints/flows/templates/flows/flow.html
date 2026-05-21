@@ -138,16 +138,16 @@
                                     <label class="form-check-label small text-muted mb-0" for="enableFigureReferenceSwitch">圖表編號重排</label>
                                 </div>
                             </div>
-                            <div class="flow-toolbar-group flow-toolbar-group-end">
-                                <button class="btn btn-outline-primary d-inline-flex align-items-center gap-1 fw-bold" id="saveFlowBtn" type="submit" name="action" value="save" {% if is_version_preview %}disabled{% endif %}>
+                            <div class="flow-toolbar-group flow-toolbar-group-end flow-toolbar-group-actions">
+                                <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" id="saveFlowBtn" type="submit" name="action" value="save" {% if is_version_preview %}disabled{% endif %}>
                                     <i class="bi bi-save"></i>
                                     保存流程
                                 </button>
-                                <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn" {% if is_version_preview %}disabled{% endif %}>
+                                <button class="btn btn-secondary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn" {% if is_version_preview %}disabled{% endif %}>
                                     <i class="bi bi-files"></i>
                                     另存流程
                                 </button>
-                                <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" id="runFlowBtn" type="submit" name="action" value="run" {% if is_version_preview %}disabled{% endif %}>
+                                <button class="btn btn-success d-inline-flex align-items-center gap-1 fw-bold" id="runFlowBtn" type="submit" name="action" value="run" {% if is_version_preview %}disabled{% endif %}>
                                     <i class="bi bi-play-fill"></i>
                                     執行流程
                                 </button>
@@ -844,6 +844,17 @@
   justify-content: flex-end;
   align-items: center;
 }
+.flow-toolbar-group-actions {
+  position: fixed;
+  top: 68px;
+  right: 1.5rem;
+  z-index: 1020;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
 .flow-toolbar-group .btn,
 .flow-toolbar-group .dropdown {
   flex: 0 0 auto;
@@ -944,6 +955,11 @@
 @media (max-width: 767.98px) {
   .flow-toolbar-group {
     gap: 0.625rem;
+  }
+  .flow-toolbar-group-actions {
+    top: 64px;
+    right: 0.75rem;
+    justify-content: flex-start;
   }
 }
 .flow-version-name-truncate {

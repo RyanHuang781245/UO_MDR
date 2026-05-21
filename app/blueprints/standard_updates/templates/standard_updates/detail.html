@@ -265,8 +265,8 @@
   } %}
   <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
     <div>
-      <h1 class="h3 mb-1 fw-bold">{{ task.name }}</h1>
-      <p class="text-muted mb-0 small">{{ task.description or '尚未填寫描述' }}</p>
+      <h1 class="h3 mb-1 fw-bold">任務詳情</h1>
+      <!-- <p class="text-muted mb-0 small">{{ task.description or '尚未填寫描述' }}</p> -->
     </div>
     <div class="d-flex gap-2">
       <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('standard_updates_bp.list') }}">
@@ -298,7 +298,8 @@
     <div class="main-card p-4 detail-summary-card">
       <div class="section-head">
         <div>
-          <h5 class="fw-bold mb-1">標準更新任務摘要</h5>
+          <h5 class="fw-bold mb-1">{{ task.name }}</h5>
+          <p class="text-muted mb-0 small">{{ task.description or '尚未填寫描述' }}</p>
         </div>
         <div class="detail-status-group">
           <div class="detail-task-id-meta">

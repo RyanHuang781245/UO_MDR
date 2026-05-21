@@ -412,13 +412,34 @@ def extract_specific_figure_from_word_xml(
         if image_block is not None and image_block.tag == qn("w:tbl") and not allow_table_figure_container:
             image_block = None
         if image_block is not None:
+            same_block_caption_candidate: etree._Element | None = None
+            if block.tag == qn("w:p"):
+                same_block_text = normalize_text(get_all_text(block))
+                if same_block_text:
+                    same_block_caption_candidate = block
+
+            candidate_figures.append((image_block, same_block_caption_candidate))
+
+            if same_block_caption_candidate is not None:
+                if caption_label and _match_figure_caption_block(same_block_caption_candidate, caption_label, seq_counters):
+                    saved_image_block = image_block
+                    saved_caption_block = same_block_caption_candidate
+                    saved_title_block = None
+                    match_mode = "caption_same_block"
+                    break
+
+                if figure_title and _match_figure_title_block(same_block_caption_candidate, figure_title):
+                    saved_image_block = image_block
+                    saved_title_block = same_block_caption_candidate
+                    saved_caption_block = None
+                    match_mode = "title_same_block"
+                    break
+
             # 先記住這張圖，等待下一個段落當圖名
             pending_image_block = image_block
             pending_caption_candidate = None
             waiting_for_caption_after_image = bool(caption_label)
             waiting_for_title_after_image = bool(figure_title)
-
-            candidate_figures.append((image_block, None))
 
             # 若是連續兩張圖，中間沒 caption，則後圖覆蓋前圖的 pending 狀態
             continue
@@ -488,7 +509,9 @@ def extract_specific_figure_from_word_xml(
         return False
 
     kept_blocks: list[etree._Element] = [saved_image_block]
-    if include_caption and saved_caption_block is not None:
+    same_block_caption = saved_caption_block is not None and saved_caption_block is saved_image_block
+    same_block_title = saved_title_block is not None and saved_title_block is saved_image_block
+    if include_caption and saved_caption_block is not None and not same_block_caption:
         materialized = materialize_paragraph_numpr_as_text(
             saved_caption_block,
             content_children,
@@ -499,7 +522,7 @@ def extract_specific_figure_from_word_xml(
             prefer_following_text_run=materialized,
         )
         kept_blocks.append(saved_caption_block)
-    elif include_caption and saved_title_block is not None:
+    elif include_caption and saved_title_block is not None and not same_block_title:
         materialized = materialize_paragraph_numpr_as_text(
             saved_title_block,
             content_children,

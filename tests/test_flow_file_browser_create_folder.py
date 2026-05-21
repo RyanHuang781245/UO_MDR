@@ -203,6 +203,8 @@ def test_flow_output_scope_downloads_subfolder_zip(app, client) -> None:
     (task_root / "output" / "pkg").mkdir(parents=True, exist_ok=True)
     (task_root / "output" / "other").mkdir(parents=True, exist_ok=True)
     (task_root / "output" / "pkg" / "a.txt").write_text("a", encoding="utf-8")
+    (task_root / "output" / "pkg" / "nested").mkdir(parents=True, exist_ok=True)
+    (task_root / "output" / "pkg" / "nested" / "c.txt").write_text("c", encoding="utf-8")
     (task_root / "output" / "other" / "b.txt").write_text("b", encoding="utf-8")
 
     with app.test_request_context():
@@ -212,7 +214,8 @@ def test_flow_output_scope_downloads_subfolder_zip(app, client) -> None:
 
     assert response.status_code == 200
     with zipfile.ZipFile(BytesIO(response.data), "r") as archive:
-        assert "a.txt" in archive.namelist()
+        assert "pkg/a.txt" in archive.namelist()
+        assert "pkg/nested/c.txt" in archive.namelist()
         assert "other/b.txt" not in archive.namelist()
 
 

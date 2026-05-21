@@ -3830,8 +3830,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             ? (copyFilesSourceKind === "dir" && !targetNameVal ? "" : "disabled")
             : (targetNameVal ? "disabled" : "");
           const keywordHelpText = helpText || (typeKey === "copy_files"
-            ? "來源為資料夾時可留白；留白代表直接複製全部檔案，輸入關鍵字則只複製符合條件的檔案"
-            : "留白代表直接複製整個來源資料夾；輸入關鍵字則只複製符合條件的資料夾");
+            ? "留白代表直接複製全部檔案，輸入關鍵字則只複製符合條件的檔案(關鍵字僅能針對檔案進行關鍵字檢索，非資料夾)"
+            : "留白代表直接複製整個來源資料夾；輸入關鍵字則只複製符合條件的資料夾(關鍵字僅能針對資料夾進行關鍵字檢索，非檔案)，輸入關鍵字後，複製後名稱欄位將不可再輸入");
           return `<div class="col-md-6${hidden}" data-copy-sync-field="keywords"><label class="form-label">${labelHtml}</label>
                  <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${disabled}>
                  <div class="form-text">${keywordHelpText}</div></div>`;
@@ -3844,7 +3844,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
             : (keywordsVal ? "disabled" : "");
           const helpText = typeKey === "copy_files"
             ? (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱" : "選擇單一檔案時可指定複製後名稱")
-            : (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱" : "輸入複製後名稱後，關鍵字將不可再輸入");
+            : (keywordsVal ? "已輸入關鍵字時，不可再輸入複製後名稱" : "輸入複製後名稱後，關鍵字欄位將不可再輸入");
           const hidden = typeKey === "copy_files" && !showTargetName ? " d-none" : "";
           const dataAttr = ' data-copy-sync-field="target_name"';
           return `<div class="col-md-6${hidden}"${dataAttr}><label class="form-label">${labelHtml}</label>

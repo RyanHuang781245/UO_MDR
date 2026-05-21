@@ -15,7 +15,7 @@ _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _NS = {"w": _W_NS}
 _PROVENANCE_PREFIX = "prov_src_"
 _PROVENANCE_CACHE_VERSION = 1
-PROVENANCE_PREVIEW_LABEL_PREFIX = "來源: "
+PROVENANCE_PREVIEW_LABEL_PREFIX = "(此說明不會出現在實際輸出文件)來源: "
 _PREVIEW_LABEL_TEXT_COLOR = "C00000"
 _LINUX_EAST_ASIA_FONT_CANDIDATES = (
     "微軟正黑體",

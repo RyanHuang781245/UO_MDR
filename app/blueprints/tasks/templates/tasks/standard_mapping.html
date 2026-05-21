@@ -2491,8 +2491,8 @@
     return `
       <div class="reference-tooltip-header">
         <div>
-          <div class="reference-tooltip-kicker">${escapeHtml(fieldLabel)}</div>
-          <div class="reference-tooltip-source">${escapeHtml(sourceLabel)}</div>
+          <div class="reference-tooltip-kicker">欄位</div>
+          <div class="reference-tooltip-source">${escapeHtml(fieldLabel)}</div>
         </div>
         <div class="d-flex align-items-center gap-2">
           <span class="reference-tooltip-status ${statusClass}">${escapeHtml(statusLabel)}</span>
@@ -2500,6 +2500,8 @@
         </div>
       </div>
       <div class="reference-tooltip-grid">
+        <div class="reference-tooltip-label">參考工作表</div>
+        <div class="reference-tooltip-value">${escapeHtml(sourceLabel)}</div>
         <div class="reference-tooltip-label">參考儲存格</div>
         <div class="reference-tooltip-value">${escapeHtml(referenceCell)}</div>
         <div class="reference-tooltip-label">命中標準</div>
@@ -2514,7 +2516,7 @@
         </div>
       ` : ""}
       <div class="reference-tooltip-section">
-        <div class="reference-tooltip-section__title">編輯此列</div>
+        <div class="reference-tooltip-section__title">編輯欄位</div>
         <div class="reference-edit-grid">
           ${availableFields.standards ? `
           <div class="reference-edit-field reference-edit-field--full">
@@ -2528,7 +2530,7 @@
           </div>` : ""}
           ${availableFields.harmonised ? `
           <div class="reference-edit-field">
-            <label>EU Harmonised</label>
+            <label>EU Harmonised Standards...</label>
             <input class="form-control form-control-sm" type="text" data-edit-field="harmonised" value="${escapeHtml(currentValues.harmonised)}">
           </div>` : ""}
           ${availableFields.title ? `

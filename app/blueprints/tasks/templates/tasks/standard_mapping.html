@@ -1,4 +1,11 @@
 {% extends "base.html" %}
+{% block sidebar %}
+  {% if mapping_route_endpoint == 'standard_updates_bp.mapping' %}
+    {% include "partials/sidebar_standard_updates.html" %}
+  {% else %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}
 {% block content %}
 <style>
   .standard-mapping-summary {

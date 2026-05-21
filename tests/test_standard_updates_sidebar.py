@@ -20,6 +20,8 @@ def test_standard_update_pages_hide_general_task_sidebar(app, client, tmp_path):
         task_detail_href = url_for("tasks_bp.task_detail", task_id=task_id)
         task_mapping_href = url_for("tasks_bp.task_mapping", task_id=task_id)
         task_flow_href = url_for("flow_builder_bp.flow_builder", task_id=task_id)
+        standard_detail_href = url_for("standard_updates_bp.detail", task_id=task_id)
+        standard_mapping_href = url_for("standard_updates_bp.mapping", task_id=task_id)
 
     for path in (f"/standards/{task_id}", f"/standards/{task_id}/mapping"):
         response = client.get(path)
@@ -29,6 +31,9 @@ def test_standard_update_pages_hide_general_task_sidebar(app, client, tmp_path):
         assert "標準更新" in html
         assert "任務管理" in html
         assert "任務內容" not in html
+        assert "標準更新工作區" in html
         assert f'href="{task_detail_href}"' not in html
         assert f'href="{task_mapping_href}"' not in html
         assert f'href="{task_flow_href}"' not in html
+        assert f'href="{standard_detail_href}"' in html
+        assert f'href="{standard_mapping_href}"' in html

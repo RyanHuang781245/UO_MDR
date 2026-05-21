@@ -1,0 +1,19 @@
+<ul class="nav flex-column">
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if ((request.endpoint and request.endpoint.startswith('tasks_bp.') and request.endpoint not in ['tasks_bp.standards', 'tasks_bp.task_standard_mapping']) or request.endpoint == 'flow_builder_bp.flow_builder') else '' }}" href="{{ url_for('tasks_bp.launcher') }}">
+      <i class="bi bi-grid me-2"></i>
+      功能入口
+    </a>
+    <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('standard_updates_bp.') else '' }}" href="{{ url_for('standard_updates_bp.list') }}">
+      <i class="bi bi-arrow-repeat me-2"></i>
+      標準更新
+    </a>
+    {% if task and task.id %}
+    <div class="px-3 pt-3 pb-2 small text-uppercase fw-semibold text-muted">標準更新工作區</div>
+    <a class="nav-link {{ 'active' if request.path == url_for('standard_updates_bp.detail', task_id=task.id) else '' }}" href="{{ url_for('standard_updates_bp.detail', task_id=task.id) }}">
+      <i class="bi bi-info-circle me-2"></i>
+      任務詳情
+    </a>
+    {% endif %}
+  </li>
+</ul>

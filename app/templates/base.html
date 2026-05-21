@@ -584,40 +584,13 @@
       {% block enable_sidebar %}true{% endblock %}
     {% endset %}
     {% set show_sidebar = sidebar_setting|trim == 'true' %}
-    {% set show_task_content_sidebar = task and task.id and not (request.endpoint and request.endpoint.startswith('standard_updates_bp.')) %}
     <div class="{{ 'container-fluid px-0' if show_sidebar else 'container' }}">
       <div class="row g-0">
         {% if show_sidebar %}
         <nav id="sidebarMenu" class="col-12 col-md-auto bg-body-tertiary border-end sidebar-width" style="min-height: calc(100vh - 56px);">
           <div class="position-sticky pt-3" style="top: 56px; height: calc(100vh - 56px); overflow-y: auto;">
             {% block sidebar %}
-              <ul class="nav flex-column">
-                <li class="nav-item">
-                  <a class="nav-link {{ 'active' if ((request.endpoint and request.endpoint.startswith('tasks_bp.') and request.endpoint not in ['tasks_bp.standards', 'tasks_bp.task_standard_mapping']) or request.endpoint == 'flow_builder_bp.flow_builder') else '' }}" href="{{ url_for('tasks_bp.tasks') }}">
-                    <i class="bi bi-list-task me-2"></i>
-                    任務管理
-                  </a>
-                  <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('standard_updates_bp.') else '' }}" href="{{ url_for('standard_updates_bp.list') }}">
-                    <i class="bi bi-arrow-repeat me-2"></i>
-                    標準更新
-                  </a>
-                  {% if show_task_content_sidebar %}
-                  <div class="px-3 pt-3 pb-2 small text-uppercase fw-semibold text-muted">任務內容</div>
-                  <a class="nav-link {{ 'active' if request.path == url_for('tasks_bp.task_detail', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_detail', task_id=task.id) }}">
-                    <i class="bi bi-info-circle me-2"></i>
-                    任務詳情
-                  </a>
-                  <a class="nav-link {{ 'active' if request.path == url_for('tasks_bp.task_mapping', task_id=task.id) else '' }}" href="{{ url_for('tasks_bp.task_mapping', task_id=task.id) }}">
-                    <i class="bi bi-diagram-3-fill me-2"></i>
-                    Mapping
-                  </a>
-                  <a class="nav-link {{ 'active' if request.endpoint == 'flow_builder_bp.flow_builder' and '/batch' not in request.path else '' }}" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id) }}">
-                    <i class="bi bi-diagram-3 me-2"></i>
-                    流程管理
-                  </a>
-                  {% endif %}
-                </li>
-              </ul>
+              {% include "partials/sidebar_tasks.html" %}
             {% endblock %}
           </div>
         </nav>

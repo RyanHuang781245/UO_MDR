@@ -334,6 +334,20 @@ def rename(task_id: str):
     return redirect(next_url)
 
 
+@standard_updates_bp.post("/standards/<task_id>/description", endpoint="update_description")
+def update_description(task_id: str):
+    task = load_standard_update(task_id)
+    if not task:
+        abort(404)
+    next_url = (request.form.get("next") or request.referrer or "").strip()
+    if not next_url:
+        next_url = url_for("standard_updates_bp.list")
+    task["description"] = (request.form.get("description") or "").strip()
+    save_standard_update(task_id, task)
+    flash("已更新標準更新任務描述", "success")
+    return redirect(next_url)
+
+
 @standard_updates_bp.post("/standards/<task_id>/use-latest-harmonised", endpoint="use_latest_harmonised")
 def use_latest_harmonised(task_id: str):
     existing = load_standard_update(task_id)

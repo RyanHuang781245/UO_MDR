@@ -38,7 +38,7 @@ def test_standard_update_pages_hide_general_task_sidebar(app, client, tmp_path):
 
         assert response.status_code == 200
         assert "標準更新" in html
-        assert "標準更新任務" in html
+        assert "任務管理" in html
         assert "任務內容" not in html
         assert "標準更新工作區" in html
         assert f'href="{task_detail_href}"' not in html
@@ -90,7 +90,53 @@ def test_task_detail_sidebar_highlights_only_workspace_link(app, client, tmp_pat
         detail_href = url_for("tasks_bp.task_detail", task_id=task_id)
 
     assert response.status_code == 200
-    assert "任務工作區" in html
+    assert "文件轉換工作區" in html
     assert "active" not in _anchor_classes(html, launcher_href).split()
     assert "active" not in _anchor_classes(html, tasks_href).split()
     assert "active" in _anchor_classes(html, detail_href).split()
+
+
+def test_standard_update_list_shows_detail_action(app, client, tmp_path):
+    standard_update_root = tmp_path / "standard_update_store"
+    harmonised_root = tmp_path / "harmonised_store"
+    standard_update_root.mkdir()
+    harmonised_root.mkdir()
+
+    app.config["STANDARD_UPDATE_FOLDER"] = str(standard_update_root)
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = str(harmonised_root)
+
+    task_id = create_standard_update("List Detail", harmonised_source_mode=HARMONISED_SOURCE_CUSTOM)
+
+    with app.test_request_context():
+        detail_href = url_for("standard_updates_bp.detail", task_id=task_id)
+
+    response = client.get("/standards")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert f'href="{detail_href}"' in html
+    assert "standard-update-detail-trigger" in html
+    assert "standardUpdateDrawer" in html
+    assert "bi bi-eye" in html
+
+
+def test_standard_update_description_route_updates_metadata(app, client, tmp_path):
+    standard_update_root = tmp_path / "standard_update_store"
+    harmonised_root = tmp_path / "harmonised_store"
+    standard_update_root.mkdir()
+    harmonised_root.mkdir()
+
+    app.config["STANDARD_UPDATE_FOLDER"] = str(standard_update_root)
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = str(harmonised_root)
+
+    task_id = create_standard_update("Update Desc", harmonised_source_mode=HARMONISED_SOURCE_CUSTOM)
+
+    response = client.post(
+        f"/standards/{task_id}/description",
+        data={"description": "updated description", "next": "/standards"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    meta = json.loads((standard_update_root / task_id / "meta.json").read_text(encoding="utf-8"))
+    assert meta["description"] == "updated description"

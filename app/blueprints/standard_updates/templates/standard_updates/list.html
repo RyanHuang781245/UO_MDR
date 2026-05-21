@@ -10,6 +10,28 @@
   .standard-task-name:hover {
     color: var(--bs-blue-600);
   }
+  .standard-update-desc-truncate {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 250px;
+  }
+  .standard-update-table thead th {
+    text-align: center;
+    vertical-align: middle;
+  }
+  .standard-update-table thead th.standard-update-table__th-start {
+    text-align: start;
+  }
+  .standard-update-table__th-label {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.35;
+    text-align: center;
+  }
   .system-release-card {
     border: 1px solid var(--app-border);
     border-radius: 0.75rem;
@@ -82,6 +104,76 @@
     justify-content: flex-end;
     align-items: end;
   }
+  .task-desc-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 1040;
+  }
+  .task-desc-drawer-backdrop.is-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .task-desc-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    width: min(90vw, 420px);
+    background: var(--app-card-bg);
+    color: var(--app-text);
+    box-shadow: -12px 0 28px rgba(0, 0, 0, 0.18);
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    z-index: 1050;
+    display: flex;
+    flex-direction: column;
+  }
+  .task-desc-drawer.is-open {
+    transform: translateX(0);
+  }
+  .task-desc-drawer-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--app-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .task-desc-drawer-body {
+    padding: 16px;
+    word-break: break-word;
+    overflow: auto;
+    flex: 1;
+  }
+  .task-detail-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--app-bg);
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+  }
+  .task-detail-label {
+    color: var(--bs-gray-500);
+    font-weight: 600;
+    min-width: 90px;
+  }
+  .task-detail-value {
+    color: var(--app-text);
+    text-align: right;
+    flex: 1;
+    word-break: break-word;
+  }
+  .task-desc-drawer-open {
+    overflow: hidden;
+  }
   @media (max-width: 991.98px) {
     .task-create-form__actions {
       justify-content: stretch;
@@ -132,13 +224,13 @@
             <input class="form-control form-control-custom rounded-2" name="name" placeholder="輸入標準更新任務名稱" required>
           </div>
           <div class="task-create-form__field">
-            <label class="form-label small fw-bold text-uppercase text-muted">描述</label>
+            <label class="form-label small fw-bold text-uppercase text-muted">任務描述  (選填)</label>
             <input class="form-control form-control-custom rounded-2" name="description" placeholder="輸入任務描述">
           </div>
         </div>
         <div class="task-create-form__group task-create-form__group--controls">
           <div class="task-create-form__field">
-            <label class="form-label small fw-bold text-uppercase text-muted">採認標準來源模式</label>
+            <label class="form-label small fw-bold text-uppercase text-muted">歐盟採認標準來源模式</label>
             <div class="task-create-form__mode-group">
               <div class="form-check">
                 <input class="form-check-input" type="radio" name="harmonised_source_mode" id="harmonisedModeSystem" value="system" checked>
@@ -167,25 +259,38 @@
       <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆任務 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
     </div>
     <div class="table-responsive">
-      <table class="table mb-0 align-middle">
+      <table class="table mb-0 align-middle standard-update-table">
         <thead>
           <tr>
-            <th class="text-start ps-4" style="width: 25%;">任務名稱</th>
-            <th class="text-start" style="width: 20%;">描述</th>
-            <th style="width: 15%;">建立人員</th>
-            <th style="width: 15%;">建立時間</th>
-            <th style="width: 10%;">模式</th>
-            <th style="width: 10%;">使用版本</th>
-            <th style="width: 10%;">操作</th>
+            <th class="ps-4 standard-update-table__th-start" style="width: 25%;"><span class="standard-update-table__th-label">任務名稱</span></th>
+            <th class="standard-update-table__th-start" style="width: 17%;"><span class="standard-update-table__th-label">任務描述</span></th>
+            <th style="width: 15%;"><span class="standard-update-table__th-label">建立人員</span></th>
+            <th style="width: 15%;"><span class="standard-update-table__th-label">建立時間</span></th>
+            <th style="width: 10%;"><span class="standard-update-table__th-label"><span>歐盟採認標準</span><span>來源模式</span></span></th>
+            <th style="width: 16%;"><span class="standard-update-table__th-label"><span>歐盟採認標準</span><span>系統版本</span></span></th>
+            <th style="width: 10%;"><span class="standard-update-table__th-label">操作</span></th>
           </tr>
         </thead>
         <tbody>
           {% for item in items %}
-          <tr>
+          <tr class="standard-update-row" data-task-id="{{ item.id }}">
             <td class="text-start ps-4">
-              <a class="standard-task-name d-block text-primary" href="{{ url_for('standard_updates_bp.detail', task_id=item.id) }}">{{ item.name }}</a>
+              <a class="standard-task-name standard-update-desc-truncate d-block text-primary" href="{{ url_for('standard_updates_bp.detail', task_id=item.id) }}" title="{{ item.name }}">{{ item.name }}</a>
             </td>
-            <td class="text-start text-muted">{{ item.description or '-' }}</td>
+            <td class="text-start text-muted">
+              {% if item.description %}
+              <div class="standard-update-desc-truncate" title="{{ item.description }}">{{ item.description }}</div>
+              {% else %}
+              <span>-</span>
+              {% endif %}
+              <span class="standard-update-id-data d-none">{{ item.id }}</span>
+              <span class="standard-update-name-data d-none">{{ item.name }}</span>
+              <span class="standard-update-desc-data d-none">{{ item.description or '' }}</span>
+              <span class="standard-update-creator-data d-none">{{ item.creator_name or '-' }}</span>
+              <span class="standard-update-created-data d-none">{{ item.created or '-' }}</span>
+              <span class="standard-update-mode-data d-none">{{ '自行上傳檔案' if item.harmonised_source_mode == 'custom' else '使用系統檔案' }}</span>
+              <span class="standard-update-version-data d-none">{{ item.custom_harmonised_version if item.harmonised_source_mode == 'custom' else (item.harmonised_snapshot_version or '-') }}</span>
+            </td>
             <td class="text-muted">{{ item.creator_name or '-' }}</td>
             <td class="text-muted font-monospace">{{ item.created or '-' }}</td>
             <td class="text-muted">
@@ -200,8 +305,8 @@
             </td>
             <td>
               <div class="d-flex justify-content-center gap-1">
-                <button class="btn-action-icon text-primary" type="button" title="重新命名" data-rename-standard-update data-task-id="{{ item.id }}" data-task-name="{{ item.name }}">
-                  <i class="bi bi-input-cursor-text"></i>
+                <button class="btn-action-icon standard-update-detail-trigger" type="button" title="查看詳情" aria-label="查看詳情">
+                  <i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span>
                 </button>
                 <form action="{{ url_for('standard_updates_bp.delete', task_id=item.id) }}" method="post" class="d-inline" onsubmit="return confirm('確定刪除標準更新任務「{{ item.name }}」?')">
                   <button class="btn-action-icon text-danger" type="submit" title="刪除任務">
@@ -245,6 +350,14 @@
     {% endif %}
   </div>
 </div>
+<div class="task-desc-drawer-backdrop" id="standardUpdateDrawerBackdrop" aria-hidden="true" hidden></div>
+<aside class="task-desc-drawer" id="standardUpdateDrawer" aria-hidden="true" aria-label="標準更新任務資訊" hidden>
+  <div class="task-desc-drawer-header">
+    <div class="fw-semibold" id="standardUpdateDrawerTitle">標準更新任務資訊</div>
+    <button class="btn btn-sm btn-outline-secondary" type="button" id="standardUpdateDrawerClose" aria-label="關閉">關閉</button>
+  </div>
+  <div class="task-desc-drawer-body" id="standardUpdateDrawerBody"></div>
+</aside>
 <div class="modal fade" id="renameStandardUpdateModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -305,17 +418,138 @@
     }, 120);
   }
 
+  function getRowText(row, selector) {
+    return row ? row.querySelector(selector)?.textContent?.trim() : "";
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function renderStandardUpdateDetailBody(details) {
+    const rows = [
+      { label: "建立人員", value: details.creator || "-" },
+      { label: "建立時間", value: details.created || "-" },
+      { label: "來源模式", value: details.mode || "-" },
+      { label: "使用版本", value: details.version || "-" },
+    ];
+    const rowsHtml = rows.map((row) => (
+      `<div class="task-detail-row">
+        <div class="task-detail-label">${escapeHtml(row.label)}</div>
+        <div class="task-detail-value">${escapeHtml(row.value)}</div>
+      </div>`
+    )).join("");
+
+    return `
+      <div class="task-detail-list">
+        <div class="mb-4">
+          <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務名稱</label>
+          <input type="text" class="form-control form-control-custom shadow-sm" id="drawerStandardUpdateName" value="${escapeHtml(details.name)}">
+          <div class="mt-2 text-end">
+            <button class="btn btn-sm btn-outline-primary px-3 fw-bold" type="button" onclick="renameStandardUpdateDirect('${details.id}', document.getElementById('drawerStandardUpdateName').value)">
+              更新名稱
+            </button>
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務描述</label>
+          <textarea class="form-control form-control-custom shadow-sm" id="drawerStandardUpdateDesc" rows="4" placeholder="輸入任務描述...">${escapeHtml(details.desc || "")}</textarea>
+          <div class="mt-2 text-end">
+            <button class="btn btn-sm btn-outline-primary px-3 fw-bold" type="button" onclick="updateStandardUpdateDesc('${details.id}', document.getElementById('drawerStandardUpdateDesc').value)">
+              更新描述
+            </button>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務資訊</label>
+          ${rowsHtml}
+        </div>
+        <div class="mt-4 pt-3 border-top text-end">
+          <a class="btn btn-link btn-sm text-primary text-decoration-none p-0" href="/standards/${encodeURIComponent(details.id)}">
+            <i class="bi bi-box-arrow-up-right"></i> 進入任務詳情
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
+  function renameStandardUpdateDirect(taskId, name) {
+    const trimmed = (name || "").trim();
+    if (!trimmed) {
+      alert("任務名稱不能為空");
+      return;
+    }
+    submitPostForm(`/standards/${encodeURIComponent(taskId)}/rename`, { name: trimmed, next: window.location.href });
+  }
+
+  function updateStandardUpdateDesc(taskId, description) {
+    submitPostForm(`/standards/${encodeURIComponent(taskId)}/description`, { description: description || "", next: window.location.href });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
+    const drawer = document.getElementById("standardUpdateDrawer");
+    const backdrop = document.getElementById("standardUpdateDrawerBackdrop");
+    const drawerBody = document.getElementById("standardUpdateDrawerBody");
+    const drawerTitle = document.getElementById("standardUpdateDrawerTitle");
+    const drawerClose = document.getElementById("standardUpdateDrawerClose");
     const nameInput = document.getElementById("renameStandardUpdateInput");
     const countEl = document.getElementById("renameStandardUpdateCount");
     const submitBtn = document.getElementById("renameStandardUpdateSubmitBtn");
     const idInput = document.getElementById("renameStandardUpdateTaskId");
+    const closeDrawer = () => {
+      drawer?.classList.remove("is-open");
+      backdrop?.classList.remove("is-open");
+      drawer?.setAttribute("aria-hidden", "true");
+      backdrop?.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("task-desc-drawer-open");
+      window.setTimeout(() => {
+        if (drawer && !drawer.classList.contains("is-open")) {
+          drawer.setAttribute("hidden", "");
+        }
+        if (backdrop && !backdrop.classList.contains("is-open")) {
+          backdrop.setAttribute("hidden", "");
+        }
+      }, 220);
+    };
+    const openDrawer = (details) => {
+      if (!drawer || !backdrop || !drawerBody || !drawerTitle) return;
+      drawerTitle.textContent = details.name || "標準更新任務資訊";
+      drawerBody.innerHTML = renderStandardUpdateDetailBody(details);
+      drawer.removeAttribute("hidden");
+      backdrop.removeAttribute("hidden");
+      requestAnimationFrame(() => {
+        drawer.classList.add("is-open");
+        backdrop.classList.add("is-open");
+      });
+      drawer.setAttribute("aria-hidden", "false");
+      backdrop.setAttribute("aria-hidden", "false");
+      document.body.classList.add("task-desc-drawer-open");
+    };
     document.querySelectorAll("[data-rename-standard-update]").forEach((button) => {
       button.addEventListener("click", () => {
         openRenameStandardUpdateModal(
           button.getAttribute("data-task-id") || "",
           button.getAttribute("data-task-name") || "",
         );
+      });
+    });
+    document.querySelectorAll(".standard-update-detail-trigger").forEach((button) => {
+      button.addEventListener("click", () => {
+        const row = button.closest(".standard-update-row");
+        openDrawer({
+          id: getRowText(row, ".standard-update-id-data"),
+          name: getRowText(row, ".standard-update-name-data"),
+          desc: getRowText(row, ".standard-update-desc-data"),
+          creator: getRowText(row, ".standard-update-creator-data"),
+          created: getRowText(row, ".standard-update-created-data"),
+          mode: getRowText(row, ".standard-update-mode-data"),
+          version: getRowText(row, ".standard-update-version-data"),
+        });
       });
     });
     if (nameInput && countEl) {
@@ -330,6 +564,13 @@
       if (!taskId || !name) return;
       submitPostForm(`/standards/${encodeURIComponent(taskId)}/rename`, { name, next: window.location.href });
       renameStandardUpdateModalInstance?.hide();
+    });
+    drawerClose?.addEventListener("click", closeDrawer);
+    backdrop?.addEventListener("click", closeDrawer);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && drawer?.classList.contains("is-open")) {
+        closeDrawer();
+      }
     });
   });
 </script>

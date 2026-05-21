@@ -73,6 +73,30 @@ def _step_uses_template_index(values: dict[str, str]) -> bool:
     return _has_text(values.get("template_index"))
 
 
+def _parse_chapter_ref(raw: Any) -> tuple[str, str]:
+    text = str(raw or "").strip()
+    if not text:
+        return "", ""
+    import re
+    match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", text)
+    if match:
+        return match.group(1).strip(), str(match.group(2) or "").strip()
+    inline = re.search(r"\b(\d+(?:\.\d+)*)\b", text)
+    if inline:
+        return inline.group(1).strip(), text
+    return text, ""
+
+
+def _has_complete_chapter_ref(values: dict[str, str], fields: list[str]) -> bool:
+    if fields and all(_has_text(values.get(field)) for field in fields):
+        chapter_section, chapter_title = _parse_chapter_ref(
+            " ".join(values.get(field, "") for field in fields)
+        )
+        return _has_text(chapter_section) and _has_text(chapter_title)
+    chapter_section, chapter_title = _parse_chapter_ref(values.get("chapter_ref"))
+    return _has_text(chapter_section) and _has_text(chapter_title)
+
+
 def _evaluate_condition(values: dict[str, str], condition: dict[str, Any]) -> bool:
     field = str(condition.get("field") or "").strip()
     if not field:
@@ -105,14 +129,18 @@ def _validate_step(step_id: str, step_type: str, schema: dict, values: dict[str,
 
     for rule in validation.get("composite_required", []):
         fields = [str(item) for item in rule.get("fields", []) if str(item).strip()]
-        if fields and all(_has_text(values.get(field)) for field in fields):
+        proxy_field = str(rule.get("proxy_field") or (fields[0] if fields else ""))
+        if proxy_field == "chapter_ref":
+            if _has_complete_chapter_ref(values, fields):
+                continue
+        elif fields and all(_has_text(values.get(field)) for field in fields):
             continue
         errors.append(
             {
                 "scope": "step",
                 "step_id": step_id,
                 "step_type": step_type,
-                "field": str(rule.get("proxy_field") or (fields[0] if fields else "")),
+                "field": proxy_field,
                 "message": str(rule.get("message") or f"步驟「{schema.get('label') or step_type}」缺少必填欄位"),
             }
         )
@@ -227,6 +255,8 @@ def validate_saved_flow_run(payload, supported_steps: dict) -> list[dict[str, st
         values = {key: str(params.get(key, "") or "").strip() for key in schema.get("inputs", [])}
         values["chapter_ref"] = " ".join(part for part in (values.get("target_chapter_section", ""), values.get("target_chapter_title", "")) if part).strip()
         values["continuous_end_ref"] = " ".join(part for part in (values.get("explicit_end_number", ""), values.get("explicit_end_title", "")) if part).strip()
+        if not _has_text(values.get("use_chapter_title")):
+            values["use_chapter_title"] = "true" if _has_text(values.get("target_subtitle")) else "false"
         if _step_uses_template_index(values):
             has_any_template_index = True
         step_errors = _validate_step(f"saved_{index}", step_type, schema, values)

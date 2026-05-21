@@ -81,6 +81,28 @@ def _paginate(items: list[dict], page: int, per_page: int = 10) -> tuple[list[di
     }
 
 
+def _remove_stale_output_variants(output_dir: str, base_name: str) -> None:
+    stem = Path(base_name).stem
+    suffix = Path(base_name).suffix.lower()
+    variant_prefix = f"{stem} ("
+    for entry in os.listdir(output_dir):
+        entry_path = os.path.join(output_dir, entry)
+        if not os.path.isfile(entry_path):
+            continue
+        if Path(entry).suffix.lower() != suffix:
+            continue
+        entry_stem = Path(entry).stem
+        if not (entry_stem.startswith(variant_prefix) and entry_stem.endswith(")")):
+            continue
+        variant_number = entry_stem[len(variant_prefix):-1]
+        if not variant_number.isdigit():
+            continue
+        try:
+            os.remove(entry_path)
+        except OSError:
+            current_app.logger.warning("Failed to remove stale standard update output: %s", entry_path)
+
+
 def _load_chapter_options(task_id: str, selected_word: str) -> tuple[list[dict], str]:
     if not selected_word:
         return [], ""
@@ -699,12 +721,8 @@ def download_result(task_id: str):
         output_dir = standard_update_output_dir(task_id)
         os.makedirs(output_dir, exist_ok=True)
         base_name = _safe_uploaded_filename(f"{Path(selected_word).stem}_updated.docx", default_stem="standard_mapping_updated")
-        output_name = base_name
-        counter = 1
-        while os.path.exists(os.path.join(output_dir, output_name)):
-            output_name = f"{Path(base_name).stem} ({counter}){Path(base_name).suffix}"
-            counter += 1
-        output_path = os.path.join(output_dir, output_name)
+        _remove_stale_output_variants(output_dir, base_name)
+        output_path = os.path.join(output_dir, base_name)
 
         process_document(
             word_path=word_path,
@@ -738,4 +756,4 @@ def download_result(task_id: str):
         flash(f"下載失敗：{exc}", "danger")
         return redirect(url_for("standard_updates_bp.mapping", task_id=task_id))
 
-    return send_file(output_path, as_attachment=True, download_name=output_name)
+    return send_file(output_path, as_attachment=True, download_name=base_name)

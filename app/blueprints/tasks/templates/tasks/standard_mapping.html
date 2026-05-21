@@ -2276,6 +2276,50 @@
     return buildDiffSegments(source, target);
   }
 
+  function buildWordDiffSegments(oldText, newText) {
+    const source = normalizeText(oldText);
+    const target = normalizeText(newText);
+    if (source === target) return [{ text: target, isRed: false }];
+
+    const tokenPattern = /\s+|\w+|[^\w\s]/g;
+    const oldTokens = source.match(tokenPattern) || [];
+    const newTokens = target.match(tokenPattern) || [];
+    const dp = Array.from({ length: oldTokens.length + 1 }, () => Array(newTokens.length + 1).fill(0));
+
+    for (let i = oldTokens.length - 1; i >= 0; i -= 1) {
+      for (let j = newTokens.length - 1; j >= 0; j -= 1) {
+        if (oldTokens[i] === newTokens[j]) {
+          dp[i][j] = dp[i + 1][j + 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+    }
+
+    const segments = [];
+    let i = 0;
+    let j = 0;
+    while (i < oldTokens.length && j < newTokens.length) {
+      if (oldTokens[i] === newTokens[j]) {
+        segments.push({ text: newTokens[j], isRed: false });
+        i += 1;
+        j += 1;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        i += 1;
+      } else {
+        segments.push({ text: newTokens[j], isRed: !/^\s+$/.test(newTokens[j]) });
+        j += 1;
+      }
+    }
+
+    while (j < newTokens.length) {
+      segments.push({ text: newTokens[j], isRed: !/^\s+$/.test(newTokens[j]) });
+      j += 1;
+    }
+
+    return mergeSegments(segments);
+  }
+
   function buildPlainReplacementSegments(oldText, newText) {
     const source = normalizeText(oldText);
     const target = normalizeText(newText);
@@ -2415,7 +2459,7 @@
         const newTitle = titleMeta.matched_title || oldTitle;
         const content = cell.querySelector(".preview-cell__content");
         if (content) {
-          content.innerHTML = renderSegmentsHtml(buildDiffSegments(oldTitle, newTitle));
+          content.innerHTML = renderSegmentsHtml(buildWordDiffSegments(oldTitle, newTitle));
         }
         refreshCellOverflow(cell);
       }

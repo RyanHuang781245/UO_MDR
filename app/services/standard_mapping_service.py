@@ -604,22 +604,6 @@ def build_year_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
     return build_diff_segments(old_text, new_text)
 
 
-def build_preserve_original_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
-    old_text = normalize_text(old_text)
-    new_text = normalize_text(new_text)
-    if old_text == new_text:
-        return [(new_text, False)]
-    if not old_text:
-        return [(new_text, True)]
-    if not new_text:
-        return [(old_text, False)]
-    return merge_text_segments([
-        (old_text, False),
-        (" ", False),
-        (new_text, True),
-    ])
-
-
 def get_first_run_properties(tc: etree._Element) -> etree._Element | None:
     rpr = tc.find(".//w:r/w:rPr", namespaces=NS)
     return copy.deepcopy(rpr) if rpr is not None else None
@@ -1899,7 +1883,7 @@ def process_document(
                     if year_needs_update and rec["issued_year_tc"] is not None:
                         rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, edited_year))
                     if harmonised_needs_update and rec["harmonised_tc"] is not None:
-                        rebuild_cell_with_segments(rec["harmonised_tc"], build_preserve_original_segments(word_harmonised_text, edited_harmonised))
+                        rebuild_cell_with_segments(rec["harmonised_tc"], build_diff_segments(word_harmonised_text, edited_harmonised))
                     if title_needs_update and rec["title_tc"] is not None:
                         rebuild_cell_with_segments(rec["title_tc"], build_diff_segments(word_title_text, edited_title))
                     row_updated = standards_needs_update or year_needs_update or harmonised_needs_update or title_needs_update
@@ -1996,7 +1980,7 @@ def process_document(
             if year_needs_update and rec["issued_year_tc"] is not None:
                 rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, final_year))
             if harmonised_needs_update and rec["harmonised_tc"] is not None:
-                rebuild_cell_with_segments(rec["harmonised_tc"], build_preserve_original_segments(word_harmonised_text, final_harmonised))
+                rebuild_cell_with_segments(rec["harmonised_tc"], build_diff_segments(word_harmonised_text, final_harmonised))
             if title_needs_update and rec["title_tc"] is not None:
                 rebuild_cell_with_segments(rec["title_tc"], build_diff_segments(word_title_text, final_title))
 

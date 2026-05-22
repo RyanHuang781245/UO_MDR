@@ -15,6 +15,9 @@
     flex: 1 1 320px;
     min-width: 0;
   }
+  .detail-summary-state {
+    margin-top: 0.65rem;
+  }
   .detail-summary-title {
     line-height: 1.35;
     overflow-wrap: anywhere;
@@ -38,13 +41,21 @@
   }
   .detail-task-id-meta {
     display: inline-flex;
-    align-items: flex-start;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: flex-start;
     gap: 0.4rem;
     flex-wrap: wrap;
     font-size: 0.8125rem;
     color: var(--bs-gray-600);
     min-width: 0;
+  }
+  .detail-meta-value-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    min-width: 0;
+    flex-wrap: wrap;
   }
   .detail-task-id-meta code {
     font-size: 0.8125rem;
@@ -73,6 +84,14 @@
     margin-bottom: 0;
     align-self: start;
   }
+  .detail-grid--hero {
+    align-items: stretch;
+  }
+  .detail-grid--hero > .main-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
   .detail-grid--single {
     grid-template-columns: 1fr;
   }
@@ -100,13 +119,20 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.875rem;
     margin-top: 0.5rem;
+    align-items: stretch;
+    flex: 1 1 auto;
   }
   .version-chip {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.35rem;
     border: 1px solid var(--app-border);
     border-radius: 0.75rem;
     padding: 0.875rem 1rem;
     background: var(--app-card-bg);
     min-width: 0;
+    height: 100%;
   }
   .version-chip--locked {
     border-color: var(--bs-blue-100);
@@ -125,12 +151,12 @@
     color: var(--bs-emerald-700);
   }
   .version-chip__label {
-    font-size: 0.75rem;
+    font-size: 1rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--bs-gray-500);
     font-weight: 700;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0;
   }
   .version-chip__value {
     font-weight: 700;
@@ -139,13 +165,14 @@
   }
   .version-chip__value code {
     display: block;
+    font-size: 1rem;
     max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .version-chip__meta {
-    margin-top: 0.25rem;
+    margin-top: 0;
     font-size: 0.8125rem;
     color: var(--bs-gray-500);
     min-width: 0;
@@ -271,10 +298,6 @@
     .detail-summary-header {
       flex-direction: column;
     }
-    .detail-status-group,
-    .detail-task-id-meta {
-      justify-content: flex-start;
-    }
     .version-summary {
       grid-template-columns: 1fr;
     }
@@ -295,6 +318,21 @@
       grid-column: 2 / 3;
       grid-row: 1 / 3;
       align-self: start;
+    }
+  }
+  @media (max-width: 767.98px) {
+    .detail-meta-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.35rem;
+    }
+    .detail-meta-row span:last-child,
+    .detail-meta-value-inline {
+      text-align: left;
+      justify-content: flex-start;
+    }
+    .detail-task-id-meta {
+      width: 100%;
     }
   }
 </style>
@@ -329,7 +367,7 @@
     <div class="version-notice">
       <div class="version-notice__body">
         <div class="version-notice__title">有較新的 Regulation (EU) 2017/745 採認標準版本</div>
-        <div class="version-notice__desc">目前任務仍使用既有鎖定版本；若要改用最新資料，可以直接在這裡切換。</div>
+        <div class="version-notice__desc">目前任務仍使用既有鎖定版本；若要改用最新資料，可以直接在這裡切換</div>
       </div>
     </div>
     <form action="{{ url_for('standard_updates_bp.use_latest_harmonised', task_id=task.id) }}" method="post" onsubmit="return confirm('確定將此任務切換為最新 harmonised 版本？')">
@@ -338,20 +376,24 @@
   </div>
   {% endif %}
 
-  <div class="detail-grid">
+  <div class="detail-grid detail-grid--hero">
     <div class="main-card p-4 detail-summary-card">
       <div class="section-head detail-summary-header">
         <div class="detail-summary-main">
           <h5 class="fw-bold mb-1 detail-summary-title" title="{{ task.name }}">{{ task.name[:50] }}{% if task.name|length > 50 %}…{% endif %}</h5>
-          <p class="text-muted mb-0 small detail-summary-desc" {% if task.description %}title="{{ task.description }}"{% endif %}>{% if task.description %}{{ task.description[:50] }}{% if task.description|length > 50 %}…{% endif %}{% else %}尚未填寫描述{% endif %}</p>
-        </div>
-        <div class="detail-status-group">
-          <div class="detail-task-id-meta">
+          <!-- <div class="detail-summary-state">
             <span class="status-badge {% if task.status in ['completed'] %}status-badge-completed{% elif task.status in ['failed'] %}status-badge-failed{% else %}status-badge-running{% endif %}">
               <i class="bi {% if task.status == 'completed' %}bi-check-circle{% elif task.status == 'failed' %}bi-exclamation-circle{% else %}bi-clock-history{% endif %}"></i>
               {{ status_labels.get(task.status, task.status or '-') }}
             </span>
-            <span>任務 ID:</span>
+          </div> -->
+          <p class="text-muted mb-0 small detail-summary-desc" {% if task.description %}title="{{ task.description }}"{% endif %}>{% if task.description %}{{ task.description[:50] }}{% if task.description|length > 50 %}…{% endif %}{% else %}尚未填寫描述{% endif %}</p>
+        </div>
+      </div>
+      <div class="detail-meta-row">
+        <span class="text-muted">任務 ID</span>
+        <span class="detail-meta-value-inline">
+          <span class="detail-task-id-meta">
             <code>{{ task.id }}</code>
             <button
               class="detail-copy-id-btn"
@@ -362,8 +404,8 @@
             >
               <i class="bi bi-files"></i>
             </button>
-          </div>
-        </div>
+          </span>
+        </span>
       </div>
       <div class="detail-meta-row">
         <span class="text-muted">建立人員</span>
@@ -374,7 +416,7 @@
         <span class="font-monospace">{{ task.created or '-' }}</span>
       </div>
       <div class="detail-meta-row">
-        <span class="text-muted">目前模式</span>
+        <span class="text-muted">歐盟採認標準來源</span>
         <span>{% if harmonised_source_mode == 'custom' %}自行上傳檔案{% else %}使用系統檔案{% endif %}</span>
       </div>
     </div>
@@ -405,7 +447,7 @@
       <div class="section-head">
         <div>
           <h5 class="fw-bold mb-1">輸入檔案</h5>
-          <div class="small text-muted">上傳 Word、UOC 標準規範總表_現行標準 Excel 與各國法規條文登記表，完成後即可進入預覽。</div>
+          <div class="small text-muted">上傳 Word、UOC 標準規範總表_現行標準 Excel 與各國法規條文登記表，完成後即可進入預覽</div>
         </div>
       </div>
       <div class="detail-grid">
@@ -436,7 +478,7 @@
                 </form>
               </div>
               {% else %}
-              <div class="small text-muted">目前沒有 Word 上傳紀錄。</div>
+              <div class="small text-muted">目前沒有 Word 上傳紀錄</div>
               {% endfor %}
             </div>
           </div>
@@ -469,7 +511,7 @@
                 </form>
               </div>
               {% else %}
-              <div class="small text-muted">目前沒有 Excel 上傳紀錄。</div>
+              <div class="small text-muted">目前沒有 Excel 上傳紀錄</div>
               {% endfor %}
             </div>
           </div>
@@ -479,13 +521,13 @@
         <div class="border rounded-3 p-3">
           <label class="form-label fw-bold">
             <i class="bi bi-file-earmark-spreadsheet text-success flex-shrink-0"></i>
-            任務自訂 Regulation (EU) 2017/745 採認標準
+            自訂 Regulation (EU) 2017/745 採認標準
           </label>
           <form action="{{ url_for('standard_updates_bp.upload_harmonised_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
             <input class="form-control form-control-custom" type="file" name="harmonised_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
             <button class="btn btn-success align-self-start mt-1" type="submit">上傳 Excel</button>
           </form>
-          <div class="form-text mt-2">這個檔案可不提供；若未上傳，標準更新仍可執行，但會略過 harmonised 比對。</div>
+          <div class="form-text mt-2">檔案可不提供；若未上傳，標準更新仍可執行，但會略過歐盟採認標準比對</div>
           <div class="upload-history mt-3">
             <div class="upload-history__title">上傳歷史</div>
             <div class="upload-history__list">
@@ -504,7 +546,7 @@
                 </form>
               </div>
               {% else %}
-              <div class="small text-muted">目前沒有任務自訂採認標準上傳紀錄。</div>
+              <div class="small text-muted">目前沒有任務自訂採認標準上傳紀錄</div>
               {% endfor %}
             </div>
           </div>
@@ -538,7 +580,7 @@
                 </form>
               </div>
               {% else %}
-              <div class="small text-muted">目前沒有法規條文登記表上傳紀錄。</div>
+              <div class="small text-muted">目前沒有法規條文登記表上傳紀錄</div>
               {% endfor %}
             </div>
           </div>

@@ -1985,16 +1985,20 @@ def process_document(
                 year_needs_update = ("issued_year" in row_edits and word_year_text != edited_year)
                 harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(edited_harmonised)
                 title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(edited_title)
+                applied_standards_update = standards_needs_update and rec["standards_tc"] is not None
+                applied_year_update = year_needs_update and rec["issued_year_tc"] is not None
+                applied_harmonised_update = harmonised_needs_update and rec["harmonised_tc"] is not None
+                applied_title_update = title_needs_update and rec["title_tc"] is not None
                 if row_edits:
-                    if standards_needs_update and rec["standards_tc"] is not None:
+                    if applied_standards_update:
                         rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, edited_standard))
-                    if year_needs_update and rec["issued_year_tc"] is not None:
+                    if applied_year_update:
                         rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, edited_year))
-                    if harmonised_needs_update and rec["harmonised_tc"] is not None:
+                    if applied_harmonised_update:
                         rebuild_cell_with_segments(rec["harmonised_tc"], build_plain_replacement_segments(word_harmonised_text, edited_harmonised))
-                    if title_needs_update and rec["title_tc"] is not None:
+                    if applied_title_update:
                         rebuild_cell_with_segments(rec["title_tc"], build_word_diff_segments(word_title_text, edited_title))
-                    row_updated = standards_needs_update or year_needs_update or harmonised_needs_update or title_needs_update
+                    row_updated = applied_standards_update or applied_year_update or applied_harmonised_update or applied_title_update
                     if row_updated:
                         updated_count += 1
                     status = "UPDATED" if row_updated else "SAME_NO_UPDATE"
@@ -2089,17 +2093,21 @@ def process_document(
             year_needs_update = (("issued_year" in row_edits) and word_year_text != final_year) or (bool(final_year) and "issued_year" not in row_edits and word_year_text != final_year)
             harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(final_harmonised)
             title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(final_title)
+            applied_standards_update = standards_needs_update and rec["standards_tc"] is not None
+            applied_year_update = year_needs_update and rec["issued_year_tc"] is not None
+            applied_harmonised_update = harmonised_needs_update and rec["harmonised_tc"] is not None
+            applied_title_update = title_needs_update and rec["title_tc"] is not None
 
-            if standards_needs_update and rec["standards_tc"] is not None:
+            if applied_standards_update:
                 rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, final_standard))
-            if year_needs_update and rec["issued_year_tc"] is not None:
+            if applied_year_update:
                 rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, final_year))
-            if harmonised_needs_update and rec["harmonised_tc"] is not None:
+            if applied_harmonised_update:
                 rebuild_cell_with_segments(rec["harmonised_tc"], build_plain_replacement_segments(word_harmonised_text, final_harmonised))
-            if title_needs_update and rec["title_tc"] is not None:
+            if applied_title_update:
                 rebuild_cell_with_segments(rec["title_tc"], build_word_diff_segments(word_title_text, final_title))
 
-            row_updated = standards_needs_update or year_needs_update or harmonised_needs_update or title_needs_update
+            row_updated = applied_standards_update or applied_year_update or applied_harmonised_update or applied_title_update
             if row_updated:
                 updated_count += 1
 

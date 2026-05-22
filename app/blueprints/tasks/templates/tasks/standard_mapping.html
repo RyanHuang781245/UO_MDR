@@ -1137,7 +1137,7 @@
   {% if task_lock and task_lock.held_by_current_user %}
   <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
     <i class="bi bi-unlock mt-1"></i>
-    <div>目前由你操作此任務，其他使用者無法操作，操作完畢請點擊 <span class="fw-bold text-danger">離開標準更新按鈕</span> 釋放鎖定(直接關閉瀏覽器不會釋放鎖定)，若關閉瀏覽器超過 <span class="fw-bold text-danger">1</span> 分鐘會自動釋放鎖定</div>
+    <div>目前由你操作此任務，其他使用者無法操作，操作完畢請點擊 <span class="fw-bold text-danger">離開標準更新按鈕</span> 釋放鎖定(直接關閉瀏覽器不會釋放鎖定)，離開頁面或關閉瀏覽器超過 <span class="fw-bold text-danger">1</span> 分鐘會自動釋放鎖定</div>
   </div>
   {% endif %}
 
@@ -1365,10 +1365,10 @@
                           min="1"
                           step="1"
                           value="{{ target_table_index or '' }}"
-                          placeholder="留白表示處理該章節所有表格；填 1 代表第 1 張"
+                          placeholder="留白表示處理該章節所有表格，填 1 代表第 1 張"
                           {% if not limit_to_chapter %}disabled{% endif %}
                         >
-                        <div class="small text-muted mt-2">若該章節有多張表，可輸入第 1、2、3... 張表；留白則處理全部</div>
+                        <div class="small text-muted mt-2">若該章節有多張表，可輸入第 1、2、3... 張表，留白則處理全部</div>
                       </div>
                     </div>
                   </div>
@@ -1391,7 +1391,7 @@
                   <div class="standard-priority-summary mt-0">
                     系統會先預檢四個目標欄位：<code>Standards</code>、<code>Issued Year</code>、
                     <code>EU Harmonised Standards under MDR 2017/745 (YES/NO)</code>、<code>Title</code>
-                    只有完全符合這四個欄位的表格可以直接更新；若欄位多一欄、少一欄，或名稱差異過大，必須先完成手動對應欄位設定後才能更新
+                    只有完全符合這四個欄位的表格可以直接更新，若欄位多一欄、少一欄，或名稱差異過大，必須先完成手動對應欄位設定後才能更新
                   </div>
                 </div>
               </div>
@@ -1476,7 +1476,7 @@
                                   <div class="standard-manual-mapping-spacer"></div>
 
                                   <div class="standard-manual-mapping-column">
-                                    <div class="standard-manual-mapping-column__title">{{ table_check.table_label }} 掃描標頭</div>
+                                    <div class="standard-manual-mapping-column__title">{{ table_check.table_label }} 掃描標題</div>
                                     <div class="standard-manual-mapping-list">
                                       {% for option in table_check.header_options %}
                                         <button
@@ -1532,7 +1532,7 @@
     <div class="main-card mb-3">
       <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
         <div class="fw-bold">表格預檢結果</div>
-        <div class="small text-muted">完整符合預設四欄格式的表格可直接更新；其餘格式需先完成手動對應欄位設定</div>
+        <div class="small text-muted">完整符合預設四欄格式的表格可直接更新，其餘格式需先完成手動對應欄位設定</div>
       </div>
       <div class="p-4">
         <div class="standard-precheck-grid">
@@ -1587,12 +1587,12 @@
       <div class="standard-summary-card standard-summary-card--override">
         <div class="standard-summary-card__label">人工改選欄位數</div>
         <div class="standard-summary-card__value" id="overrideCount">0</div>
-        <div class="standard-summary-card__depiction">依目前改選結果輸出至新的 Word</div>
+        <div class="standard-summary-card__depiction">人工改選的標準，使用黃色標記改選欄位</div>
       </div>
       <div class="standard-summary-card standard-summary-card--edit">
         <div class="standard-summary-card__label">人工編輯列數</div>
         <div class="standard-summary-card__value" id="editCount">0</div>
-        <div class="standard-summary-card__depiction">直接編輯欄位值，下載時會一併寫入 Word</div>
+        <div class="standard-summary-card__depiction">人工編輯的欄位，使用黃色標記編輯欄位</div>
       </div>
     </div>
 
@@ -1600,12 +1600,12 @@
       <div class="standard-preview-bar">
         <div class="standard-preview-bar__main">
           <div class="standard-preview-bar__title mb-2">
-            目前規則：核心編號比對後，先比年份，再依 {{ iso_priority | join(' > ') }}{% if target_chapter_ref %}；限定章節 {{ target_chapter_ref }}{% if target_table_index %} 第 {{ target_table_index }} 張表{% endif %}{% endif %}
+            目前規則：核心編號比對後，先比年份，再依 {{ iso_priority | join(' > ') }}{% if target_chapter_ref %}，限定章節 {{ target_chapter_ref }}{% if target_table_index %} 第 {{ target_table_index }} 張表{% endif %}{% endif %}
           </div>
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
               <i class="bi bi-info-circle"></i>
-              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單；若要調整自動選用規則，請展開上方設定區重新產生預覽</div>
+              <div>點擊欄位資料可檢視命中標準清單，若要調整自動選用規則，請展開上方設定區重新產生預覽</div>
             </div>
             <div id="actionBar" class="standard-preview-note" aria-hidden="true">
               <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -1622,13 +1622,13 @@
       <div class="standard-preview-filters">
         <div class="search-wrapper">
           <i class="bi bi-search"></i>
-          <input type="text" id="standardSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋標準號、標題或分類...">
+          <input type="text" id="standardSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋標準、年份...">
         </div>
         <select id="standardStatusFilter" class="form-select form-control-custom rounded-2">
           <option value="all">全部狀態</option>
           <option value="updated">只看已更新</option>
-          <option value="missing">只看查無來源</option>
           <option value="same">只看無需更新</option>
+          <option value="missing">只看查無來源</option>
           <option value="overridden">只看人工改選</option>
         </select>
         <div class="standard-preview-filter-actions">

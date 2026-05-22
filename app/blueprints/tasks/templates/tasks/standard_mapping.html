@@ -1512,13 +1512,19 @@
             </details>
           </div>
           <div class="d-flex justify-content-end gap-2 flex-wrap">
-            <button class="btn btn-outline-primary fw-bold px-3" type="submit" name="action" value="inspect_headers">
+            <button class="btn btn-outline-primary fw-bold px-3" id="inspectHeadersBtn" type="submit" name="action" value="inspect_headers">
               <i class="bi bi-search"></i>
               欄位檢查
             </button>
-            <button class="btn btn-primary fw-bold px-3" type="submit" name="action" value="preview" {% if has_unresolved_manual_mapping %}disabled title="請先完成手動對應欄位設定"{% endif %}>
-              <i class="bi bi-arrow-repeat"></i>
-              更新標準清單
+            <button class="btn btn-primary fw-bold px-3" id="previewSubmitBtn" type="submit" name="action" value="preview" {% if has_unresolved_manual_mapping %}disabled title="請先完成手動對應欄位設定"{% endif %}>
+              <span data-submit-default>
+                <i class="bi bi-arrow-repeat"></i>
+                更新標準清單
+              </span>
+              <span data-submit-loading class="d-none">
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                更新中...
+              </span>
             </button>
           </div>
         </form>
@@ -1634,9 +1640,15 @@
             <i class="bi bi-file-earmark-text"></i>
             匯出改選 Log
           </button>
-          <button class="btn btn-primary px-3" form="downloadForm" type="submit">
-            <i class="bi bi-file-earmark-word"></i>
-            下載目前結果
+          <button class="btn btn-primary px-3" id="downloadSubmitBtn" form="downloadForm" type="submit">
+            <span data-submit-default>
+              <i class="bi bi-file-earmark-word"></i>
+              下載目前結果
+            </span>
+            <span data-submit-loading class="d-none">
+              <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+              下載中...
+            </span>
           </button>
         </div>
       </div>
@@ -1729,11 +1741,24 @@
 </div>
 
 <script>
+  const standardMappingConfigForm = document.getElementById("standardMappingConfigForm");
   const prioritySortList = document.getElementById("prioritySortList");
   const downloadForm = document.getElementById("downloadForm");
+  const inspectHeadersBtn = document.getElementById("inspectHeadersBtn");
+  const previewSubmitBtn = document.getElementById("previewSubmitBtn");
+  const downloadSubmitBtn = document.getElementById("downloadSubmitBtn");
   const resetPriorityDefaultsBtn = document.getElementById("resetPriorityDefaultsBtn");
   const defaultIsoPriority = {{ default_iso_priority | tojson }};
   const defaultEnabledStandardLevels = new Set({{ default_enabled_standard_levels | tojson }});
+
+  const setSubmitButtonState = (button, isLoading) => {
+    if (!button) return;
+    const defaultNode = button.querySelector("[data-submit-default]");
+    const loadingNode = button.querySelector("[data-submit-loading]");
+    if (defaultNode) defaultNode.classList.toggle("d-none", isLoading);
+    if (loadingNode) loadingNode.classList.toggle("d-none", !isLoading);
+    button.disabled = isLoading;
+  };
 
   const syncDownloadPriorityState = () => {
     if (!downloadForm || !prioritySortList) return;
@@ -1761,6 +1786,18 @@
       syncDownloadPriorityState();
       if (typeof syncInteractiveState === "function") {
         syncInteractiveState();
+      }
+      setSubmitButtonState(downloadSubmitBtn, true);
+    });
+  }
+
+  if (standardMappingConfigForm) {
+    standardMappingConfigForm.addEventListener("submit", (event) => {
+      const submitter = event.submitter;
+      if (!submitter || submitter.value !== "preview") return;
+      setSubmitButtonState(previewSubmitBtn, true);
+      if (inspectHeadersBtn) {
+        inspectHeadersBtn.disabled = true;
       }
     });
   }

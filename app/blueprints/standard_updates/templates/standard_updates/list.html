@@ -240,7 +240,7 @@
           <div class="form-text text-end small task-create-form__helper invisible" aria-hidden="true">0/50</div>
         </div>
         <div class="task-create-form__actions">
-          <label class="form-label small fw-bold text-uppercase text-muted">建立</label>
+          <!-- <label class="form-label small fw-bold text-uppercase text-muted">建立</label> -->
           <button class="btn btn-primary fw-bold task-create-form__submit" type="submit">
             <i class="bi bi-plus-lg me-1"></i>
             建立任務
@@ -515,6 +515,7 @@
 
   function renderStandardUpdateDetailBody(details) {
     const rows = [
+      { label: "任務 ID", value: details.id || "-" },
       { label: "建立人員", value: details.creator || "-" },
       { label: "建立時間", value: details.created || "-" },
       { label: "來源模式", value: details.mode || "-" },
@@ -541,7 +542,7 @@
           </div>
         </div>
         <div class="mb-4">
-          <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務描述</label>
+          <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務描述 (選填)</label>
           <textarea class="form-control form-control-custom shadow-sm" id="drawerStandardUpdateDesc" rows="4" maxlength="50" placeholder="輸入任務描述...">${escapeHtml((details.desc || '').slice(0, 50))}</textarea>
           <div class="form-text text-end small" id="drawerStandardUpdateDescCount">${Math.min((details.desc || '').length, 50)}/50</div>
           <div class="mt-2 text-end">
@@ -551,7 +552,6 @@
           </div>
         </div>
         <div class="mb-2">
-          <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務資訊</label>
           ${rowsHtml}
         </div>
         <div class="mt-4 pt-3 border-top text-end">
@@ -590,7 +590,7 @@
       applyStandardUpdateRowUpdate(taskId, { name: result.name || trimmed });
       const drawerTitle = document.getElementById("standardUpdateDrawerTitle");
       if (drawerTitle) {
-        drawerTitle.textContent = result.name || trimmed;
+        drawerTitle.textContent = "任務資訊";
       }
       setDrawerFeedback(feedbackEl, result.message || "已更新標準更新任務名稱");
     } catch (error) {
@@ -665,7 +665,7 @@
     };
     const openDrawer = (details) => {
       if (!drawer || !backdrop || !drawerBody || !drawerTitle) return;
-      drawerTitle.textContent = details.name || "標準更新任務資訊";
+      drawerTitle.textContent = "任務資訊";
       drawerBody.innerHTML = renderStandardUpdateDetailBody(details);
       bindLengthCounter(document.getElementById("drawerStandardUpdateName"), document.getElementById("drawerStandardUpdateNameCount"));
       bindLengthCounter(document.getElementById("drawerStandardUpdateDesc"), document.getElementById("drawerStandardUpdateDescCount"));

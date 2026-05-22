@@ -1,26 +1,76 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .task-detail-summary-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .task-detail-summary-main {
+    flex: 1 1 320px;
+    min-width: 0;
+  }
+  .task-detail-summary-title {
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .task-detail-summary-desc {
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-width: 100%;
+  }
+  .task-detail-summary-id {
+    display: inline-flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    flex: 0 1 220px;
+    min-width: 0;
+    color: var(--bs-gray-500);
+    font-size: 0.875rem;
+    opacity: 0.9;
+  }
+  .task-detail-summary-id code {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+  @media (max-width: 991.98px) {
+    .task-detail-summary-header {
+      flex-direction: column;
+    }
+    .task-detail-summary-id {
+      justify-content: flex-start;
+    }
+  }
+</style>
 <div class="container-fluid px-0">
     <div class="mb-3">
-        <h1 class="h3 mb-1 fw-bold">任務詳情</h1>
+        <h1 class="h3 mb-1 fw-bold">文件轉換任務詳情</h1>
         <!-- <p class="text-muted">檢視任務基本資訊與檔案結構，並同步 NAS 變更。</p> -->
     </div>
 
-    <div class="main-card mb-4 position-relative">
+    <div class="main-card mb-4">
         <div class="px-4 py-4 border-bottom">
-            <div class="d-flex align-items-center gap-3">
-              <div class="flex-grow-1">
-                  <h2 class="h5 mb-1 fw-bold text-dark">{{ task.name }}</h2>
-                  <div class="text-muted small">
-                      {{ task.description or '<span class="italic opacity-50">尚未填寫描述</span>'|safe }}
+            <div class="task-detail-summary-header">
+              <div class="task-detail-summary-main">
+                  <h2 class="h5 mb-1 fw-bold text-dark task-detail-summary-title" title="{{ task.name }}">{{ task.name[:50] }}{% if task.name|length > 50 %}…{% endif %}</h2>
+                  <div class="text-muted small task-detail-summary-desc" {% if task.description %}title="{{ task.description }}"{% endif %}>
+                      {% if task.description %}{{ task.description[:50] }}{% if task.description|length > 50 %}…{% endif %}{% else %}<span class="italic opacity-50">尚未填寫描述</span>{% endif %}
                   </div>
               </div>
-            </div>
-            <div class="position-absolute top-0 end-0 mt-3 me-4 text-muted small d-flex align-items-center gap-1 opacity-75">
+              <div class="task-detail-summary-id">
                 任務 ID: <code class="text-primary fw-bold">{{ task.id }}</code>
                 <button class="btn btn-link p-0 text-muted" style="font-size: inherit;" onclick="copyToClipboard('{{ task.id }}', this)" title="複製 ID">
                     <i class="bi bi-files"></i>
                 </button>
+              </div>
             </div>
         </div>
         <div class="px-4 py-3 bg-light bg-opacity-50">

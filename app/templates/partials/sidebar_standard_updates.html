@@ -1,0 +1,23 @@
+<ul class="nav flex-column">
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if request.endpoint == 'tasks_bp.launcher' else '' }}" href="{{ url_for('tasks_bp.launcher') }}">
+      <i class="bi bi-grid me-2"></i>
+      功能入口
+    </a>
+    <div class="px-3 pt-3 pb-2 small text-uppercase fw-semibold text-muted">標準更新工作區</div>
+    <a class="nav-link {{ 'active' if request.endpoint == 'standard_updates_bp.list' else '' }}" href="{{ url_for('standard_updates_bp.list') }}">
+      <i class="bi bi-list-task me-2"></i>
+      任務管理
+    </a>
+    {% if task and task.id %}
+    <a class="nav-link {{ 'active' if request.endpoint == 'standard_updates_bp.detail' else '' }}" href="{{ url_for('standard_updates_bp.detail', task_id=task.id) }}">
+      <i class="bi bi-info-circle me-2"></i>
+      任務詳情
+    </a>
+    <a class="nav-link {{ 'active' if request.endpoint == 'standard_updates_bp.mapping' else '' }} {% if not is_ready %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
+      <i class="bi bi-arrow-repeat me-2"></i>
+      標準更新
+    </a>
+    {% endif %}
+  </li>
+</ul>

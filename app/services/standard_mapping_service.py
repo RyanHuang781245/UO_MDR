@@ -125,6 +125,15 @@ def normalize_harmonised_identifier(text: str) -> str:
     return collapsed.strip()
 
 
+def normalize_harmonised_yes_no(value: str) -> str:
+    normalized = normalize_text(value).upper()
+    if normalized in {"Y", "YES"}:
+        return "YES"
+    if normalized in {"N", "NO"}:
+        return "NO"
+    return normalized
+
+
 def normalize_harmonised_standard_text(text: str, title: str = "") -> str:
     raw_text = "" if text is None else str(text).replace("\r\n", "\n").replace("\r", "\n")
     lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
@@ -155,13 +164,42 @@ def extract_harmonised_reference_keys(text: str) -> list[str]:
     return keys
 
 
-def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> set[str] | None:
+def coerce_year_value(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value if 1900 <= value <= 2099 else None
+    text = normalize_text(value)
+    if re.fullmatch(r"(19|20)\d{2}", text):
+        return int(text)
+    return None
+
+
+def extract_harmonised_reference_year(entry: str) -> int | None:
+    family = detect_search_family(entry)
+    if family == "ASTM":
+        return extract_latest_year_from_astm_style(entry)
+    if family == "IEC_FAMILY":
+        return extract_latest_year_from_iec_style(entry)
+    return extract_latest_year_from_en_iso_style(entry)
+
+
+def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> dict[str, set[int]] | None:
     path = Path(reference_path or "")
     if not path.is_file():
         return None
     wb = load_workbook(path, data_only=True, read_only=True)
     try:
-        lookup: set[str] = set()
+        lookup: dict[str, set[int]] = {}
+
+        def add_lookup(key: str, year: int | None) -> None:
+            normalized_key = normalize_text(key)
+            if not normalized_key:
+                return
+            bucket = lookup.setdefault(normalized_key, set())
+            if year is not None:
+                bucket.add(year)
+
         for ws in wb.worksheets:
             rows = list(ws.iter_rows(min_row=1, max_row=min(10, ws.max_row), values_only=True))
             col_index = find_excel_header_col_index(rows, HARMONISED_REFERENCE_HEADERS)
@@ -172,9 +210,10 @@ def load_harmonised_reference_index(reference_path: str | os.PathLike | None = N
                 value = values[col_index] if col_index < len(values) else None
                 for normalized in extract_harmonised_reference_entries(value):
                     if normalized != normalize_harmonised_standard_text(HARMONISED_REFERENCE_HEADERS[0]):
-                        lookup.add(normalized)
-                for match_key in extract_harmonised_reference_keys(value):
-                    lookup.add(match_key)
+                        year = extract_harmonised_reference_year(normalized)
+                        add_lookup(normalized, year)
+                        match_key = extract_standard_match_key(normalized, "")
+                        add_lookup(match_key, year)
         return lookup
     finally:
         wb.close()
@@ -251,14 +290,30 @@ def load_regulation_reference_index(reference_path: str | os.PathLike | None = N
         wb.close()
 
 
-def is_harmonised_standard(std_no: str, title: str, harmonised_reference_index: set[str] | None) -> bool:
+def is_harmonised_standard(std_no: str, title: str, harmonised_reference_index: dict[str, set[int]] | None, *, year=None) -> bool:
     if not harmonised_reference_index:
         return False
     normalized = normalize_harmonised_standard_text(std_no)
     match_key = extract_standard_match_key(std_no, "")
+    target_year = coerce_year_value(year)
+    if target_year is None:
+        family = detect_search_family(std_no)
+        if family == "ASTM":
+            target_year = extract_latest_year_from_astm_style(std_no)
+        elif family == "IEC_FAMILY":
+            target_year = extract_latest_year_from_iec_style(std_no)
+        else:
+            target_year = extract_latest_year_from_en_iso_style(std_no)
+    if target_year is None:
+        return False
+
+    def matches(key: str) -> bool:
+        years = harmonised_reference_index.get(key) or set()
+        return target_year in years
+
     return bool(
-        (normalized and normalized in harmonised_reference_index)
-        or (match_key and match_key in harmonised_reference_index)
+        (normalized and matches(normalized))
+        or (match_key and matches(match_key))
     )
 
 
@@ -604,20 +659,31 @@ def build_year_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
     return build_diff_segments(old_text, new_text)
 
 
-def build_preserve_original_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
+def build_word_diff_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
     old_text = normalize_text(old_text)
     new_text = normalize_text(new_text)
     if old_text == new_text:
         return [(new_text, False)]
-    if not old_text:
-        return [(new_text, True)]
-    if not new_text:
-        return [(old_text, False)]
-    return merge_text_segments([
-        (old_text, False),
-        (" ", False),
-        (new_text, True),
-    ])
+    token_pattern = r"\s+|\w+|[^\w\s]"
+    old_tokens = re.findall(token_pattern, old_text)
+    new_tokens = re.findall(token_pattern, new_text)
+    matcher = SequenceMatcher(a=old_tokens, b=new_tokens)
+    segments: list[tuple[str, bool]] = []
+    for tag, _, _, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            segments.extend((token, False) for token in new_tokens[j1:j2])
+        elif tag in {"replace", "insert"}:
+            for token in new_tokens[j1:j2]:
+                segments.append((token, False if token.isspace() else True))
+    return merge_text_segments(segments)
+
+
+def build_plain_replacement_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
+    normalized_old = normalize_text(old_text)
+    normalized_new = normalize_text(new_text)
+    if normalized_old == normalized_new:
+        return [(normalized_new, False)]
+    return [(normalized_new, True)]
 
 
 def get_first_run_properties(tc: etree._Element) -> etree._Element | None:
@@ -633,6 +699,8 @@ def set_run_color(run: etree._Element, color_hex: str):
     if color is None:
         color = etree.SubElement(rpr, qn("w:color"))
     color.set(qn("w:val"), color_hex)
+    for attr_name in ("themeColor", "themeTint", "themeShade"):
+        color.attrib.pop(qn(f"w:{attr_name}"), None)
 
 
 def rebuild_cell_with_segments(tc: etree._Element, segments: list[tuple[str, bool]]):
@@ -910,7 +978,16 @@ def find_latest_year_from_excel(
                 "candidate_harmonised": (
                     ""
                     if harmonised_reference_index is None
-                    else ("Yes" if is_harmonised_standard(rec["standard_no"], rec.get("standard_title", ""), harmonised_reference_index) else "No")
+                    else (
+                        "YES"
+                        if is_harmonised_standard(
+                            rec["standard_no"],
+                            rec.get("standard_title", ""),
+                            harmonised_reference_index,
+                            year=year,
+                        )
+                        else "NO"
+                    )
                 ),
                 "latest_year": year,
                 "standard_level": rec["standard_level"],
@@ -1032,13 +1109,14 @@ def find_latest_year_from_excel(
         ""
         if harmonised_reference_index is None
         else (
-            "Yes"
+            "YES"
             if is_harmonised_standard(
                 selected["matched_standard_no"],
                 selected.get("matched_title", ""),
                 harmonised_reference_index,
+                year=selected.get("latest_year"),
             )
-            else "No"
+            else "NO"
         )
     )
     result["iso_priority"] = list(normalized_iso_priority)
@@ -1137,7 +1215,11 @@ def normalize_edit_map(edit_map: dict | None) -> dict[str, dict[str, str]]:
         if not isinstance(value, dict):
             continue
         fields = {
-            str(field): str(field_value)
+            str(field): (
+                normalize_harmonised_yes_no(str(field_value))
+                if str(field) == "harmonised"
+                else str(field_value)
+            )
             for field, field_value in value.items()
             if str(field) in allowed_fields
         }
@@ -1256,7 +1338,7 @@ def resolve_target_table_indexes(
     *,
     document_xml_path: str,
     target_chapter_ref: str = "",
-    target_table_index: int | None = None,
+    target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
 ) -> set[int] | None:
     chapter_ref = normalize_text(target_chapter_ref)
     if not chapter_ref:
@@ -1344,11 +1426,27 @@ def resolve_target_table_indexes(
             scoped_tables.extend(block.xpath(".//w:tbl", namespaces=NS))
 
     if target_table_index is not None:
-        if target_table_index <= 0:
+        if isinstance(target_table_index, int):
+            requested_indexes = [target_table_index]
+        else:
+            requested_indexes = []
+            for item in target_table_index:
+                try:
+                    requested_indexes.append(int(item))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("表格索引格式不正確") from exc
+        if not requested_indexes:
+            raise ValueError("表格索引格式不正確")
+        invalid_indexes = [value for value in requested_indexes if value <= 0]
+        if invalid_indexes:
             raise ValueError("表格索引必須大於 0")
-        if target_table_index > len(scoped_tables):
-            raise ValueError(f"指定章節只有 {len(scoped_tables)} 張表，找不到第 {target_table_index} 張")
-        scoped_tables = [scoped_tables[target_table_index - 1]]
+        missing_indexes = [value for value in requested_indexes if value > len(scoped_tables)]
+        if missing_indexes:
+            if len(missing_indexes) == 1:
+                raise ValueError(f"指定章節只有 {len(scoped_tables)} 張表，找不到第 {missing_indexes[0]} 張")
+            missing_text = "、".join(str(value) for value in missing_indexes)
+            raise ValueError(f"指定章節只有 {len(scoped_tables)} 張表，找不到第 {missing_text} 張")
+        scoped_tables = [scoped_tables[value - 1] for value in requested_indexes]
 
     all_tables = root.xpath(".//w:tbl", namespaces=NS)
     table_index_map = {id(tbl): idx for idx, tbl in enumerate(all_tables)}
@@ -1777,7 +1875,7 @@ def inspect_document_tables(
     word_path: str,
     *,
     target_chapter_ref: str = "",
-    target_table_index: int | None = None,
+    target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
     manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> dict:
     normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
@@ -1822,7 +1920,7 @@ def process_document(
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
     required_headers: list[str] | tuple[str, ...] | None = None,
     target_chapter_ref: str = "",
-    target_table_index: int | None = None,
+    target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
     manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> dict:
     override_map = override_map or {}
@@ -1864,7 +1962,7 @@ def process_document(
             row_edits = normalized_edit_map.get(row_key, {})
             standards = rec["standards"]
             word_year_text = normalize_text(rec["issued_year"])
-            word_harmonised_text = normalize_text(rec["harmonised"])
+            word_harmonised_text = normalize_harmonised_yes_no(rec["harmonised"])
             word_title_text = normalize_text(rec["title"])
             match_info = None
             if is_regulation_lookup_target(standards):
@@ -1887,22 +1985,36 @@ def process_document(
             if not match_info:
                 edited_standard = row_edits.get("standards", standards)
                 edited_year = row_edits.get("issued_year", word_year_text)
-                edited_harmonised = row_edits.get("harmonised", word_harmonised_text)
+                auto_harmonised = (
+                    "YES"
+                    if harmonised_reference_index and is_harmonised_standard(
+                        edited_standard,
+                        word_title_text,
+                        harmonised_reference_index,
+                        year=edited_year,
+                    )
+                    else "NO"
+                ) if harmonised_reference_index else word_harmonised_text
+                edited_harmonised = row_edits.get("harmonised", auto_harmonised)
                 edited_title = row_edits.get("title", word_title_text)
                 standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(edited_standard)
                 year_needs_update = ("issued_year" in row_edits and word_year_text != edited_year)
                 harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(edited_harmonised)
                 title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(edited_title)
+                applied_standards_update = standards_needs_update and rec["standards_tc"] is not None
+                applied_year_update = year_needs_update and rec["issued_year_tc"] is not None
+                applied_harmonised_update = harmonised_needs_update and rec["harmonised_tc"] is not None
+                applied_title_update = title_needs_update and rec["title_tc"] is not None
                 if row_edits:
-                    if standards_needs_update and rec["standards_tc"] is not None:
+                    if applied_standards_update:
                         rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, edited_standard))
-                    if year_needs_update and rec["issued_year_tc"] is not None:
+                    if applied_year_update:
                         rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, edited_year))
-                    if harmonised_needs_update and rec["harmonised_tc"] is not None:
-                        rebuild_cell_with_segments(rec["harmonised_tc"], build_preserve_original_segments(word_harmonised_text, edited_harmonised))
-                    if title_needs_update and rec["title_tc"] is not None:
-                        rebuild_cell_with_segments(rec["title_tc"], build_diff_segments(word_title_text, edited_title))
-                    row_updated = standards_needs_update or year_needs_update or harmonised_needs_update or title_needs_update
+                    if applied_harmonised_update:
+                        rebuild_cell_with_segments(rec["harmonised_tc"], build_plain_replacement_segments(word_harmonised_text, edited_harmonised))
+                    if applied_title_update:
+                        rebuild_cell_with_segments(rec["title_tc"], build_word_diff_segments(word_title_text, edited_title))
+                    row_updated = applied_standards_update or applied_year_update or applied_harmonised_update or applied_title_update
                     if row_updated:
                         updated_count += 1
                     status = "UPDATED" if row_updated else "SAME_NO_UPDATE"
@@ -1977,30 +2089,41 @@ def process_document(
             latest_year = "" if match_info.get("latest_year") in {None, ""} else str(match_info["latest_year"])
             matched_standard_no = match_info["matched_standard_no"]
             matched_display_standard_no = match_info["matched_display_standard_no"]
-            matched_harmonised = normalize_text(match_info.get("matched_harmonised", ""))
+            matched_harmonised = normalize_harmonised_yes_no(match_info.get("matched_harmonised", ""))
             matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
             final_standard = row_edits.get("standards", matched_display_standard_no)
             final_year = row_edits.get("issued_year", latest_year)
-            final_harmonised = row_edits.get(
-                "harmonised",
-                word_harmonised_text if harmonised_reference_index is None else matched_harmonised,
-            )
             final_title = row_edits.get("title", matched_title)
+            auto_harmonised = (
+                "YES"
+                if harmonised_reference_index and is_harmonised_standard(
+                    final_standard,
+                    final_title,
+                    harmonised_reference_index,
+                    year=final_year,
+                )
+                else "NO"
+            ) if harmonised_reference_index is not None else word_harmonised_text
+            final_harmonised = row_edits.get("harmonised", auto_harmonised)
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(final_standard)
             year_needs_update = (("issued_year" in row_edits) and word_year_text != final_year) or (bool(final_year) and "issued_year" not in row_edits and word_year_text != final_year)
             harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(final_harmonised)
             title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(final_title)
+            applied_standards_update = standards_needs_update and rec["standards_tc"] is not None
+            applied_year_update = year_needs_update and rec["issued_year_tc"] is not None
+            applied_harmonised_update = harmonised_needs_update and rec["harmonised_tc"] is not None
+            applied_title_update = title_needs_update and rec["title_tc"] is not None
 
-            if standards_needs_update and rec["standards_tc"] is not None:
+            if applied_standards_update:
                 rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, final_standard))
-            if year_needs_update and rec["issued_year_tc"] is not None:
+            if applied_year_update:
                 rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, final_year))
-            if harmonised_needs_update and rec["harmonised_tc"] is not None:
-                rebuild_cell_with_segments(rec["harmonised_tc"], build_preserve_original_segments(word_harmonised_text, final_harmonised))
-            if title_needs_update and rec["title_tc"] is not None:
-                rebuild_cell_with_segments(rec["title_tc"], build_diff_segments(word_title_text, final_title))
+            if applied_harmonised_update:
+                rebuild_cell_with_segments(rec["harmonised_tc"], build_plain_replacement_segments(word_harmonised_text, final_harmonised))
+            if applied_title_update:
+                rebuild_cell_with_segments(rec["title_tc"], build_word_diff_segments(word_title_text, final_title))
 
-            row_updated = standards_needs_update or year_needs_update or harmonised_needs_update or title_needs_update
+            row_updated = applied_standards_update or applied_year_update or applied_harmonised_update or applied_title_update
             if row_updated:
                 updated_count += 1
 

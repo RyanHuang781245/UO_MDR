@@ -202,6 +202,16 @@
                                 <a class="btn-action-icon" href="{{ url_for('tasks_bp.task_download_mapping_scheme', task_id=task_id, scheme_id=scheme.id) }}" title="下載 Mapping 檔">
                                     <i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載 Mapping 檔</span>
                                 </a>
+                                <!-- {% if scheme.has_check_log %}
+                                <a class="btn-action-icon text-secondary" href="{{ url_for('tasks_bp.task_download_mapping_scheme_log', task_id=task_id, scheme_id=scheme.id, kind='check') }}" title="下載引用檢查 Log">
+                                    <i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">引用檢查 Log</span>
+                                </a>
+                                {% endif %}
+                                {% if scheme.has_check_extract_log %}
+                                <a class="btn-action-icon text-secondary" href="{{ url_for('tasks_bp.task_download_mapping_scheme_log', task_id=task_id, scheme_id=scheme.id, kind='check_extract') }}" title="下載擷取檢查 Log">
+                                    <i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">擷取檢查 Log</span>
+                                </a>
+                                {% endif %} -->
                                 <button
                                     class="btn-action-icon"
                                     type="button"
@@ -474,6 +484,14 @@
                 </div>
             </div>
             <div class="d-flex align-items-center gap-2">
+                {% if check_log_downloads %}
+                {% for item in check_log_downloads %}
+                <a class="btn btn-white border bg-white shadow-sm fw-medium d-inline-flex align-items-center gap-2" href="{{ item.url }}">
+                    <i class="bi bi-download"></i>
+                    {{ item.label }}
+                </a>
+                {% endfor %}
+                {% endif %}
                 {% if current_action == 'check_extract' and auto_saved_scheme_name and allow_direct_run and not current_job_in_progress and not has_error %}
                 <form method="post" class="mb-0" {% if has_warning and warning_confirm %}onsubmit="return confirm({{ warning_confirm|tojson }});"{% endif %}>
                     <input type="hidden" name="action" value="run_cached">
@@ -494,13 +512,13 @@
         <div class="px-4 py-4">
             {% if current_job_in_progress %}
             <div class="border rounded-3 px-4 py-4 bg-light bg-opacity-50">
-                <div class="d-flex align-items-center gap-3 mb-2">
+                <!-- <div class="d-flex align-items-center gap-3 mb-2">
                     <span class="status-badge status-badge-running">
                         <i class="bi bi-arrow-repeat spin"></i>
                         {{ '引用文件檢查中' if current_action == 'check' else '擷取條件檢查中' if current_action == 'check_extract' else '處理中' }}
                     </span>
                     <span class="small text-muted">完成後會自動顯示處理步驟，右上角提示也可隨時跳回結果。</span>
-                </div>
+                </div> -->
                 {% if current_mapping_display_name %}
                 <div class="small text-muted">
                     目前檔案：<span class="font-monospace">{{ current_mapping_display_name }}</span>
@@ -587,7 +605,7 @@
     width: 180px;
 }
 .saved-mapping-col-actions {
-    width: 430px;
+    width: 620px;
 }
 .run-status-container {
     position: fixed;

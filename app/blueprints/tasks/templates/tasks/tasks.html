@@ -169,11 +169,48 @@
         align-items: center;
         gap: 0.5rem;
     }
+    .task-create-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 5fr) minmax(0, 5fr) minmax(180px, 2fr);
+        gap: 1rem;
+        align-items: start;
+    }
+    .task-create-grid__cell {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+        min-width: 0;
+    }
+    .task-create-grid__cell .form-label {
+        margin-bottom: 0;
+        line-height: 1.1;
+    }
+    .task-create-grid__helper {
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+    .task-create-grid__helper.invisible {
+        visibility: hidden !important;
+    }
+    .task-create-grid__action {
+        align-items: stretch;
+    }
+    .task-create-grid__action .btn {
+        height: calc(1.5em + 0.75rem + 2px);
+    }
+    @media (max-width: 991.98px) {
+        .task-create-grid {
+            grid-template-columns: 1fr;
+        }
+        .task-create-grid__action .btn {
+            width: 100%;
+        }
+    }
 </style>
 <div class="container-fluid px-0">
     <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
         <div>
-            <h1 class="h3 mb-1 fw-bold">任務管理</h1>
+            <h1 class="h3 mb-1 fw-bold">文件轉換任務管理</h1>
             <p class="text-muted mb-0 small">建立新任務或管理現有任務。請輸入任務名稱並選擇 NAS 存取路徑</p>
         </div>
         <div class="d-flex gap-2">
@@ -191,29 +228,34 @@
     <!-- 建立任務表單 -->
     <div class="main-card p-4 mb-4">
         <form action="{{ url_for('tasks_bp.create_task') }}" method="post" id="createTaskForm">
-            <div class="row g-3">
-                <div class="col-md-5">
+            <div class="task-create-grid">
+                <div class="task-create-grid__cell">
                     <label class="form-label small fw-bold text-uppercase text-muted">任務名稱</label>
-                    <input class="form-control form-control-custom rounded-2" name="task_name" placeholder="輸入任務名稱 (中英文)">
+                    <input class="form-control form-control-custom rounded-2" name="task_name" placeholder="輸入任務名稱 (中英文)" maxlength="50">
+                    <div class="form-text text-end small task-create-grid__helper" id="taskNameCount">0/50</div>
                 </div>
-                <div class="col-md-5">
+                <div class="task-create-grid__cell">
                     <label class="form-label small fw-bold text-uppercase text-muted">NAS 存取路徑</label>
                     <div class="input-group">
                         <input class="form-control form-control-custom rounded-2" type="text" name="nas_path" id="nasPathInput" placeholder="例如 /1-系統開發/測試專案" required>
                         <button class="btn btn-outline-secondary px-3" type="button" data-bs-toggle="modal" data-bs-target="#nasBrowserModal" id="openNasBrowserBtn" {% if not allowed_nas_roots %}disabled{% endif %}>瀏覽</button>
                     </div>
                     <input type="hidden" name="nas_root_index" id="nasRootIndexInput" value="">
+                    <div class="form-text text-end small task-create-grid__helper invisible" aria-hidden="true">0/50</div>
                 </div>
-                <div class="col-md-2 d-grid align-items-end">
+                <div class="task-create-grid__cell task-create-grid__action">
+                    <label class="form-label small fw-bold text-uppercase text-muted">建立任務</label>
                     <button class="btn btn-primary fw-bold" type="submit">
                         <i class="bi bi-plus-lg me-1"></i>
                         建立任務
                     </button>
+                    <div class="form-text text-end small task-create-grid__helper invisible" aria-hidden="true">0/50</div>
                 </div>
-                <div class="col-md-12">
-                    <label class="form-label small fw-bold text-uppercase text-muted">任務描述 (選填)</label>
-                    <textarea class="form-control form-control-custom rounded-2" name="task_desc" rows="2" placeholder="輸入任務描述..."></textarea>
-                </div>
+            </div>
+            <div class="mt-3">
+                <label class="form-label small fw-bold text-uppercase text-muted">任務描述 (選填)</label>
+                <textarea class="form-control form-control-custom rounded-2" name="task_desc" rows="2" placeholder="輸入任務描述..." maxlength="50"></textarea>
+                <div class="form-text text-end small" id="taskDescCount">0/50</div>
             </div>
         </form>
     </div>
@@ -228,7 +270,7 @@
     <!-- 任務列表 -->
     <div class="main-card">
         <div class="px-4 py-3 border-bottom bg-light bg-opacity-50 d-flex justify-content-between align-items-center">
-            <h5 class="fw-bold mb-0">現有任務</h5>
+            <h5 class="fw-bold mb-0">現有文件轉換任務</h5>
             <!-- <div class="text-muted small">共 <span id="totalTaskCount">{{ tasks|length }}</span> 個任務</div> -->
             <div class="text-muted small">共 <span>{{ pagination.total_count }}</span> 筆任務 (第 {{ pagination.page }} / {{ pagination.total_pages }} 頁)</div>
         </div>
@@ -286,9 +328,9 @@
                         </td>
                         <td class="text-start">
                             {% if t.description %}
-                                <div class="task-desc-truncate text-muted" style="font-size: 0.875rem;" title="{{ t.description }}">{{ t.description }}</div>
+                                <div class="task-desc-truncate text-muted task-desc-display" style="font-size: 0.875rem;" title="{{ t.description }}">{{ t.description }}</div>
                             {% else %}
-                                <span class="text-muted" style="font-size: 0.875rem;">-</span>
+                                <span class="text-muted task-desc-display" style="font-size: 0.875rem;">-</span>
                             {% endif %}
                             <span class="task-id-data d-none">{{ t.id }}</span>
                             <span class="task-desc-data d-none">{{ t.description or "" }}</span>
@@ -389,7 +431,8 @@
     <div class="task-modal-body">
       <div class="mb-3">
         <label class="small fw-bold text-uppercase text-muted d-block mb-1">新任務名稱</label>
-        <input type="text" class="form-control form-control-custom" id="copyTaskNameInput" maxlength="120">
+        <input type="text" class="form-control form-control-custom" id="copyTaskNameInput" maxlength="50">
+        <div class="form-text text-end small" id="copyTaskNameCount">0/50</div>
       </div>
       <div>
         <label class="small fw-bold text-uppercase text-muted d-block mb-1">NAS 存取路徑</label>
@@ -509,11 +552,92 @@ function getRowText(row, selector){
   return row ? row.querySelector(selector)?.textContent?.trim() : '';
 }
 
+function bindLengthCounter(input, countEl){
+  if(!input || !countEl) return;
+  const max = input.getAttribute('maxlength') || '50';
+  const sync = () => {
+    countEl.textContent = `${input.value.length}/${max}`;
+  };
+  input.addEventListener('input', sync);
+  sync();
+}
+
+async function postFormJson(action, fields){
+  const body = new URLSearchParams();
+  Object.entries(fields || {}).forEach(([key, value]) => {
+    body.set(key, String(value ?? ''));
+  });
+  const resp = await fetch(action, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: body.toString(),
+  });
+  const contentType = resp.headers.get('content-type') || '';
+  const payload = contentType.includes('application/json')
+    ? await resp.json()
+    : { message: (await resp.text()).trim() };
+  if(!resp.ok){
+    throw new Error(payload.error || payload.message || '更新失敗');
+  }
+  return payload;
+}
+
+function setDrawerFeedback(feedbackEl, message, variant = 'success'){
+  if(!feedbackEl) return;
+  feedbackEl.className = `alert alert-${variant} py-2 px-3 small mb-3`;
+  feedbackEl.textContent = message;
+  feedbackEl.classList.remove('d-none');
+}
+
+function clearDrawerFeedback(feedbackEl){
+  if(!feedbackEl) return;
+  feedbackEl.className = 'alert d-none py-2 px-3 small mb-3';
+  feedbackEl.textContent = '';
+}
+
+function findTaskRow(taskId){
+  return Array.from(document.querySelectorAll('.task-row')).find((row) => row.dataset.taskId === String(taskId));
+}
+
+function applyTaskRowUpdate(taskId, updates){
+  const row = findTaskRow(taskId);
+  if(!row) return;
+  if(Object.prototype.hasOwnProperty.call(updates, 'name')){
+    const nameLink = row.querySelector('.task-name-link');
+    if(nameLink){
+      nameLink.textContent = updates.name || '-';
+      nameLink.title = updates.name || '';
+    }
+  }
+  if(Object.prototype.hasOwnProperty.call(updates, 'description')){
+    const descValue = updates.description || '';
+    const descData = row.querySelector('.task-desc-data');
+    if(descData){
+      descData.textContent = descValue;
+    }
+    const descDisplay = row.querySelector('.task-desc-display');
+    if(descDisplay){
+      descDisplay.textContent = descValue || '-';
+      descDisplay.classList.toggle('task-desc-truncate', !!descValue);
+      if(descValue){
+        descDisplay.setAttribute('title', descValue);
+      } else {
+        descDisplay.removeAttribute('title');
+      }
+    }
+  }
+}
+
 function renderDetailBody(details){
   const copyTaskIdArg = JSON.stringify(details.id || "");
   const copyTaskNameArg = JSON.stringify(details.name || "");
   const copyTaskNasArg = JSON.stringify(details.nasPath || "");
   const rows = [
+    { label: '任務 ID', value: details.id || '-' },
     { label: '建立人員', value: details.creator || '-' },
     { label: '建立時間', value: details.created || '-' },
     { label: '最後編輯人員', value: details.lastEditor || '-' },
@@ -528,12 +652,14 @@ function renderDetailBody(details){
 
   return `
     <div class="task-detail-list">
+      <div class="alert d-none py-2 px-3 small mb-3" id="drawerTaskFeedback" role="status"></div>
       <!-- 任務名稱編輯 -->
       <div class="mb-4">
         <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務名稱</label>
-        <input type="text" class="form-control form-control-custom shadow-sm" id="drawerTaskName" value="${escapeHtml(details.name)}">
+        <input type="text" class="form-control form-control-custom shadow-sm" id="drawerTaskName" maxlength="50" value="${escapeHtml((details.name || '').slice(0, 50))}">
+        <div class="form-text text-end small" id="drawerTaskNameCount">${Math.min((details.name || '').length, 50)}/50</div>
         <div class="mt-2 text-end">
-          <button class="btn btn-sm btn-outline-primary px-3 fw-bold" onclick="renameTask('${details.id}', document.getElementById('drawerTaskName').value, true)">
+          <button class="btn btn-sm btn-outline-primary px-3 fw-bold" type="button" onclick="renameTask('${details.id}', document.getElementById('drawerTaskName').value, true, this)">
             更新名稱
           </button>
         </div>
@@ -541,17 +667,17 @@ function renderDetailBody(details){
 
       <!-- 任務描述編輯 -->
       <div class="mb-4">
-        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務描述</label>
-        <textarea class="form-control form-control-custom shadow-sm" id="drawerTaskDesc" rows="4" placeholder="輸入任務描述...">${escapeHtml(details.desc || "")}</textarea>
+        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務描述 (選填)</label>
+        <textarea class="form-control form-control-custom shadow-sm" id="drawerTaskDesc" rows="4" maxlength="50" placeholder="輸入任務描述...">${escapeHtml((details.desc || '').slice(0, 50))}</textarea>
+        <div class="form-text text-end small" id="drawerTaskDescCount">${Math.min((details.desc || '').length, 50)}/50</div>
         <div class="mt-2 text-end">
-          <button class="btn btn-sm btn-outline-primary px-3 fw-bold" onclick="editTaskDesc('${details.id}', document.getElementById('drawerTaskDesc').value, true)">
+          <button class="btn btn-sm btn-outline-primary px-3 fw-bold" type="button" onclick="editTaskDesc('${details.id}', document.getElementById('drawerTaskDesc').value, true, this)">
             更新描述
           </button>
         </div>
       </div>
 
       <div class="mb-2">
-        <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務資訊</label>
         ${rowsHtml}
       </div>
 
@@ -564,20 +690,79 @@ function renderDetailBody(details){
   `;
 }
 
-function renameTask(id, current, isDirect = false){
+async function renameTask(id, current, isDirect = false, buttonEl = null){
   const name = isDirect ? current : prompt('輸入新名稱', current);
   if(!name) {
     if(!isDirect) return;
     alert('任務名稱不能為空');
     return;
   }
-  submitPostForm(`/tasks/${id}/rename`, { name });
+  if(name.trim().length > 50){
+    alert('任務名稱最多 50 字');
+    return;
+  }
+  const trimmed = name.trim();
+  const feedbackEl = document.getElementById('drawerTaskFeedback');
+  clearDrawerFeedback(feedbackEl);
+  const originalLabel = buttonEl?.innerHTML;
+  if(buttonEl){
+    buttonEl.disabled = true;
+    buttonEl.innerHTML = '儲存中...';
+  }
+  try {
+    const result = await postFormJson(`/tasks/${encodeURIComponent(id)}/rename`, { name: trimmed });
+    const nameInput = document.getElementById('drawerTaskName');
+    if(nameInput){
+      nameInput.value = result.name || trimmed;
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    applyTaskRowUpdate(id, { name: result.name || trimmed });
+    const drawerTitle = document.getElementById('taskDescDrawerTitle');
+    // if(drawerTitle){
+    //   drawerTitle.textContent = `任務詳情 : ${result.name || trimmed}`;
+    // }
+    setDrawerFeedback(feedbackEl, result.message || '已更新任務名稱');
+  } catch (error) {
+    setDrawerFeedback(feedbackEl, error.message || '更新任務名稱失敗', 'danger');
+  } finally {
+    if(buttonEl){
+      buttonEl.disabled = false;
+      buttonEl.innerHTML = originalLabel;
+    }
+  }
 }
 
-function editTaskDesc(id, currentDesc, isDirect = false){
+async function editTaskDesc(id, currentDesc, isDirect = false, buttonEl = null){
   const desc = isDirect ? currentDesc : prompt('輸入新的任務描述（可為空）', currentDesc || '');
   if(desc === null) return;
-  submitPostForm(`/tasks/${id}/description`, { description: desc });
+  if(String(desc).trim().length > 50){
+    alert('任務描述最多 50 字');
+    return;
+  }
+  const feedbackEl = document.getElementById('drawerTaskFeedback');
+  clearDrawerFeedback(feedbackEl);
+  const originalLabel = buttonEl?.innerHTML;
+  if(buttonEl){
+    buttonEl.disabled = true;
+    buttonEl.innerHTML = '儲存中...';
+  }
+  try {
+    const result = await postFormJson(`/tasks/${encodeURIComponent(id)}/description`, { description: desc });
+    const descInput = document.getElementById('drawerTaskDesc');
+    if(descInput){
+      descInput.value = result.description ?? String(desc || '').trim();
+      descInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    applyTaskRowUpdate(id, { description: result.description ?? desc.trim() });
+    setDrawerFeedback(feedbackEl, result.message || '已更新任務描述');
+  } catch (error) {
+    setDrawerFeedback(feedbackEl, error.message || '更新任務描述失敗', 'danger');
+  } finally {
+    if(buttonEl){
+      buttonEl.disabled = false;
+      buttonEl.innerHTML = originalLabel;
+    }
+  }
 }
 
 const copyTaskModalOverlay = document.getElementById('copyTaskModalOverlay');
@@ -593,6 +778,11 @@ const copyTaskNasInput = document.getElementById('copyTaskNasInput');
 const copyTaskNasBrowseBtn = document.getElementById('copyTaskNasBrowseBtn');
 const copyTaskNasWarning = document.getElementById('copyTaskNasWarning');
 const copyTaskError = document.getElementById('copyTaskError');
+const taskNameInput = document.querySelector('input[name="task_name"]');
+const taskNameCount = document.getElementById('taskNameCount');
+const taskDescInput = document.querySelector('textarea[name="task_desc"]');
+const taskDescCount = document.getElementById('taskDescCount');
+const copyTaskNameCount = document.getElementById('copyTaskNameCount');
 
 let copyTaskDraft = null;
 let copyTaskLastFocused = null;
@@ -712,7 +902,7 @@ function openCopyTaskModal(id, currentName, currentNasPath){
     sourceNasPath: sourceDisplayPath,
   };
   copyTaskLastFocused = document.activeElement;
-  copyTaskNameInput.value = currentName ? `${currentName} (複製)` : '任務複製';
+  copyTaskNameInput.value = (currentName ? `${currentName} (複製)` : '任務複製').slice(0, 50);
   copyTaskNasInput.value = sourceDisplayPath;
   copyTaskNasRootIndex = sourceRootIndex;
   setCopyTaskError('');
@@ -744,6 +934,11 @@ function submitCopyTaskForm(){
   let nasRootIndex = copyTaskNasRootIndex || '';
   if(!name){
     setCopyTaskError('任務名稱不能為空');
+    copyTaskNameInput?.focus();
+    return;
+  }
+  if(name.length > 50){
+    setCopyTaskError('任務名稱最多 50 字');
     copyTaskNameInput?.focus();
     return;
   }
@@ -781,6 +976,9 @@ copyTaskNasInput?.addEventListener('input', () => {
   refreshNasWarning();
 });
 copyTaskNameInput?.addEventListener('input', () => setCopyTaskError(''));
+bindLengthCounter(taskNameInput, taskNameCount);
+bindLengthCounter(taskDescInput, taskDescCount);
+bindLengthCounter(copyTaskNameInput, copyTaskNameCount);
 copyTaskModalCloseBtn?.addEventListener('click', closeCopyTaskModal);
 copyTaskCancelBtn?.addEventListener('click', closeCopyTaskModal);
 copyTaskConfirmCloseBtn?.addEventListener('click', closeCopyTaskConfirmModal);
@@ -789,6 +987,11 @@ copyTaskSubmitBtn?.addEventListener('click', () => {
   const name = (copyTaskNameInput?.value || '').trim();
   if(!name){
     setCopyTaskError('任務名稱不能為空');
+    copyTaskNameInput?.focus();
+    return;
+  }
+  if(name.length > 50){
+    setCopyTaskError('任務名稱最多 50 字');
     copyTaskNameInput?.focus();
     return;
   }
@@ -1218,7 +1421,8 @@ function initTaskDescDrawer(){
     const lastEditor = getRowText(row, '.task-last-editor-data');
     const lastEdited = getRowText(row, '.task-last-edited-data');
     const nasPath = getRowText(row, '.task-nas-data');
-    const title = name ? `任務詳情 : ${name}` : '任務詳情';
+    // const title = name ? `任務詳情 : ${name}` : '任務詳情';
+    const title = '任務資訊';
     const detailHtml = renderDetailBody({
       id,
       name,
@@ -1231,6 +1435,8 @@ function initTaskDescDrawer(){
     });
     openDrawer(title, '');
     bodyEl.innerHTML = detailHtml;
+    bindLengthCounter(document.getElementById('drawerTaskName'), document.getElementById('drawerTaskNameCount'));
+    bindLengthCounter(document.getElementById('drawerTaskDesc'), document.getElementById('drawerTaskDescCount'));
   }
 
   taskTableBody?.addEventListener('click', (event) => {

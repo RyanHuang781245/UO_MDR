@@ -28,6 +28,18 @@ def _normalize_rel_path(rel_path: str) -> str:
 def build_task_output_path(task_id: str) -> str:
     return os.path.join(current_app.config["TASK_FOLDER"], task_id, "output")
 
+
+def _parse_task_created_at(value: str | None) -> datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
 def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel", "image")):
     ext = os.path.splitext(filename)[1].lower()
     if "docx" in kinds and ext in ALLOWED_DOCX:
@@ -220,6 +232,16 @@ def gather_available_files(files_dir):
 
 def list_tasks():
     task_list = []
+    existing_task_ids: set[str] = set()
+    try:
+        existing_task_ids = {
+            str(task_id).strip()
+            for (task_id,) in db.session.query(TaskRecord.id).all()
+            if str(task_id or "").strip()
+        }
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to load existing task ids from DB")
     for tid, tdir, meta_path in _iter_task_dirs():
         name = tid
         description = ""
@@ -250,6 +272,17 @@ def list_tasks():
             last_edited = created
         if not last_editor:
             last_editor = creator
+        if tid not in existing_task_ids:
+            record_task_in_db(
+                tid,
+                name=name,
+                description=description or None,
+                creator=creator or None,
+                nas_path=nas_path or None,
+                output_path=output_path or build_task_output_path(tid),
+                created_at=_parse_task_created_at(created),
+            )
+            existing_task_ids.add(tid)
         task_list.append(
             {
                 "id": tid,
@@ -285,7 +318,8 @@ def record_task_in_db(
     nas_path: str | None = None,
     output_path: str | None = None,
     created_at: datetime | None = None,
-) -> None:
+    raise_on_error: bool = False,
+) -> bool:
     try:
         task = db.session.get(TaskRecord, task_id)
         if not task:
@@ -304,9 +338,13 @@ def record_task_in_db(
         if created_at and not task.created_at:
             task.created_at = created_at
         commit_session()
+        return True
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Failed to record task in DB")
+        if raise_on_error:
+            raise
+        return False
 
 
 def delete_task_record(task_id: str) -> None:

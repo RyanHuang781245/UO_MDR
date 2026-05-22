@@ -203,6 +203,8 @@
             <span class="status-badge status-badge-queued"><i class="bi bi-slash-circle"></i> 已取消</span>
             {% elif run.status == 'timeout' %}
             <span class="status-badge status-badge-failed"><i class="bi bi-clock-history"></i> 逾時</span>
+            {% elif run.status == 'claimed' %}
+            <span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 準備中</span>
             {% elif run.status == 'running' %}
             <span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>
             {% elif run.status == 'queued' %}
@@ -221,7 +223,7 @@
               {% if run.has_log %}
               <a href="{{ url_for('tasks_bp.task_download', task_id=results_task_id, job_id=run.job_id, kind='log') }}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>
               {% endif %}
-              {% if run.status in ['queued', 'running'] %}
+              {% if run.status in ['queued', 'claimed', 'running'] %}
               <form method="post" action="{{ url_for('flow_results_bp.cancel_flow_run', task_id=results_task_id, job_id=run.job_id) }}" class="d-inline">
                 <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
               </form>
@@ -257,6 +259,8 @@
             <span class="status-badge status-badge-queued"><i class="bi bi-slash-circle"></i> 已取消</span>
             {% elif run.status == 'timeout' %}
             <span class="status-badge status-badge-failed"><i class="bi bi-clock-history"></i> 逾時</span>
+            {% elif run.status == 'claimed' %}
+            <span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 準備中</span>
             {% elif run.status == 'running' %}
             <span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>
             {% elif run.status == 'queued' %}
@@ -274,7 +278,7 @@
               {% if run.has_log %}
               <a href="{{ url_for('tasks_bp.task_download_output_query', task_id=results_task_id, filename=run.log_file) }}" class="btn-action-icon" title="Log"><i class="bi bi-file-earmark-text"></i><span class="d-none d-lg-inline small fw-semibold">Log</span></a>
               {% endif %}
-              {% if run.status in ['queued', 'running'] %}
+              {% if run.status in ['queued', 'claimed', 'running'] %}
               <form method="post" action="{{ url_for('mapping_run_bp.cancel_mapping_run', task_id=results_task_id, run_id=run.run_id) }}" class="d-inline">
                 <button type="submit" class="btn-action-icon" title="取消"><i class="bi bi-x-octagon"></i><span class="d-none d-lg-inline small fw-semibold">取消</span></button>
               </form>
@@ -553,7 +557,7 @@
     });
   });
 
-  const ACTIVE_STATUSES = new Set(["queued", "running"]);
+  const ACTIVE_STATUSES = new Set(["queued", "claimed", "running"]);
   const FINAL_RETRY_STATUSES = new Set(["failed", "canceled", "timeout"]);
   let syncingResultsRows = false;
 
@@ -563,6 +567,7 @@
     if (key === "failed") return '<span class="status-badge status-badge-failed"><i class="bi bi-x-circle-fill"></i> 失敗</span>';
     if (key === "canceled") return '<span class="status-badge status-badge-queued"><i class="bi bi-slash-circle"></i> 已取消</span>';
     if (key === "timeout") return '<span class="status-badge status-badge-failed"><i class="bi bi-clock-history"></i> 逾時</span>';
+    if (key === "claimed") return '<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 準備中</span>';
     if (key === "running") return '<span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat spin"></i> 執行中</span>';
     if (key === "queued") return '<span class="status-badge status-badge-queued"><i class="bi bi-hourglass-split"></i> 排隊中</span>';
     return '<span class="status-badge status-badge-queued"><i class="bi bi-question-circle"></i> 未知</span>';

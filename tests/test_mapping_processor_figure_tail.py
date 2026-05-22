@@ -473,6 +473,15 @@ def test_mapping_figure_tail_title_and_index(tmp_path: Path) -> None:
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_figure_tail_quoted_title_with_pipe(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, '1.1 Figure 1|title="Overview | Figure"', item_type="Figure")
+    params = _first_step_params(log_data)
+    assert params.get("target_caption_label") == "Figure 1"
+    assert params.get("target_figure_title") == "Overview | Figure"
+    assert "target_figure_index" not in params
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_figure_table_type_sets_allow_table_flag(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "1.1 Figure 2", item_type="Figure Table")
     params = _first_step_params(log_data)
@@ -564,6 +573,15 @@ def test_mapping_table_tail_behavior_unchanged(tmp_path: Path) -> None:
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_table_tail_quoted_title_with_pipe(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(tmp_path, '1.1 Table 1|title="Table | Name"|index=4', item_type="Table")
+    params = _first_step_params(log_data)
+    assert params.get("target_caption_label") == "Table 1"
+    assert params.get("target_table_title") == "Table | Name"
+    assert params.get("target_table_index") == 4
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_chapter_title_with_table_word_stays_chapter_extract(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "1.1 Table overview and summary")
     assert _first_step_type(log_data) == "extract_word_chapter"
@@ -606,7 +624,7 @@ def test_mapping_blank_type_table_like_text_stays_chapter_extract(tmp_path: Path
 
 def test_mapping_blank_type_all_keyword_is_not_special_anymore(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(tmp_path, "All")
-    assert any("unsupported operation: All" in msg for msg in result.get("logs", []))
+    assert any("不支援的操作：All" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
     assert all(not (run.get("workflow_log") or []) for run in runs)
@@ -619,7 +637,7 @@ def test_mapping_blank_type_add_text_keyword_is_not_special_anymore(tmp_path: Pa
         source_name="這是一段說明文字",
         source_files=[],
     )
-    assert any("unsupported operation: Add Text" in msg for msg in result.get("logs", []))
+    assert any("不支援的操作：Add Text" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
     assert all(not (run.get("workflow_log") or []) for run in runs)

@@ -186,23 +186,30 @@ def api_flow_download_task_file(task_id):
 @flow_file_bp.get("/download-zip", endpoint="api_flow_download_task_scope_zip")
 def api_flow_download_task_scope_zip(task_id):
     scope_raw = (request.args.get("scope") or "").strip()
+    path_raw = (request.args.get("path") or "").strip()
     try:
         root_dir, scope = _resolve_browser_root(task_id, scope_raw)
-    except FileNotFoundError as exc:
+        rel_path = _normalize_task_file_rel_path(path_raw)
+        zip_root = _resolve_task_file_path(root_dir, rel_path, expect_dir=True) if rel_path else root_dir
+    except (ValueError, FileNotFoundError) as exc:
         return {"ok": False, "error": str(exc)}, 404
+    except PermissionError:
+        return {"ok": False, "error": "Permission denied"}, 403
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for current_root, _dirs, files in os.walk(root_dir):
+        for current_root, _dirs, files in os.walk(zip_root):
             for filename in files:
                 if scope == "output" and filename in _HIDDEN_FLOW_OUTPUT_FILES:
                     continue
                 file_abs = os.path.join(current_root, filename)
-                rel = os.path.relpath(file_abs, root_dir).replace("\\", "/")
+                rel_base = root_dir if rel_path else zip_root
+                rel = os.path.relpath(file_abs, rel_base).replace("\\", "/")
                 zf.write(file_abs, rel)
     buffer.seek(0)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    zip_name = f"{task_id}_{scope}_{stamp}.zip"
+    zip_label = os.path.basename(zip_root.rstrip("\\/")) if rel_path else scope
+    zip_name = f"{task_id}_{zip_label}_{stamp}.zip"
     return send_file(buffer, as_attachment=True, download_name=zip_name, mimetype="application/zip")
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -175,17 +176,56 @@ def _parse_target_chapter_ref(values, *, limit_to_chapter: bool) -> str:
     return target_chapter_ref
 
 
-def _parse_target_table_index(values, *, limit_to_chapter: bool) -> int | None:
+def _parse_target_table_index(values, *, limit_to_chapter: bool) -> tuple[int, ...] | None:
     raw_value = str(values.get("target_table_index") or "").strip()
     if not limit_to_chapter or not raw_value:
         return None
-    try:
-        value = int(raw_value)
-    except ValueError as exc:
-        raise ValueError("表格索引必須是正整數") from exc
-    if value <= 0:
-        raise ValueError("表格索引必須大於 0")
-    return value
+    resolved: list[int] = []
+    seen: set[int] = set()
+    for chunk in re.split(r"\s*,\s*", raw_value):
+        part = chunk.strip()
+        if not part:
+            continue
+        range_match = re.fullmatch(r"(\d+)\s*-\s*(\d+)", part)
+        if range_match:
+            start = int(range_match.group(1))
+            end = int(range_match.group(2))
+            if start <= 0 or end <= 0:
+                raise ValueError("表格索引必須大於 0")
+            if start > end:
+                raise ValueError("表格索引範圍格式不正確")
+            for value in range(start, end + 1):
+                if value not in seen:
+                    seen.add(value)
+                    resolved.append(value)
+            continue
+        try:
+            value = int(part)
+        except ValueError as exc:
+            raise ValueError("表格索引只支援正整數、逗號清單或範圍格式，例如 1,3,5 或 2-4") from exc
+        if value <= 0:
+            raise ValueError("表格索引必須大於 0")
+        if value not in seen:
+            seen.add(value)
+            resolved.append(value)
+    if not resolved:
+        return None
+    return tuple(resolved)
+
+
+def _format_target_table_index_display(value) -> str:
+    if value is None or value == "":
+        return ""
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, (list, tuple, set)):
+        parts = []
+        for item in value:
+            text = str(item).strip()
+            if text:
+                parts.append(text)
+        return ",".join(parts)
+    return str(value).strip()
 
 
 def _load_chapter_options(files_dir: str, selected_word: str) -> tuple[list[dict], str]:
@@ -273,7 +313,7 @@ def _render_standard_mapping_page(
     required_headers: tuple[str, ...] | list[str] | None = None,
     limit_to_chapter: bool = False,
     target_chapter_ref: str = "",
-    target_table_index: int | None = None,
+    target_table_index: tuple[int, ...] | list[int] | int | None = None,
     manual_target_chapter_ref: str = "",
     manual_header_mappings: dict[int, dict[str, str]] | None = None,
 ):
@@ -323,6 +363,7 @@ def _render_standard_mapping_page(
         limit_to_chapter=bool((preview_result or {}).get("target_chapter_ref") or limit_to_chapter),
         target_chapter_ref=(preview_result or {}).get("target_chapter_ref", target_chapter_ref),
         target_table_index=(preview_result or {}).get("target_table_index", target_table_index),
+        target_table_index_display=_format_target_table_index_display((preview_result or {}).get("target_table_index", target_table_index)),
         manual_target_chapter_ref=manual_target_chapter_ref,
         scope_table_count=(preview_result or {}).get("scope_table_count", 0),
         chapter_options=chapter_options,
@@ -585,7 +626,7 @@ def task_standard_mapping_download(task_id):
                 harmonised_excel_path=selected_harmonised_excel,
                 limit_to_chapter=1 if limit_to_chapter else 0,
                 target_chapter_ref=target_chapter_ref,
-                target_table_index=target_table_index or "",
+                target_table_index=_format_target_table_index_display(target_table_index),
                 manual_target_chapter_ref=manual_target_chapter_ref,
             )
         )
@@ -601,7 +642,7 @@ def task_standard_mapping_download(task_id):
                 harmonised_excel_path=selected_harmonised_excel,
                 limit_to_chapter=1 if limit_to_chapter else 0,
                 target_chapter_ref=target_chapter_ref,
-                target_table_index=target_table_index or "",
+                target_table_index=_format_target_table_index_display(target_table_index),
                 manual_target_chapter_ref=manual_target_chapter_ref,
             )
         )

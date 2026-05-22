@@ -91,21 +91,33 @@ def _mapping_yes_no(value, default: str = "Y") -> str:
     return "Y" if parse_bool(value, default=(default == "Y")) else "N"
 
 
+def _quote_mapping_operation_text(text: str, *, protected_chars: tuple[str, ...] = ("/", "\\")) -> str:
+    raw = str(text or "").strip()
+    if not raw or not any(ch in raw for ch in protected_chars):
+        return raw
+    if '"' not in raw:
+        return f'"{raw}"'
+    if "'" not in raw:
+        return f"'{raw}'"
+    return raw
+
+
 def _build_extract_target(params: dict) -> str:
     section = str(params.get("target_chapter_section") or "").strip()
     chapter_title = str(params.get("target_chapter_title") or "").strip()
+    quoted_title = _quote_mapping_operation_text(chapter_title)
     if section and chapter_title:
         section_fold = section.casefold()
         title_fold = chapter_title.casefold()
         if title_fold in section_fold:
             return section
-        return f"{section} {chapter_title}"
+        return f"{section} {quoted_title}"
     if section:
         return section
     ref_raw = str(params.get("target_chapter_ref_raw") or "").strip()
     if ref_raw:
         return ref_raw
-    return chapter_title
+    return quoted_title
 
 
 def _build_mapping_operation_for_visual(params: dict, *, kind: str) -> str:
@@ -114,7 +126,7 @@ def _build_mapping_operation_for_visual(params: dict, *, kind: str) -> str:
     caption = str(params.get("target_caption_label") or "").strip()
     title_value = params.get("target_figure_title") if kind == "figure" else params.get("target_table_title")
     index_value = params.get("target_figure_index") if kind == "figure" else params.get("target_table_index")
-    title = str(title_value or "").strip()
+    title = _quote_mapping_operation_text(str(title_value or "").strip(), protected_chars=("|", "/", "\\"))
     index = str(index_value or "").strip()
     if caption:
         parts.append(caption)
@@ -180,7 +192,7 @@ def _flow_step_to_mapping_row(
         subtitle = str(params.get("target_subtitle") or "").strip()
         operation = chapter
         if chapter and subtitle:
-            operation = f"{chapter}\\{subtitle}"
+            operation = f"{chapter}\\{_quote_mapping_operation_text(subtitle)}"
         return {
             "source": _normalize_flow_source_for_mapping(params.get("input_file"), files_dir),
             "item_type": "",

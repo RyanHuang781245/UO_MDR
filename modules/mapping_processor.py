@@ -126,17 +126,17 @@ def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
 
     raw_name = str(name or "").strip()
     if not raw_name:
-        return None, "empty input name"
+        return None, "未填寫輸入名稱"
 
     if "." in os.path.basename(raw_name):
         if "/" in raw_name or "\\" in raw_name:
             resolved = _resolve_relative_file(base, raw_name)
             if resolved:
                 return resolved, ""
-            return None, f"file not found: {raw_name}"
+            return None, f"找不到檔案：{raw_name}"
         matches = _find_files(base, raw_name)
         if not matches:
-            return None, f"file not found: {raw_name}"
+            return None, f"找不到檔案：{raw_name}"
         if len(matches) > 1:
             rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
             joined = "; ".join(rel_matches)
@@ -145,27 +145,27 @@ def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
 
     dir_path = _find_directory(base, raw_name)
     if not dir_path:
-        return None, f"directory not found: {raw_name}"
+        return None, f"找不到資料夾：{raw_name}"
     for fn in os.listdir(dir_path):
         if fn.lower().endswith((".docx", ".doc")):
             return os.path.join(dir_path, fn), ""
-    return None, f"no Word file found in directory: {raw_name}"
+    return None, f"資料夾中找不到 Word 檔案：{raw_name}"
 
 
 def _resolve_any_file(base: str, name: str) -> tuple[str | None, str]:
     raw_name = str(name or "").strip()
     if not raw_name:
-        return None, "empty input name"
+        return None, "未填寫輸入名稱"
 
     if "/" in raw_name or "\\" in raw_name:
         resolved = _resolve_relative_file(base, raw_name)
         if resolved:
             return resolved, ""
-        return None, f"file not found: {raw_name}"
+        return None, f"找不到檔案：{raw_name}"
 
     matches = _find_files(base, raw_name)
     if not matches:
-        return None, f"file not found: {raw_name}"
+        return None, f"找不到檔案：{raw_name}"
     if len(matches) > 1:
         rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
         joined = "; ".join(rel_matches)
@@ -176,7 +176,7 @@ def _resolve_any_file(base: str, name: str) -> tuple[str | None, str]:
 def _resolve_input_directory(base: str, name: str) -> tuple[str | None, str]:
     raw_name = str(name or "").strip()
     if not raw_name:
-        return None, "empty input name"
+        return None, "未填寫輸入名稱"
     if raw_name.replace("\\", "/") in {".", "./", "/"}:
         return base, ""
 
@@ -184,11 +184,11 @@ def _resolve_input_directory(base: str, name: str) -> tuple[str | None, str]:
         resolved = _find_directory(base, raw_name)
         if resolved:
             return resolved, ""
-        return None, f"directory not found: {raw_name}"
+        return None, f"找不到資料夾：{raw_name}"
 
     matches = _find_directories(base, raw_name)
     if not matches:
-        return None, f"directory not found: {raw_name}"
+        return None, f"找不到資料夾：{raw_name}"
     if len(matches) > 1:
         rel_matches = sorted(os.path.relpath(p, base).replace("\\", "/") for p in matches)
         joined = "; ".join(rel_matches)
@@ -373,7 +373,7 @@ def process_mapping_excel(
                 if folder:
                     found_dir = _find_directory(task_files_dir, folder)
                     if not found_dir:
-                        logs.append(f"ERROR: {out_name or '?'} folder not found {folder}")
+                        logs.append(f"ERROR: {out_name or '?'} 找不到資料夾 {folder}")
                         continue
                     base_dir = found_dir
 
@@ -381,7 +381,7 @@ def process_mapping_excel(
                 chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
                 if is_all or chapter_match:
                     if not input_name:
-                        logs.append(f"ERROR: {out_name or '?'} missing source filename")
+                        logs.append(f"ERROR: {out_name or '?'} 缺少來源檔名")
                         continue
                     infile, resolve_error = _resolve_input_file(base_dir, input_name)
                     if not infile:
@@ -414,7 +414,7 @@ def process_mapping_excel(
             if folder:
                 found_dir = _find_directory(task_files_dir, folder)
                 if not found_dir:
-                    logs.append(f"{out_name or '?'}: folder not found {folder}")
+                    logs.append(f"{out_name or '?'}: 找不到資料夾 {folder}")
                     continue
                 base_dir = found_dir
 
@@ -423,7 +423,7 @@ def process_mapping_excel(
 
             if is_all or chapter_match:
                 if not input_name:
-                    logs.append(f"{out_name or '?'}: missing source filename")
+                    logs.append(f"{out_name or '?'}: 缺少來源檔名")
                     continue
                 infile, resolve_error = _resolve_input_file(base_dir, input_name)
                 if not infile:
@@ -708,6 +708,30 @@ def process_mapping_excel(
             return raw[1:-1].strip()
         return raw
 
+    def _split_quoted_tokens(text: str, delimiter: str = "|") -> list[str]:
+        raw = str(text or "").strip()
+        if not raw:
+            return []
+
+        tokens: list[str] = []
+        current: list[str] = []
+        quote_char = ""
+        for ch in raw:
+            if ch in {'"', "'"}:
+                if not quote_char:
+                    quote_char = ch
+                elif quote_char == ch:
+                    quote_char = ""
+                current.append(ch)
+                continue
+            if ch == delimiter and not quote_char:
+                tokens.append("".join(current).strip())
+                current = []
+                continue
+            current.append(ch)
+        tokens.append("".join(current).strip())
+        return tokens
+
     def _split_mapping_subheading(text: str) -> tuple[str, str]:
         raw = str(text or "").strip()
         if not raw:
@@ -773,13 +797,12 @@ def process_mapping_excel(
         out_rel: str = "",
         out_name: str = "",
     ) -> str:
-        instruction_core = (instruction or "").split("|", 1)[0].strip()
-        tail_title_match = re.search(r"(?:^|\|)\s*title\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
-        tail_index_match = re.search(r"(?:^|\|)\s*index\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
-        tail_container_match = re.search(r"(?:^|\|)\s*container\s*=\s*([^|]+)", instruction or "", re.IGNORECASE)
-        tail_title = (tail_title_match.group(1) if tail_title_match else "").strip()
-        tail_index = (tail_index_match.group(1) if tail_index_match else "").strip()
-        tail_container = (tail_container_match.group(1) if tail_container_match else "").strip()
+        instruction_core, tail_options, _tail_error = _parse_instruction_tail_options(instruction)
+        if not instruction_core:
+            instruction_core = (instruction or "").strip()
+        tail_title = (tail_options.get("title") or "").strip()
+        tail_index = (tail_options.get("index") or "").strip()
+        tail_container = (tail_options.get("container") or "").strip()
         src_base = os.path.basename(src) if src else ""
         if action == "Append text":
             return src
@@ -855,7 +878,7 @@ def process_mapping_excel(
         raw = (raw_instruction or "").strip()
         if not raw:
             return "", {}, ""
-        parts = [p.strip() for p in raw.split("|")]
+        parts = _split_quoted_tokens(raw, delimiter="|")
         core = parts[0]
         options: dict[str, str] = {}
         for token in parts[1:]:
@@ -865,7 +888,7 @@ def process_mapping_excel(
                 return core, options, f"無效參數語法: {token}"
             key_raw, value_raw = token.split("=", 1)
             key = key_raw.strip().lower()
-            value = value_raw.strip()
+            value = _strip_matching_quotes(value_raw.strip())
             if key in {"title", "index", "container"}:
                 options[key] = value
         return core, options, ""
@@ -972,7 +995,7 @@ def process_mapping_excel(
 
             target_dir = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir
             if validate_only and out_rel_normalized and not os.path.isdir(target_dir):
-                _log("warn", f"輸出資料夾不存在: {out_rel}", row_num, action_label, detail_label)
+                _log("warn", f"輸出路徑不存在: {out_rel}", row_num, action_label, detail_label)
 
             if item_type == "copy_file":
                 if copy_keywords:
@@ -1143,7 +1166,7 @@ def process_mapping_excel(
         output_dir_full = os.path.join(output_dir, out_rel_normalized) if out_rel_normalized else output_dir
         output_path = os.path.join(output_dir_full, out_name)
         if validate_only and out_rel_normalized and not os.path.isdir(output_dir_full):
-            _log("warn", f"輸出資料夾不存在: {out_rel}", row_num, action_label, detail_label)
+            _log("warn", f"輸出路徑不存在: {out_rel}", row_num, action_label, detail_label)
         if output_path in output_template_map and output_template_map[output_path] != template_path:
             _log("error", f"output uses different templates: {out_name}", row_num, action_label, detail_label)
             continue
@@ -1228,25 +1251,28 @@ def process_mapping_excel(
             parsed_subtitle = None
             if not head_text:
                 return parsed_chapter, parsed_title, parsed_subtitle
-            # Accept "/", "\" and "|" as section delimiters for user convenience.
-            head_parts = [p.strip() for p in re.split(r"[\\/|]+", head_text) if p.strip()]
-            if not head_parts:
-                head_parts = [head_text.strip()]
-            inline_match = re.match(r"^(\d+(?:\.\d+)*)(?:\.)?(?:\s+(.+))?$", head_parts[0])
-            if inline_match:
-                parsed_chapter = inline_match.group(1).rstrip(".")
-                inline_title = (inline_match.group(2) or "").strip()
-                if inline_title:
-                    parsed_title = inline_title
-                    if len(head_parts) > 1:
-                        parsed_subtitle = " ".join(head_parts[1:]).strip() or None
-                else:
-                    if len(head_parts) > 1:
-                        parsed_title = head_parts[1].strip() or None
-                    if len(head_parts) > 2:
-                        parsed_subtitle = " ".join(head_parts[2:]).strip() or None
-            else:
-                parsed_subtitle = " ".join(head_parts).strip() or None
+            # Keep "/" and "\" inside quoted titles intact.
+            primary_part = head_text.strip()
+            extra_subtitle_parts: list[str] = []
+            pipe_tokens = _split_quoted_tokens(primary_part, delimiter="|")
+            if pipe_tokens:
+                primary_part = pipe_tokens[0].strip()
+                extra_subtitle_parts = [token.strip() for token in pipe_tokens[1:] if token.strip()]
+
+            chapter_part, title_part, subtitle_part = _parse_chapter_parts(primary_part)
+            parsed_chapter = chapter_part
+            parsed_title = title_part or None
+            parsed_subtitle = subtitle_part or None
+
+            if extra_subtitle_parts:
+                merged_extra = " ".join(extra_subtitle_parts).strip()
+                if merged_extra:
+                    if parsed_subtitle:
+                        parsed_subtitle = f"{parsed_subtitle} {merged_extra}".strip()
+                    elif parsed_title:
+                        parsed_subtitle = merged_extra
+                    else:
+                        parsed_title = merged_extra
             return parsed_chapter, parsed_title, parsed_subtitle
 
         label_match, label_head = _find_object_label(instruction_core)
@@ -1403,7 +1429,7 @@ def process_mapping_excel(
         is_all = False
         chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction_core)
         if not is_all and not chapter_match:
-            _log("error", f"unsupported operation: {instruction_core}", row_num, action_label, detail_label)
+            _log("error", f"不支援的操作：{instruction_core}", row_num, action_label, detail_label)
             continue
 
         infile, resolve_error = _resolve_input_file(task_files_dir, src_name)
@@ -1544,7 +1570,7 @@ def process_mapping_excel(
                 if entry.get("status") == "error":
                     step_type = entry.get("type") or "step"
                     logs.append(
-                        f"WF_ERROR: {os.path.basename(output_path)} {step_type}: {entry.get('error') or 'unknown error'}"
+                        f"WF_ERROR: {os.path.basename(output_path)} {step_type}: {entry.get('error') or '未知錯誤'}"
                     )
             result_path = workflow_result.get("result_docx") or os.path.join(workdir, "result.docx")
             titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))

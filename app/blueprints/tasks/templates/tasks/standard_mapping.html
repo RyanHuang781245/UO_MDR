@@ -1,4 +1,11 @@
 {% extends "base.html" %}
+{% block sidebar %}
+  {% if mapping_route_endpoint == 'standard_updates_bp.mapping' %}
+    {% include "partials/sidebar_standard_updates.html" %}
+  {% else %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}
 {% block content %}
 <style>
   .standard-mapping-summary {
@@ -14,35 +21,35 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   }
   .standard-summary-card--updated {
-    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    background: #eff6ff;
     border-color: #bfdbfe;
   }
   .standard-summary-card--updated .standard-summary-card__value {
     color: var(--bs-blue-600);
   }
   .standard-summary-card--same {
-    background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+    background: #ecfdf5;
     border-color: #a7f3d0;
   }
   .standard-summary-card--same .standard-summary-card__value {
     color: var(--bs-emerald-700);
   }
   .standard-summary-card--missing {
-    background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+    background: #fef2f2;
     border-color: #fecaca;
   }
   .standard-summary-card--missing .standard-summary-card__value {
     color: #b91c1c;
   }
   .standard-summary-card--override {
-    background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+    background: #fffbeb;
     border-color: #fde68a;
   }
   .standard-summary-card--override .standard-summary-card__value {
     color: #b45309;
   }
   .standard-summary-card--edit {
-    background: linear-gradient(180deg, #f5f3ff 0%, #ffffff 100%);
+    background: #f5f3ff;
     border-color: #ddd6fe;
   }
   .standard-summary-card--edit .standard-summary-card__value {
@@ -287,20 +294,20 @@
   }
   .standard-precheck-card--full {
     border-color: #a7f3d0;
-    background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+    background: var(--bs-emerald-50);
   }
   .standard-precheck-card--core_only {
     border-color: #bfdbfe;
-    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    background: #eff6ff;
   }
   .standard-precheck-card--manual {
     border-color: #fde68a;
-    background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+    background: #fffbeb;
   }
   .standard-precheck-card--partial,
   .standard-precheck-card--ignored {
     border-color: #fecaca;
-    background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+    background: #fef2f2;
   }
   .standard-precheck-card__status {
     display: inline-flex;
@@ -342,12 +349,14 @@
   }
   .standard-manual-mapping-board {
     display: grid;
-    grid-template-columns: 260px 300px 260px;
+    grid-template-columns: minmax(0, 260px) minmax(0, 300px) minmax(0, 260px);
     gap: 0;
     justify-content: center;
     align-items: stretch;
     position: relative;
     margin: 0 auto;
+    width: 100%;
+    max-width: 820px;
   }
   .standard-manual-mapping-column {
     border: 1px solid var(--bs-gray-200);
@@ -357,6 +366,7 @@
     display: flex;
     flex-direction: column;
     z-index: 2;
+    min-width: 0;
   }
   .standard-manual-mapping-column__title {
     font-size: 0.75rem;
@@ -400,6 +410,7 @@
     color: #334155;
     cursor: pointer;
     position: relative;
+    word-break: break-word;
   }
   .standard-manual-mapping-node:hover {
     border-color: var(--bs-blue-600);
@@ -534,6 +545,48 @@
     font-size: 0.8125rem;
     white-space: nowrap;
   }
+  .standard-preview-navigator {
+    position: sticky;
+    top: 0.75rem;
+    z-index: 20;
+    padding: 0.875rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.875rem;
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(10px);
+  }
+  .standard-preview-navigator__main {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .standard-preview-navigator__label {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--bs-gray-500);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .standard-preview-navigator__select {
+    min-width: min(320px, 100%);
+    flex: 1 1 280px;
+    width: 100%;
+  }
+  .standard-preview-navigator__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
   .standard-preview-status-row {
     padding: 0;
   }
@@ -561,9 +614,13 @@
   }
   .standard-preview-filters {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 220px auto;
+    grid-template-columns: minmax(0, 1.35fr) minmax(180px, 220px) minmax(220px, 1fr) auto;
     gap: 0.875rem;
     padding: 1rem 1.25rem 1rem;
+    align-items: start;
+  }
+  .standard-preview-filters > * {
+    min-width: 0;
   }
   .standard-preview-filter-actions {
     display: flex;
@@ -571,6 +628,10 @@
     justify-content: flex-end;
     gap: 0.75rem;
     flex-wrap: wrap;
+    min-width: 0;
+  }
+  .standard-preview-filter-actions .btn {
+    white-space: nowrap;
   }
   .standard-preview-empty {
     display: none;
@@ -583,6 +644,48 @@
   }
   .standard-preview-empty.is-visible {
     display: block;
+  }
+  .standard-preview-table-card {
+    overflow: hidden;
+  }
+  .standard-preview-table-card > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .standard-preview-table-card > summary::-webkit-details-marker {
+    display: none;
+  }
+  .standard-preview-table-card__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--bs-gray-200);
+    background: #f8fafc;
+    min-width: 0;
+  }
+  .standard-preview-table-card__title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+  .standard-preview-table-card__toggle {
+    color: var(--bs-blue-600);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .standard-preview-table-card__toggle::before {
+    content: "展開表格";
+  }
+  .standard-preview-table-card[open] .standard-preview-table-card__toggle::before {
+    content: "收合表格";
+  }
+  .standard-preview-table-scroll {
+    max-height: min(72vh, 960px);
+    overflow: auto;
   }
   .standard-table {
     min-width: 960px;
@@ -616,6 +719,11 @@
   .standard-table tr td:nth-child(1),
   .standard-table tr td:last-child {
     text-align: left;
+  }
+  .standard-table tr.is-header th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
   .preview-cell__inner {
     display: flex;
@@ -907,9 +1015,30 @@
     font-size: 1.25rem;
     line-height: 1;
   }
-  @media (max-width: 1200px) {
+  @media (max-width: 1199.98px) {
     .standard-mapping-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .standard-preview-filters {
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr);
+    }
+    .standard-preview-filter-actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+    .standard-manual-mapping-board {
+      grid-template-columns: 1fr;
+      gap: 0.625rem;
+      max-width: none;
+    }
+    .standard-manual-mapping-canvas {
+      min-height: 120px;
+    }
+    .standard-manual-mapping-actions {
+      position: static;
+      left: auto;
+      transform: none;
+      margin-top: 0.75rem;
     }
   }
   @media (max-width: 991.98px) {
@@ -940,6 +1069,15 @@
       position: static;
       margin-top: 0.75rem;
     }
+    .standard-preview-navigator {
+      position: static;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .standard-preview-navigator__main,
+    .standard-preview-navigator__actions {
+      width: 100%;
+    }
   }
   @media (max-width: 767.98px) {
     .standard-mapping-summary {
@@ -955,7 +1093,15 @@
       justify-content: flex-start;
     }
     .standard-preview-filter-actions .btn {
+      flex: 1 1 100%;
       width: 100%;
+    }
+    .standard-preview-table-card__summary {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .standard-preview-table-card__toggle {
+      align-self: flex-start;
     }
     .standard-table {
       min-width: 0;
@@ -1041,6 +1187,7 @@
     color: var(--app-text);
   }
   [data-bs-theme="dark"] .standard-source-panel__summary,
+  [data-bs-theme="dark"] .standard-preview-table-card__summary,
   [data-bs-theme="dark"] .standard-settings-group__body,
   [data-bs-theme="dark"] .standard-manual-mapping-column,
   [data-bs-theme="dark"] .standard-manual-mapping-summary,
@@ -1054,25 +1201,37 @@
     background: var(--app-bg) !important;
     border-color: var(--app-border) !important;
   }
+  [data-bs-theme="dark"] .standard-preview-table-card__summary {
+    color: var(--app-text) !important;
+  }
+  [data-bs-theme="dark"] .standard-preview-table-card__summary .text-muted {
+    color: var(--bs-gray-500) !important;
+  }
+  [data-bs-theme="dark"] .standard-preview-table-card__toggle {
+    color: var(--bs-blue-600);
+  }
+  [data-bs-theme="dark"] .standard-precheck-card__headers {
+    color: var(--bs-gray-500) !important;
+  }
   [data-bs-theme="dark"] .standard-summary-card--updated,
   [data-bs-theme="dark"] .standard-precheck-card--core_only {
-    background: linear-gradient(180deg, rgba(59, 130, 246, 0.18) 0%, rgba(30, 41, 59, 0.96) 100%) !important;
+    background: rgba(59, 130, 246, 0.18) !important;
     border-color: rgba(59, 130, 246, 0.45) !important;
   }
   [data-bs-theme="dark"] .standard-summary-card--same,
   [data-bs-theme="dark"] .standard-precheck-card--full {
-    background: linear-gradient(180deg, rgba(52, 211, 153, 0.16) 0%, rgba(30, 41, 59, 0.96) 100%) !important;
+    background: rgba(52, 211, 153, 0.16) !important;
     border-color: rgba(52, 211, 153, 0.4) !important;
   }
   [data-bs-theme="dark"] .standard-summary-card--missing,
   [data-bs-theme="dark"] .standard-precheck-card--partial,
   [data-bs-theme="dark"] .standard-precheck-card--ignored {
-    background: linear-gradient(180deg, rgba(239, 68, 68, 0.16) 0%, rgba(30, 41, 59, 0.96) 100%) !important;
+    background: rgba(239, 68, 68, 0.16) !important;
     border-color: rgba(239, 68, 68, 0.4) !important;
   }
   [data-bs-theme="dark"] .standard-summary-card--override,
   [data-bs-theme="dark"] .standard-precheck-card--manual {
-    background: linear-gradient(180deg, rgba(245, 158, 11, 0.18) 0%, rgba(30, 41, 59, 0.96) 100%) !important;
+    background: rgba(245, 158, 11, 0.18) !important;
     border-color: rgba(245, 158, 11, 0.4) !important;
   }
   [data-bs-theme="dark"] .standard-source-panel__file,
@@ -1108,15 +1267,31 @@
   <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
     <div>
       <h1 class="h3 mb-1 fw-bold">{{ page_title or '標準清單更新' }}</h1>
-      <p class="text-muted mb-0 small">{{ page_description or '請先選擇要更新的 Word 標準清單與 UOC 標準規範總表_現行標準，下方設置可調整標準比對的優先選用規則、限制處理特定章節內的表格。未調整時，系統會依預設配置直接產生預覽與下載結果' }}</p>
+      <p class="text-muted mb-0 small">{{ page_description or '請先選擇要更新的 Word 標準清單與 UOC 標準規範總表_現行標準，下方設置可調整標準比對的優先選用規則、限制處理特定章節內的表格未調整時，系統會依預設配置直接產生預覽與下載結果' }}</p>
     </div>
     <div class="d-flex gap-2">
-      <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('standard_updates_bp.detail', task_id=task.id) }}">
+      {% if task_lock and task_lock.held_by_current_user %}
+      <form method="post" action="{{ url_for('standard_updates_bp.release_lock', task_id=task_id) }}" class="d-inline">
+        <input type="hidden" name="next" value="{{ url_for('standard_updates_bp.detail', task_id=task.id) }}">
+        <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-2" type="submit">
+          <i class="bi bi-box-arrow-left"></i>
+          離開標準更新
+        </button>
+      </form>
+      {% endif %}
+      <a class="btn btn-sm btn-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('standard_updates_bp.detail', task_id=task.id) }}">
         <i class="bi bi-arrow-left"></i>
         返回任務詳情
       </a>
     </div>
   </div>
+
+  {% if task_lock and task_lock.held_by_current_user %}
+  <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+    <i class="bi bi-unlock mt-1"></i>
+    <div>目前由你操作此任務，其他使用者無法操作，操作完畢請點擊 <span class="fw-bold text-danger">離開標準更新按鈕</span> 釋放鎖定(直接關閉瀏覽器不會釋放鎖定)，離開頁面或關閉瀏覽器超過 <span class="fw-bold text-danger">1</span> 分鐘會自動釋放鎖定</div>
+  </div>
+  {% endif %}
 
   <details class="standard-source-panel mb-3" {% if not has_preview %}open{% endif %}>
     <summary>
@@ -1142,9 +1317,9 @@
     <div class="standard-source-panel__body">
       {% if not word_options or not excel_options %}
         <div class="alert alert-warning mb-0">
-          {% if not word_options %}找不到可用的 Word 檔。{% endif %}
+          {% if not word_options %}找不到可用的 Word 檔{% endif %}
           {% if not word_options and not excel_options %}<br>{% endif %}
-          {% if not excel_options %}找不到可用的 UOC 標準規範總表_現行標準。{{ missing_file_hint or '請先把檔案放進此任務的 `files` 目錄。' }}{% endif %}
+          {% if not excel_options %}找不到可用的 UOC 標準規範總表_現行標準{{ missing_file_hint or '請先把檔案放進此任務的 `files` 目錄' }}{% endif %}
         </div>
       {% else %}
         <form id="standardMappingConfigForm" method="post" action="{{ url_for(mapping_route_endpoint or 'tasks_bp.task_standard_mapping', task_id=task_id) }}" class="vstack gap-3">
@@ -1338,14 +1513,12 @@
                           class="form-control form-control-custom rounded-2"
                           id="targetTableIndex"
                           name="target_table_index"
-                          type="number"
-                          min="1"
-                          step="1"
-                          value="{{ target_table_index or '' }}"
-                          placeholder="留白表示處理該章節所有表格；填 1 代表第 1 張"
+                          type="text"
+                          value="{{ target_table_index_display or '' }}"
+                          placeholder="留白表示處理該章節所有表格，例如 1,3,5 或 2-4"
                           {% if not limit_to_chapter %}disabled{% endif %}
                         >
-                        <div class="small text-muted mt-2">若該章節有多張表，可輸入第 1、2、3... 張表；留白則處理全部</div>
+                        <div class="small text-muted mt-2">可輸入逗號清單或範圍，例如 1,3,5 或 2-4；留白則處理該章節全部表格</div>
                       </div>
                     </div>
                   </div>
@@ -1367,8 +1540,8 @@
                 <div class="standard-settings-group__body-inner">
                   <div class="standard-priority-summary mt-0">
                     系統會先預檢四個目標欄位：<code>Standards</code>、<code>Issued Year</code>、
-                    <code>EU Harmonised Standards under MDR 2017/745 (YES/NO)</code>、<code>Title</code>。
-                    只有完全符合這四個欄位的表格可以直接更新；若欄位多一欄、少一欄，或名稱差異過大，必須先完成手動對應欄位設定後才能更新。
+                    <code>EU Harmonised Standards under MDR 2017/745 (YES/NO)</code>、<code>Title</code>
+                    只有完全符合這四個欄位的表格可以直接更新，若欄位多一欄、少一欄，或名稱差異過大，必須先完成手動對應欄位設定後才能更新
                   </div>
                 </div>
               </div>
@@ -1453,7 +1626,7 @@
                                   <div class="standard-manual-mapping-spacer"></div>
 
                                   <div class="standard-manual-mapping-column">
-                                    <div class="standard-manual-mapping-column__title">{{ table_check.table_label }} 掃描標頭</div>
+                                    <div class="standard-manual-mapping-column__title">{{ table_check.table_label }} 掃描標題</div>
                                     <div class="standard-manual-mapping-list">
                                       {% for option in table_check.header_options %}
                                         <button
@@ -1471,11 +1644,11 @@
                                 </div>
                                 <div class="standard-manual-mapping-summary">
                                   <!-- <div><strong>偵測結果：</strong>{{ table_check.detected_headers | join('、') if table_check.detected_headers else '目前尚未自動辨識到標準欄位' }}</div> -->
-                                  <div class="mt-1"><strong>操作說明：</strong>按住左側欄位向右拖曳至目標標頭，或點選左側再點選右側即可建立連線。</div>
+                                  <div class="mt-1"><strong>操作說明：</strong>按住左側欄位向右拖曳至目標標頭，或點選左側再點選右側即可建立連線</div>
                                 </div>
                               {% else %}
                             <div class="standard-manual-mapping-empty">
-                              這張表目前找不到足夠的表頭文字可供手動對應，請先確認 Word 表頭內容是否存在。
+                              這張表目前找不到足夠的表頭文字可供手動對應，請先確認 Word 表頭內容是否存在
                             </div>
                           {% endif %}
                         </div>
@@ -1483,7 +1656,7 @@
                     </div>
                   {% else %}
                     <div class="standard-manual-mapping-empty">
-                      目前還沒有掃描結果。先按「欄位檢查」或「更新標準清單」，這裡就會顯示每張表掃描到的標頭與可調整的手動對應欄位。
+                      目前還沒有掃描結果先按「欄位檢查」或「更新標準清單」，這裡就會顯示每張表掃描到的標頭與可調整的手動對應欄位
                     </div>
                   {% endif %}
                 </div>
@@ -1491,13 +1664,19 @@
             </details>
           </div>
           <div class="d-flex justify-content-end gap-2 flex-wrap">
-            <button class="btn btn-outline-primary fw-bold px-3" type="submit" name="action" value="inspect_headers">
+            <button class="btn btn-outline-primary fw-bold px-3" id="inspectHeadersBtn" type="submit" name="action" value="inspect_headers">
               <i class="bi bi-search"></i>
               欄位檢查
             </button>
-            <button class="btn btn-primary fw-bold px-3" type="submit" name="action" value="preview" {% if has_unresolved_manual_mapping %}disabled title="請先完成手動對應欄位設定"{% endif %}>
-              <i class="bi bi-arrow-repeat"></i>
-              更新標準清單
+            <button class="btn btn-primary fw-bold px-3" id="previewSubmitBtn" type="submit" name="action" value="preview" {% if has_unresolved_manual_mapping %}disabled title="請先完成手動對應欄位設定"{% endif %}>
+              <span data-submit-default>
+                <i class="bi bi-arrow-repeat"></i>
+                更新標準清單
+              </span>
+              <span data-submit-loading class="d-none">
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                更新中...
+              </span>
             </button>
           </div>
         </form>
@@ -1506,12 +1685,17 @@
   </details>
 
   {% if table_checks %}
-    <div class="main-card mb-3">
-      <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
-        <div class="fw-bold">表格預檢結果</div>
-        <div class="small text-muted">完整符合預設四欄格式的表格可直接更新；其餘格式需先完成手動對應欄位設定。</div>
-      </div>
-      <div class="p-4">
+    <details class="standard-source-panel mb-3" open>
+      <summary>
+        <div class="standard-source-panel__summary">
+          <div class="standard-source-panel__files">
+            <div class="fw-bold">表格預檢結果</div>
+            <div class="standard-source-panel__file">完整符合預設四欄格式的表格可直接更新，其餘格式需先完成手動對應欄位設定</div>
+          </div>
+          <div class="standard-source-panel__hint">展開或收合</div>
+        </div>
+      </summary>
+      <div class="standard-source-panel__body">
         <div class="standard-precheck-grid">
           {% for table_check in table_checks %}
             <div class="standard-precheck-card standard-precheck-card--{{ table_check.status }}">
@@ -1525,7 +1709,7 @@
               <div class="small text-muted mt-2">{{ table_check.message }}</div>
               {% if table_check.needs_manual_mapping %}
                 <div class="standard-manual-mapping-summary">
-                  <div><strong>手動對應欄位：</strong>請至下方設定區指定 {{ table_check.table_label }} 的欄位對應。</div>
+                  <div><strong>手動對應欄位：</strong>請至下方設定區指定 {{ table_check.table_label }} 的欄位對應</div>
                   {% for label, field_id in manual_header_field_order %}
                     {% if table_check.manual_mapping.get(label) %}
                       <div><strong>{{ label }}</strong>：{{ table_check.manual_mapping.get(label) }}</div>
@@ -1542,9 +1726,25 @@
           {% endfor %}
         </div>
       </div>
-    </div>
+    </details>
   {% endif %}
   {% if preview_tables %}
+    <!-- <div class="standard-preview-scope">
+    <div class="main-card mb-3 standard-preview-navigator">
+      <div class="standard-preview-navigator__main">
+        <div class="standard-preview-navigator__label">快速瀏覽</div>
+        <select class="form-select form-control-custom rounded-2 standard-preview-navigator__select" id="previewTableJumpSelect">
+          <option value="">跳轉到指定表格</option>
+          {% for table in preview_tables %}
+          <option value="preview-table-{{ loop.index0 }}">{{ table.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="standard-preview-navigator__actions">
+        <button class="btn btn-outline-secondary btn-sm" type="button" id="collapseAllPreviewTablesBtn">收合全部</button>
+        <button class="btn btn-outline-primary btn-sm" type="button" id="expandAllPreviewTablesBtn">展開全部</button>
+      </div>
+    </div> -->
     <div class="standard-mapping-summary mb-3">
       <div class="standard-summary-card standard-summary-card--updated">
         <div class="standard-summary-card__label">已更新欄位數</div>
@@ -1564,12 +1764,12 @@
       <div class="standard-summary-card standard-summary-card--override">
         <div class="standard-summary-card__label">人工改選欄位數</div>
         <div class="standard-summary-card__value" id="overrideCount">0</div>
-        <div class="standard-summary-card__depiction">依目前改選結果輸出至新的 Word</div>
+        <div class="standard-summary-card__depiction">人工改選的標準，使用黃色標記改選欄位</div>
       </div>
       <div class="standard-summary-card standard-summary-card--edit">
         <div class="standard-summary-card__label">人工編輯列數</div>
         <div class="standard-summary-card__value" id="editCount">0</div>
-        <div class="standard-summary-card__depiction">直接編輯欄位值，下載時會一併寫入 Word</div>
+        <div class="standard-summary-card__depiction">人工編輯的欄位，使用黃色標記編輯欄位</div>
       </div>
     </div>
 
@@ -1577,12 +1777,12 @@
       <div class="standard-preview-bar">
         <div class="standard-preview-bar__main">
           <div class="standard-preview-bar__title mb-2">
-            目前規則：核心編號比對後，先比年份，再依 {{ iso_priority | join(' > ') }}{% if target_chapter_ref %}；限定章節 {{ target_chapter_ref }}{% if target_table_index %} 第 {{ target_table_index }} 張表{% endif %}{% endif %}
+            目前規則：核心編號比對後，先比年份，再依 {{ iso_priority | join(' > ') }}{% if target_chapter_ref %}，限定章節 {{ target_chapter_ref }}{% if target_table_index_display %}，表格索引 {{ target_table_index_display }}{% endif %}{% endif %}
           </div>
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
               <i class="bi bi-info-circle"></i>
-              <div>點擊 <code>Standards</code> 或 <code>Issued Year</code> 欄位可檢視命中標準清單；若要調整自動選用規則，請展開上方設定區重新產生預覽</div>
+              <div>點擊欄位資料可檢視命中標準清單，若要調整自動選用規則，請展開上方設定區重新產生預覽</div>
             </div>
             <div id="actionBar" class="standard-preview-note" aria-hidden="true">
               <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -1599,27 +1799,51 @@
       <div class="standard-preview-filters">
         <div class="search-wrapper">
           <i class="bi bi-search"></i>
-          <input type="text" id="standardSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋標準號、標題或分類...">
+          <input type="text" id="standardSearchInput" class="form-control form-control-custom rounded-2" placeholder="搜尋標準、年份...">
         </div>
         <select id="standardStatusFilter" class="form-select form-control-custom rounded-2">
           <option value="all">全部狀態</option>
           <option value="updated">只看已更新</option>
-          <option value="missing">只看查無來源</option>
           <option value="same">只看無需更新</option>
+          <option value="missing">只看查無來源</option>
           <option value="overridden">只看人工改選</option>
         </select>
+        <select class="form-select form-control-custom rounded-2 standard-preview-navigator__select" id="previewTableJumpSelect">
+          <option value="">跳轉到指定表格</option>
+          {% for table in preview_tables %}
+          <option value="preview-table-{{ loop.index0 }}">{{ table.title }}</option>
+          {% endfor %}
+        </select>
         <div class="standard-preview-filter-actions">
+          <button class="btn btn-outline-secondary px-3" type="button" id="collapseAllPreviewTablesBtn">收合全部</button>
+          <button class="btn btn-outline-primary px-3" type="button" id="expandAllPreviewTablesBtn">展開全部</button>
           <button class="btn btn-outline-primary px-3 export-overrides-btn" type="button">
             <i class="bi bi-file-earmark-text"></i>
             匯出改選 Log
           </button>
-          <button class="btn btn-primary px-3" form="downloadForm" type="submit">
-            <i class="bi bi-file-earmark-word"></i>
-            下載目前結果
+          <button class="btn btn-primary px-3" id="downloadSubmitBtn" form="downloadForm" type="submit">
+            <span data-submit-default>
+              <i class="bi bi-file-earmark-word"></i>
+              下載目前結果
+            </span>
+            <span data-submit-loading class="d-none">
+              <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+              下載中...
+            </span>
           </button>
         </div>
+        <!-- <select class="form-select form-control-custom rounded-2 standard-preview-navigator__select" id="previewTableJumpSelect">
+          <option value="">跳轉到指定表格</option>
+          {% for table in preview_tables %}
+          <option value="preview-table-{{ loop.index0 }}">{{ table.title }}</option>
+          {% endfor %}
+        </select> -->
+        <!-- <div class="standard-preview-navigator__actions">
+          <button class="btn btn-outline-secondary px-3" type="button" id="collapseAllPreviewTablesBtn">收合全部</button>
+          <button class="btn btn-outline-primary px-3" type="button" id="expandAllPreviewTablesBtn">展開全部</button>
+        </div> -->
       </div>
-      <div id="standardPreviewEmpty" class="standard-preview-empty">目前篩選條件下沒有符合的列。</div>
+      <div id="standardPreviewEmpty" class="standard-preview-empty">目前篩選條件下沒有符合的列</div>
     </div>
 
     <form id="downloadForm" action="{{ url_for(mapping_download_endpoint or 'tasks_bp.task_standard_mapping_download', task_id=task_id) }}" method="post">
@@ -1641,7 +1865,7 @@
       <input type="hidden" name="limit_to_chapter" value="{{ 1 if limit_to_chapter else 0 }}">
       <input type="hidden" name="target_chapter_ref" value="{{ target_chapter_ref }}">
       <input type="hidden" name="manual_target_chapter_ref" value="{{ manual_target_chapter_ref }}">
-      <input type="hidden" name="target_table_index" value="{{ target_table_index or '' }}">
+      <input type="hidden" name="target_table_index" value="{{ target_table_index_display or '' }}">
       {% for header_name in required_headers %}
         <input type="hidden" name="required_headers" value="{{ header_name }}">
       {% endfor %}
@@ -1657,12 +1881,15 @@
     </form>
 
     {% for table in preview_tables %}
-      <div class="main-card mb-4 standard-preview-table">
-        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
-          <div class="fw-bold">{{ table.title }}</div>
-          <div class="small text-muted">{{ table.meta }}</div>
-        </div>
-        <div class="table-responsive">
+      <details class="main-card mb-4 standard-preview-table standard-preview-table-card" id="preview-table-{{ loop.index0 }}" {% if loop.first %}open{% endif %}>
+        <summary class="standard-preview-table-card__summary">
+          <div class="standard-preview-table-card__title">
+            <div class="fw-bold">{{ table.title }}</div>
+            <div class="small text-muted">{{ table.meta }}</div>
+          </div>
+          <div class="standard-preview-table-card__toggle" aria-hidden="true"></div>
+        </summary>
+        <div class="table-responsive standard-preview-table-scroll">
           <table class="table mb-0 align-middle standard-table">
             <tbody>
               {% for row in table.rows %}
@@ -1694,7 +1921,7 @@
             </tbody>
           </table>
         </div>
-      </div>
+      </details>
     {% endfor %}
   {% endif %}
 </div>
@@ -1708,11 +1935,27 @@
 </div>
 
 <script>
+  const standardMappingConfigForm = document.getElementById("standardMappingConfigForm");
   const prioritySortList = document.getElementById("prioritySortList");
   const downloadForm = document.getElementById("downloadForm");
+  const inspectHeadersBtn = document.getElementById("inspectHeadersBtn");
+  const previewSubmitBtn = document.getElementById("previewSubmitBtn");
+  const downloadSubmitBtn = document.getElementById("downloadSubmitBtn");
+  const previewTableJumpSelect = document.getElementById("previewTableJumpSelect");
+  const collapseAllPreviewTablesBtn = document.getElementById("collapseAllPreviewTablesBtn");
+  const expandAllPreviewTablesBtn = document.getElementById("expandAllPreviewTablesBtn");
   const resetPriorityDefaultsBtn = document.getElementById("resetPriorityDefaultsBtn");
   const defaultIsoPriority = {{ default_iso_priority | tojson }};
   const defaultEnabledStandardLevels = new Set({{ default_enabled_standard_levels | tojson }});
+
+  const setSubmitButtonState = (button, isLoading) => {
+    if (!button) return;
+    const defaultNode = button.querySelector("[data-submit-default]");
+    const loadingNode = button.querySelector("[data-submit-loading]");
+    if (defaultNode) defaultNode.classList.toggle("d-none", isLoading);
+    if (loadingNode) loadingNode.classList.toggle("d-none", !isLoading);
+    button.disabled = isLoading;
+  };
 
   const syncDownloadPriorityState = () => {
     if (!downloadForm || !prioritySortList) return;
@@ -1741,8 +1984,45 @@
       if (typeof syncInteractiveState === "function") {
         syncInteractiveState();
       }
+      setSubmitButtonState(downloadSubmitBtn, true);
     });
   }
+
+  if (standardMappingConfigForm) {
+    standardMappingConfigForm.addEventListener("submit", (event) => {
+      const submitter = event.submitter;
+      if (!submitter || submitter.value !== "preview") return;
+      setSubmitButtonState(previewSubmitBtn, true);
+      if (inspectHeadersBtn) {
+        inspectHeadersBtn.disabled = true;
+      }
+    });
+  }
+
+  if (previewTableJumpSelect) {
+    previewTableJumpSelect.addEventListener("change", () => {
+      const targetId = (previewTableJumpSelect.value || "").trim();
+      if (!targetId) return;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      if (target.tagName === "DETAILS") {
+        target.open = true;
+      }
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  collapseAllPreviewTablesBtn?.addEventListener("click", () => {
+    document.querySelectorAll(".standard-preview-table-card").forEach((card) => {
+      card.open = false;
+    });
+  });
+
+  expandAllPreviewTablesBtn?.addEventListener("click", () => {
+    document.querySelectorAll(".standard-preview-table-card").forEach((card) => {
+      card.open = true;
+    });
+  });
 
   const refreshPriorityRanks = () => {
     if (!prioritySortList) return;
@@ -2142,6 +2422,13 @@
     return JSON.parse(JSON.stringify(meta || {}));
   }
 
+  function normalizeHarmonisedValue(value) {
+    const normalized = normalizeText(value).toUpperCase();
+    if (normalized === "Y" || normalized === "YES") return "YES";
+    if (normalized === "N" || normalized === "NO") return "NO";
+    return normalized;
+  }
+
   function getEffectiveMeta(referenceKey, { includeEdits = true } = {}) {
     const source = referencePayload[referenceKey];
     if (!source) return null;
@@ -2157,10 +2444,13 @@
       meta.excel_row_index = selectedCandidate.excel_row_index || "";
       meta.matched_standard_no = selectedCandidate.matched_standard_no || "";
       meta.matched_display_standard_no = selectedCandidate.matched_display_standard_no || selectedCandidate.matched_standard_no || "";
-      meta.matched_harmonised = selectedCandidate.candidate_harmonised || meta.matched_harmonised || "";
+      meta.matched_harmonised = normalizeHarmonisedValue(selectedCandidate.candidate_harmonised || meta.matched_harmonised || "");
       meta.matched_title = selectedCandidate.matched_title || meta.matched_title || "";
       meta.excel_year = selectedCandidate.latest_year || "";
     }
+
+    meta.word_harmonised = normalizeHarmonisedValue(meta.word_harmonised || "");
+    meta.matched_harmonised = normalizeHarmonisedValue(meta.matched_harmonised || "");
 
     if (includeEdits) {
       const rowEdits = editSelections[rowKey] || {};
@@ -2172,7 +2462,7 @@
         meta.excel_year = rowEdits.issued_year;
       }
       if (Object.prototype.hasOwnProperty.call(rowEdits, "harmonised")) {
-        meta.matched_harmonised = rowEdits.harmonised;
+        meta.matched_harmonised = normalizeHarmonisedValue(rowEdits.harmonised);
       }
       if (Object.prototype.hasOwnProperty.call(rowEdits, "title")) {
         meta.matched_title = rowEdits.title;
@@ -2266,17 +2556,55 @@
     return buildDiffSegments(source, target);
   }
 
-  function buildPreserveOriginalSegments(oldText, newText) {
+  function buildWordDiffSegments(oldText, newText) {
     const source = normalizeText(oldText);
     const target = normalizeText(newText);
     if (source === target) return [{ text: target, isRed: false }];
-    if (!source) return [{ text: target, isRed: true }];
-    if (!target) return [{ text: source, isRed: false }];
-    return mergeSegments([
-      { text: source, isRed: false },
-      { text: " ", isRed: false },
-      { text: target, isRed: true },
-    ]);
+
+    const tokenPattern = /\s+|\w+|[^\w\s]/g;
+    const oldTokens = source.match(tokenPattern) || [];
+    const newTokens = target.match(tokenPattern) || [];
+    const dp = Array.from({ length: oldTokens.length + 1 }, () => Array(newTokens.length + 1).fill(0));
+
+    for (let i = oldTokens.length - 1; i >= 0; i -= 1) {
+      for (let j = newTokens.length - 1; j >= 0; j -= 1) {
+        if (oldTokens[i] === newTokens[j]) {
+          dp[i][j] = dp[i + 1][j + 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+    }
+
+    const segments = [];
+    let i = 0;
+    let j = 0;
+    while (i < oldTokens.length && j < newTokens.length) {
+      if (oldTokens[i] === newTokens[j]) {
+        segments.push({ text: newTokens[j], isRed: false });
+        i += 1;
+        j += 1;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        i += 1;
+      } else {
+        segments.push({ text: newTokens[j], isRed: !/^\s+$/.test(newTokens[j]) });
+        j += 1;
+      }
+    }
+
+    while (j < newTokens.length) {
+      segments.push({ text: newTokens[j], isRed: !/^\s+$/.test(newTokens[j]) });
+      j += 1;
+    }
+
+    return mergeSegments(segments);
+  }
+
+  function buildPlainReplacementSegments(oldText, newText) {
+    const source = normalizeText(oldText);
+    const target = normalizeText(newText);
+    if (source === target) return [{ text: target, isRed: false }];
+    return [{ text: target, isRed: true }];
   }
 
   function renderSegmentsHtml(segments) {
@@ -2399,7 +2727,7 @@
         const newHarmonised = harmonisedMeta.matched_harmonised || oldHarmonised;
         const content = cell.querySelector(".preview-cell__content");
         if (content) {
-          content.innerHTML = renderSegmentsHtml(buildPreserveOriginalSegments(oldHarmonised, newHarmonised));
+          content.innerHTML = renderSegmentsHtml(buildPlainReplacementSegments(oldHarmonised, newHarmonised));
         }
         refreshCellOverflow(cell);
       }
@@ -2411,7 +2739,7 @@
         const newTitle = titleMeta.matched_title || oldTitle;
         const content = cell.querySelector(".preview-cell__content");
         if (content) {
-          content.innerHTML = renderSegmentsHtml(buildDiffSegments(oldTitle, newTitle));
+          content.innerHTML = renderSegmentsHtml(buildWordDiffSegments(oldTitle, newTitle));
         }
         refreshCellOverflow(cell);
       }
@@ -2491,8 +2819,8 @@
     return `
       <div class="reference-tooltip-header">
         <div>
-          <div class="reference-tooltip-kicker">${escapeHtml(fieldLabel)}</div>
-          <div class="reference-tooltip-source">${escapeHtml(sourceLabel)}</div>
+          <div class="reference-tooltip-kicker">欄位</div>
+          <div class="reference-tooltip-source">${escapeHtml(fieldLabel)}</div>
         </div>
         <div class="d-flex align-items-center gap-2">
           <span class="reference-tooltip-status ${statusClass}">${escapeHtml(statusLabel)}</span>
@@ -2500,6 +2828,8 @@
         </div>
       </div>
       <div class="reference-tooltip-grid">
+        <div class="reference-tooltip-label">參考工作表</div>
+        <div class="reference-tooltip-value">${escapeHtml(sourceLabel)}</div>
         <div class="reference-tooltip-label">參考儲存格</div>
         <div class="reference-tooltip-value">${escapeHtml(referenceCell)}</div>
         <div class="reference-tooltip-label">命中標準</div>
@@ -2514,7 +2844,7 @@
         </div>
       ` : ""}
       <div class="reference-tooltip-section">
-        <div class="reference-tooltip-section__title">編輯此列</div>
+        <div class="reference-tooltip-section__title">編輯欄位</div>
         <div class="reference-edit-grid">
           ${availableFields.standards ? `
           <div class="reference-edit-field reference-edit-field--full">
@@ -2528,7 +2858,7 @@
           </div>` : ""}
           ${availableFields.harmonised ? `
           <div class="reference-edit-field">
-            <label>EU Harmonised</label>
+            <label>EU Harmonised Standards...</label>
             <input class="form-control form-control-sm" type="text" data-edit-field="harmonised" value="${escapeHtml(currentValues.harmonised)}">
           </div>` : ""}
           ${availableFields.title ? `
@@ -2540,6 +2870,7 @@
         <div class="reference-edit-actions">
           <button class="btn btn-sm btn-outline-secondary" type="button" data-action="reset-edit" data-row-key="${escapeHtml(meta.row_key || "")}" data-reference-key="${escapeHtml(meta.reference_key || "")}">還原此列</button>
           <button class="btn btn-sm btn-primary" type="button" data-action="save-edit" data-row-key="${escapeHtml(meta.row_key || "")}" data-reference-key="${escapeHtml(meta.reference_key || "")}">保存此列</button>
+          <button class="btn btn-sm btn-secondary" type="button" data-action="close" data-row-key="${escapeHtml(meta.row_key || "")}" data-reference-key="${escapeHtml(meta.reference_key || "")}">關閉</button>
         </div>
       </div>
     `;
@@ -2558,13 +2889,15 @@
     const baseline = {
       standards: baseMeta.matched_display_standard_no || baseMeta.matched_standard_no || baseMeta.word_standard || "",
       issued_year: String(baseMeta.excel_year || baseMeta.word_year || ""),
-      harmonised: baseMeta.matched_harmonised || baseMeta.word_harmonised || "",
+      harmonised: normalizeHarmonisedValue(baseMeta.matched_harmonised || baseMeta.word_harmonised || ""),
       title: baseMeta.matched_title || baseMeta.word_title || "",
     };
     const normalized = {};
     Object.entries(nextValues || {}).forEach(([field, value]) => {
       if (!allowedFields[field]) return;
-      const nextValue = String(value ?? "");
+      const nextValue = field === "harmonised"
+        ? normalizeHarmonisedValue(value)
+        : String(value ?? "");
       if (nextValue !== String(baseline[field] ?? "")) {
         normalized[field] = nextValue;
       }
@@ -2843,6 +3176,34 @@
   standardSearchInput?.addEventListener("input", applyPreviewFilters);
   standardStatusFilter?.addEventListener("change", applyPreviewFilters);
   syncInteractiveState();
+</script>
+{% endif %}
+{% if mapping_route_endpoint == 'standard_updates_bp.mapping' %}
+<script>
+  (() => {
+    const refreshUrl = "{{ url_for('standard_updates_bp.refresh_lock', task_id=task_id) }}";
+    const fallbackUrl = "{{ url_for('standard_updates_bp.detail', task_id=task_id) }}";
+    const refreshLock = async () => {
+      try {
+        const response = await fetch(refreshUrl, {
+          method: "POST",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          window.location.href = fallbackUrl;
+        }
+      } catch (error) {
+        window.location.href = fallbackUrl;
+      }
+    };
+    window.setTimeout(refreshLock, 1000);
+    window.setInterval(refreshLock, 60000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refreshLock();
+    });
+    window.addEventListener("focus", refreshLock);
+  })();
 </script>
 {% endif %}
 {% endblock %}

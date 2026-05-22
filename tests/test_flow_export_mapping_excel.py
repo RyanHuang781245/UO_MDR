@@ -151,6 +151,151 @@ def test_export_flow_mapping_excel_chapter_operation_includes_title_and_subtitle
     assert ws.cell(2, 3).value == "1.1.1 General description\\General description"
 
 
+def test_export_flow_mapping_excel_quotes_chapter_title_with_slash(app, client) -> None:
+    task_id = "flow-export-mapping-quoted-chapter-title"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    (task_dir / "flows").mkdir(parents=True, exist_ok=True)
+
+    flow_payload = {
+        "steps": [
+            {
+                "type": "extract_word_chapter",
+                "params": {
+                    "input_file": "IFU.docx",
+                    "target_chapter_section": "2.1.6",
+                    "target_chapter_title": "Instructions for use/Device Operating Manual(s)",
+                },
+            }
+        ],
+        "output_filename": "test/Product Description.docx",
+    }
+    (task_dir / "flows" / "FlowQuotedTitle.json").write_text(json.dumps(flow_payload, ensure_ascii=False), encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_crud_bp.export_flow_mapping", task_id=task_id, flow_name="FlowQuotedTitle")
+
+    response = client.get(url)
+    assert response.status_code == 200
+
+    wb = load_workbook(filename=BytesIO(response.data))
+    ws = wb.active
+    assert ws.cell(2, 3).value == '2.1.6 "Instructions for use/Device Operating Manual(s)"'
+
+
+def test_export_flow_mapping_excel_quotes_subtitle_with_slash(app, client) -> None:
+    task_id = "flow-export-mapping-quoted-subtitle"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    (task_dir / "flows").mkdir(parents=True, exist_ok=True)
+
+    flow_payload = {
+        "steps": [
+            {
+                "type": "extract_word_chapter",
+                "params": {
+                    "input_file": "IFU.docx",
+                    "target_chapter_section": "2.1.6",
+                    "target_chapter_title": "Instructions for use",
+                    "target_subtitle": "Device Operating Manual(s)/Reference Guide",
+                },
+            }
+        ],
+        "output_filename": "test/Product Description.docx",
+    }
+    (task_dir / "flows" / "FlowQuotedSubtitle.json").write_text(json.dumps(flow_payload, ensure_ascii=False), encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_crud_bp.export_flow_mapping", task_id=task_id, flow_name="FlowQuotedSubtitle")
+
+    response = client.get(url)
+    assert response.status_code == 200
+
+    wb = load_workbook(filename=BytesIO(response.data))
+    ws = wb.active
+    assert ws.cell(2, 3).value == '2.1.6 Instructions for use\\"Device Operating Manual(s)/Reference Guide"'
+
+
+def test_export_flow_mapping_excel_quotes_figure_title_with_pipe(app, client) -> None:
+    task_id = "flow-export-mapping-quoted-figure-title"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    (task_dir / "flows").mkdir(parents=True, exist_ok=True)
+
+    flow_payload = {
+        "steps": [
+            {
+                "type": "extract_specific_figure_from_word",
+                "params": {
+                    "input_file": "IFU.docx",
+                    "target_chapter_section": "2.1.6",
+                    "target_caption_label": "Figure 1",
+                    "target_figure_title": "Overview | Figure",
+                },
+            }
+        ],
+        "output_filename": "test/Product Description.docx",
+    }
+    (task_dir / "flows" / "FlowQuotedFigureTitle.json").write_text(
+        json.dumps(flow_payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("flow_crud_bp.export_flow_mapping", task_id=task_id, flow_name="FlowQuotedFigureTitle")
+
+    response = client.get(url)
+    assert response.status_code == 200
+
+    wb = load_workbook(filename=BytesIO(response.data))
+    ws = wb.active
+    assert ws.cell(2, 3).value == '2.1.6 | Figure 1 | title="Overview | Figure"'
+
+
+def test_export_flow_mapping_excel_quotes_table_title_with_slash(app, client) -> None:
+    task_id = "flow-export-mapping-quoted-table-title"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    (task_dir / "flows").mkdir(parents=True, exist_ok=True)
+
+    flow_payload = {
+        "steps": [
+            {
+                "type": "extract_specific_table_from_word",
+                "params": {
+                    "input_file": "IFU.docx",
+                    "target_chapter_section": "2.1.6",
+                    "target_caption_label": "Table 1",
+                    "target_table_title": "Device/Reference Guide",
+                },
+            }
+        ],
+        "output_filename": "test/Product Description.docx",
+    }
+    (task_dir / "flows" / "FlowQuotedTableTitle.json").write_text(
+        json.dumps(flow_payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("flow_crud_bp.export_flow_mapping", task_id=task_id, flow_name="FlowQuotedTableTitle")
+
+    response = client.get(url)
+    assert response.status_code == 200
+
+    wb = load_workbook(filename=BytesIO(response.data))
+    ws = wb.active
+    assert ws.cell(2, 3).value == '2.1.6 | Table 1 | title="Device/Reference Guide"'
+
+
 def test_export_flow_mapping_excel_populates_insert_label_from_template_index(app, client, monkeypatch) -> None:
     task_id = "flow-export-mapping-insert-label"
     task_dir = Path(app.config["TASK_FOLDER"]) / task_id

@@ -37,6 +37,33 @@ def mapping_scheme_meta_path(task_id: str, scheme_id: str) -> str:
     return os.path.join(mapping_scheme_dir(task_id, scheme_id), "meta.json")
 
 
+def _mapping_scheme_check_log_name(kind: str) -> str:
+    kind_key = str(kind or "").strip().lower()
+    if kind_key == "check":
+        return "mapping_check_log.json"
+    if kind_key == "check_extract":
+        return "mapping_check_extract_log.json"
+    return ""
+
+
+def _copy_scheme_validation_logs(scheme_dir: str, validation_log_dir: str | None) -> dict[str, str]:
+    copied: dict[str, str] = {}
+    source_dir = str(validation_log_dir or "").strip()
+    if not source_dir or not os.path.isdir(source_dir):
+        return copied
+    for kind in ("check", "check_extract"):
+        filename = _mapping_scheme_check_log_name(kind)
+        if not filename:
+            continue
+        src_path = os.path.join(source_dir, filename)
+        if not os.path.isfile(src_path):
+            continue
+        dst_path = os.path.join(scheme_dir, filename)
+        shutil.copy2(src_path, dst_path)
+        copied[f"{kind}_log_file"] = filename
+    return copied
+
+
 def mapping_schedule_path(task_id: str) -> str:
     return os.path.join(_task_dir(task_id), "mapping_schedule.json")
 
@@ -110,6 +137,12 @@ def _enrich_scheme(task_id: str, payload: dict, current_files_updated_at: float 
         or str(scheme.get("mapping_file") or "").strip()
         or scheme_id
     )
+    check_log_file = str(scheme.get("check_log_file") or "").strip()
+    check_extract_log_file = str(scheme.get("check_extract_log_file") or "").strip()
+    scheme["has_check_log"] = bool(check_log_file) and os.path.isfile(os.path.join(scheme_dir, check_log_file))
+    scheme["has_check_extract_log"] = bool(check_extract_log_file) and os.path.isfile(
+        os.path.join(scheme_dir, check_extract_log_file)
+    )
     return scheme
 
 
@@ -155,6 +188,7 @@ def save_mapping_scheme(
     scheme_name: str,
     validation_state: dict,
     actor: dict | None = None,
+    validation_log_dir: str | None = None,
 ) -> dict:
     actor = actor or {}
     scheme_id = uuid.uuid4().hex[:8]
@@ -167,12 +201,15 @@ def save_mapping_scheme(
     target_path = os.path.join(scheme_dir, source_file)
     shutil.copy2(source_path, target_path)
 
+    display_name = str(validation_state.get("mapping_display_name") or original_name).strip() or original_name
+    default_scheme_name = os.path.splitext(os.path.basename(display_name))[0] or os.path.splitext(original_name)[0] or original_name
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     payload = {
         "id": scheme_id,
-        "name": (scheme_name or "").strip() or os.path.splitext(original_name)[0] or original_name,
+        "name": (scheme_name or "").strip() or default_scheme_name,
         "mapping_file": str(validation_state.get("mapping_file") or original_name),
-        "mapping_display_name": str(validation_state.get("mapping_display_name") or original_name),
+        "mapping_display_name": display_name,
+        "validated_run_id": str(validation_state.get("run_id") or "").strip(),
         "source_file": source_file,
         "reference_ok": bool(validation_state.get("reference_ok")),
         "extract_ok": bool(validation_state.get("extract_ok")),
@@ -183,6 +220,7 @@ def save_mapping_scheme(
         "actor_label": actor.get("label", ""),
         "enable_figure_reference": bool(validation_state.get("enable_figure_reference", True)),
     }
+    payload.update(_copy_scheme_validation_logs(scheme_dir, validation_log_dir))
 
     with open(mapping_scheme_meta_path(task_id, scheme_id), "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -249,7 +287,7 @@ def delete_mapping_scheme(task_id: str, scheme_id: str) -> bool:
 def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
     scheme = load_mapping_scheme(task_id, scheme_id)
     if not scheme:
-        raise FileNotFoundError("Mapping scheme not found")
+        raise FileNotFoundError("找不到 Mapping 方案")
 
     cleaned_name = str(new_name or "").strip()
     if not cleaned_name:
@@ -259,7 +297,7 @@ def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
     with open(meta_path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     if not isinstance(payload, dict):
-        raise ValueError("Mapping scheme metadata is invalid")
+        raise ValueError("Mapping 方案資料格式無效")
 
     payload["name"] = cleaned_name
     payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -277,13 +315,13 @@ def rename_mapping_scheme(task_id: str, scheme_id: str, new_name: str) -> dict:
 def set_mapping_scheme_figure_reference(task_id: str, scheme_id: str, enabled: bool) -> dict:
     scheme = load_mapping_scheme(task_id, scheme_id)
     if not scheme:
-        raise FileNotFoundError("Mapping scheme not found")
+        raise FileNotFoundError("找不到 Mapping 方案")
 
     meta_path = mapping_scheme_meta_path(task_id, scheme_id)
     with open(meta_path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     if not isinstance(payload, dict):
-        raise ValueError("Mapping scheme metadata is invalid")
+        raise ValueError("Mapping 方案資料格式無效")
 
     payload["enable_figure_reference"] = bool(enabled)
     payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -310,13 +348,13 @@ def execute_saved_mapping_scheme(
     actor = actor or {}
     scheme = load_mapping_scheme(task_id, scheme_id)
     if not scheme:
-        raise FileNotFoundError("Mapping scheme not found")
+        raise FileNotFoundError("找不到 Mapping 方案")
     if not scheme.get("source_exists"):
-        raise FileNotFoundError("Mapping scheme source file not found")
+        raise FileNotFoundError("找不到 Mapping 方案來源檔案")
     if scheme.get("needs_review"):
-        raise RuntimeError("Mapping scheme requires revalidation")
+        raise RuntimeError("Mapping 方案需要重新檢查")
     if not scheme.get("reference_ok") or not scheme.get("extract_ok"):
-        raise RuntimeError("Mapping scheme is not validated")
+        raise RuntimeError("Mapping 方案尚未通過檢查")
 
     from modules.mapping_processor import process_mapping_excel
 
@@ -369,7 +407,7 @@ def execute_saved_mapping_scheme(
                 "output_count": 0,
                 "zip_file": "",
                 "log_file": "",
-                "error": "Canceled during execution",
+                "error": "執行期間已取消",
                 "actor_work_id": actor.get("work_id", ""),
                 "actor_label": actor.get("label", ""),
                 "source": source,
@@ -453,13 +491,13 @@ def enqueue_saved_mapping_scheme_run(
     actor = actor or {}
     scheme = load_mapping_scheme(task_id, scheme_id)
     if not scheme:
-        raise FileNotFoundError("Mapping scheme not found")
+        raise FileNotFoundError("找不到 Mapping 方案")
     if not scheme.get("source_exists"):
-        raise FileNotFoundError("Mapping scheme source file not found")
+        raise FileNotFoundError("找不到 Mapping 方案來源檔案")
     if scheme.get("needs_review"):
-        raise RuntimeError("Mapping scheme requires revalidation")
+        raise RuntimeError("Mapping 方案需要重新檢查")
     if not scheme.get("reference_ok") or not scheme.get("extract_ok"):
-        raise RuntimeError("Mapping scheme is not validated")
+        raise RuntimeError("Mapping 方案尚未通過檢查")
 
     effective_enable_figure_reference = bool(
         scheme.get("enable_figure_reference", True)

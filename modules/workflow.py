@@ -714,12 +714,18 @@ STEP_VALIDATION_RULES = {
     },
     "insert_roman_heading": {
         "required": ["text"],
+        "help_text": {
+            "text": "無法指定編碼，只會從 I 開始依序編號",
+        },
     },
     "insert_bulleted_heading": {
         "required": ["text"],
     },
     "insert_numbered_heading": {
         "required": ["text"],
+        "help_text": {
+            "text": "無法指定編碼，只會從 1.、1.1、1.1.1 開始依序編號",
+        },
     },
     "insert_image": {
         "required": ["input_file"],

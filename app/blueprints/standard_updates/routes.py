@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 
 from app.blueprints.tasks.mapping_routes import _safe_uploaded_filename
 from app.blueprints.tasks.standard_mapping_routes import (
@@ -65,6 +65,24 @@ from app.services.standard_update_service import (
 )
 
 from .blueprint import standard_updates_bp
+
+STANDARD_UPDATE_TEXT_LIMIT = 50
+
+
+def _validate_limited_text(value: str, label: str, *, required: bool = False) -> str | None:
+    normalized = (value or "").strip()
+    if required and not normalized:
+        return f"請輸入{label}"
+    if len(normalized) > STANDARD_UPDATE_TEXT_LIMIT:
+        return f"{label}最多 {STANDARD_UPDATE_TEXT_LIMIT} 字"
+    return None
+
+
+def _wants_json_response() -> bool:
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.accept_mimetypes.best == "application/json"
+    )
 
 
 def _paginate(items: list[dict], page: int, per_page: int = 10) -> tuple[list[dict], dict]:
@@ -245,8 +263,13 @@ def list_page():
         name = (request.form.get("name") or "").strip()
         description = (request.form.get("description") or "").strip()
         harmonised_source_mode = normalize_harmonised_source_mode(request.form.get("harmonised_source_mode"))
-        if not name:
-            flash("請輸入標準更新任務名稱", "danger")
+        name_error = _validate_limited_text(name, "標準更新任務名稱", required=True)
+        if name_error:
+            flash(name_error, "danger")
+            return redirect(url_for("standard_updates_bp.list"))
+        desc_error = _validate_limited_text(description, "任務描述")
+        if desc_error:
+            flash(desc_error, "danger")
             return redirect(url_for("standard_updates_bp.list"))
         if standard_update_name_exists(name):
             flash("標準更新任務名稱已存在", "danger")
@@ -322,14 +345,21 @@ def rename(task_id: str):
     if not next_url:
         next_url = url_for("standard_updates_bp.list")
     name = (request.form.get("name") or "").strip()
-    if not name:
-        flash("請輸入標準更新任務名稱", "danger")
+    name_error = _validate_limited_text(name, "標準更新任務名稱", required=True)
+    if name_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": name_error}), 400
+        flash(name_error, "danger")
         return redirect(next_url)
     if standard_update_name_exists(name, exclude_id=task_id):
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": "標準更新任務名稱已存在"}), 400
         flash("標準更新任務名稱已存在", "danger")
         return redirect(next_url)
     task["name"] = name
     save_standard_update(task_id, task)
+    if _wants_json_response():
+        return jsonify({"ok": True, "task_id": task_id, "name": name, "message": "已更新標準更新任務名稱"})
     flash("已更新標準更新任務名稱", "success")
     return redirect(next_url)
 
@@ -342,8 +372,17 @@ def update_description(task_id: str):
     next_url = (request.form.get("next") or request.referrer or "").strip()
     if not next_url:
         next_url = url_for("standard_updates_bp.list")
-    task["description"] = (request.form.get("description") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    desc_error = _validate_limited_text(description, "任務描述")
+    if desc_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": desc_error}), 400
+        flash(desc_error, "danger")
+        return redirect(next_url)
+    task["description"] = description
     save_standard_update(task_id, task)
+    if _wants_json_response():
+        return jsonify({"ok": True, "task_id": task_id, "description": description, "message": "已更新標準更新任務描述"})
     flash("已更新標準更新任務描述", "success")
     return redirect(next_url)
 

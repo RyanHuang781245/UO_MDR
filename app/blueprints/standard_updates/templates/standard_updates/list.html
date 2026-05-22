@@ -41,24 +41,10 @@
     margin-bottom: 1.25rem;
   }
   .task-create-form__layout {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem 1.25rem;
-    align-items: end;
-  }
-  .task-create-form__group {
     display: grid;
-    gap: 1rem;
-    align-items: end;
-    min-width: 0;
-  }
-  .task-create-form__group--details {
-    flex: 999 1 540px;
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
-  }
-  .task-create-form__group--controls {
-    flex: 1 1 440px;
-    grid-template-columns: minmax(280px, 1fr) auto;
+    grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) minmax(320px, 1fr) minmax(180px, 220px);
+    gap: 1rem 1.25rem;
+    align-items: start;
   }
   .task-create-form__mode-group {
     display: flex;
@@ -86,6 +72,8 @@
     white-space: nowrap;
   }
   .task-create-form__submit {
+    width: 100%;
+    height: calc(1.5em + 0.75rem + 2px);
     min-height: calc(1.5em + 0.75rem + 2px);
     white-space: nowrap;
   }
@@ -99,10 +87,23 @@
     margin-bottom: 0;
     line-height: 1.1;
   }
+  .task-create-form__actions .form-label {
+    margin-bottom: 0;
+    line-height: 1.1;
+  }
   .task-create-form__actions {
     display: flex;
-    justify-content: flex-end;
-    align-items: end;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 0.45rem;
+  }
+  .task-create-form__helper {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  .task-create-form__helper.invisible {
+    visibility: hidden !important;
   }
   .task-desc-drawer-backdrop {
     position: fixed;
@@ -175,18 +176,14 @@
     overflow: hidden;
   }
   @media (max-width: 991.98px) {
-    .task-create-form__actions {
-      justify-content: stretch;
+    .task-create-form__layout {
+      grid-template-columns: 1fr;
     }
     .task-create-form__actions .btn {
       width: 100%;
     }
   }
   @media (max-width: 767.98px) {
-    .task-create-form__group--details,
-    .task-create-form__group--controls {
-      grid-template-columns: 1fr;
-    }
     .task-create-form__mode-group {
       flex-wrap: wrap;
     }
@@ -218,36 +215,37 @@
   <div class="main-card p-4 mb-4">
     <form action="{{ url_for('standard_updates_bp.list') }}" method="post">
       <div class="task-create-form__layout">
-        <div class="task-create-form__group task-create-form__group--details">
-          <div class="task-create-form__field">
-            <label class="form-label small fw-bold text-uppercase text-muted">任務名稱</label>
-            <input class="form-control form-control-custom rounded-2" name="name" placeholder="輸入標準更新任務名稱" required>
-          </div>
-          <div class="task-create-form__field">
-            <label class="form-label small fw-bold text-uppercase text-muted">任務描述  (選填)</label>
-            <input class="form-control form-control-custom rounded-2" name="description" placeholder="輸入任務描述">
-          </div>
+        <div class="task-create-form__field">
+          <label class="form-label small fw-bold text-uppercase text-muted">任務名稱</label>
+          <input class="form-control form-control-custom rounded-2" name="name" placeholder="輸入標準更新任務名稱" maxlength="50" required>
+          <div class="form-text text-end small task-create-form__helper" id="standardUpdateNameCount">0/50</div>
         </div>
-        <div class="task-create-form__group task-create-form__group--controls">
-          <div class="task-create-form__field">
-            <label class="form-label small fw-bold text-uppercase text-muted">歐盟採認標準來源模式</label>
-            <div class="task-create-form__mode-group">
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="harmonised_source_mode" id="harmonisedModeSystem" value="system" checked>
-                <label class="form-check-label" for="harmonisedModeSystem">使用系統檔案</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="harmonised_source_mode" id="harmonisedModeCustom" value="custom">
-                <label class="form-check-label" for="harmonisedModeCustom">自行上傳檔案</label>
-              </div>
+        <div class="task-create-form__field">
+          <label class="form-label small fw-bold text-uppercase text-muted">任務描述  (選填)</label>
+          <input class="form-control form-control-custom rounded-2" name="description" placeholder="輸入任務描述" maxlength="50">
+          <div class="form-text text-end small task-create-form__helper" id="standardUpdateDescCount">0/50</div>
+        </div>
+        <div class="task-create-form__field">
+          <label class="form-label small fw-bold text-uppercase text-muted">歐盟採認標準來源模式</label>
+          <div class="task-create-form__mode-group">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="harmonised_source_mode" id="harmonisedModeSystem" value="system" checked>
+              <label class="form-check-label" for="harmonisedModeSystem">使用系統檔案</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="harmonised_source_mode" id="harmonisedModeCustom" value="custom">
+              <label class="form-check-label" for="harmonisedModeCustom">自行上傳檔案</label>
             </div>
           </div>
-          <div class="task-create-form__actions">
-            <button class="btn btn-primary fw-bold px-4 task-create-form__submit" type="submit">
-              <i class="bi bi-plus-lg me-1"></i>
-              建立任務
-            </button>
-          </div>
+          <div class="form-text text-end small task-create-form__helper invisible" aria-hidden="true">0/50</div>
+        </div>
+        <div class="task-create-form__actions">
+          <label class="form-label small fw-bold text-uppercase text-muted">建立</label>
+          <button class="btn btn-primary fw-bold task-create-form__submit" type="submit">
+            <i class="bi bi-plus-lg me-1"></i>
+            建立任務
+          </button>
+          <div class="form-text text-end small task-create-form__helper invisible" aria-hidden="true">0/50</div>
         </div>
       </div>
     </form>
@@ -279,9 +277,9 @@
             </td>
             <td class="text-start text-muted">
               {% if item.description %}
-              <div class="standard-update-desc-truncate" title="{{ item.description }}">{{ item.description }}</div>
+              <div class="standard-update-desc-truncate standard-update-desc-display" title="{{ item.description }}">{{ item.description }}</div>
               {% else %}
-              <span>-</span>
+              <span class="standard-update-desc-display">-</span>
               {% endif %}
               <span class="standard-update-id-data d-none">{{ item.id }}</span>
               <span class="standard-update-name-data d-none">{{ item.name }}</span>
@@ -383,6 +381,16 @@
 <script>
   let renameStandardUpdateModalInstance = null;
 
+  function bindLengthCounter(input, countEl) {
+    if (!input || !countEl) return;
+    const max = input.getAttribute("maxlength") || "50";
+    const sync = () => {
+      countEl.textContent = `${input.value.length}/${max}`;
+    };
+    input.addEventListener("input", sync);
+    sync();
+  }
+
   function submitPostForm(action, payload) {
     const form = document.createElement("form");
     form.method = "post";
@@ -396,6 +404,80 @@
     });
     document.body.appendChild(form);
     form.submit();
+  }
+
+  async function postFormJson(action, payload) {
+    const body = new URLSearchParams();
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      body.set(key, String(value ?? ""));
+    });
+    const resp = await fetch(action, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: body.toString(),
+    });
+    const contentType = resp.headers.get("content-type") || "";
+    const data = contentType.includes("application/json")
+      ? await resp.json()
+      : { message: (await resp.text()).trim() };
+    if (!resp.ok) {
+      throw new Error(data.error || data.message || "更新失敗");
+    }
+    return data;
+  }
+
+  function setDrawerFeedback(feedbackEl, message, variant = "success") {
+    if (!feedbackEl) return;
+    feedbackEl.className = `alert alert-${variant} py-2 px-3 small mb-3`;
+    feedbackEl.textContent = message;
+    feedbackEl.classList.remove("d-none");
+  }
+
+  function clearDrawerFeedback(feedbackEl) {
+    if (!feedbackEl) return;
+    feedbackEl.className = "alert d-none py-2 px-3 small mb-3";
+    feedbackEl.textContent = "";
+  }
+
+  function findStandardUpdateRow(taskId) {
+    return Array.from(document.querySelectorAll(".standard-update-row")).find((row) => row.dataset.taskId === String(taskId));
+  }
+
+  function applyStandardUpdateRowUpdate(taskId, updates) {
+    const row = findStandardUpdateRow(taskId);
+    if (!row) return;
+    if (Object.prototype.hasOwnProperty.call(updates, "name")) {
+      const nameLink = row.querySelector(".standard-task-name");
+      const nameData = row.querySelector(".standard-update-name-data");
+      if (nameLink) {
+        nameLink.textContent = updates.name || "-";
+        nameLink.title = updates.name || "";
+      }
+      if (nameData) {
+        nameData.textContent = updates.name || "";
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, "description")) {
+      const descValue = updates.description || "";
+      const descData = row.querySelector(".standard-update-desc-data");
+      const descDisplay = row.querySelector(".standard-update-desc-display");
+      if (descData) {
+        descData.textContent = descValue;
+      }
+      if (descDisplay) {
+        descDisplay.textContent = descValue || "-";
+        descDisplay.classList.toggle("standard-update-desc-truncate", !!descValue);
+        if (descValue) {
+          descDisplay.setAttribute("title", descValue);
+        } else {
+          descDisplay.removeAttribute("title");
+        }
+      }
+    }
   }
 
   function openRenameStandardUpdateModal(taskId, currentName) {
@@ -447,20 +529,23 @@
 
     return `
       <div class="task-detail-list">
-        <div class="mb-4">
+      <div class="alert d-none py-2 px-3 small mb-3" id="standardUpdateDrawerFeedback" role="status"></div>
+      <div class="mb-4">
           <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務名稱</label>
-          <input type="text" class="form-control form-control-custom shadow-sm" id="drawerStandardUpdateName" value="${escapeHtml(details.name)}">
+          <input type="text" class="form-control form-control-custom shadow-sm" id="drawerStandardUpdateName" maxlength="50" value="${escapeHtml((details.name || '').slice(0, 50))}">
+          <div class="form-text text-end small" id="drawerStandardUpdateNameCount">${Math.min((details.name || '').length, 50)}/50</div>
           <div class="mt-2 text-end">
-            <button class="btn btn-sm btn-outline-primary px-3 fw-bold" type="button" onclick="renameStandardUpdateDirect('${details.id}', document.getElementById('drawerStandardUpdateName').value)">
+            <button class="btn btn-sm btn-outline-primary px-3 fw-bold" type="button" onclick="renameStandardUpdateDirect('${details.id}', document.getElementById('drawerStandardUpdateName').value, this)">
               更新名稱
             </button>
           </div>
         </div>
         <div class="mb-4">
           <label class="small fw-bold text-uppercase text-muted d-block mb-2">任務描述</label>
-          <textarea class="form-control form-control-custom shadow-sm" id="drawerStandardUpdateDesc" rows="4" placeholder="輸入任務描述...">${escapeHtml(details.desc || "")}</textarea>
+          <textarea class="form-control form-control-custom shadow-sm" id="drawerStandardUpdateDesc" rows="4" maxlength="50" placeholder="輸入任務描述...">${escapeHtml((details.desc || '').slice(0, 50))}</textarea>
+          <div class="form-text text-end small" id="drawerStandardUpdateDescCount">${Math.min((details.desc || '').length, 50)}/50</div>
           <div class="mt-2 text-end">
-            <button class="btn btn-sm btn-outline-primary px-3 fw-bold" type="button" onclick="updateStandardUpdateDesc('${details.id}', document.getElementById('drawerStandardUpdateDesc').value)">
+            <button class="btn btn-sm btn-outline-primary px-3 fw-bold" type="button" onclick="updateStandardUpdateDesc('${details.id}', document.getElementById('drawerStandardUpdateDesc').value, this)">
               更新描述
             </button>
           </div>
@@ -478,17 +563,75 @@
     `;
   }
 
-  function renameStandardUpdateDirect(taskId, name) {
+  async function renameStandardUpdateDirect(taskId, name, buttonEl = null) {
     const trimmed = (name || "").trim();
     if (!trimmed) {
       alert("任務名稱不能為空");
       return;
     }
-    submitPostForm(`/standards/${encodeURIComponent(taskId)}/rename`, { name: trimmed, next: window.location.href });
+    if (trimmed.length > 50) {
+      alert("標準更新任務名稱最多 50 字");
+      return;
+    }
+    const feedbackEl = document.getElementById("standardUpdateDrawerFeedback");
+    clearDrawerFeedback(feedbackEl);
+    const originalLabel = buttonEl?.innerHTML;
+    if (buttonEl) {
+      buttonEl.disabled = true;
+      buttonEl.innerHTML = "儲存中...";
+    }
+    try {
+      const result = await postFormJson(`/standards/${encodeURIComponent(taskId)}/rename`, { name: trimmed });
+      const nameInput = document.getElementById("drawerStandardUpdateName");
+      if (nameInput) {
+        nameInput.value = result.name || trimmed;
+        nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      applyStandardUpdateRowUpdate(taskId, { name: result.name || trimmed });
+      const drawerTitle = document.getElementById("standardUpdateDrawerTitle");
+      if (drawerTitle) {
+        drawerTitle.textContent = result.name || trimmed;
+      }
+      setDrawerFeedback(feedbackEl, result.message || "已更新標準更新任務名稱");
+    } catch (error) {
+      setDrawerFeedback(feedbackEl, error.message || "更新標準更新任務名稱失敗", "danger");
+    } finally {
+      if (buttonEl) {
+        buttonEl.disabled = false;
+        buttonEl.innerHTML = originalLabel;
+      }
+    }
   }
 
-  function updateStandardUpdateDesc(taskId, description) {
-    submitPostForm(`/standards/${encodeURIComponent(taskId)}/description`, { description: description || "", next: window.location.href });
+  async function updateStandardUpdateDesc(taskId, description, buttonEl = null) {
+    if (String(description || "").trim().length > 50) {
+      alert("任務描述最多 50 字");
+      return;
+    }
+    const feedbackEl = document.getElementById("standardUpdateDrawerFeedback");
+    clearDrawerFeedback(feedbackEl);
+    const originalLabel = buttonEl?.innerHTML;
+    if (buttonEl) {
+      buttonEl.disabled = true;
+      buttonEl.innerHTML = "儲存中...";
+    }
+    try {
+      const result = await postFormJson(`/standards/${encodeURIComponent(taskId)}/description`, { description: description || "" });
+      const descInput = document.getElementById("drawerStandardUpdateDesc");
+      if (descInput) {
+        descInput.value = result.description ?? String(description || "").trim();
+        descInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      applyStandardUpdateRowUpdate(taskId, { description: result.description ?? String(description || "").trim() });
+      setDrawerFeedback(feedbackEl, result.message || "已更新標準更新任務描述");
+    } catch (error) {
+      setDrawerFeedback(feedbackEl, error.message || "更新標準更新任務描述失敗", "danger");
+    } finally {
+      if (buttonEl) {
+        buttonEl.disabled = false;
+        buttonEl.innerHTML = originalLabel;
+      }
+    }
   }
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -501,6 +644,10 @@
     const countEl = document.getElementById("renameStandardUpdateCount");
     const submitBtn = document.getElementById("renameStandardUpdateSubmitBtn");
     const idInput = document.getElementById("renameStandardUpdateTaskId");
+    const createNameInput = document.querySelector('input[name="name"]');
+    const createNameCount = document.getElementById("standardUpdateNameCount");
+    const createDescInput = document.querySelector('input[name="description"]');
+    const createDescCount = document.getElementById("standardUpdateDescCount");
     const closeDrawer = () => {
       drawer?.classList.remove("is-open");
       backdrop?.classList.remove("is-open");
@@ -520,6 +667,8 @@
       if (!drawer || !backdrop || !drawerBody || !drawerTitle) return;
       drawerTitle.textContent = details.name || "標準更新任務資訊";
       drawerBody.innerHTML = renderStandardUpdateDetailBody(details);
+      bindLengthCounter(document.getElementById("drawerStandardUpdateName"), document.getElementById("drawerStandardUpdateNameCount"));
+      bindLengthCounter(document.getElementById("drawerStandardUpdateDesc"), document.getElementById("drawerStandardUpdateDescCount"));
       drawer.removeAttribute("hidden");
       backdrop.removeAttribute("hidden");
       requestAnimationFrame(() => {
@@ -552,12 +701,9 @@
         });
       });
     });
-    if (nameInput && countEl) {
-      nameInput.addEventListener("input", () => {
-        const max = nameInput.getAttribute("maxlength") || "50";
-        countEl.textContent = `${nameInput.value.length}/${max}`;
-      });
-    }
+    bindLengthCounter(nameInput, countEl);
+    bindLengthCounter(createNameInput, createNameCount);
+    bindLengthCounter(createDescInput, createDescCount);
     submitBtn?.addEventListener("click", () => {
       const taskId = (idInput?.value || "").trim();
       const name = (nameInput?.value || "").trim();

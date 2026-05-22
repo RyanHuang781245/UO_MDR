@@ -3889,8 +3889,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                  </div>
                </div>`;
         }
+        const helpTextHtml = helpText ? `<div class="form-text">${escapeHtml(helpText)}</div>` : "";
         return `<div class="col-md-6"><label class="form-label">${labelHtml}</label>
-                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${required ? "required" : ""}></div>`;
+                 <input class="form-control" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}" ${required ? "required" : ""}>
+                 ${helpTextHtml}</div>`;
       }
     if (accept === "bool"){
       const boolDefault = BOOL_DEFAULTS[k] || "true";
@@ -3923,10 +3925,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（1.）</option>
                      <option value="1" ${val==="1"?"selected": ""}>Level 1（1.1.）</option>
                      <option value="2" ${val==="2"?"selected": ""}>Level 2（1.1.1.）</option>`;
-          help = "建議僅用到 Level 2；更深層需先擴充樣式";
+          // help = "建議僅用到 Level 2；更深層需先擴充樣式";
         } else if (typeKey === "insert_roman_heading") {
           options = `<option value="0" ${val==="0"?"selected": ""}>Level 0（I.）</option>`;
-          help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式";
+          // help = "僅定義 Level 0；要 I→A→1 多層需擴充樣式";
         } else {
           options = `<option value="0" ${val==="0"?"selected": ""}>0</option>`;
         }

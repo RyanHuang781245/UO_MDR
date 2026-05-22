@@ -14,7 +14,7 @@
       <i class="bi bi-info-circle me-2"></i>
       任務詳情
     </a>
-    <a class="nav-link {{ 'active' if request.endpoint == 'standard_updates_bp.mapping' else '' }}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
+    <a class="nav-link {{ 'active' if request.endpoint == 'standard_updates_bp.mapping' else '' }} {% if not is_ready %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
       <i class="bi bi-arrow-repeat me-2"></i>
       標準更新
     </a>

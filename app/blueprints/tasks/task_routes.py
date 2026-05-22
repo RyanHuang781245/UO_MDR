@@ -27,6 +27,24 @@ from app.services.user_context_service import get_actor_info as _get_actor_info
 from .blueprint import tasks_bp
 from .mapping_routes import _safe_uploaded_filename
 
+TASK_TEXT_LIMIT = 50
+
+
+def _validate_limited_text(value: str, label: str, *, required: bool = False) -> str | None:
+    normalized = (value or "").strip()
+    if required and not normalized:
+        return f"請輸入{label}"
+    if len(normalized) > TASK_TEXT_LIMIT:
+        return f"{label}最多 {TASK_TEXT_LIMIT} 字"
+    return None
+
+
+def _wants_json_response() -> bool:
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.accept_mimetypes.best == "application/json"
+    )
+
 
 def _build_task_listing_context() -> dict:
     task_list_all = list_tasks()
@@ -100,6 +118,12 @@ def create_task():
         return _fail(str(exc))
     task_name = request.form.get("task_name", "").strip() or "未命名任務"
     task_desc = request.form.get("task_desc", "").strip()
+    name_error = _validate_limited_text(task_name, "任務名稱", required=True)
+    if name_error:
+        return _fail(name_error)
+    desc_error = _validate_limited_text(task_desc, "任務描述")
+    if desc_error:
+        return _fail(desc_error)
     if task_name_exists(task_name):
         return _fail("任務名稱已存在")
     tid = str(uuid.uuid4())[:8]
@@ -167,15 +191,20 @@ def create_task():
             ensure_ascii=False,
             indent=2,
         )
-    record_task_in_db(
-        tid,
-        name=task_name,
-        description=task_desc,
-        creator=creator or None,
-        nas_path=display_nas_path or None,
-        output_path=output_dir,
-        created_at=created_at,
-    )
+    try:
+        record_task_in_db(
+            tid,
+            name=task_name,
+            description=task_desc,
+            creator=creator or None,
+            nas_path=display_nas_path or None,
+            output_path=output_dir,
+            created_at=created_at,
+            raise_on_error=True,
+        )
+    except Exception:
+        shutil.rmtree(tdir, ignore_errors=True)
+        return _fail("建立任務資料庫紀錄失敗，請稍後再試")
     record_audit(
         action="task_create",
         actor={"work_id": work_id, "label": creator},
@@ -197,6 +226,9 @@ def copy_task(task_id):
     new_name = request.form.get("name", "").strip()
     if not new_name:
         return _fail("缺少任務名稱")
+    name_error = _validate_limited_text(new_name, "任務名稱", required=True)
+    if name_error:
+        return _fail(name_error)
     if task_name_exists(new_name):
         return _fail("任務名稱已存在")
 
@@ -293,9 +325,10 @@ def copy_task(task_id):
         shutil.rmtree(new_dir, ignore_errors=True)
         return _fail("複製任務資料夾失敗，請稍後再試")
 
+    copied_description = (meta.get("description", "") or "").strip()[:TASK_TEXT_LIMIT]
     new_meta = {
         "name": new_name,
-        "description": meta.get("description", ""),
+        "description": copied_description,
         "nas_path": target_nas_path,
         "output_path": new_output_dir,
         "created": created_at.strftime("%Y-%m-%d %H:%M"),
@@ -310,15 +343,20 @@ def copy_task(task_id):
     with open(os.path.join(new_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(new_meta, f, ensure_ascii=False, indent=2)
 
-    record_task_in_db(
-        new_id,
-        name=new_name,
-        description=new_meta.get("description") or None,
-        creator=creator or None,
-        nas_path=new_meta.get("nas_path") or None,
-        output_path=new_meta.get("output_path") or None,
-        created_at=created_at,
-    )
+    try:
+        record_task_in_db(
+            new_id,
+            name=new_name,
+            description=new_meta.get("description") or None,
+            creator=creator or None,
+            nas_path=new_meta.get("nas_path") or None,
+            output_path=new_meta.get("output_path") or None,
+            created_at=created_at,
+            raise_on_error=True,
+        )
+    except Exception:
+        shutil.rmtree(new_dir, ignore_errors=True)
+        return _fail("建立複製任務的資料庫紀錄失敗，請稍後再試")
     record_audit(
         action="task_copy",
         actor={"work_id": work_id, "label": creator},
@@ -361,8 +399,17 @@ def delete_task(task_id):
 def rename_task(task_id):
     new_name = request.form.get("name", "").strip()
     if not new_name:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": "缺少名稱"}), 400
         return "缺少名稱", 400
+    name_error = _validate_limited_text(new_name, "任務名稱", required=True)
+    if name_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": name_error}), 400
+        return name_error, 400
     if task_name_exists(new_name, exclude_id=task_id):
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": "任務名稱已存在"}), 400
         return "任務名稱已存在", 400
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     if not os.path.isdir(tdir):
@@ -385,11 +432,18 @@ def rename_task(task_id):
         detail={"task_id": task_id, "name": new_name},
         task_id=task_id,
     )
+    if _wants_json_response():
+        return jsonify({"ok": True, "task_id": task_id, "name": new_name, "message": "已更新任務名稱"})
     return redirect(url_for("tasks_bp.tasks"))
 
 @tasks_bp.post("/tasks/<task_id>/description", endpoint="update_task_description")
 def update_task_description(task_id):
     new_desc = request.form.get("description", "").strip()
+    desc_error = _validate_limited_text(new_desc, "任務描述")
+    if desc_error:
+        if _wants_json_response():
+            return jsonify({"ok": False, "error": desc_error}), 400
+        return desc_error, 400
     tdir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
     if not os.path.isdir(tdir):
         abort(404)
@@ -413,6 +467,8 @@ def update_task_description(task_id):
         detail={"task_id": task_id, "description": new_desc},
         task_id=task_id,
     )
+    if _wants_json_response():
+        return jsonify({"ok": True, "task_id": task_id, "description": new_desc, "message": "已更新任務描述"})
     return redirect(url_for("tasks_bp.tasks"))
 
 @tasks_bp.get("/tasks/<task_id>", endpoint="task_detail")

@@ -7,22 +7,51 @@
   .detail-summary-card {
     padding-bottom: 0.8rem !important;
   }
+  .detail-summary-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .detail-summary-main {
+    flex: 1 1 320px;
+    min-width: 0;
+  }
+  .detail-summary-title {
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .detail-summary-desc {
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-width: 100%;
+  }
   .detail-status-group {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.4rem;
     flex-wrap: wrap;
     justify-content: flex-end;
+    flex: 0 1 220px;
+    min-width: 0;
+    margin-left: auto;
   }
   .detail-task-id-meta {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
+    justify-content: flex-end;
     gap: 0.4rem;
+    flex-wrap: wrap;
     font-size: 0.8125rem;
     color: var(--bs-gray-600);
+    min-width: 0;
   }
   .detail-task-id-meta code {
     font-size: 0.8125rem;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-all;
   }
   .detail-copy-id-btn {
     border: 0;
@@ -38,9 +67,11 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
+    align-items: start;
   }
   .detail-grid .main-card {
     margin-bottom: 0;
+    align-self: start;
   }
   .detail-grid--single {
     grid-template-columns: 1fr;
@@ -57,6 +88,12 @@
   }
   .detail-meta-row:last-child {
     border-bottom: 0;
+  }
+  .detail-meta-row span:last-child {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .version-summary {
     display: grid;
@@ -231,6 +268,13 @@
     .detail-grid {
       grid-template-columns: 1fr;
     }
+    .detail-summary-header {
+      flex-direction: column;
+    }
+    .detail-status-group,
+    .detail-task-id-meta {
+      justify-content: flex-start;
+    }
     .version-summary {
       grid-template-columns: 1fr;
     }
@@ -265,7 +309,7 @@
   } %}
   <div class="mb-3 d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
     <div>
-      <h1 class="h3 mb-1 fw-bold">任務詳情</h1>
+      <h1 class="h3 mb-1 fw-bold">標準更新任務詳情</h1>
       <!-- <p class="text-muted mb-0 small">{{ task.description or '尚未填寫描述' }}</p> -->
     </div>
     <div class="d-flex gap-2">
@@ -296,10 +340,10 @@
 
   <div class="detail-grid">
     <div class="main-card p-4 detail-summary-card">
-      <div class="section-head">
-        <div>
-          <h5 class="fw-bold mb-1">{{ task.name }}</h5>
-          <p class="text-muted mb-0 small">{{ task.description or '尚未填寫描述' }}</p>
+      <div class="section-head detail-summary-header">
+        <div class="detail-summary-main">
+          <h5 class="fw-bold mb-1 detail-summary-title" title="{{ task.name }}">{{ task.name[:50] }}{% if task.name|length > 50 %}…{% endif %}</h5>
+          <p class="text-muted mb-0 small detail-summary-desc" {% if task.description %}title="{{ task.description }}"{% endif %}>{% if task.description %}{{ task.description[:50] }}{% if task.description|length > 50 %}…{% endif %}{% else %}尚未填寫描述{% endif %}</p>
         </div>
         <div class="detail-status-group">
           <div class="detail-task-id-meta">
@@ -439,7 +483,7 @@
           </label>
           <form action="{{ url_for('standard_updates_bp.upload_harmonised_excel', task_id=task.id) }}" method="post" enctype="multipart/form-data" class="vstack gap-2">
             <input class="form-control form-control-custom" type="file" name="harmonised_excel_file" accept=".xlsx,.xls,.xlsm,.xltx,.xltm" required>
-            <button class="btn btn-outline-primary align-self-start mt-1" type="submit">上傳任務自訂版本</button>
+            <button class="btn btn-success align-self-start mt-1" type="submit">上傳 Excel</button>
           </form>
           <div class="form-text mt-2">這個檔案可不提供；若未上傳，標準更新仍可執行，但會略過 harmonised 比對。</div>
           <div class="upload-history mt-3">

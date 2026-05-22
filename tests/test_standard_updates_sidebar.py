@@ -6,6 +6,8 @@ from flask import url_for
 
 from app.services.standard_update_service import HARMONISED_SOURCE_CUSTOM, create_standard_update
 
+LONG_TEXT = "超長文字" * 20
+
 
 def _anchor_classes(html: str, href: str) -> str:
     match = re.search(rf'<a class="([^"]*)" href="{re.escape(href)}">', html)
@@ -117,6 +119,8 @@ def test_standard_update_list_shows_detail_action(app, client, tmp_path):
     assert f'href="{detail_href}"' in html
     assert "standard-update-detail-trigger" in html
     assert "standardUpdateDrawer" in html
+    assert "standardUpdateNameCount" in html
+    assert "standardUpdateDescCount" in html
     assert "bi bi-eye" in html
 
 
@@ -140,3 +144,277 @@ def test_standard_update_description_route_updates_metadata(app, client, tmp_pat
     assert response.status_code == 302
     meta = json.loads((standard_update_root / task_id / "meta.json").read_text(encoding="utf-8"))
     assert meta["description"] == "updated description"
+
+
+def test_standard_update_drawer_actions_support_ajax_updates(app, client, tmp_path):
+    standard_update_root = tmp_path / "standard_update_store"
+    harmonised_root = tmp_path / "harmonised_store"
+    standard_update_root.mkdir()
+    harmonised_root.mkdir()
+
+    app.config["STANDARD_UPDATE_FOLDER"] = str(standard_update_root)
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = str(harmonised_root)
+
+    task_id = create_standard_update("原標題", description="原描述", harmonised_source_mode=HARMONISED_SOURCE_CUSTOM)
+    headers = {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"}
+
+    rename_response = client.post(
+        f"/standards/{task_id}/rename",
+        data={"name": "更新後名稱"},
+        headers=headers,
+    )
+    desc_response = client.post(
+        f"/standards/{task_id}/description",
+        data={"description": "更新後描述"},
+        headers=headers,
+    )
+
+    assert rename_response.status_code == 200
+    assert rename_response.is_json
+    assert rename_response.get_json()["name"] == "更新後名稱"
+    assert desc_response.status_code == 200
+    assert desc_response.is_json
+    assert desc_response.get_json()["description"] == "更新後描述"
+
+    meta = json.loads((standard_update_root / task_id / "meta.json").read_text(encoding="utf-8"))
+    assert meta["name"] == "更新後名稱"
+    assert meta["description"] == "更新後描述"
+
+
+def test_standard_update_list_truncates_long_description(app, client, tmp_path):
+    standard_update_root = tmp_path / "standard_update_store"
+    harmonised_root = tmp_path / "harmonised_store"
+    standard_update_root.mkdir()
+    harmonised_root.mkdir()
+
+    app.config["STANDARD_UPDATE_FOLDER"] = str(standard_update_root)
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = str(harmonised_root)
+
+    task_id = create_standard_update(
+        "Long Desc",
+        description="這是一段很長很長的標準更新任務描述，用來確認列表頁會用省略樣式處理而不是直接把整列撐高。",
+        harmonised_source_mode=HARMONISED_SOURCE_CUSTOM,
+    )
+
+    response = client.get("/standards")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert task_id in html
+    assert "standard-update-desc-truncate" in html
+    assert 'title="這是一段很長很長的標準更新任務描述，用來確認列表頁會用省略樣式處理而不是直接把整列撐高。"' in html
+
+
+def test_standard_update_list_truncates_long_name(app, client, tmp_path):
+    standard_update_root = tmp_path / "standard_update_store"
+    harmonised_root = tmp_path / "harmonised_store"
+    standard_update_root.mkdir()
+    harmonised_root.mkdir()
+
+    app.config["STANDARD_UPDATE_FOLDER"] = str(standard_update_root)
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = str(harmonised_root)
+
+    task_name = "這是一個很長很長的標準更新任務名稱，用來確認列表頁任務名稱也會用省略樣式處理"
+    create_standard_update(
+        task_name,
+        harmonised_source_mode=HARMONISED_SOURCE_CUSTOM,
+    )
+
+    response = client.get("/standards")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert f'title="{task_name}"' in html
+    assert 'class="standard-task-name standard-update-desc-truncate d-block text-primary"' in html
+
+
+def test_standard_update_detail_handles_long_name_and_description(app, client, tmp_path):
+    standard_update_root = tmp_path / "standard_update_store"
+    harmonised_root = tmp_path / "harmonised_store"
+    standard_update_root.mkdir()
+    harmonised_root.mkdir()
+
+    app.config["STANDARD_UPDATE_FOLDER"] = str(standard_update_root)
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = str(harmonised_root)
+
+    task_id = create_standard_update(
+        "標準更新5標準更新5標準更新5標準更新5標準更新5標準更新5標準更新5標準更新5",
+        description="這是一段很長很長的任務描述，內容會持續延伸，用來確認任務詳情摘要卡在遇到長名稱與長敘述時會換行而不是把右側任務 ID 區塊擠壞。",
+        harmonised_source_mode=HARMONISED_SOURCE_CUSTOM,
+    )
+
+    response = client.get(f"/standards/{task_id}")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "detail-summary-header" in html
+    assert "detail-summary-title" in html
+    assert "detail-summary-desc" in html
+    assert "detail-task-id-meta" in html
+    assert "align-items: start;" in html
+
+
+def test_task_detail_handles_long_name_and_description(app, client, tmp_path):
+    task_root = tmp_path / "task_store"
+    task_id = "task5678"
+    task_dir = task_root / task_id
+    files_dir = task_dir / "files"
+    output_dir = task_dir / "output"
+    files_dir.mkdir(parents=True)
+    output_dir.mkdir()
+    (task_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "name": "testtesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttesttest",
+                "description": "這是一段很長很長的文件轉換任務描述，內容會持續延伸，用來確認任務詳情摘要卡在遇到長名稱與長敘述時會換行而不是把右側任務 ID 區塊擠壞。",
+                "creator": "NF025 黃倫",
+                "created": "2026-05-21 10:00",
+                "nas_path": "C:/nas/path",
+                "output_path": str(output_dir),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    app.config["TASK_FOLDER"] = str(task_root)
+
+    response = client.get(f"/tasks/{task_id}")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "task-detail-summary-header" in html
+    assert "task-detail-summary-title" in html
+    assert "task-detail-summary-desc" in html
+    assert "task-detail-summary-id" in html
+
+
+def test_tasks_page_shows_length_counters(app, client, tmp_path):
+    task_root = tmp_path / "task_store"
+    task_root.mkdir()
+    app.config["TASK_FOLDER"] = str(task_root)
+
+    response = client.get("/tasks")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "taskNameCount" in html
+    assert "taskDescCount" in html
+    assert "copyTaskNameCount" in html
+
+
+def test_standard_update_create_rejects_text_over_50(app, client, tmp_path):
+    standard_update_root = tmp_path / "standard_update_store"
+    harmonised_root = tmp_path / "harmonised_store"
+    standard_update_root.mkdir()
+    harmonised_root.mkdir()
+
+    app.config["STANDARD_UPDATE_FOLDER"] = str(standard_update_root)
+    app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = str(harmonised_root)
+
+    response = client.post(
+        "/standards",
+        data={
+            "name": LONG_TEXT,
+            "description": "",
+            "harmonised_source_mode": "custom",
+        },
+        follow_redirects=True,
+    )
+
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "標準更新任務名稱最多 50 字" in html
+    assert not any(standard_update_root.iterdir())
+
+
+def test_task_rename_rejects_name_over_50(app, client, tmp_path):
+    task_root = tmp_path / "task_store"
+    task_id = "task9012"
+    task_dir = task_root / task_id
+    files_dir = task_dir / "files"
+    output_dir = task_dir / "output"
+    files_dir.mkdir(parents=True)
+    output_dir.mkdir()
+    meta_path = task_dir / "meta.json"
+    meta_path.write_text(
+        json.dumps({"name": "原名稱", "description": "", "output_path": str(output_dir)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    app.config["TASK_FOLDER"] = str(task_root)
+
+    response = client.post(
+        f"/tasks/{task_id}/rename",
+        data={"name": LONG_TEXT},
+    )
+
+    assert response.status_code == 400
+    assert "任務名稱最多 50 字" in response.get_data(as_text=True)
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["name"] == "原名稱"
+
+
+def test_task_description_rejects_text_over_50(app, client, tmp_path):
+    task_root = tmp_path / "task_store"
+    task_id = "task3456"
+    task_dir = task_root / task_id
+    files_dir = task_dir / "files"
+    output_dir = task_dir / "output"
+    files_dir.mkdir(parents=True)
+    output_dir.mkdir()
+    meta_path = task_dir / "meta.json"
+    meta_path.write_text(
+        json.dumps({"name": "原名稱", "description": "原描述", "output_path": str(output_dir)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    app.config["TASK_FOLDER"] = str(task_root)
+
+    response = client.post(
+        f"/tasks/{task_id}/description",
+        data={"description": LONG_TEXT},
+    )
+
+    assert response.status_code == 400
+    assert "任務描述最多 50 字" in response.get_data(as_text=True)
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["description"] == "原描述"
+
+
+def test_task_drawer_actions_support_ajax_updates(app, client, tmp_path):
+    task_root = tmp_path / "task_store"
+    task_id = "task7788"
+    task_dir = task_root / task_id
+    files_dir = task_dir / "files"
+    output_dir = task_dir / "output"
+    files_dir.mkdir(parents=True)
+    output_dir.mkdir()
+    meta_path = task_dir / "meta.json"
+    meta_path.write_text(
+        json.dumps({"name": "原名稱", "description": "原描述", "output_path": str(output_dir)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    app.config["TASK_FOLDER"] = str(task_root)
+    headers = {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"}
+
+    rename_response = client.post(
+        f"/tasks/{task_id}/rename",
+        data={"name": "更新後名稱"},
+        headers=headers,
+    )
+    desc_response = client.post(
+        f"/tasks/{task_id}/description",
+        data={"description": "更新後描述"},
+        headers=headers,
+    )
+
+    assert rename_response.status_code == 200
+    assert rename_response.is_json
+    assert rename_response.get_json()["name"] == "更新後名稱"
+    assert desc_response.status_code == 200
+    assert desc_response.is_json
+    assert desc_response.get_json()["description"] == "更新後描述"
+
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["name"] == "更新後名稱"
+    assert meta["description"] == "更新後描述"

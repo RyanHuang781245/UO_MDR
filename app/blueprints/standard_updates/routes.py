@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask_login import current_user
 
 from app.blueprints.tasks.mapping_routes import _safe_uploaded_filename
 from app.blueprints.tasks.standard_mapping_routes import (
@@ -48,6 +49,7 @@ from app.services.standard_update_service import (
     create_standard_update,
     delete_input_file,
     delete_standard_update,
+    force_takeover_standard_update_lock,
     get_active_harmonised_release,
     get_latest_uploaded_input,
     get_locked_harmonised_release,
@@ -67,6 +69,7 @@ from app.services.standard_update_service import (
     standard_update_output_dir,
     sync_harmonised_release_snapshot,
 )
+from app.services.authz_service import user_is_admin
 from app.services.user_context_service import get_actor_info
 
 from .blueprint import standard_updates_bp
@@ -965,4 +968,31 @@ def release_lock(task_id: str):
         return redirect(next_url)
     if not ok:
         return jsonify({"ok": False, "lock": _build_lock_state(task_id, updated_task or task)}), 409
+    return jsonify({"ok": True, "lock": _build_lock_state(task_id, updated_task)})
+
+
+@standard_updates_bp.post("/standards/<task_id>/lock/takeover", endpoint="takeover_lock")
+def takeover_lock(task_id: str):
+    task = load_standard_update(task_id)
+    if not task:
+        abort(404)
+    if not user_is_admin(current_user):
+        abort(403)
+
+    actor_id, work_id, actor_name = _resolve_lock_actor()
+    ok, updated_task = force_takeover_standard_update_lock(
+        task_id,
+        actor_id,
+        work_id=work_id,
+        actor_name=actor_name,
+    )
+    if not ok:
+        abort(404)
+
+    if not _wants_json_response():
+        next_url = (request.form.get("next") or request.referrer or "").strip()
+        if not next_url:
+            next_url = url_for("standard_updates_bp.mapping", task_id=task_id)
+        flash("已強制接管此任務鎖定", "success")
+        return redirect(next_url)
     return jsonify({"ok": True, "lock": _build_lock_state(task_id, updated_task)})

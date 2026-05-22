@@ -432,6 +432,29 @@ def release_standard_update_lock(task_id: str, actor_id: str) -> tuple[bool, dic
     return True, task
 
 
+def force_takeover_standard_update_lock(
+    task_id: str,
+    actor_id: str,
+    *,
+    work_id: str = "",
+    actor_name: str = "",
+    ttl_minutes: int = STANDARD_UPDATE_LOCK_TTL_MINUTES,
+) -> tuple[bool, dict]:
+    task = load_standard_update(task_id)
+    if not task:
+        return False, {}
+    now = datetime.now()
+    task["lock"] = {
+        "locked_by_actor_id": actor_id,
+        "locked_by_work_id": (work_id or "").strip(),
+        "locked_by_name": (actor_name or "").strip(),
+        "locked_at": _format_task_lock_time(now),
+        "lock_expires_at": _format_task_lock_time(now + timedelta(minutes=max(ttl_minutes, 1))),
+    }
+    save_standard_update(task_id, task)
+    return True, task
+
+
 def list_standard_updates() -> list[dict]:
     items: list[dict] = []
     root = standard_update_root()

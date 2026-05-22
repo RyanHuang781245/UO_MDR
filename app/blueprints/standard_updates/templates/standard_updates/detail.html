@@ -355,7 +355,7 @@
         <i class="bi bi-arrow-left"></i>
         返回任務清單
       </a>
-      <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2 {% if not is_ready or task_lock.blocked_by_other %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
+      <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-2 {% if not is_ready or task_lock.blocked_by_other %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
         進入標準更新
         <i class="bi bi-arrow-right"></i>
       </a>
@@ -370,6 +370,12 @@
     </div> -->
     <div>
       此任務目前由 <span class="fw-bold text-success">{{ task_lock.lock_display_name }}</span> 使用中
+      {% if has_permission(PERM_USER_MANAGE) %}
+      <form action="{{ url_for('standard_updates_bp.takeover_lock', task_id=task.id) }}" method="post" class="d-inline ms-2" onsubmit="return confirm('確定要強制接管此任務嗎？原持鎖者後續操作會失效。')">
+        <input type="hidden" name="next" value="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
+        <button class="btn btn-sm btn-danger" type="submit">強制接管任務</button>
+      </form>
+      {% endif %}
     </div>
   </div>
   {% elif task_lock.held_by_current_user %}
@@ -379,7 +385,7 @@
       目前由你操作此任務
       <form action="{{ url_for('standard_updates_bp.release_lock', task_id=task.id) }}" method="post" class="d-inline ms-2">
         <input type="hidden" name="next" value="{{ url_for('standard_updates_bp.detail', task_id=task.id) }}">
-        <button class="btn btn-sm btn-outline-danger" type="submit">釋放鎖定</button>
+        <button class="btn btn-sm btn-danger" type="submit">釋放鎖定</button>
       </form>
     </div>
   </div>
@@ -633,4 +639,31 @@
     });
   }
 </script>
+{% if task_lock and task_lock.held_by_current_user %}
+<script>
+  (() => {
+    const refreshUrl = "{{ url_for('standard_updates_bp.refresh_lock', task_id=task.id) }}";
+    const refreshLock = async () => {
+      try {
+        const response = await fetch(refreshUrl, {
+          method: "POST",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          window.location.reload();
+        }
+      } catch (error) {
+        window.location.reload();
+      }
+    };
+    window.setTimeout(refreshLock, 1000);
+    window.setInterval(refreshLock, 60000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refreshLock();
+    });
+    window.addEventListener("focus", refreshLock);
+  })();
+</script>
+{% endif %}
 {% endblock %}

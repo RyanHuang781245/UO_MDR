@@ -349,12 +349,14 @@
   }
   .standard-manual-mapping-board {
     display: grid;
-    grid-template-columns: 260px 300px 260px;
+    grid-template-columns: minmax(0, 260px) minmax(0, 300px) minmax(0, 260px);
     gap: 0;
     justify-content: center;
     align-items: stretch;
     position: relative;
     margin: 0 auto;
+    width: 100%;
+    max-width: 820px;
   }
   .standard-manual-mapping-column {
     border: 1px solid var(--bs-gray-200);
@@ -364,6 +366,7 @@
     display: flex;
     flex-direction: column;
     z-index: 2;
+    min-width: 0;
   }
   .standard-manual-mapping-column__title {
     font-size: 0.75rem;
@@ -407,6 +410,7 @@
     color: #334155;
     cursor: pointer;
     position: relative;
+    word-break: break-word;
   }
   .standard-manual-mapping-node:hover {
     border-color: var(--bs-blue-600);
@@ -541,6 +545,48 @@
     font-size: 0.8125rem;
     white-space: nowrap;
   }
+  .standard-preview-navigator {
+    position: sticky;
+    top: 0.75rem;
+    z-index: 20;
+    padding: 0.875rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.875rem;
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(10px);
+  }
+  .standard-preview-navigator__main {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .standard-preview-navigator__label {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--bs-gray-500);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .standard-preview-navigator__select {
+    min-width: min(320px, 100%);
+    flex: 1 1 280px;
+    width: 100%;
+  }
+  .standard-preview-navigator__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
   .standard-preview-status-row {
     padding: 0;
   }
@@ -568,9 +614,13 @@
   }
   .standard-preview-filters {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 220px auto;
+    grid-template-columns: minmax(0, 1.35fr) minmax(180px, 220px) minmax(220px, 1fr) auto;
     gap: 0.875rem;
     padding: 1rem 1.25rem 1rem;
+    align-items: start;
+  }
+  .standard-preview-filters > * {
+    min-width: 0;
   }
   .standard-preview-filter-actions {
     display: flex;
@@ -578,6 +628,10 @@
     justify-content: flex-end;
     gap: 0.75rem;
     flex-wrap: wrap;
+    min-width: 0;
+  }
+  .standard-preview-filter-actions .btn {
+    white-space: nowrap;
   }
   .standard-preview-empty {
     display: none;
@@ -590,6 +644,48 @@
   }
   .standard-preview-empty.is-visible {
     display: block;
+  }
+  .standard-preview-table-card {
+    overflow: hidden;
+  }
+  .standard-preview-table-card > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .standard-preview-table-card > summary::-webkit-details-marker {
+    display: none;
+  }
+  .standard-preview-table-card__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--bs-gray-200);
+    background: #f8fafc;
+    min-width: 0;
+  }
+  .standard-preview-table-card__title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+  .standard-preview-table-card__toggle {
+    color: var(--bs-blue-600);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .standard-preview-table-card__toggle::before {
+    content: "展開表格";
+  }
+  .standard-preview-table-card[open] .standard-preview-table-card__toggle::before {
+    content: "收合表格";
+  }
+  .standard-preview-table-scroll {
+    max-height: min(72vh, 960px);
+    overflow: auto;
   }
   .standard-table {
     min-width: 960px;
@@ -623,6 +719,11 @@
   .standard-table tr td:nth-child(1),
   .standard-table tr td:last-child {
     text-align: left;
+  }
+  .standard-table tr.is-header th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
   .preview-cell__inner {
     display: flex;
@@ -914,9 +1015,30 @@
     font-size: 1.25rem;
     line-height: 1;
   }
-  @media (max-width: 1200px) {
+  @media (max-width: 1199.98px) {
     .standard-mapping-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .standard-preview-filters {
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr);
+    }
+    .standard-preview-filter-actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+    .standard-manual-mapping-board {
+      grid-template-columns: 1fr;
+      gap: 0.625rem;
+      max-width: none;
+    }
+    .standard-manual-mapping-canvas {
+      min-height: 120px;
+    }
+    .standard-manual-mapping-actions {
+      position: static;
+      left: auto;
+      transform: none;
+      margin-top: 0.75rem;
     }
   }
   @media (max-width: 991.98px) {
@@ -947,6 +1069,15 @@
       position: static;
       margin-top: 0.75rem;
     }
+    .standard-preview-navigator {
+      position: static;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .standard-preview-navigator__main,
+    .standard-preview-navigator__actions {
+      width: 100%;
+    }
   }
   @media (max-width: 767.98px) {
     .standard-mapping-summary {
@@ -962,7 +1093,15 @@
       justify-content: flex-start;
     }
     .standard-preview-filter-actions .btn {
+      flex: 1 1 100%;
       width: 100%;
+    }
+    .standard-preview-table-card__summary {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .standard-preview-table-card__toggle {
+      align-self: flex-start;
     }
     .standard-table {
       min-width: 0;
@@ -1048,6 +1187,7 @@
     color: var(--app-text);
   }
   [data-bs-theme="dark"] .standard-source-panel__summary,
+  [data-bs-theme="dark"] .standard-preview-table-card__summary,
   [data-bs-theme="dark"] .standard-settings-group__body,
   [data-bs-theme="dark"] .standard-manual-mapping-column,
   [data-bs-theme="dark"] .standard-manual-mapping-summary,
@@ -1060,6 +1200,18 @@
   [data-bs-theme="dark"] .standard-table tr.is-category td {
     background: var(--app-bg) !important;
     border-color: var(--app-border) !important;
+  }
+  [data-bs-theme="dark"] .standard-preview-table-card__summary {
+    color: var(--app-text) !important;
+  }
+  [data-bs-theme="dark"] .standard-preview-table-card__summary .text-muted {
+    color: var(--bs-gray-500) !important;
+  }
+  [data-bs-theme="dark"] .standard-preview-table-card__toggle {
+    color: var(--bs-blue-600);
+  }
+  [data-bs-theme="dark"] .standard-precheck-card__headers {
+    color: var(--bs-gray-500) !important;
   }
   [data-bs-theme="dark"] .standard-summary-card--updated,
   [data-bs-theme="dark"] .standard-precheck-card--core_only {
@@ -1533,12 +1685,17 @@
   </details>
 
   {% if table_checks %}
-    <div class="main-card mb-3">
-      <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
-        <div class="fw-bold">表格預檢結果</div>
-        <div class="small text-muted">完整符合預設四欄格式的表格可直接更新，其餘格式需先完成手動對應欄位設定</div>
-      </div>
-      <div class="p-4">
+    <details class="standard-source-panel mb-3" open>
+      <summary>
+        <div class="standard-source-panel__summary">
+          <div class="standard-source-panel__files">
+            <div class="fw-bold">表格預檢結果</div>
+            <div class="standard-source-panel__file">完整符合預設四欄格式的表格可直接更新，其餘格式需先完成手動對應欄位設定</div>
+          </div>
+          <div class="standard-source-panel__hint">展開或收合</div>
+        </div>
+      </summary>
+      <div class="standard-source-panel__body">
         <div class="standard-precheck-grid">
           {% for table_check in table_checks %}
             <div class="standard-precheck-card standard-precheck-card--{{ table_check.status }}">
@@ -1569,9 +1726,25 @@
           {% endfor %}
         </div>
       </div>
-    </div>
+    </details>
   {% endif %}
   {% if preview_tables %}
+    <!-- <div class="standard-preview-scope">
+    <div class="main-card mb-3 standard-preview-navigator">
+      <div class="standard-preview-navigator__main">
+        <div class="standard-preview-navigator__label">快速瀏覽</div>
+        <select class="form-select form-control-custom rounded-2 standard-preview-navigator__select" id="previewTableJumpSelect">
+          <option value="">跳轉到指定表格</option>
+          {% for table in preview_tables %}
+          <option value="preview-table-{{ loop.index0 }}">{{ table.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="standard-preview-navigator__actions">
+        <button class="btn btn-outline-secondary btn-sm" type="button" id="collapseAllPreviewTablesBtn">收合全部</button>
+        <button class="btn btn-outline-primary btn-sm" type="button" id="expandAllPreviewTablesBtn">展開全部</button>
+      </div>
+    </div> -->
     <div class="standard-mapping-summary mb-3">
       <div class="standard-summary-card standard-summary-card--updated">
         <div class="standard-summary-card__label">已更新欄位數</div>
@@ -1635,7 +1808,15 @@
           <option value="missing">只看查無來源</option>
           <option value="overridden">只看人工改選</option>
         </select>
+        <select class="form-select form-control-custom rounded-2 standard-preview-navigator__select" id="previewTableJumpSelect">
+          <option value="">跳轉到指定表格</option>
+          {% for table in preview_tables %}
+          <option value="preview-table-{{ loop.index0 }}">{{ table.title }}</option>
+          {% endfor %}
+        </select>
         <div class="standard-preview-filter-actions">
+          <button class="btn btn-outline-secondary px-3" type="button" id="collapseAllPreviewTablesBtn">收合全部</button>
+          <button class="btn btn-outline-primary px-3" type="button" id="expandAllPreviewTablesBtn">展開全部</button>
           <button class="btn btn-outline-primary px-3 export-overrides-btn" type="button">
             <i class="bi bi-file-earmark-text"></i>
             匯出改選 Log
@@ -1651,6 +1832,16 @@
             </span>
           </button>
         </div>
+        <!-- <select class="form-select form-control-custom rounded-2 standard-preview-navigator__select" id="previewTableJumpSelect">
+          <option value="">跳轉到指定表格</option>
+          {% for table in preview_tables %}
+          <option value="preview-table-{{ loop.index0 }}">{{ table.title }}</option>
+          {% endfor %}
+        </select> -->
+        <!-- <div class="standard-preview-navigator__actions">
+          <button class="btn btn-outline-secondary px-3" type="button" id="collapseAllPreviewTablesBtn">收合全部</button>
+          <button class="btn btn-outline-primary px-3" type="button" id="expandAllPreviewTablesBtn">展開全部</button>
+        </div> -->
       </div>
       <div id="standardPreviewEmpty" class="standard-preview-empty">目前篩選條件下沒有符合的列</div>
     </div>
@@ -1690,12 +1881,15 @@
     </form>
 
     {% for table in preview_tables %}
-      <div class="main-card mb-4 standard-preview-table">
-        <div class="px-4 py-3 border-bottom bg-light bg-opacity-50">
-          <div class="fw-bold">{{ table.title }}</div>
-          <div class="small text-muted">{{ table.meta }}</div>
-        </div>
-        <div class="table-responsive">
+      <details class="main-card mb-4 standard-preview-table standard-preview-table-card" id="preview-table-{{ loop.index0 }}" {% if loop.first %}open{% endif %}>
+        <summary class="standard-preview-table-card__summary">
+          <div class="standard-preview-table-card__title">
+            <div class="fw-bold">{{ table.title }}</div>
+            <div class="small text-muted">{{ table.meta }}</div>
+          </div>
+          <div class="standard-preview-table-card__toggle" aria-hidden="true"></div>
+        </summary>
+        <div class="table-responsive standard-preview-table-scroll">
           <table class="table mb-0 align-middle standard-table">
             <tbody>
               {% for row in table.rows %}
@@ -1727,7 +1921,7 @@
             </tbody>
           </table>
         </div>
-      </div>
+      </details>
     {% endfor %}
   {% endif %}
 </div>
@@ -1747,6 +1941,9 @@
   const inspectHeadersBtn = document.getElementById("inspectHeadersBtn");
   const previewSubmitBtn = document.getElementById("previewSubmitBtn");
   const downloadSubmitBtn = document.getElementById("downloadSubmitBtn");
+  const previewTableJumpSelect = document.getElementById("previewTableJumpSelect");
+  const collapseAllPreviewTablesBtn = document.getElementById("collapseAllPreviewTablesBtn");
+  const expandAllPreviewTablesBtn = document.getElementById("expandAllPreviewTablesBtn");
   const resetPriorityDefaultsBtn = document.getElementById("resetPriorityDefaultsBtn");
   const defaultIsoPriority = {{ default_iso_priority | tojson }};
   const defaultEnabledStandardLevels = new Set({{ default_enabled_standard_levels | tojson }});
@@ -1801,6 +1998,31 @@
       }
     });
   }
+
+  if (previewTableJumpSelect) {
+    previewTableJumpSelect.addEventListener("change", () => {
+      const targetId = (previewTableJumpSelect.value || "").trim();
+      if (!targetId) return;
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      if (target.tagName === "DETAILS") {
+        target.open = true;
+      }
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  collapseAllPreviewTablesBtn?.addEventListener("click", () => {
+    document.querySelectorAll(".standard-preview-table-card").forEach((card) => {
+      card.open = false;
+    });
+  });
+
+  expandAllPreviewTablesBtn?.addEventListener("click", () => {
+    document.querySelectorAll(".standard-preview-table-card").forEach((card) => {
+      card.open = true;
+    });
+  });
 
   const refreshPriorityRanks = () => {
     if (!prioritySortList) return;

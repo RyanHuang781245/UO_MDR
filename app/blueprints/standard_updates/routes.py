@@ -22,6 +22,7 @@ from app.blueprints.tasks.standard_mapping_routes import (
     _parse_required_headers,
     _parse_target_chapter_ref,
     _parse_target_table_index,
+    _format_target_table_index_display,
 )
 from app.services.standard_mapping_service import (
     DEFAULT_ENABLED_STANDARD_LEVELS,
@@ -223,7 +224,7 @@ def _render_mapping_page(
     required_headers: tuple[str, ...] | list[str] | None = None,
     limit_to_chapter: bool = False,
     target_chapter_ref: str = "",
-    target_table_index: int | None = None,
+    target_table_index: tuple[int, ...] | list[int] | int | None = None,
     manual_target_chapter_ref: str = "",
     manual_header_mappings: dict[int, dict[str, str]] | None = None,
 ):
@@ -298,6 +299,7 @@ def _render_mapping_page(
         limit_to_chapter=bool((preview_result or {}).get("target_chapter_ref") or limit_to_chapter),
         target_chapter_ref=(preview_result or {}).get("target_chapter_ref", target_chapter_ref),
         target_table_index=(preview_result or {}).get("target_table_index", target_table_index),
+        target_table_index_display=_format_target_table_index_display((preview_result or {}).get("target_table_index", target_table_index)),
         manual_target_chapter_ref=manual_target_chapter_ref,
         scope_table_count=(preview_result or {}).get("scope_table_count", 0),
         chapter_options=chapter_options,

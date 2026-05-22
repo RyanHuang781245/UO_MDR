@@ -1338,7 +1338,7 @@ def resolve_target_table_indexes(
     *,
     document_xml_path: str,
     target_chapter_ref: str = "",
-    target_table_index: int | None = None,
+    target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
 ) -> set[int] | None:
     chapter_ref = normalize_text(target_chapter_ref)
     if not chapter_ref:
@@ -1426,11 +1426,27 @@ def resolve_target_table_indexes(
             scoped_tables.extend(block.xpath(".//w:tbl", namespaces=NS))
 
     if target_table_index is not None:
-        if target_table_index <= 0:
+        if isinstance(target_table_index, int):
+            requested_indexes = [target_table_index]
+        else:
+            requested_indexes = []
+            for item in target_table_index:
+                try:
+                    requested_indexes.append(int(item))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("表格索引格式不正確") from exc
+        if not requested_indexes:
+            raise ValueError("表格索引格式不正確")
+        invalid_indexes = [value for value in requested_indexes if value <= 0]
+        if invalid_indexes:
             raise ValueError("表格索引必須大於 0")
-        if target_table_index > len(scoped_tables):
-            raise ValueError(f"指定章節只有 {len(scoped_tables)} 張表，找不到第 {target_table_index} 張")
-        scoped_tables = [scoped_tables[target_table_index - 1]]
+        missing_indexes = [value for value in requested_indexes if value > len(scoped_tables)]
+        if missing_indexes:
+            if len(missing_indexes) == 1:
+                raise ValueError(f"指定章節只有 {len(scoped_tables)} 張表，找不到第 {missing_indexes[0]} 張")
+            missing_text = "、".join(str(value) for value in missing_indexes)
+            raise ValueError(f"指定章節只有 {len(scoped_tables)} 張表，找不到第 {missing_text} 張")
+        scoped_tables = [scoped_tables[value - 1] for value in requested_indexes]
 
     all_tables = root.xpath(".//w:tbl", namespaces=NS)
     table_index_map = {id(tbl): idx for idx, tbl in enumerate(all_tables)}
@@ -1859,7 +1875,7 @@ def inspect_document_tables(
     word_path: str,
     *,
     target_chapter_ref: str = "",
-    target_table_index: int | None = None,
+    target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
     manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> dict:
     normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
@@ -1904,7 +1920,7 @@ def process_document(
     prefer_latest_en_variants: bool = DEFAULT_PREFER_LATEST_EN_VARIANTS,
     required_headers: list[str] | tuple[str, ...] | None = None,
     target_chapter_ref: str = "",
-    target_table_index: int | None = None,
+    target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
     manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> dict:
     override_map = override_map or {}

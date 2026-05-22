@@ -6,7 +6,7 @@ import os
 import shutil
 import tempfile
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import current_app
@@ -30,6 +30,7 @@ STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 HARMONISED_SOURCE_SYSTEM = "system"
 HARMONISED_SOURCE_CUSTOM = "custom"
+STANDARD_UPDATE_LOCK_TTL_MINUTES = 1
 _INVALID_UPLOAD_FILENAME_CHARS = '\\/:*?"<>|'
 _WINDOWS_RESERVED_FILE_NAMES = {
     "CON",
@@ -281,6 +282,7 @@ def create_standard_update(name: str, description: str = "", *, harmonised_sourc
         "last_output_path": "",
         "last_run_at": "",
         "last_run_status": "",
+        "lock": _empty_task_lock(),
     }
     with open(standard_update_meta_path(task_id), "w", encoding="utf-8") as fh:
         json.dump(meta, fh, ensure_ascii=False, indent=2)
@@ -307,6 +309,127 @@ def create_standard_update(name: str, description: str = "", *, harmonised_sourc
         db.session.rollback()
         current_app.logger.exception("Failed to record standard update task in DB")
     return task_id
+
+
+def _empty_task_lock() -> dict:
+    return {
+        "locked_by_actor_id": "",
+        "locked_by_work_id": "",
+        "locked_by_name": "",
+        "locked_at": "",
+        "lock_expires_at": "",
+    }
+
+
+def _normalize_task_lock(lock_payload: dict | None) -> dict:
+    payload = dict(lock_payload or {})
+    normalized = _empty_task_lock()
+    for key in normalized:
+        normalized[key] = str(payload.get(key) or "").strip()
+    return normalized
+
+
+def _parse_task_lock_time(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _format_task_lock_time(value: datetime | None) -> str:
+    if not value:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _lock_owned_by_actor(lock_payload: dict | None, actor_id: str) -> bool:
+    normalized = _normalize_task_lock(lock_payload)
+    return bool(actor_id and normalized.get("locked_by_actor_id") == actor_id)
+
+
+def get_standard_update_lock_info(task_id: str, meta: dict | None = None) -> dict:
+    task = dict(meta or load_standard_update(task_id) or {})
+    lock_payload = _normalize_task_lock(task.get("lock"))
+    expires_at = _parse_task_lock_time(lock_payload.get("lock_expires_at"))
+    locked_at = _parse_task_lock_time(lock_payload.get("locked_at"))
+    now = datetime.now()
+    is_active = bool(lock_payload.get("locked_by_actor_id")) and bool(expires_at) and expires_at > now
+    return {
+        "is_locked": is_active,
+        "is_expired": bool(lock_payload.get("locked_by_actor_id")) and not is_active,
+        "locked_by_actor_id": lock_payload.get("locked_by_actor_id", ""),
+        "locked_by_work_id": lock_payload.get("locked_by_work_id", ""),
+        "locked_by_name": lock_payload.get("locked_by_name", ""),
+        "locked_at": _format_task_lock_time(locked_at),
+        "lock_expires_at": _format_task_lock_time(expires_at),
+    }
+
+
+def acquire_standard_update_lock(
+    task_id: str,
+    actor_id: str,
+    *,
+    work_id: str = "",
+    actor_name: str = "",
+    ttl_minutes: int = STANDARD_UPDATE_LOCK_TTL_MINUTES,
+    meta: dict | None = None,
+) -> tuple[bool, dict]:
+    task = dict(meta or load_standard_update(task_id) or {})
+    if not task:
+        return False, {}
+    lock_info = get_standard_update_lock_info(task_id, meta=task)
+    if lock_info.get("is_locked") and lock_info.get("locked_by_actor_id") != actor_id:
+        return False, task
+
+    now = datetime.now()
+    task["lock"] = {
+        "locked_by_actor_id": actor_id,
+        "locked_by_work_id": (work_id or "").strip(),
+        "locked_by_name": (actor_name or "").strip(),
+        "locked_at": _format_task_lock_time(now),
+        "lock_expires_at": _format_task_lock_time(now + timedelta(minutes=max(ttl_minutes, 1))),
+    }
+    save_standard_update(task_id, task)
+    return True, task
+
+
+def refresh_standard_update_lock(
+    task_id: str,
+    actor_id: str,
+    *,
+    work_id: str = "",
+    actor_name: str = "",
+    ttl_minutes: int = STANDARD_UPDATE_LOCK_TTL_MINUTES,
+) -> tuple[bool, dict]:
+    task = load_standard_update(task_id)
+    if not task:
+        return False, {}
+    if not _lock_owned_by_actor(task.get("lock"), actor_id):
+        return False, task
+    return acquire_standard_update_lock(
+        task_id,
+        actor_id,
+        work_id=work_id,
+        actor_name=actor_name,
+        ttl_minutes=ttl_minutes,
+        meta=task,
+    )
+
+
+def release_standard_update_lock(task_id: str, actor_id: str) -> tuple[bool, dict]:
+    task = load_standard_update(task_id)
+    if not task:
+        return False, {}
+    if not _lock_owned_by_actor(task.get("lock"), actor_id):
+        return False, task
+    task["lock"] = _empty_task_lock()
+    save_standard_update(task_id, task)
+    return True, task
 
 
 def list_standard_updates() -> list[dict]:
@@ -355,6 +478,7 @@ def load_standard_update(task_id: str) -> dict:
     meta.setdefault("last_output_path", "")
     meta.setdefault("last_run_at", "")
     meta.setdefault("last_run_status", "")
+    meta["lock"] = _normalize_task_lock(meta.get("lock"))
     meta["input_dir"] = standard_update_input_dir(task_id)
     meta["output_dir"] = standard_update_output_dir(task_id)
     meta["has_locked_harmonised"] = bool(meta.get("harmonised_snapshot_path") and os.path.isfile(meta["harmonised_snapshot_path"]))
@@ -363,6 +487,7 @@ def load_standard_update(task_id: str) -> dict:
 
 def save_standard_update(task_id: str, meta: dict) -> None:
     meta["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    meta["lock"] = _normalize_task_lock(meta.get("lock"))
     with open(standard_update_meta_path(task_id), "w", encoding="utf-8") as fh:
         json.dump(meta, fh, ensure_ascii=False, indent=2)
 

@@ -43,6 +43,7 @@ from app.services.standard_update_service import (
     STATUS_FAILED,
     STATUS_PREVIEWED,
     STATUS_READY,
+    acquire_standard_update_lock,
     available_input_files,
     create_standard_update,
     delete_input_file,
@@ -50,12 +51,15 @@ from app.services.standard_update_service import (
     get_active_harmonised_release,
     get_latest_uploaded_input,
     get_locked_harmonised_release,
+    get_standard_update_lock_info,
     get_task_harmonised_release,
     input_file_history,
     lock_standard_update_to_latest_harmonised,
     list_standard_updates,
     load_standard_update,
     normalize_harmonised_source_mode,
+    refresh_standard_update_lock,
+    release_standard_update_lock,
     safe_standard_update_file,
     save_standard_update,
     save_uploaded_input,
@@ -63,6 +67,7 @@ from app.services.standard_update_service import (
     standard_update_output_dir,
     sync_harmonised_release_snapshot,
 )
+from app.services.user_context_service import get_actor_info
 
 from .blueprint import standard_updates_bp
 
@@ -154,6 +159,54 @@ def _apply_ready_status(task_id: str, task: dict) -> dict:
     return task
 
 
+def _resolve_lock_actor() -> tuple[str, str, str]:
+    work_id, actor_name = get_actor_info()
+    actor_id = work_id or actor_name or f"ip:{request.remote_addr or 'unknown'}"
+    return actor_id, work_id, actor_name
+
+
+def _build_lock_state(task_id: str, task: dict | None = None) -> dict:
+    actor_id, _, actor_name = _resolve_lock_actor()
+    lock_info = get_standard_update_lock_info(task_id, meta=task)
+    locked_display_name = lock_info.get("locked_by_name") or lock_info.get("locked_by_work_id") or "其他使用者"
+    return {
+        **lock_info,
+        "held_by_current_user": bool(lock_info.get("is_locked")) and lock_info.get("locked_by_actor_id") == actor_id,
+        "blocked_by_other": bool(lock_info.get("is_locked")) and lock_info.get("locked_by_actor_id") != actor_id,
+        "lock_display_name": locked_display_name if lock_info.get("is_locked") else (actor_name or ""),
+        "lock_expires_at_display": lock_info.get("lock_expires_at") or "",
+    }
+
+
+def _lock_block_message(lock_state: dict) -> str:
+    if not lock_state.get("blocked_by_other"):
+        return ""
+    name = lock_state.get("lock_display_name") or "其他使用者"
+    expires_at = lock_state.get("lock_expires_at_display") or "-"
+    # return f"此任務目前由 {name} 使用中，鎖定至 {expires_at}"
+    return f"此任務目前由 {name} 使用中"
+
+
+def _acquire_task_lock_or_respond(task_id: str, task: dict | None = None):
+    actor_id, work_id, actor_name = _resolve_lock_actor()
+    ok, updated_task = acquire_standard_update_lock(
+        task_id,
+        actor_id,
+        work_id=work_id,
+        actor_name=actor_name,
+        meta=task,
+    )
+    if ok:
+        return updated_task, None
+
+    lock_state = _build_lock_state(task_id, updated_task or task)
+    message = _lock_block_message(lock_state) or "此任務目前無法取得操作鎖"
+    if _wants_json_response():
+        return updated_task or task or {}, jsonify({"ok": False, "error": message, "lock": lock_state}), 423
+    flash(message, "warning")
+    return updated_task or task or {}, redirect(url_for("standard_updates_bp.detail", task_id=task_id))
+
+
 def _render_mapping_page(
     task_id: str,
     *,
@@ -174,6 +227,7 @@ def _render_mapping_page(
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    task_lock = _build_lock_state(task_id, task)
     word_options, excel_options = available_input_files(task_id)
     regulation_excel_options = [item["name"] for item in input_file_history(task_id, kind="regulation", current_file=task.get("regulation_excel_path", ""))]
     harmonised_excel_options = [item["name"] for item in input_file_history(task_id, kind="harmonised", current_file="")]
@@ -184,12 +238,12 @@ def _render_mapping_page(
     harmonised_source_message = (
         "目前使用任務鎖定的系統 Regulation (EU) 2017/745 採認標準"
         if use_system_harmonised
-        else "可選擇任務已上傳的 Regulation (EU) 2017/745 採認標準；未上傳時會略過 harmonised 比對。"
+        else "可選擇任務已上傳的 Regulation (EU) 2017/745 採認標準；未上傳時會略過 harmonised 比對"
     )
     page_description = (
-        "使用獨立標準更新任務的上傳檔案與任務鎖定的 Regulation (EU) 2017/745 snapshot 產生預覽或下載結果。"
+        "使用獨立標準更新任務的上傳檔案與任務鎖定的 Regulation (EU) 2017/745 snapshot 產生預覽或下載結果"
         if use_system_harmonised
-        else "使用獨立標準更新任務的上傳檔案與任務自訂採認標準檔案產生預覽或下載結果。"
+        else "使用獨立標準更新任務的上傳檔案與任務自訂採認標準檔案產生預覽或下載結果"
     )
     reference_payload = (preview_result or {}).get("reference_payload", {})
     active_iso_priority = tuple((preview_result or {}).get("iso_priority") or normalize_iso_priority(iso_priority))
@@ -213,7 +267,7 @@ def _render_mapping_page(
         page_title="標準更新",
         page_description=page_description,
         task_label="標準更新任務",
-        missing_file_hint="請先上傳 Word、UOC 標準規範總表_現行標準與各國法規條文登記表。",
+        missing_file_hint="請先上傳 Word、UOC 標準規範總表_現行標準與各國法規條文登記表",
         word_options=word_options,
         excel_options=excel_options,
         regulation_excel_options=regulation_excel_options,
@@ -254,6 +308,7 @@ def _render_mapping_page(
         use_system_harmonised=use_system_harmonised,
         harmonised_system_release=harmonised_release,
         harmonised_source_message=harmonised_source_message,
+        task_lock=task_lock,
     )
 
 
@@ -333,6 +388,7 @@ def detail(task_id: str):
         using_custom_harmonised=using_custom_harmonised,
         has_newer_harmonised=has_newer_harmonised,
         is_ready=is_ready,
+        task_lock=_build_lock_state(task_id, task),
     )
 
 
@@ -341,6 +397,12 @@ def rename(task_id: str):
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     next_url = (request.form.get("next") or request.referrer or "").strip()
     if not next_url:
         next_url = url_for("standard_updates_bp.list")
@@ -369,6 +431,12 @@ def update_description(task_id: str):
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     next_url = (request.form.get("next") or request.referrer or "").strip()
     if not next_url:
         next_url = url_for("standard_updates_bp.list")
@@ -392,6 +460,12 @@ def use_latest_harmonised(task_id: str):
     existing = load_standard_update(task_id)
     if not existing:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, existing)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    existing, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     if normalize_harmonised_source_mode(existing.get("harmonised_source_mode")) != HARMONISED_SOURCE_SYSTEM:
         flash("此任務為自行上傳模式，不能套用系統版本", "warning")
         return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
@@ -421,6 +495,12 @@ def upload_word(task_id: str):
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     try:
         filename = save_uploaded_input(task_id, request.files.get("word_file"), kind="word")
         task["word_file_path"] = filename
@@ -437,6 +517,12 @@ def upload_standard_excel(task_id: str):
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     try:
         filename = save_uploaded_input(task_id, request.files.get("standard_excel_file"), kind="excel")
         task["standard_excel_path"] = filename
@@ -453,6 +539,12 @@ def upload_regulation_excel(task_id: str):
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     try:
         filename = save_uploaded_input(task_id, request.files.get("regulation_excel_file"), kind="regulation")
         task["regulation_excel_path"] = filename
@@ -469,6 +561,12 @@ def upload_harmonised_excel(task_id: str):
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     if normalize_harmonised_source_mode(task.get("harmonised_source_mode")) != HARMONISED_SOURCE_CUSTOM:
         flash("此任務為系統檔案模式，不提供任務自訂採認標準上傳", "warning")
         return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
@@ -486,8 +584,15 @@ def upload_harmonised_excel(task_id: str):
 
 @standard_updates_bp.post("/standards/<task_id>/files/delete", endpoint="delete_input_file")
 def delete_uploaded_input_file(task_id: str):
-    if not load_standard_update(task_id):
+    task = load_standard_update(task_id)
+    if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     kind = (request.form.get("kind") or "").strip().lower()
     rel_path = (request.form.get("file_name") or "").strip()
     if kind not in {"word", "excel", "regulation", "harmonised"} or not rel_path:
@@ -506,6 +611,12 @@ def mapping(task_id: str):
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     selected_word = (request.values.get("word_path") or task.get("word_file_path") or "").strip()
     selected_excel = (request.values.get("excel_path") or task.get("standard_excel_path") or "").strip()
     selected_regulation_excel = (request.values.get("regulation_excel_path") or task.get("regulation_excel_path") or "").strip()
@@ -595,7 +706,7 @@ def mapping(task_id: str):
                 target_table_index=target_table_index if limit_to_chapter else None,
                 manual_header_mappings=manual_header_mappings,
             )
-            flash("欄位檢查完成，已列出目前偵測到的表格標頭。", "info")
+            flash("欄位檢查完成，已列出目前偵測到的表格標頭", "info")
         else:
             inspection_result = inspect_document_tables(
                 word_path,
@@ -604,7 +715,7 @@ def mapping(task_id: str):
                 manual_header_mappings=manual_header_mappings,
             )
             if _has_unresolved_manual_mapping(inspection_result.get("table_checks")):
-                flash("尚有表格未符合預設四欄格式，請先完成手動對應欄位設定後再更新標準清單。", "warning")
+                flash("尚有表格未符合預設四欄格式，請先完成手動對應欄位設定後再更新標準清單", "warning")
                 return _render_mapping_page(
                     task_id,
                     preview_result=inspection_result,
@@ -707,6 +818,12 @@ def download_result(task_id: str):
     task = load_standard_update(task_id)
     if not task:
         abort(404)
+    lock_result = _acquire_task_lock_or_respond(task_id, task)
+    if len(lock_result) == 3:
+        return lock_result[1], lock_result[2]
+    task, blocked_response = lock_result
+    if blocked_response is not None:
+        return blocked_response
     selected_word = (request.form.get("word_path") or task.get("word_file_path") or "").strip()
     selected_excel = (request.form.get("excel_path") or task.get("standard_excel_path") or "").strip()
     selected_regulation_excel = (request.form.get("regulation_excel_path") or task.get("regulation_excel_path") or "").strip()
@@ -753,7 +870,7 @@ def download_result(task_id: str):
             manual_header_mappings=manual_header_mappings,
         )
         if _has_unresolved_manual_mapping(inspection_result.get("table_checks")):
-            flash("尚有表格未符合預設四欄格式，請先完成手動對應欄位設定後再下載結果。", "warning")
+            flash("尚有表格未符合預設四欄格式，請先完成手動對應欄位設定後再下載結果", "warning")
             return _render_mapping_page(
                 task_id,
                 preview_result=inspection_result,
@@ -810,3 +927,42 @@ def download_result(task_id: str):
         return redirect(url_for("standard_updates_bp.mapping", task_id=task_id))
 
     return send_file(output_path, as_attachment=True, download_name=base_name)
+
+
+@standard_updates_bp.post("/standards/<task_id>/lock/refresh", endpoint="refresh_lock")
+def refresh_lock(task_id: str):
+    task = load_standard_update(task_id)
+    if not task:
+        abort(404)
+    actor_id, work_id, actor_name = _resolve_lock_actor()
+    ok, updated_task = refresh_standard_update_lock(
+        task_id,
+        actor_id,
+        work_id=work_id,
+        actor_name=actor_name,
+    )
+    if not ok:
+        lock_state = _build_lock_state(task_id, updated_task or task)
+        return jsonify({"ok": False, "error": _lock_block_message(lock_state) or "無法續鎖", "lock": lock_state}), 423
+    return jsonify({"ok": True, "lock": _build_lock_state(task_id, updated_task)})
+
+
+@standard_updates_bp.post("/standards/<task_id>/lock/release", endpoint="release_lock")
+def release_lock(task_id: str):
+    task = load_standard_update(task_id)
+    if not task:
+        abort(404)
+    actor_id, _, _ = _resolve_lock_actor()
+    ok, updated_task = release_standard_update_lock(task_id, actor_id)
+    if not _wants_json_response():
+        next_url = (request.form.get("next") or request.referrer or "").strip()
+        if not next_url:
+            next_url = url_for("standard_updates_bp.detail", task_id=task_id)
+        if ok:
+            flash("已釋放任務鎖定", "success")
+        else:
+            flash("你目前未持有此任務鎖，無法釋放", "warning")
+        return redirect(next_url)
+    if not ok:
+        return jsonify({"ok": False, "lock": _build_lock_state(task_id, updated_task or task)}), 409
+    return jsonify({"ok": True, "lock": _build_lock_state(task_id, updated_task)})

@@ -355,12 +355,35 @@
         <i class="bi bi-arrow-left"></i>
         返回任務清單
       </a>
-      <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2 {% if not is_ready %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
+      <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2 {% if not is_ready or task_lock.blocked_by_other %}disabled{% endif %}" href="{{ url_for('standard_updates_bp.mapping', task_id=task.id) }}">
         進入標準更新
         <i class="bi bi-arrow-right"></i>
       </a>
     </div>
   </div>
+
+  {% if task_lock.blocked_by_other %}
+  <div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+    <i class="bi bi-lock mt-1"></i>
+    <!-- <div>
+      此任務目前由 {{ task_lock.lock_display_name }} 使用中，鎖定至 {{ task_lock.lock_expires_at_display or '-' }}
+    </div> -->
+    <div>
+      此任務目前由 <span class="fw-bold text-success">{{ task_lock.lock_display_name }}</span> 使用中
+    </div>
+  </div>
+  {% elif task_lock.held_by_current_user %}
+  <div class="alert alert-info d-flex align-items-cneter gap-2 mb-3">
+    <i class="bi bi-unlock mt-1"></i>
+    <div>
+      目前由你操作此任務
+      <form action="{{ url_for('standard_updates_bp.release_lock', task_id=task.id) }}" method="post" class="d-inline ms-2">
+        <input type="hidden" name="next" value="{{ url_for('standard_updates_bp.detail', task_id=task.id) }}">
+        <button class="btn btn-sm btn-outline-danger" type="submit">釋放鎖定</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
 
   {% if harmonised_source_mode == 'system' and has_newer_harmonised %}
   <div class="version-notice-row">
@@ -406,6 +429,10 @@
             </button>
           </span>
         </span>
+      </div>
+      <div class="detail-meta-row">
+        <span class="text-muted">任務狀態</span>
+        <span>{{ status_labels.get(task.status, task.status or '-') }}</span>
       </div>
       <div class="detail-meta-row">
         <span class="text-muted">建立人員</span>

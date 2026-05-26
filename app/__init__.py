@@ -8,6 +8,7 @@ from flask import Flask, render_template
 from app.blueprints import register_blueprints
 from app.config import CONFIG_MAP, BaseConfig
 from app.extensions import db, ldap_manager, login_manager
+from app.logging_config import configure_app_logging
 from app.services import (
     auth_service,
     execution_service,
@@ -29,10 +30,19 @@ def _build_flask_app(base_dir: Path) -> Flask:
     )
 
 
-def _configure_app(app: Flask, base_dir: Path, config_name: str | None = None) -> None:
+def _resolve_config_class(config_name: str | None):
     config_key = (config_name or "default").lower()
-    config_cls = CONFIG_MAP.get(config_key, BaseConfig)
-    app.config.from_object(config_cls)
+    return CONFIG_MAP.get(config_key, BaseConfig)
+
+
+def _configure_app(app: Flask, base_dir: Path) -> None:
+    if (
+        str(app.config.get("APP_ENV") or "").strip().lower() == "production"
+        and str(app.config.get("JOB_EXECUTOR_MODE") or "").strip().lower() == "inline"
+    ):
+        app.config["JOB_EXECUTOR_MODE"] = "worker"
+        app.logger.warning("JOB_EXECUTOR_MODE=inline is not allowed in production; forcing worker mode.")
+
     reference_storage = standard_update_service.resolve_harmonised_reference_storage(
         base_dir,
         app.config.get("REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED", ""),
@@ -71,8 +81,11 @@ def create_job_app(config_name: str | None = None) -> Flask:
     base_dir = Path(__file__).resolve().parents[1]
     load_dotenv_if_present(str(base_dir))
 
+    config_cls = _resolve_config_class(config_name)
     app = _build_flask_app(base_dir)
-    _configure_app(app, base_dir, config_name)
+    app.config.from_object(config_cls)
+    configure_app_logging(app, role="worker")
+    _configure_app(app, base_dir)
     db.init_app(app)
     standard_update_service.init_standard_update_store(app)
     system_service.init_system_settings(app)
@@ -84,8 +97,11 @@ def create_app(config_name: str | None = None, *, init_auth: bool = True) -> Fla
     base_dir = Path(__file__).resolve().parents[1]
     load_dotenv_if_present(str(base_dir))
 
+    config_cls = _resolve_config_class(config_name)
     app = _build_flask_app(base_dir)
-    _configure_app(app, base_dir, config_name)
+    app.config.from_object(config_cls)
+    configure_app_logging(app, role="web")
+    _configure_app(app, base_dir)
 
     db.init_app(app)
     if init_auth:

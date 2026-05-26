@@ -34,6 +34,7 @@ from app.models.settings import SystemSetting
 from app.services.audit_service import record_audit
 from app.services.authn_service import search_ad_users
 from app.services.authz_service import sanitize_next_url, user_is_admin
+from app.services.execution_service import is_inline_execution_enabled
 from app.services.standard_update_service import (
     activate_harmonised_release,
     get_active_harmonised_release,
@@ -489,7 +490,7 @@ class SystemSettingView(BaseView):
                             )
                             raise
                 elif action == "download_regulation_release_now":
-                    from app.jobs.adoption_standard_update import run_update
+                    from app.jobs.adoption_standard_update import enqueue_regulation_manual_download_job
 
                     page_url = (request.form.get("regulation_download_page_url") or "").strip() or (
                         (setting.regulation_download_page_url or "").strip() if setting else ""
@@ -497,19 +498,23 @@ class SystemSettingView(BaseView):
                     link_text = (request.form.get("regulation_download_link_text") or "").strip() or (
                         (setting.regulation_download_link_text or "").strip() if setting else ""
                     )
-                    result = run_update(
-                        force_download=True,
+                    job_id, created = enqueue_regulation_manual_download_job(
                         page_url=page_url or None,
                         link_text=link_text or None,
                         actor=_current_actor(),
                     )
-                    if result.get("downloaded"):
+                    if created:
                         flash(
-                            f"已手動下載採認標準，儲存模式：{result.get('storage_mode')}",
+                            f"已建立背景下載工作，job_id={job_id}。請由 worker 處理。"
+                            if not is_inline_execution_enabled()
+                            else f"已建立下載工作，job_id={job_id}。",
                             "success",
                         )
                     else:
-                        flash("手動下載未執行", "warning")
+                        flash(
+                            f"已有進行中的採認標準下載工作，job_id={job_id}",
+                            "info",
+                        )
                 elif action == "check_regulation_release_update":
                     from app.jobs.adoption_standard_update import check_for_update
 

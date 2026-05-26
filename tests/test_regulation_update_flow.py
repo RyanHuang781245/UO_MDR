@@ -192,6 +192,85 @@ def test_run_update_force_download_records_manual_download_audit(monkeypatch, tm
     assert actor == {"work_id": "A123", "label": "Admin"}
 
 
+def test_enqueue_regulation_manual_download_job_returns_existing_job(monkeypatch):
+    class ExistingJob:
+        job_id = "job-existing"
+
+    monkeypatch.setattr(update_job, "find_active_job", lambda *args, **kwargs: ExistingJob())
+
+    job_id, created = update_job.enqueue_regulation_manual_download_job(
+        actor={"work_id": "A123", "label": "Admin"},
+        page_url="https://example.com/page",
+        link_text="Summary list as xls file",
+    )
+
+    assert job_id == "job-existing"
+    assert created is False
+
+
+def test_enqueue_regulation_manual_download_job_enqueues_new_job(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(update_job, "find_active_job", lambda *args, **kwargs: None)
+
+    def fake_enqueue_job(job_type, payload, **kwargs):
+        captured["job_type"] = job_type
+        captured["payload"] = payload
+        captured["kwargs"] = kwargs
+        return "job-new"
+
+    monkeypatch.setattr(update_job, "enqueue_job", fake_enqueue_job)
+
+    job_id, created = update_job.enqueue_regulation_manual_download_job(
+        actor={"work_id": "A123", "label": "Admin"},
+        page_url="https://example.com/page",
+        link_text="Summary list as xls file",
+    )
+
+    assert job_id == "job-new"
+    assert created is True
+    assert captured["job_type"] == "regulation_manual_download"
+    assert captured["payload"] == {
+        "actor": {"work_id": "A123", "label": "Admin"},
+        "page_url": "https://example.com/page",
+        "link_text": "Summary list as xls file",
+        "force_download": True,
+    }
+    assert captured["kwargs"]["target_name"] == "manual-download"
+    assert captured["kwargs"]["queue_name"] == "heavy"
+
+
+def test_run_regulation_manual_download_job_returns_result_payload(monkeypatch):
+    monkeypatch.setattr(
+        update_job,
+        "run_update",
+        lambda **kwargs: {
+            "downloaded": True,
+            "forced": True,
+            "path": "/tmp/release.xlsx",
+            "storage_mode": "primary",
+            "current": {"filename": "release.xlsx"},
+            "sync_result": {"id": 9},
+        },
+    )
+
+    result = update_job.run_regulation_manual_download_job(
+        "job-1234",
+        {
+            "actor": {"work_id": "A123", "label": "Admin"},
+            "page_url": "https://example.com/page",
+            "link_text": "Summary list as xls file",
+            "force_download": True,
+        },
+    )
+
+    assert result["result_payload"]["job_id"] == "job-1234"
+    assert result["result_payload"]["downloaded"] is True
+    assert result["result_payload"]["storage_mode"] == "primary"
+    assert result["result_payload"]["current"]["filename"] == "release.xlsx"
+    assert result["result_payload"]["sync_result"]["id"] == 9
+
+
 def test_get_latest_harmonised_release_in_dir_returns_latest_excel(tmp_path):
     older = tmp_path / "older.xlsx"
     newer = tmp_path / "newer.xlsx"

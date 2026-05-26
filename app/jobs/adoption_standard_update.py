@@ -21,6 +21,8 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from app.logging_config import configure_process_logging
+from app.services.execution_service import REGULATION_MANUAL_DOWNLOAD_JOB, enqueue_job, find_active_job
 from modules.env_loader import load_dotenv_if_present
 
 load_dotenv_if_present(str(BASE_DIR))
@@ -46,13 +48,7 @@ class UpdateDecision:
 
 
 def _configure_default_logging() -> None:
-    root_logger = logging.getLogger()
-    if root_logger.handlers:
-        return
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    configure_process_logging(BASE_DIR, role="worker")
 
 
 def _normalize_actor(actor: dict | None) -> dict[str, str]:
@@ -599,6 +595,65 @@ def run_update(
             actor=actor,
         )
         raise
+
+
+def enqueue_regulation_manual_download_job(
+    *,
+    actor: dict | None = None,
+    page_url: str | None = None,
+    link_text: str | None = None,
+) -> tuple[str, bool]:
+    normalized_actor = _normalize_actor(actor)
+    normalized_page_url = (page_url or "").strip()
+    normalized_link_text = (link_text or "").strip()
+    existing = find_active_job(
+        REGULATION_MANUAL_DOWNLOAD_JOB,
+        target_name="manual-download",
+        payload_matcher=lambda data: (
+            str(data.get("page_url") or "").strip() == normalized_page_url
+            and str(data.get("link_text") or "").strip() == normalized_link_text
+        ),
+    )
+    if existing:
+        return str(existing.job_id), False
+
+    job_id = enqueue_job(
+        REGULATION_MANUAL_DOWNLOAD_JOB,
+        {
+            "actor": normalized_actor,
+            "page_url": normalized_page_url,
+            "link_text": normalized_link_text,
+            "force_download": True,
+        },
+        target_name="manual-download",
+        actor=normalized_actor,
+        queue_name="heavy",
+    )
+    return job_id, True
+
+
+def run_regulation_manual_download_job(job_id: str, payload: dict) -> dict:
+    actor = dict(payload.get("actor") or {})
+    page_url = str(payload.get("page_url") or "").strip() or None
+    link_text = str(payload.get("link_text") or "").strip() or None
+    force_download = bool(payload.get("force_download", True))
+    result = run_update(
+        force_download=force_download,
+        page_url=page_url,
+        link_text=link_text,
+        actor=actor,
+    )
+    return {
+        "result_payload": {
+            "job_id": job_id,
+            "downloaded": bool(result.get("downloaded")),
+            "forced": bool(result.get("forced")),
+            "path": result.get("path") or "",
+            "storage_mode": result.get("storage_mode") or "",
+            "current": result.get("current") or {},
+            "sync_result": result.get("sync_result") or {},
+        }
+    }
 
 
 def main() -> None:

@@ -22,6 +22,12 @@ class BaseConfig:
     OUTPUT_FOLDER = str(BASE_DIR / "output")
     TASK_FOLDER = str(BASE_DIR / "task_store")
     STANDARD_UPDATE_FOLDER = str(BASE_DIR / "standard_update_store")
+    APP_LOG_DIR = (os.environ.get("APP_LOG_DIR") or str(BASE_DIR / "logs")).strip()
+    APP_LOG_LEVEL = (os.environ.get("APP_LOG_LEVEL") or "INFO").strip().upper()
+    APP_LOG_TO_FILE = parse_bool(os.environ.get("APP_LOG_TO_FILE"), True)
+    APP_LOG_STDOUT = parse_bool(os.environ.get("APP_LOG_STDOUT"), True)
+    APP_LOG_MAX_BYTES = int(os.environ.get("APP_LOG_MAX_BYTES") or 10 * 1024 * 1024)
+    APP_LOG_BACKUP_COUNT = int(os.environ.get("APP_LOG_BACKUP_COUNT") or 10)
     REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED = (
         os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or ""
     ).strip()
@@ -74,6 +80,8 @@ class TestingConfig(BaseConfig):
     AUTH_ENABLED = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     JOB_EXECUTOR_MODE = "inline"
+    APP_LOG_TO_FILE = False
+    APP_LOG_STDOUT = False
 
 
 class DevelopmentConfig(BaseConfig):

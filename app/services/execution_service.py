@@ -29,6 +29,7 @@ MAPPING_OPERATION_JOB = "mapping_operation"
 MAPPING_SCHEME_RUN_JOB = "mapping_scheme_run"
 GLOBAL_BATCH_JOB = "global_batch"
 GLOBAL_BATCH_ITEM_JOB = "global_batch_item"
+REGULATION_MANUAL_DOWNLOAD_JOB = "regulation_manual_download"
 
 WRITE_LOCK_JOB_TYPES = {
     FLOW_SINGLE_JOB,
@@ -126,6 +127,10 @@ def stale_after_seconds() -> int:
 
 def job_executor_mode() -> str:
     return str(current_app.config.get("JOB_EXECUTOR_MODE") or "worker").strip().lower()
+
+
+def is_inline_execution_enabled() -> bool:
+    return job_executor_mode() == "inline"
 
 
 def log_job_event(job_id: str, event_type: str, message: str = "", payload: dict | None = None) -> None:
@@ -657,6 +662,10 @@ def _dispatch_job(job: JobRecord) -> dict | None:
         from app.blueprints.flows.global_batch_routes import _run_global_batch_item_job
 
         return _run_global_batch_item_job(job.job_id, payload)
+    if job.job_type == REGULATION_MANUAL_DOWNLOAD_JOB:
+        from app.jobs.adoption_standard_update import run_regulation_manual_download_job
+
+        return run_regulation_manual_download_job(job.job_id, payload)
     raise RuntimeError(f"Unsupported job type: {job.job_type}")
 
 

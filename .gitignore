@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 output/
+logs/
 task_store/
 word_all_images/
 images/

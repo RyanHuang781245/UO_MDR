@@ -24,6 +24,11 @@ class StandardUpdateRecord(db.Model):
     last_output_path = db.Column(db.Text)
     last_run_at = db.Column(db.DateTime)
     last_run_status = db.Column(db.String(40))
+    locked_by_actor_id = db.Column(db.String(255))
+    locked_by_work_id = db.Column(db.String(120))
+    locked_by_name = db.Column(db.String(200))
+    locked_at = db.Column(db.DateTime)
+    lock_expires_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
     updated_at = db.Column(db.DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -86,6 +91,16 @@ def _ensure_standard_update_columns(engine, inspector) -> None:
                         "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN last_run_at DATETIME;"},
         "last_run_status": {"mssql": "ALTER TABLE standard_update_tasks ADD last_run_status NVARCHAR(40) NULL;",
                             "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN last_run_status TEXT;"},
+        "locked_by_actor_id": {"mssql": "ALTER TABLE standard_update_tasks ADD locked_by_actor_id NVARCHAR(255) NULL;",
+                               "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN locked_by_actor_id TEXT;"},
+        "locked_by_work_id": {"mssql": "ALTER TABLE standard_update_tasks ADD locked_by_work_id NVARCHAR(120) NULL;",
+                              "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN locked_by_work_id TEXT;"},
+        "locked_by_name": {"mssql": "ALTER TABLE standard_update_tasks ADD locked_by_name NVARCHAR(200) NULL;",
+                           "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN locked_by_name TEXT;"},
+        "locked_at": {"mssql": "ALTER TABLE standard_update_tasks ADD locked_at DATETIME2 NULL;",
+                      "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN locked_at DATETIME;"},
+        "lock_expires_at": {"mssql": "ALTER TABLE standard_update_tasks ADD lock_expires_at DATETIME2 NULL;",
+                            "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN lock_expires_at DATETIME;"},
         "created_at": {"mssql": "ALTER TABLE standard_update_tasks ADD created_at DATETIME2 NOT NULL CONSTRAINT DF_standard_update_tasks_created_at DEFAULT(SYSDATETIME());",
                        "sqlite": "ALTER TABLE standard_update_tasks ADD COLUMN created_at DATETIME;"},
         "updated_at": {"mssql": "ALTER TABLE standard_update_tasks ADD updated_at DATETIME2 NOT NULL CONSTRAINT DF_standard_update_tasks_updated_at DEFAULT(SYSDATETIME());",

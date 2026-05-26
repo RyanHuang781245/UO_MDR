@@ -5,11 +5,14 @@ import json
 import os
 import shutil
 import tempfile
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import current_app
+from sqlalchemy import or_, update
 
 from app.extensions import db
 from app.models.auth import commit_session
@@ -30,7 +33,7 @@ STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 HARMONISED_SOURCE_SYSTEM = "system"
 HARMONISED_SOURCE_CUSTOM = "custom"
-STANDARD_UPDATE_LOCK_TTL_MINUTES = 1
+STANDARD_UPDATE_LOCK_TTL_MINUTES = 15
 _INVALID_UPLOAD_FILENAME_CHARS = '\\/:*?"<>|'
 _WINDOWS_RESERVED_FILE_NAMES = {
     "CON",
@@ -202,6 +205,63 @@ def standard_update_reference_dir(task_id: str) -> str:
     return os.path.join(standard_update_dir(task_id), "reference")
 
 
+def _write_json_with_replace_retry(path: str, payload: dict, retries: int = 8, delay_sec: float = 0.03) -> None:
+    last_exc = None
+    for attempt in range(retries):
+        tmp_path = f"{path}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, path)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay_sec * (attempt + 1))
+        except Exception:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+    if last_exc:
+        raise last_exc
+
+
+def _load_json_with_retry(path: str, retries: int = 2, delay_sec: float = 0.05) -> dict:
+    last_exc: Exception | None = None
+    saw_empty = False
+    for attempt in range(retries):
+        with open(path, "r", encoding="utf-8") as fh:
+            raw = fh.read()
+        if not raw.strip():
+            saw_empty = True
+            if attempt < retries - 1:
+                time.sleep(delay_sec * (attempt + 1))
+                continue
+            raise ValueError("metadata file is empty")
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                time.sleep(delay_sec * (attempt + 1))
+                continue
+            raise
+    if saw_empty:
+        raise ValueError("metadata file is empty")
+    if last_exc:
+        raise last_exc
+    return {}
+
+
 def normalize_harmonised_source_mode(value: str | None) -> str:
     return HARMONISED_SOURCE_CUSTOM if (value or "").strip().lower() == HARMONISED_SOURCE_CUSTOM else HARMONISED_SOURCE_SYSTEM
 
@@ -282,10 +342,8 @@ def create_standard_update(name: str, description: str = "", *, harmonised_sourc
         "last_output_path": "",
         "last_run_at": "",
         "last_run_status": "",
-        "lock": _empty_task_lock(),
     }
-    with open(standard_update_meta_path(task_id), "w", encoding="utf-8") as fh:
-        json.dump(meta, fh, ensure_ascii=False, indent=2)
+    _write_json_with_replace_retry(standard_update_meta_path(task_id), meta)
 
     try:
         record = StandardUpdateRecord(
@@ -300,6 +358,11 @@ def create_standard_update(name: str, description: str = "", *, harmonised_sourc
             harmonised_snapshot_version=harmonised_release.get("version_label") or None,
             custom_harmonised_path=None,
             custom_harmonised_version=None,
+            locked_by_actor_id=None,
+            locked_by_work_id=None,
+            locked_by_name=None,
+            locked_at=None,
+            lock_expires_at=None,
             created_at=now,
             updated_at=now,
         )
@@ -352,9 +415,77 @@ def _lock_owned_by_actor(lock_payload: dict | None, actor_id: str) -> bool:
     return bool(actor_id and normalized.get("locked_by_actor_id") == actor_id)
 
 
+def _normalize_record_lock(record: StandardUpdateRecord | None) -> dict:
+    return {
+        "locked_by_actor_id": (getattr(record, "locked_by_actor_id", None) or "").strip(),
+        "locked_by_work_id": (getattr(record, "locked_by_work_id", None) or "").strip(),
+        "locked_by_name": (getattr(record, "locked_by_name", None) or "").strip(),
+        "locked_at": _format_task_lock_time(getattr(record, "locked_at", None)),
+        "lock_expires_at": _format_task_lock_time(getattr(record, "lock_expires_at", None)),
+    }
+
+
+def _ensure_standard_update_record(task_id: str, meta: dict | None = None) -> StandardUpdateRecord | None:
+    record = db.session.get(StandardUpdateRecord, task_id)
+    if record:
+        return record
+
+    payload = dict(meta or load_standard_update(task_id) or {})
+    if not payload:
+        return None
+
+    created_at = None
+    updated_at = None
+    for key in ("created", "updated"):
+        raw = str(payload.get(key) or "").strip()
+        if not raw:
+            continue
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
+        if key == "created":
+            created_at = parsed
+        else:
+            updated_at = parsed
+
+    record = StandardUpdateRecord(
+        id=task_id,
+        name=payload.get("name") or task_id,
+        description=payload.get("description") or None,
+        creator_name=payload.get("creator_name") or None,
+        creator_work_id=payload.get("creator_work_id") or None,
+        status=payload.get("status") or STATUS_DRAFT,
+        harmonised_source_mode=normalize_harmonised_source_mode(payload.get("harmonised_source_mode")),
+        word_file_path=payload.get("word_file_path") or None,
+        standard_excel_path=payload.get("standard_excel_path") or None,
+        harmonised_snapshot_path=payload.get("harmonised_snapshot_path") or None,
+        harmonised_snapshot_version=payload.get("harmonised_snapshot_version") or None,
+        custom_harmonised_path=payload.get("custom_harmonised_path") or None,
+        custom_harmonised_version=payload.get("custom_harmonised_version") or None,
+        last_output_path=payload.get("last_output_path") or None,
+        last_run_status=payload.get("last_run_status") or None,
+        created_at=created_at or datetime.now(),
+        updated_at=updated_at or datetime.now(),
+    )
+    if payload.get("last_run_at"):
+        try:
+            record.last_run_at = datetime.strptime(payload["last_run_at"], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pass
+    db.session.add(record)
+    try:
+        commit_session()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to backfill standard update DB record")
+        return None
+    return db.session.get(StandardUpdateRecord, task_id)
+
+
 def get_standard_update_lock_info(task_id: str, meta: dict | None = None) -> dict:
-    task = dict(meta or load_standard_update(task_id) or {})
-    lock_payload = _normalize_task_lock(task.get("lock"))
+    record = _ensure_standard_update_record(task_id, meta=meta)
+    lock_payload = _normalize_record_lock(record)
     expires_at = _parse_task_lock_time(lock_payload.get("lock_expires_at"))
     locked_at = _parse_task_lock_time(lock_payload.get("locked_at"))
     now = datetime.now()
@@ -382,20 +513,39 @@ def acquire_standard_update_lock(
     task = dict(meta or load_standard_update(task_id) or {})
     if not task:
         return False, {}
-    lock_info = get_standard_update_lock_info(task_id, meta=task)
-    if lock_info.get("is_locked") and lock_info.get("locked_by_actor_id") != actor_id:
-        return False, task
-
     now = datetime.now()
-    task["lock"] = {
-        "locked_by_actor_id": actor_id,
-        "locked_by_work_id": (work_id or "").strip(),
-        "locked_by_name": (actor_name or "").strip(),
-        "locked_at": _format_task_lock_time(now),
-        "lock_expires_at": _format_task_lock_time(now + timedelta(minutes=max(ttl_minutes, 1))),
-    }
-    save_standard_update(task_id, task)
-    return True, task
+    expires_at = now + timedelta(minutes=max(ttl_minutes, 1))
+    record = _ensure_standard_update_record(task_id, meta=task)
+    if not record:
+        return False, task
+    try:
+        result = db.session.execute(
+            update(StandardUpdateRecord)
+            .where(StandardUpdateRecord.id == task_id)
+            .where(
+                or_(
+                    StandardUpdateRecord.lock_expires_at.is_(None),
+                    StandardUpdateRecord.lock_expires_at <= now,
+                    StandardUpdateRecord.locked_by_actor_id == actor_id,
+                )
+            )
+            .values(
+                locked_by_actor_id=actor_id,
+                locked_by_work_id=(work_id or "").strip() or None,
+                locked_by_name=(actor_name or "").strip() or None,
+                locked_at=now,
+                lock_expires_at=expires_at,
+            )
+        )
+        if not result.rowcount:
+            db.session.rollback()
+            return False, load_standard_update(task_id)
+        commit_session()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to acquire standard update lock")
+        return False, task
+    return True, load_standard_update(task_id)
 
 
 def refresh_standard_update_lock(
@@ -406,11 +556,6 @@ def refresh_standard_update_lock(
     actor_name: str = "",
     ttl_minutes: int = STANDARD_UPDATE_LOCK_TTL_MINUTES,
 ) -> tuple[bool, dict]:
-    task = load_standard_update(task_id)
-    if not task:
-        return False, {}
-    if not _lock_owned_by_actor(task.get("lock"), actor_id):
-        return False, task
     return acquire_standard_update_lock(
         task_id,
         actor_id,
@@ -425,11 +570,31 @@ def release_standard_update_lock(task_id: str, actor_id: str) -> tuple[bool, dic
     task = load_standard_update(task_id)
     if not task:
         return False, {}
-    if not _lock_owned_by_actor(task.get("lock"), actor_id):
+    record = _ensure_standard_update_record(task_id, meta=task)
+    if not record:
         return False, task
-    task["lock"] = _empty_task_lock()
-    save_standard_update(task_id, task)
-    return True, task
+    try:
+        result = db.session.execute(
+            update(StandardUpdateRecord)
+            .where(StandardUpdateRecord.id == task_id)
+            .where(StandardUpdateRecord.locked_by_actor_id == actor_id)
+            .values(
+                locked_by_actor_id=None,
+                locked_by_work_id=None,
+                locked_by_name=None,
+                locked_at=None,
+                lock_expires_at=None,
+            )
+        )
+        if not result.rowcount:
+            db.session.rollback()
+            return False, load_standard_update(task_id)
+        commit_session()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to release standard update lock")
+        return False, task
+    return True, load_standard_update(task_id)
 
 
 def force_takeover_standard_update_lock(
@@ -444,15 +609,28 @@ def force_takeover_standard_update_lock(
     if not task:
         return False, {}
     now = datetime.now()
-    task["lock"] = {
-        "locked_by_actor_id": actor_id,
-        "locked_by_work_id": (work_id or "").strip(),
-        "locked_by_name": (actor_name or "").strip(),
-        "locked_at": _format_task_lock_time(now),
-        "lock_expires_at": _format_task_lock_time(now + timedelta(minutes=max(ttl_minutes, 1))),
-    }
-    save_standard_update(task_id, task)
-    return True, task
+    expires_at = now + timedelta(minutes=max(ttl_minutes, 1))
+    record = _ensure_standard_update_record(task_id, meta=task)
+    if not record:
+        return False, task
+    try:
+        db.session.execute(
+            update(StandardUpdateRecord)
+            .where(StandardUpdateRecord.id == task_id)
+            .values(
+                locked_by_actor_id=actor_id,
+                locked_by_work_id=(work_id or "").strip() or None,
+                locked_by_name=(actor_name or "").strip() or None,
+                locked_at=now,
+                lock_expires_at=expires_at,
+            )
+        )
+        commit_session()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to force takeover standard update lock")
+        return False, task
+    return True, load_standard_update(task_id)
 
 
 def list_standard_updates() -> list[dict]:
@@ -477,8 +655,13 @@ def load_standard_update(task_id: str) -> dict:
     if not os.path.isfile(meta_path):
         return {}
     try:
-        with open(meta_path, "r", encoding="utf-8") as fh:
-            meta = json.load(fh)
+        meta = _load_json_with_retry(meta_path)
+    except ValueError:
+        current_app.logger.warning("Standard update metadata file is empty: %s", meta_path)
+        return {}
+    except json.JSONDecodeError:
+        current_app.logger.exception("Failed to decode standard update metadata: %s", meta_path)
+        return {}
     except Exception:
         current_app.logger.exception("Failed to load standard update metadata")
         return {}
@@ -501,7 +684,7 @@ def load_standard_update(task_id: str) -> dict:
     meta.setdefault("last_output_path", "")
     meta.setdefault("last_run_at", "")
     meta.setdefault("last_run_status", "")
-    meta["lock"] = _normalize_task_lock(meta.get("lock"))
+    meta["lock"] = _normalize_record_lock(db.session.get(StandardUpdateRecord, task_id))
     meta["input_dir"] = standard_update_input_dir(task_id)
     meta["output_dir"] = standard_update_output_dir(task_id)
     meta["has_locked_harmonised"] = bool(meta.get("harmonised_snapshot_path") and os.path.isfile(meta["harmonised_snapshot_path"]))
@@ -509,34 +692,37 @@ def load_standard_update(task_id: str) -> dict:
 
 
 def save_standard_update(task_id: str, meta: dict) -> None:
-    meta["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-    meta["lock"] = _normalize_task_lock(meta.get("lock"))
-    with open(standard_update_meta_path(task_id), "w", encoding="utf-8") as fh:
-        json.dump(meta, fh, ensure_ascii=False, indent=2)
+    payload = dict(meta)
+    payload.pop("lock", None)
+    payload.pop("input_dir", None)
+    payload.pop("output_dir", None)
+    payload.pop("has_locked_harmonised", None)
+    payload["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    _write_json_with_replace_retry(standard_update_meta_path(task_id), payload)
 
     try:
         record = db.session.get(StandardUpdateRecord, task_id)
         if not record:
-            record = StandardUpdateRecord(id=task_id, name=meta.get("name") or task_id)
+            record = StandardUpdateRecord(id=task_id, name=payload.get("name") or task_id)
             db.session.add(record)
-        record.name = meta.get("name") or task_id
-        record.description = meta.get("description") or None
-        record.creator_name = meta.get("creator_name") or None
-        record.creator_work_id = meta.get("creator_work_id") or None
-        record.status = meta.get("status") or STATUS_DRAFT
-        record.harmonised_source_mode = normalize_harmonised_source_mode(meta.get("harmonised_source_mode"))
-        record.word_file_path = meta.get("word_file_path") or None
-        record.standard_excel_path = meta.get("standard_excel_path") or None
-        record.harmonised_snapshot_path = meta.get("harmonised_snapshot_path") or None
-        record.harmonised_snapshot_version = meta.get("harmonised_snapshot_version") or None
-        record.custom_harmonised_path = meta.get("custom_harmonised_path") or None
-        record.custom_harmonised_version = meta.get("custom_harmonised_version") or None
-        record.last_output_path = meta.get("last_output_path") or None
-        record.last_run_status = meta.get("last_run_status") or None
+        record.name = payload.get("name") or task_id
+        record.description = payload.get("description") or None
+        record.creator_name = payload.get("creator_name") or None
+        record.creator_work_id = payload.get("creator_work_id") or None
+        record.status = payload.get("status") or STATUS_DRAFT
+        record.harmonised_source_mode = normalize_harmonised_source_mode(payload.get("harmonised_source_mode"))
+        record.word_file_path = payload.get("word_file_path") or None
+        record.standard_excel_path = payload.get("standard_excel_path") or None
+        record.harmonised_snapshot_path = payload.get("harmonised_snapshot_path") or None
+        record.harmonised_snapshot_version = payload.get("harmonised_snapshot_version") or None
+        record.custom_harmonised_path = payload.get("custom_harmonised_path") or None
+        record.custom_harmonised_version = payload.get("custom_harmonised_version") or None
+        record.last_output_path = payload.get("last_output_path") or None
+        record.last_run_status = payload.get("last_run_status") or None
         record.updated_at = datetime.now()
-        if meta.get("last_run_at"):
+        if payload.get("last_run_at"):
             try:
-                record.last_run_at = datetime.strptime(meta["last_run_at"], "%Y-%m-%d %H:%M:%S")
+                record.last_run_at = datetime.strptime(payload["last_run_at"], "%Y-%m-%d %H:%M:%S")
             except ValueError:
                 pass
         commit_session()

@@ -163,6 +163,105 @@ def test_mapping_route_auto_saved_scheme_copies_validation_logs(app, client, mon
     assert (scheme_dirs[0] / "mapping_check_extract_log.json").is_file()
 
 
+def test_mapping_route_does_not_auto_save_scheme_when_check_extract_workflow_log_has_error(
+    app,
+    client,
+    monkeypatch,
+) -> None:
+    task_id = "mapping-scheme-auto-save-blocked-by-workflow-error"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+
+    calls = {"count": 0}
+
+    def fake_process_mapping_excel(
+        mapping_path,
+        task_files_dir,
+        output_dir,
+        log_dir=None,
+        validate_only=False,
+        validate_extract_only=False,
+    ):
+        calls["count"] += 1
+        target_dir = Path(log_dir or output_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        if calls["count"] == 1:
+            (target_dir / "mapping_check_log.json").write_text('{"messages":[],"runs":[]}', encoding="utf-8")
+            return {
+                "logs": [],
+                "outputs": [],
+                "log_file": "mapping_check_log.json",
+                "zip_file": None,
+            }
+
+        assert validate_extract_only is True
+        (target_dir / "mapping_check_extract_log.json").write_text(
+            json.dumps(
+                {
+                    "messages": [],
+                    "runs": [
+                        {
+                            "output": "result.docx",
+                            "status": "error",
+                            "workflow_log": [
+                                {
+                                    "step": 1,
+                                    "type": "extract_word_chapter",
+                                    "status": "error",
+                                    "error": "chapter not found",
+                                    "params": {
+                                        "mapping_row": 2,
+                                        "mapping_action_label": "擷取 Word 指定章節/標題",
+                                        "mapping_detail_label": "source.docx (chapter 1.2)",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "logs": [],
+            "outputs": [],
+            "log_file": "mapping_check_extract_log.json",
+            "zip_file": None,
+        }
+
+    monkeypatch.setattr("modules.mapping_processor.process_mapping_excel", fake_process_mapping_excel)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    assert client.post(
+        url,
+        data={"action": "check", "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    ).status_code == 200
+    response = client.post(
+        url,
+        data={"action": "check_extract"},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    scheme_dirs = [p for p in (task_dir / "mappings").glob("*") if p.is_dir() and (p / "meta.json").is_file()]
+    assert scheme_dirs == []
+
+    workspace_dirs = list((task_dir / "_mapping_sessions").glob("*/*"))
+    assert len(workspace_dirs) == 1
+    validation_state = json.loads((workspace_dirs[0] / "mapping_validation_state.json").read_text(encoding="utf-8"))
+    assert validation_state["reference_ok"] is True
+    assert validation_state["extract_ok"] is False
+
+
 def test_save_mapping_scheme_defaults_to_original_display_name_when_filename_is_sanitized(app) -> None:
     task_id = "mapping-scheme-display-name"
     task_dir = Path(app.config["TASK_FOLDER"]) / task_id

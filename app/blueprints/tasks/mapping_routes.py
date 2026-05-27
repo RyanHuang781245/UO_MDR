@@ -447,6 +447,70 @@ def _first_mapping_error(messages: list[str]) -> str:
     return ""
 
 
+def _mapping_log_has_error(log_path: str) -> bool:
+    if not log_path or not os.path.isfile(log_path):
+        return False
+    try:
+        payload = json.loads(Path(log_path).read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if any(_mapping_message_is_error(str(message or "").strip()) for message in (payload.get("messages") or [])):
+        return True
+    for run in payload.get("runs", []):
+        if not isinstance(run, dict):
+            continue
+        if str(run.get("status") or "").strip().lower() == "error":
+            return True
+        if str(run.get("error") or "").strip():
+            return True
+        for entry in run.get("workflow_log", []):
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("status") or "").strip().lower() == "error":
+                return True
+            if str(entry.get("error") or "").strip():
+                return True
+    return False
+
+
+def _first_mapping_log_error(log_path: str) -> str:
+    if not log_path or not os.path.isfile(log_path):
+        return ""
+    try:
+        payload = json.loads(Path(log_path).read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    for message in payload.get("messages", []):
+        text = str(message or "").strip()
+        if _mapping_message_is_error(text):
+            return text
+    for run in payload.get("runs", []):
+        if not isinstance(run, dict):
+            continue
+        run_error = str(run.get("error") or "").strip()
+        if run_error:
+            return run_error
+        for entry in run.get("workflow_log", []):
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("status") or "").strip().lower() != "error":
+                continue
+            entry_error = str(entry.get("error") or "").strip()
+            action_label = str((entry.get("params") or {}).get("mapping_action_label") or "").strip()
+            detail_label = str((entry.get("params") or {}).get("mapping_detail_label") or "").strip()
+            if action_label and detail_label and entry_error:
+                return f"{action_label} :: {detail_label} :: {entry_error}"
+            if action_label and entry_error:
+                return f"{action_label}: {entry_error}"
+            if entry_error:
+                return entry_error
+    return ""
+
+
 def _can_reuse_mapping_run_id(
     action: str,
     current_mapping_name: str,
@@ -753,7 +817,13 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
         zip_file_raw = str(result.get("zip_file") or "").strip()
         log_file = f"{current_run_id}/{log_file_raw}" if log_file_raw else ""
         zip_file = f"{current_run_id}/{zip_file_raw}" if zip_file_raw else ""
+        log_path = os.path.join(run_out_dir, log_file_raw) if log_file_raw else ""
         current_has_error = any(_mapping_message_is_error(message) for message in raw_messages + messages)
+        if not current_has_error:
+            current_has_error = _mapping_log_has_error(log_path)
+        first_error = _first_mapping_error(messages)
+        if not first_error and log_path:
+            first_error = _localize_mapping_message(_first_mapping_log_error(log_path))
         current_mapping_name = (
             str(validation_state_snapshot.get("mapping_file") or "").strip()
             or os.path.basename(mapping_path)
@@ -802,7 +872,7 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
                 "output_count": len(run_outputs),
                 "zip_file": zip_file_raw,
                 "log_file": log_file_raw,
-                "error": _first_mapping_error(messages),
+                "error": first_error,
                 "actor_work_id": actor.get("work_id", ""),
                 "actor_label": actor.get("label", ""),
                 "source": "manual",
@@ -853,7 +923,7 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
                 zip_file=zip_file,
                 log_file_name=log_file_raw,
                 zip_file_name=zip_file_raw,
-                error=_first_mapping_error(messages),
+                error=first_error,
                 resume_url=_mapping_op_resume_url(task_id, op_id),
                 auto_saved_scheme_name=str(ui_payload.get("auto_saved_scheme_name") or "").strip(),
             )
@@ -882,7 +952,7 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
                 "action": action,
                 "status": "failed" if current_has_error else "completed",
                 "output_count": len(rel_outputs),
-                "error": _first_mapping_error(messages),
+                "error": first_error,
                 "reference_ok": bool(next_validation_state.get("reference_ok")),
                 "extract_ok": bool(next_validation_state.get("extract_ok")),
                 "log_file": log_file_raw,

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
+from app.services.audit_service import record_audit
 from app.services.standard_mapping_service import (
     DEFAULT_ENABLED_STANDARD_LEVELS,
     DEFAULT_REQUIRED_HEADERS,
@@ -22,6 +23,7 @@ from app.services.standard_mapping_service import (
     process_document,
 )
 from app.services.task_service import deduplicate_name, list_files, load_task_context as _load_task_context
+from app.services.user_context_service import get_actor_info
 from .blueprint import tasks_bp
 from .mapping_routes import _safe_uploaded_filename
 
@@ -41,6 +43,22 @@ _STANDARD_PRIORITY_FIELDS = {
     "ISO": "priority_iso",
     "BS": "priority_bs",
 }
+
+
+def _current_actor() -> dict[str, str]:
+    work_id, label = get_actor_info()
+    return {"work_id": work_id, "label": label}
+
+
+def _record_task_standard_mapping_audit(action: str, task_id: str, detail: dict | None = None) -> None:
+    payload = {"task_id": task_id}
+    payload.update(detail or {})
+    record_audit(
+        action=action,
+        actor=_current_actor(),
+        detail=payload,
+        task_id=task_id,
+    )
 
 
 def _resolve_regulation_reference_path(files_dir: str | None = None) -> str | None:
@@ -455,6 +473,17 @@ def task_standard_mapping(task_id):
                 target_table_index=target_table_index if limit_to_chapter else None,
                 manual_header_mappings=manual_header_mappings,
             )
+            _record_task_standard_mapping_audit(
+                "task_standard_mapping_inspect_headers",
+                task_id,
+                {
+                    "word_path": selected_word,
+                    "target_chapter_ref": target_chapter_ref,
+                    "target_table_index": _format_target_table_index_display(target_table_index),
+                    "manual_header_mapping_count": len(manual_header_mappings),
+                    "table_count": len(result.get("table_checks") or []),
+                },
+            )
             flash("欄位檢查完成，已列出目前偵測到的表格標頭。", "info")
         else:
             inspection_result = inspect_document_tables(
@@ -495,6 +524,22 @@ def task_standard_mapping(task_id):
                 target_table_index=target_table_index if limit_to_chapter else None,
                 manual_header_mappings=manual_header_mappings,
             )
+            preview_stats = _build_stats(result.get("report", []))
+            _record_task_standard_mapping_audit(
+                "task_standard_mapping_preview",
+                task_id,
+                {
+                    "word_path": selected_word,
+                    "excel_path": selected_excel,
+                    "harmonised_excel_path": selected_harmonised_excel,
+                    "target_chapter_ref": target_chapter_ref,
+                    "target_table_index": _format_target_table_index_display(target_table_index),
+                    "manual_header_mapping_count": len(manual_header_mappings),
+                    "updated_count": preview_stats.get("updated", 0),
+                    "same_count": preview_stats.get("same", 0),
+                    "missing_count": preview_stats.get("missing", 0),
+                },
+            )
         if limit_to_chapter and not result.get("table_checks"):
             flash("指定章節下找不到可辨識的表格", "warning")
     except (ValueError, FileNotFoundError) as exc:
@@ -515,6 +560,19 @@ def task_standard_mapping(task_id):
         )
     except Exception as exc:
         current_app.logger.exception("Standard mapping preview failed")
+        _record_task_standard_mapping_audit(
+            "task_standard_mapping_preview_failed",
+            task_id,
+            {
+                "word_path": selected_word,
+                "excel_path": selected_excel,
+                "harmonised_excel_path": selected_harmonised_excel,
+                "target_chapter_ref": target_chapter_ref,
+                "target_table_index": _format_target_table_index_display(target_table_index),
+                "manual_header_mapping_count": len(manual_header_mappings),
+                "error": str(exc),
+            },
+        )
         flash(f"預覽失敗：{exc}", "danger")
         return _render_standard_mapping_page(
             task_id,
@@ -615,7 +673,37 @@ def task_standard_mapping_download(task_id):
             target_table_index=target_table_index if limit_to_chapter else None,
             manual_header_mappings=manual_header_mappings,
         )
+        download_stats = _build_stats(inspection_result.get("report", []))
+        _record_task_standard_mapping_audit(
+            "task_standard_mapping_download",
+            task_id,
+            {
+                "word_path": selected_word,
+                "excel_path": selected_excel,
+                "harmonised_excel_path": selected_harmonised_excel,
+                "target_chapter_ref": target_chapter_ref,
+                "target_table_index": _format_target_table_index_display(target_table_index),
+                "manual_header_mapping_count": len(manual_header_mappings),
+                "updated_count": download_stats.get("updated", 0),
+                "same_count": download_stats.get("same", 0),
+                "missing_count": download_stats.get("missing", 0),
+                "output_path": output_path,
+            },
+        )
     except (ValueError, FileNotFoundError) as exc:
+        _record_task_standard_mapping_audit(
+            "task_standard_mapping_download_failed",
+            task_id,
+            {
+                "word_path": selected_word,
+                "excel_path": selected_excel,
+                "harmonised_excel_path": selected_harmonised_excel,
+                "target_chapter_ref": target_chapter_ref,
+                "target_table_index": _format_target_table_index_display(target_table_index),
+                "manual_header_mapping_count": len(manual_header_mappings),
+                "error": str(exc),
+            },
+        )
         flash(str(exc), "danger")
         return redirect(
             url_for(
@@ -632,6 +720,19 @@ def task_standard_mapping_download(task_id):
         )
     except Exception as exc:
         current_app.logger.exception("Standard mapping download failed")
+        _record_task_standard_mapping_audit(
+            "task_standard_mapping_download_failed",
+            task_id,
+            {
+                "word_path": selected_word,
+                "excel_path": selected_excel,
+                "harmonised_excel_path": selected_harmonised_excel,
+                "target_chapter_ref": target_chapter_ref,
+                "target_table_index": _format_target_table_index_display(target_table_index),
+                "manual_header_mapping_count": len(manual_header_mappings),
+                "error": str(exc),
+            },
+        )
         flash(f"下載失敗：{exc}", "danger")
         return redirect(
             url_for(

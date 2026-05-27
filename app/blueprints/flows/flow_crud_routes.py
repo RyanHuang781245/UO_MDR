@@ -8,8 +8,10 @@ from io import BytesIO
 from flask import abort, current_app, redirect, request, send_file, url_for
 from werkzeug.utils import secure_filename
 
+from app.services.audit_service import record_audit
 from app.utils import normalize_docx_output_path, parse_bool
 from app.services.flow_service import parse_template_paragraphs
+from app.services.user_context_service import get_actor_info
 
 from app.services.flow_version_service import flow_versions_dir as _flow_versions_dir
 
@@ -17,6 +19,22 @@ from .flow_crud_blueprint import flow_crud_bp
 from .flow_file_helpers import _resolve_task_file_path
 from .flow_route_helpers import _touch_task_last_edit
 from .flow_validation_helpers import _validate_flow_name
+
+
+def _current_actor() -> dict[str, str]:
+    work_id, label = get_actor_info()
+    return {"work_id": work_id, "label": label}
+
+
+def _record_flow_audit(action: str, task_id: str, detail: dict | None = None) -> None:
+    payload = {"task_id": task_id}
+    payload.update(detail or {})
+    record_audit(
+        action=action,
+        actor=_current_actor(),
+        detail=payload,
+        task_id=task_id,
+    )
 
 
 @flow_crud_bp.post("/delete/<flow_name>", endpoint="delete_flow")
@@ -30,6 +48,7 @@ def delete_flow(task_id, flow_name):
         if os.path.isdir(versions_dir):
             shutil.rmtree(versions_dir, ignore_errors=True)
         _touch_task_last_edit(task_id)
+        _record_flow_audit("flow_delete", task_id, {"flow": flow_name})
     return redirect(url_for("flow_builder_bp.flow_builder", task_id=task_id, fpage=request.form.get("fpage")))
 
 
@@ -56,6 +75,7 @@ def rename_flow(task_id, flow_name):
             shutil.rmtree(new_versions_dir, ignore_errors=True)
         os.rename(old_versions_dir, new_versions_dir)
     _touch_task_last_edit(task_id)
+    _record_flow_audit("flow_rename", task_id, {"flow": flow_name, "new_name": new_name})
     return redirect(url_for("flow_builder_bp.flow_builder", task_id=task_id, fpage=request.form.get("fpage")))
 
 
@@ -65,6 +85,7 @@ def export_flow(task_id, flow_name):
     path = os.path.join(task_dir, "flows", f"{flow_name}.json")
     if not os.path.exists(path):
         abort(404)
+    _record_flow_audit("flow_export", task_id, {"flow": flow_name, "export_type": "json"})
     return send_file(path, as_attachment=True, download_name=f"{flow_name}.json")
 
 
@@ -413,6 +434,7 @@ def export_flow_mapping(task_id, flow_name):
         flow_data = json.load(f)
 
     payload = _build_mapping_workbook_bytes(flow_data, files_dir)
+    _record_flow_audit("flow_export_mapping", task_id, {"flow": flow_name, "export_type": "mapping_excel"})
     return send_file(
         BytesIO(payload),
         as_attachment=True,
@@ -433,4 +455,12 @@ def import_flow(task_id):
     path = os.path.join(flow_dir, f"{name}.json")
     uploaded.save(path)
     _touch_task_last_edit(task_id)
+    _record_flow_audit(
+        "flow_import",
+        task_id,
+        {
+            "flow": name,
+            "source_file": os.path.basename(uploaded.filename),
+        },
+    )
     return redirect(url_for("flow_builder_bp.flow_builder", task_id=task_id, fpage=request.form.get("fpage")))

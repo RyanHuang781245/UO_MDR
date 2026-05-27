@@ -260,6 +260,148 @@ def test_mapping_route_localizes_english_error_messages(app, client, monkeypatch
     assert "ERROR: file not found: missing-source.docx" not in html
 
 
+def test_mapping_check_records_completed_audit_with_status_details(app, client, monkeypatch) -> None:
+    task_id = "mapping-audit-check-success"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    audits: list[dict] = []
+
+    def fake_record_audit(action, actor=None, detail=None, task_id=None):
+        audits.append(
+            {
+                "action": action,
+                "actor": dict(actor or {}),
+                "detail": dict(detail or {}),
+                "task_id": task_id,
+            }
+        )
+
+    def fake_process_mapping_excel(
+        mapping_path,
+        task_files_dir,
+        output_dir,
+        log_dir=None,
+        validate_only=False,
+        validate_extract_only=False,
+    ):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        Path(log_dir or output_dir).mkdir(parents=True, exist_ok=True)
+        (Path(log_dir or output_dir) / "mapping_log.json").write_text('{"messages":[],"runs":[]}', encoding="utf-8")
+        return {
+            "logs": [],
+            "outputs": [],
+            "log_file": "mapping_log.json",
+            "zip_file": None,
+        }
+
+    monkeypatch.setattr("app.blueprints.tasks.mapping_routes.record_audit", fake_record_audit)
+    monkeypatch.setattr("modules.mapping_processor.process_mapping_excel", fake_process_mapping_excel)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={"action": "check", "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    actions = [item["action"] for item in audits]
+    assert "task_mapping_check" in actions
+    assert "task_mapping_check_completed" in actions
+    queued_audit = next(item for item in audits if item["action"] == "task_mapping_check")
+    completed_audit = next(item for item in audits if item["action"] == "task_mapping_check_completed")
+    assert queued_audit["detail"]["status"] == "queued"
+    assert queued_audit["detail"]["mapping_file"] == "mapping.xlsx"
+    assert completed_audit["detail"]["status"] == "completed"
+    assert completed_audit["detail"]["mapping_file"] == "mapping.xlsx"
+    assert completed_audit["detail"]["reference_ok"] is True
+    assert completed_audit["detail"]["extract_ok"] is False
+    assert completed_audit["detail"]["log_file"] == "mapping_check_log.json"
+
+
+def test_mapping_check_extract_records_failed_audit_with_error_details(app, client, monkeypatch) -> None:
+    task_id = "mapping-audit-check-extract-failed"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    audits: list[dict] = []
+
+    def fake_record_audit(action, actor=None, detail=None, task_id=None):
+        audits.append(
+            {
+                "action": action,
+                "actor": dict(actor or {}),
+                "detail": dict(detail or {}),
+                "task_id": task_id,
+            }
+        )
+
+    calls = {"count": 0}
+
+    def fake_process_mapping_excel(
+        mapping_path,
+        task_files_dir,
+        output_dir,
+        log_dir=None,
+        validate_only=False,
+        validate_extract_only=False,
+    ):
+        calls["count"] += 1
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        Path(log_dir or output_dir).mkdir(parents=True, exist_ok=True)
+        if calls["count"] == 1:
+            (Path(log_dir or output_dir) / "mapping_log.json").write_text('{"messages":[],"runs":[]}', encoding="utf-8")
+            return {
+                "logs": [],
+                "outputs": [],
+                "log_file": "mapping_log.json",
+                "zip_file": None,
+            }
+        raise RuntimeError("extract check failed")
+
+    monkeypatch.setattr("app.blueprints.tasks.mapping_routes.record_audit", fake_record_audit)
+    monkeypatch.setattr("modules.mapping_processor.process_mapping_excel", fake_process_mapping_excel)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    first = client.post(
+        url,
+        data={"action": "check", "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    second = client.post(
+        url,
+        data={"action": "check_extract"},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    actions = [item["action"] for item in audits]
+    assert "task_mapping_check" in actions
+    assert "task_mapping_check_completed" in actions
+    assert "task_mapping_check_extract" in actions
+    assert "task_mapping_check_extract_failed" in actions
+    failed_audit = next(item for item in audits if item["action"] == "task_mapping_check_extract_failed")
+    queued_audit = next(item for item in audits if item["action"] == "task_mapping_check_extract")
+    assert queued_audit["detail"]["status"] == "queued"
+    assert failed_audit["detail"]["status"] == "failed"
+    assert failed_audit["detail"]["mapping_file"] == "mapping.xlsx"
+    assert failed_audit["detail"]["extract_ok"] is False
+    assert failed_audit["detail"]["error"] == "extract check failed"
+
+
 def test_mapping_route_blocks_workspace_reset_when_active_op_exists(app, client, monkeypatch) -> None:
     task_id = "mapping-workspace-active-op-lock"
     task_dir = Path(app.config["TASK_FOLDER"]) / task_id

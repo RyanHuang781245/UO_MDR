@@ -36,6 +36,7 @@ from app.services.standard_mapping_service import (
     normalize_required_headers,
     process_document,
 )
+from app.services.audit_service import record_audit
 from app.services.standard_update_service import (
     ALLOWED_EXCEL_EXTENSIONS,
     ALLOWED_WORD_EXTENSIONS,
@@ -91,6 +92,22 @@ def _wants_json_response() -> bool:
     return (
         request.headers.get("X-Requested-With") == "XMLHttpRequest"
         or request.accept_mimetypes.best == "application/json"
+    )
+
+
+def _current_actor() -> dict[str, str]:
+    work_id, label = get_actor_info()
+    return {"work_id": work_id, "label": label}
+
+
+def _record_standard_update_audit(action: str, task_id: str, detail: dict | None = None, *, actor: dict | None = None) -> None:
+    payload = {"task_id": task_id}
+    payload.update(detail or {})
+    record_audit(
+        action=action,
+        actor=actor or _current_actor(),
+        detail=payload,
+        task_id=task_id,
     )
 
 
@@ -335,6 +352,15 @@ def list_page():
             flash("標準更新任務名稱已存在", "danger")
             return redirect(url_for("standard_updates_bp.list"))
         task_id = create_standard_update(name, description, harmonised_source_mode=harmonised_source_mode)
+        _record_standard_update_audit(
+            "standard_update_create",
+            task_id,
+            {
+                "name": name,
+                "description": description,
+                "harmonised_source_mode": harmonised_source_mode,
+            },
+        )
         flash("已建立標準更新任務", "success")
         return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
 
@@ -423,8 +449,14 @@ def rename(task_id: str):
             return jsonify({"ok": False, "error": "標準更新任務名稱已存在"}), 400
         flash("標準更新任務名稱已存在", "danger")
         return redirect(next_url)
+    old_name = str(task.get("name") or "").strip()
     task["name"] = name
     save_standard_update(task_id, task)
+    _record_standard_update_audit(
+        "standard_update_rename",
+        task_id,
+        {"old_name": old_name, "name": name},
+    )
     if _wants_json_response():
         return jsonify({"ok": True, "task_id": task_id, "name": name, "message": "已更新標準更新任務名稱"})
     flash("已更新標準更新任務名稱", "success")
@@ -452,8 +484,14 @@ def update_description(task_id: str):
             return jsonify({"ok": False, "error": desc_error}), 400
         flash(desc_error, "danger")
         return redirect(next_url)
+    old_description = str(task.get("description") or "")
     task["description"] = description
     save_standard_update(task_id, task)
+    _record_standard_update_audit(
+        "standard_update_update_description",
+        task_id,
+        {"old_description": old_description, "description": description},
+    )
     if _wants_json_response():
         return jsonify({"ok": True, "task_id": task_id, "description": description, "message": "已更新標準更新任務描述"})
     flash("已更新標準更新任務描述", "success")
@@ -479,6 +517,16 @@ def use_latest_harmonised(task_id: str):
         abort(404)
     task = _apply_ready_status(task_id, task)
     save_standard_update(task_id, task)
+    task_release = get_task_harmonised_release(task_id, task)
+    _record_standard_update_audit(
+        "standard_update_use_latest_harmonised",
+        task_id,
+        {
+            "version_label": task_release.get("version_label", ""),
+            "path": task_release.get("path", ""),
+            "status": task.get("status", ""),
+        },
+    )
     if task.get("harmonised_snapshot_path"):
         flash("已改用最新 harmonised 版本", "success")
     else:
@@ -488,8 +536,17 @@ def use_latest_harmonised(task_id: str):
 
 @standard_updates_bp.post("/standards/<task_id>/delete", endpoint="delete")
 def delete(task_id: str):
-    if not load_standard_update(task_id):
+    task = load_standard_update(task_id)
+    if not task:
         abort(404)
+    _record_standard_update_audit(
+        "standard_update_delete",
+        task_id,
+        {
+            "name": str(task.get("name") or "").strip(),
+            "harmonised_source_mode": task.get("harmonised_source_mode", ""),
+        },
+    )
     delete_standard_update(task_id)
     flash("已刪除標準更新任務", "success")
     return redirect(url_for("standard_updates_bp.list"))
@@ -511,6 +568,11 @@ def upload_word(task_id: str):
         task["word_file_path"] = filename
         task = _apply_ready_status(task_id, task)
         save_standard_update(task_id, task)
+        _record_standard_update_audit(
+            "standard_update_upload_word",
+            task_id,
+            {"file_name": filename, "status": task.get("status", "")},
+        )
         flash("Word 檔案已上傳", "success")
     except ValueError as exc:
         flash(str(exc), "danger")
@@ -533,6 +595,11 @@ def upload_standard_excel(task_id: str):
         task["standard_excel_path"] = filename
         task = _apply_ready_status(task_id, task)
         save_standard_update(task_id, task)
+        _record_standard_update_audit(
+            "standard_update_upload_standard_excel",
+            task_id,
+            {"file_name": filename, "status": task.get("status", "")},
+        )
         flash("Excel 標準總表已上傳", "success")
     except ValueError as exc:
         flash(str(exc), "danger")
@@ -555,6 +622,11 @@ def upload_regulation_excel(task_id: str):
         task["regulation_excel_path"] = filename
         task = _apply_ready_status(task_id, task)
         save_standard_update(task_id, task)
+        _record_standard_update_audit(
+            "standard_update_upload_regulation_excel",
+            task_id,
+            {"file_name": filename, "status": task.get("status", "")},
+        )
         flash("法規條文登記表已上傳", "success")
     except ValueError as exc:
         flash(str(exc), "danger")
@@ -576,11 +648,16 @@ def upload_harmonised_excel(task_id: str):
         flash("此任務為系統檔案模式，不提供任務自訂採認標準上傳", "warning")
         return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
     try:
-        save_uploaded_input(task_id, request.files.get("harmonised_excel_file"), kind="harmonised")
+        filename = save_uploaded_input(task_id, request.files.get("harmonised_excel_file"), kind="harmonised")
         task["custom_harmonised_path"] = ""
         task["custom_harmonised_version"] = ""
         task = _apply_ready_status(task_id, task)
         save_standard_update(task_id, task)
+        _record_standard_update_audit(
+            "standard_update_upload_harmonised_excel",
+            task_id,
+            {"file_name": filename, "status": task.get("status", "")},
+        )
         flash("任務自訂採認標準已上傳", "success")
     except ValueError as exc:
         flash(str(exc), "danger")
@@ -605,6 +682,11 @@ def delete_uploaded_input_file(task_id: str):
         return redirect(url_for("standard_updates_bp.detail", task_id=task_id))
     try:
         delete_input_file(task_id, kind=kind, rel_path=rel_path)
+        _record_standard_update_audit(
+            "standard_update_delete_input_file",
+            task_id,
+            {"kind": kind, "file_name": rel_path},
+        )
         flash("已移除檔案", "success")
     except (ValueError, FileNotFoundError) as exc:
         flash(str(exc), "danger")
@@ -711,6 +793,17 @@ def mapping(task_id: str):
                 target_table_index=target_table_index if limit_to_chapter else None,
                 manual_header_mappings=manual_header_mappings,
             )
+            _record_standard_update_audit(
+                "standard_update_mapping_inspect_headers",
+                task_id,
+                {
+                    "word_path": selected_word,
+                    "target_chapter_ref": target_chapter_ref,
+                    "target_table_index": _format_target_table_index_display(target_table_index),
+                    "manual_header_mapping_count": len(manual_header_mappings),
+                    "table_count": len(result.get("table_checks") or []),
+                },
+            )
             flash("欄位檢查完成，已列出目前偵測到的表格標頭", "info")
         else:
             inspection_result = inspect_document_tables(
@@ -760,6 +853,23 @@ def mapping(task_id: str):
             )
             task["status"] = STATUS_PREVIEWED
             save_standard_update(task_id, task)
+            preview_stats = _build_stats(result.get("report", []))
+            _record_standard_update_audit(
+                "standard_update_mapping_preview",
+                task_id,
+                {
+                    "word_path": selected_word,
+                    "excel_path": selected_excel,
+                    "regulation_excel_path": selected_regulation_excel,
+                    "harmonised_excel_path": selected_harmonised_excel,
+                    "target_chapter_ref": target_chapter_ref,
+                    "target_table_index": _format_target_table_index_display(target_table_index),
+                    "manual_header_mapping_count": len(manual_header_mappings),
+                    "updated_count": preview_stats.get("updated", 0),
+                    "same_count": preview_stats.get("same", 0),
+                    "missing_count": preview_stats.get("missing", 0),
+                },
+            )
         if limit_to_chapter and not result.get("table_checks"):
             flash("指定章節下找不到可辨識的表格", "warning")
     except (ValueError, FileNotFoundError) as exc:
@@ -781,6 +891,20 @@ def mapping(task_id: str):
         )
     except Exception as exc:
         current_app.logger.exception("Standard update preview failed")
+        _record_standard_update_audit(
+            "standard_update_mapping_preview_failed",
+            task_id,
+            {
+                "word_path": selected_word,
+                "excel_path": selected_excel,
+                "regulation_excel_path": selected_regulation_excel,
+                "harmonised_excel_path": selected_harmonised_excel,
+                "target_chapter_ref": target_chapter_ref,
+                "target_table_index": _format_target_table_index_display(target_table_index),
+                "manual_header_mapping_count": len(manual_header_mappings),
+                "error": str(exc),
+            },
+        )
         flash(f"預覽失敗：{exc}", "danger")
         task["status"] = STATUS_FAILED
         save_standard_update(task_id, task)
@@ -919,11 +1043,57 @@ def download_result(task_id: str):
         task["last_run_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         task["last_run_status"] = STATUS_COMPLETED
         save_standard_update(task_id, task)
+        download_stats = _build_stats(inspection_result.get("report", []))
+        _record_standard_update_audit(
+            "standard_update_mapping_download",
+            task_id,
+            {
+                "word_path": selected_word,
+                "excel_path": selected_excel,
+                "regulation_excel_path": selected_regulation_excel,
+                "harmonised_excel_path": selected_harmonised_excel,
+                "target_chapter_ref": target_chapter_ref,
+                "target_table_index": _format_target_table_index_display(target_table_index),
+                "manual_header_mapping_count": len(manual_header_mappings),
+                "updated_count": download_stats.get("updated", 0),
+                "same_count": download_stats.get("same", 0),
+                "missing_count": download_stats.get("missing", 0),
+                "output_path": output_path,
+            },
+        )
     except (ValueError, FileNotFoundError) as exc:
+        _record_standard_update_audit(
+            "standard_update_mapping_download_failed",
+            task_id,
+            {
+                "word_path": selected_word,
+                "excel_path": selected_excel,
+                "regulation_excel_path": selected_regulation_excel,
+                "harmonised_excel_path": selected_harmonised_excel,
+                "target_chapter_ref": target_chapter_ref,
+                "target_table_index": _format_target_table_index_display(target_table_index),
+                "manual_header_mapping_count": len(manual_header_mappings),
+                "error": str(exc),
+            },
+        )
         flash(str(exc), "danger")
         return redirect(url_for("standard_updates_bp.mapping", task_id=task_id))
     except Exception as exc:
         current_app.logger.exception("Standard update download failed")
+        _record_standard_update_audit(
+            "standard_update_mapping_download_failed",
+            task_id,
+            {
+                "word_path": selected_word,
+                "excel_path": selected_excel,
+                "regulation_excel_path": selected_regulation_excel,
+                "harmonised_excel_path": selected_harmonised_excel,
+                "target_chapter_ref": target_chapter_ref,
+                "target_table_index": _format_target_table_index_display(target_table_index),
+                "manual_header_mapping_count": len(manual_header_mappings),
+                "error": str(exc),
+            },
+        )
         task["status"] = STATUS_FAILED
         task["last_run_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         task["last_run_status"] = STATUS_FAILED
@@ -959,6 +1129,8 @@ def release_lock(task_id: str):
         abort(404)
     actor_id, _, _ = _resolve_lock_actor()
     ok, updated_task = release_standard_update_lock(task_id, actor_id)
+    if ok:
+        _record_standard_update_audit("standard_update_lock_release", task_id, {"actor_id": actor_id})
     if not _wants_json_response():
         next_url = (request.form.get("next") or request.referrer or "").strip()
         if not next_url:
@@ -990,6 +1162,11 @@ def takeover_lock(task_id: str):
     )
     if not ok:
         abort(404)
+    _record_standard_update_audit(
+        "standard_update_lock_takeover",
+        task_id,
+        {"actor_id": actor_id, "work_id": work_id, "actor_name": actor_name},
+    )
 
     if not _wants_json_response():
         next_url = (request.form.get("next") or request.referrer or "").strip()

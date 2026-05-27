@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 from flask import abort, current_app, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from werkzeug.utils import secure_filename
 
+from app.services.audit_service import record_audit
 from app.services.execution_service import (
     JobCanceledError,
     MAPPING_OPERATION_JOB,
@@ -77,6 +78,40 @@ _MAPPING_UI_STATE_FILE = "mapping_ui_state.json"
 _MAPPING_OPS_DIR = "_ops"
 _MAPPING_VALIDATION_DIR = "_validation"
 _MAPPING_WORKSPACE_TTL_DAYS = 7
+
+
+def _record_mapping_audit(action: str, task_id: str, detail: dict | None = None, *, actor: dict | None = None) -> None:
+    payload = {"task_id": task_id}
+    payload.update(detail or {})
+    current_work_id, current_label = _get_actor_info()
+    record_audit(
+        action=action,
+        actor=actor or {"work_id": current_work_id, "label": current_label},
+        detail=payload,
+        task_id=task_id,
+    )
+
+
+def _mapping_action_to_audit_action(action: str) -> str:
+    return {
+        "check": "task_mapping_check",
+        "check_extract": "task_mapping_check_extract",
+        "run_cached": "task_mapping_run",
+    }.get(str(action or "").strip().lower(), "task_mapping_run")
+
+
+def _mapping_action_result_to_audit_action(action: str, status: str) -> str:
+    status_key = str(status or "").strip().lower()
+    suffix = {
+        "completed": "completed",
+        "failed": "failed",
+        "canceled": "canceled",
+    }.get(status_key, status_key or "completed")
+    return {
+        "check": f"task_mapping_check_{suffix}",
+        "check_extract": f"task_mapping_check_extract_{suffix}",
+        "run_cached": f"task_mapping_run_{suffix}",
+    }.get(str(action or "").strip().lower(), f"task_mapping_run_{suffix}")
 
 
 def _paginate_saved_mapping_schemes(schemes_all: list[dict], page: int, per_page: int = 10) -> tuple[list[dict], dict]:
@@ -837,12 +872,50 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
                         "size_bytes": os.path.getsize(path),
                     }
                 )
+        _record_mapping_audit(
+            _mapping_action_result_to_audit_action(action, "failed" if current_has_error else "completed"),
+            task_id,
+            {
+                "mapping_file": next_validation_state.get("mapping_file") or "",
+                "mapping_display_name": next_validation_state.get("mapping_display_name") or "",
+                "run_id": current_run_id,
+                "action": action,
+                "status": "failed" if current_has_error else "completed",
+                "output_count": len(rel_outputs),
+                "error": _first_mapping_error(messages),
+                "reference_ok": bool(next_validation_state.get("reference_ok")),
+                "extract_ok": bool(next_validation_state.get("extract_ok")),
+                "log_file": log_file_raw,
+                "zip_file": zip_file_raw,
+                "auto_saved_scheme_name": str(ui_payload.get("auto_saved_scheme_name") or "").strip(),
+            },
+            actor=actor,
+        )
         return {
             "artifact_root": _task_relative_path(run_out_dir),
             "artifacts": artifacts,
             "result_payload": run_result_payload,
         }
+        
+        
     except JobCanceledError as exc:
+        _record_mapping_audit(
+            _mapping_action_result_to_audit_action(action, "canceled"),
+            task_id,
+            {
+                "mapping_file": str(validation_state_snapshot.get("mapping_file") or "").strip() or os.path.basename(mapping_path),
+                "mapping_display_name": current_mapping_display_name
+                or str(validation_state_snapshot.get("mapping_display_name") or "").strip()
+                or os.path.basename(mapping_path),
+                "run_id": current_run_id,
+                "action": action,
+                "status": "canceled",
+                "error": str(exc),
+                "reference_ok": bool(validation_state_snapshot.get("reference_ok")),
+                "extract_ok": bool(validation_state_snapshot.get("extract_ok")),
+            },
+            actor=actor,
+        )
         messages = [_localize_mapping_message(f"CANCELED: {exc}")]
         ui_payload = {
             "current_action": action,
@@ -913,6 +986,23 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
         raise
     except Exception as exc:
         current_app.logger.exception("Mapping operation failed")
+        _record_mapping_audit(
+            _mapping_action_result_to_audit_action(action, "failed"),
+            task_id,
+            {
+                "mapping_file": str(validation_state_snapshot.get("mapping_file") or "").strip() or os.path.basename(mapping_path),
+                "mapping_display_name": current_mapping_display_name
+                or str(validation_state_snapshot.get("mapping_display_name") or "").strip()
+                or os.path.basename(mapping_path),
+                "run_id": current_run_id,
+                "action": action,
+                "status": "failed",
+                "error": str(exc),
+                "reference_ok": bool(validation_state_snapshot.get("reference_ok")),
+                "extract_ok": bool(validation_state_snapshot.get("extract_ok")),
+            },
+            actor=actor,
+        )
         messages = [_localize_mapping_message(f"ERROR: {exc}")]
         ui_payload = {
             "current_action": action,
@@ -1326,6 +1416,18 @@ def task_mapping(task_id):
                             enable_figure_reference=(action == "run_scheme_figure_reference"),
                         )
                         current_mapping_display_name = active_scheme.get("display_name") or active_scheme.get("mapping_display_name") or ""
+                    _record_mapping_audit(
+                        "mapping_scheme_run",
+                        task_id,
+                        {
+                            "scheme_id": scheme_id,
+                            "scheme_name": active_scheme.get("display_name") or active_scheme.get("name") or scheme_id,
+                            "mapping_file": current_mapping_display_name or active_scheme.get("mapping_file") or "",
+                            "job_id": current_run_id,
+                            "enable_figure_reference": action == "run_scheme_figure_reference",
+                        },
+                        actor={"work_id": work_id, "label": actor_label},
+                    )
                     active_mapping_tab = "results"
                     messages = []
                 except Exception as e:
@@ -1340,6 +1442,14 @@ def task_mapping(task_id):
             else:
                 try:
                     set_scheduled_mapping_scheme(task_id, scheme_id)
+                    _record_mapping_audit(
+                        "mapping_scheme_schedule_set",
+                        task_id,
+                        {
+                            "scheme_id": scheme_id,
+                            "scheme_name": active_scheme.get("display_name") or active_scheme.get("name") or scheme_id,
+                        },
+                    )
                     messages.append(f"已設為排程方案：{active_scheme.get('display_name') or scheme_id}")
                 except Exception as e:
                     messages = [_localize_mapping_message(str(e))]
@@ -1367,6 +1477,17 @@ def task_mapping(task_id):
                             workspace_dir,
                             str(validation_state.get("run_id") or "").strip(),
                         ),
+                    )
+                    _record_mapping_audit(
+                        "mapping_scheme_create",
+                        task_id,
+                        {
+                            "scheme_id": saved_scheme.get("id", ""),
+                            "scheme_name": saved_scheme.get("display_name") or saved_scheme.get("name") or "",
+                            "mapping_file": saved_scheme.get("mapping_display_name") or saved_scheme.get("mapping_file") or "",
+                            "validated_run_id": saved_scheme.get("validated_run_id") or "",
+                        },
+                        actor={"work_id": work_id, "label": actor_label},
                     )
                     messages.append(f"已儲存方案：{saved_scheme.get('display_name') or saved_scheme.get('id')}")
                     _delete_mapping_workspace(workspace_dir)
@@ -1398,6 +1519,14 @@ def task_mapping(task_id):
                 try:
                     deleted = delete_mapping_scheme(task_id, scheme_id)
                     if deleted:
+                        _record_mapping_audit(
+                            "mapping_scheme_delete",
+                            task_id,
+                            {
+                                "scheme_id": scheme_id,
+                                "scheme_name": active_scheme.get("display_name") or active_scheme.get("name") or scheme_id,
+                            },
+                        )
                         messages.append(f"已刪除方案：{active_scheme.get('display_name') or scheme_id}")
                     else:
                         messages.append("刪除失敗，請稍後再試。")
@@ -1410,10 +1539,20 @@ def task_mapping(task_id):
                 messages.append("找不到指定的 Mapping 方案。")
             else:
                 try:
+                    old_scheme_name = active_scheme.get("display_name") or active_scheme.get("name") or scheme_id
                     renamed_scheme = rename_mapping_scheme(
                         task_id,
                         scheme_id,
                         request.form.get("scheme_name") or "",
+                    )
+                    _record_mapping_audit(
+                        "mapping_scheme_rename",
+                        task_id,
+                        {
+                            "scheme_id": scheme_id,
+                            "scheme_name": renamed_scheme.get("display_name") or renamed_scheme.get("name") or scheme_id,
+                            "old_scheme_name": old_scheme_name,
+                        },
                     )
                     messages.append(f"已重新命名方案：{renamed_scheme.get('display_name') or scheme_id}")
                 except Exception as e:
@@ -1559,6 +1698,19 @@ def task_mapping(task_id):
                         queue_name="light" if action in {"check", "check_extract"} else "heavy",
                         job_id=current_run_id,
                         artifact_root=_task_relative_path(run_artifact_dir),
+                        )
+                    _record_mapping_audit(
+                        _mapping_action_to_audit_action(action),
+                        task_id,
+                        {
+                            "mapping_file": current_mapping_name,
+                            "mapping_display_name": current_mapping_display_name or current_mapping_name,
+                            "job_id": current_run_id,
+                            "run_id": current_run_id,
+                            "action": action,
+                            "status": "queued",
+                        },
+                        actor={"work_id": actor_work_id, "label": actor_label},
                     )
                     return redirect(
                         url_for(
@@ -1976,6 +2128,11 @@ def task_download_mapping_validation_log(task_id, run_id, kind):
     if not os.path.isfile(file_path):
         abort(404)
 
+    _record_mapping_audit(
+        "task_mapping_download_log",
+        task_id,
+        {"run_id": run_id, "kind": kind_key, "file_name": filename},
+    )
     return send_file(
         file_path,
         as_attachment=True,
@@ -2051,6 +2208,15 @@ def task_download_mapping_scheme(task_id, scheme_id):
         or os.path.basename(str(scheme.get("source_path") or ""))
         or f"{scheme_id}.xlsx"
     )
+    _record_mapping_audit(
+        "mapping_scheme_download_source",
+        task_id,
+        {
+            "scheme_id": scheme_id,
+            "scheme_name": scheme.get("display_name") or scheme.get("name") or scheme_id,
+            "file_name": download_name,
+        },
+    )
     return send_file(
         scheme["source_path"],
         as_attachment=True,
@@ -2087,6 +2253,16 @@ def task_download_mapping_scheme_log(task_id, scheme_id, kind):
     if not os.path.isfile(file_path):
         abort(404)
 
+    _record_mapping_audit(
+        "mapping_scheme_download_log",
+        task_id,
+        {
+            "scheme_id": scheme_id,
+            "scheme_name": scheme.get("display_name") or scheme.get("name") or scheme_id,
+            "kind": kind_key,
+            "file_name": log_file,
+        },
+    )
     return send_file(
         file_path,
         as_attachment=True,
@@ -2106,6 +2282,12 @@ def _send_mapping_output_file(task_id: str, filename: str):
     for base_dir in (mapping_job_dir, legacy_out_dir):
         file_path = os.path.join(base_dir, safe_name)
         if os.path.isfile(file_path):
+            action = "task_mapping_download_zip" if safe_name.lower().endswith(".zip") else "task_mapping_download_log"
+            _record_mapping_audit(
+                action,
+                task_id,
+                {"file_name": safe_name},
+            )
             return send_from_directory(base_dir, safe_name, as_attachment=True)
     abort(404)
 

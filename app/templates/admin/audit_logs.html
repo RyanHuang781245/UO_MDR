@@ -47,6 +47,12 @@
 
     .badge-status-completed { background-color: var(--bs-emerald-50); color: var(--bs-emerald-700); border: 1px solid rgba(4, 120, 87, 0.2); }
     .badge-status-failed { background-color: #fef2f2; color: #b91c1c; border: 1px solid rgba(185, 28, 28, 0.2); }
+    .audit-summary {
+      margin-top: 0.35rem;
+      color: var(--bs-gray-600);
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
     [data-bs-theme="dark"] .audit-table thead th {
       background: var(--app-bg);
       border-bottom-color: var(--app-border);
@@ -120,7 +126,7 @@
           <tr>
             <th class="text-left" style="width: 16%;">時間</th>
             <th class="text-center" style="width: 10%;">任務 ID</th>
-            <th class="text-center" style="width: 10%;">動作</th>
+            <th class="text-center" style="width: 10%;">執行操作</th>
             <th class="text-center" style="width: 10%;">操作者</th>
             <th>詳細摘要</th>
             <th class="text-right pe-4">詳情</th>
@@ -130,85 +136,45 @@
         {% for e in entries %}
           {% set actor = e.get('actor', {}) %}
           {% set detail = e.get('detail', {}) %}
-          {% set action_name = e.get('action', '') %}
-          {% set action_label = '手動檢查更新' if action_name == 'regulation_release_update_check' else '手動下載採認標準' if action_name == 'regulation_release_manual_download' else '排程偵測更新' if action_name == 'regulation_release_update_run' else '備援同步至主要路徑' if action_name == 'regulation_release_switch_to_primary' else action_name %}
-          {% set status = detail.get('status', '') %}
-          {% set flow = detail.get('flow', '') %}
-          {% set job_id = detail.get('job_id', '') %}
-          {% set batch_id = detail.get('batch_id', '') %}
-          {% set storage_mode = detail.get('storage_mode', '') %}
-          {% set storage_mode_label = '主要路徑' if storage_mode == 'primary' else '備援路徑' if storage_mode == 'fallback' else '本機預設路徑' if storage_mode == 'default' else '' %}
-          {% set should_download = detail.get('should_download') %}
-          {% set downloaded = detail.get('downloaded') %}
-          {% set results = detail.get('results', []) %}
+          {% set status_badge = e.get('status_badge') %}
+          {% set badges = e.get('badges', []) %}
+          {% set summary_lines = e.get('summary_lines', []) %}
           <tr>
             <td class="text-left text-muted font-monospace">{{ e.get('ts', '') }}</td>
             <td class="text-center">
               <code class="text-primary font-weight-bold font-monospace">{{ e.get('task_id', '-') }}</code>
             </td>
             <td class="text-center">
-              <span class="badge badge-light border px-2 py-1 x-small font-weight-bold">{{ action_label }}</span>
+              <span class="badge badge-light border px-2 py-1 x-small font-weight-bold">{{ e.get('action_label', e.get('action', '')) }}</span>
             </td>
             <td class="text-center font-weight-bold text-dark">{{ actor.get('work_id') }}</td>
             <td>
               <div class="d-flex flex-wrap align-items-center gap-2">
-                {% if status %}
-                  <span class="status-badge {{ 'badge-status-completed' if status == 'completed' else 'badge-status-failed' if status == 'failed' else 'bg-light border text-muted' }}">
-                    <i class="fas {{ 'fa-check-circle' if status == 'completed' else 'fa-times-circle' if status == 'failed' else 'fa-info-circle' }}"></i>
-                    {{ status|upper }}
+                {% if status_badge %}
+                  <span class="status-badge {{ status_badge.get('class_name', '') }}">
+                    <i class="fas {{ status_badge.get('icon_class', 'fa-info-circle') }}"></i>
+                    {{ status_badge.get('text', '') }}
                   </span>
                 {% endif %}
-                {% if flow %}
-                  <span class="audit-pill shadow-sm">
-                    <a href="{{ url_for('flow_builder_bp.flow_builder', task_id=e.get('task_id'), flow=flow) }}" class="text-decoration-none text-inherit">{{ flow }}</a>
+                {% for badge in badges %}
+                  <span class="audit-pill {{ badge.get('class_name', '') }}" {% if badge.get('style') %}style="{{ badge.get('style') }}"{% endif %}>
+                    {% if badge.get('href') %}
+                      <a href="{{ badge.get('href') }}" class="text-decoration-none text-inherit">{{ badge.get('text') }}</a>
+                    {% else %}
+                      {{ badge.get('text') }}
+                    {% endif %}
                   </span>
-                {% endif %}
-                {% if job_id %}
-                  <span class="audit-pill border-primary font-monospace">
-                    {{ job_id }}
-                  </span>
-                {% endif %}
-                {% if batch_id %}
-                  <span class="audit-pill border-info font-monospace" style="color: #6f42c1; background: #f5f3ff;"><i class="fas fa-layer-group mr-1 opacity-50"></i>{{ batch_id }}</span>
-                {% endif %}
-                {% if should_download is sameas true %}
-                  <span class="audit-pill border-success" style="background: #ecfdf5; color: #047857;">
-                    <i class="fas fa-check mr-0 opacity-50"></i>有更新
-                  </span>
-                {% elif should_download is sameas false %}
-                  <span class="audit-pill border-secondary" style="background: #f8fafc; color: #475569;">
-                    <i class="fas fa-times mr-0 opacity-50"></i>無更新
-                  </span>
-                {% endif %}
-                {% if downloaded is sameas true %}
-                  <span class="audit-pill" style="background: #eff6ff; color: #1d4ed8;">
-                    <i class="fas fa-sync-alt mr-0 opacity-50"></i>偵測到更新
-                  </span>
-                  <span class="audit-pill border-primary" style="background: #eff6ff; color: #1d4ed8;">
-                    <i class="fas fa-download mr-0 opacity-50"></i>已下載
-                  </span>
-                {% elif downloaded is sameas false %}
-                  <span class="audit-pill" style="background: #f8fafc; color: #475569;">
-                    <i class="fas fa-sync-alt mr-0 opacity-50"></i>未偵測到更新
-                  </span>
-                  <span class="audit-pill border-secondary" style="background: #f8fafc; color: #475569;">
-                    <i class="fas fa-minus-circle mr-0 opacity-50"></i>未下載
-                  </span>
-                {% endif %}
-                {% if storage_mode_label == '主要路徑' %}
-                  <span class="audit-pill border-warning" style="background: #fff8e1; color: #8a5a00;">
-                    <i class="fas fa-folder-open mr-0 opacity-50"></i>{{ storage_mode_label }}
-                  </span>
-                {% elif storage_mode_label == '備援路徑' %}
-                  <span class="audit-pill border-danger" style="background: #ffe1e1; color: #8a0000;">
-                    <i class="fas fa-folder-open mr-0 opacity-50"></i>{{ storage_mode_label }}
-                  </span>
-                {% elif storage_mode_label == '本機預設路徑' %}
-                  <span class="audit-pill border-danger" style="background: #ffe1e1; color: #8a0000;">
-                    <i class="fas fa-folder-open mr-0 opacity-50"></i>{{ storage_mode_label }}
-                  </span>
-                {% endif %}
+                {% endfor %}
               </div>
+              {% if summary_lines %}
+                <div class="audit-summary">
+                  {% for line in summary_lines %}
+                    <div {% if line.get('class_name') %}class="{{ line.get('class_name') }}"{% endif %} {% if line.get('title') %}title="{{ line.get('title') }}"{% endif %}>
+                      {{ line.get('text') }}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
             </td>
             <td class="text-right pe-4">
               <button class="btn btn-xs btn-outline-secondary shadow-sm" type="button" data-toggle="collapse" data-target="#detail-{{ loop.index }}" aria-expanded="false">

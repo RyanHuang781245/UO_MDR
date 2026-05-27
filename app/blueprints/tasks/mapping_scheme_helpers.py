@@ -9,6 +9,7 @@ from datetime import datetime
 
 from flask import current_app
 
+from app.services.audit_service import record_audit
 from app.services.execution_service import (
     JobCanceledError,
     MAPPING_SCHEME_RUN_JOB,
@@ -17,6 +18,17 @@ from app.services.execution_service import (
     find_active_job,
 )
 from app.services.mapping_metadata_service import sync_run_payload, sync_scheme_payload, delete_mapping_scheme_record
+
+
+def _record_mapping_scheme_audit(action: str, task_id: str, detail: dict | None = None, *, actor: dict | None = None) -> None:
+    payload = {"task_id": task_id}
+    payload.update(detail or {})
+    record_audit(
+        action=action,
+        actor=actor or {},
+        detail=payload,
+        task_id=task_id,
+    )
 
 
 def _task_dir(task_id: str) -> str:
@@ -415,6 +427,19 @@ def execute_saved_mapping_scheme(
                 "enable_figure_reference": bool(enable_figure_reference),
             },
         )
+        _record_mapping_scheme_audit(
+            "mapping_scheme_run_failed",
+            task_id,
+            {
+                "scheme_id": scheme.get("id") or scheme_id,
+                "scheme_name": scheme.get("display_name") or scheme.get("name") or scheme_id,
+                "run_id": run_id,
+                "status": "canceled",
+                "error": "執行期間已取消",
+                "enable_figure_reference": bool(enable_figure_reference),
+            },
+            actor=actor,
+        )
         raise
 
     messages = result.get("logs") or []
@@ -461,6 +486,20 @@ def execute_saved_mapping_scheme(
             "global_batch_id": global_batch_id,
             "enable_figure_reference": bool(enable_figure_reference),
         },
+    )
+    _record_mapping_scheme_audit(
+        "mapping_scheme_run_completed" if status == "completed" else "mapping_scheme_run_failed",
+        task_id,
+        {
+            "scheme_id": scheme.get("id") or scheme_id,
+            "scheme_name": scheme.get("display_name") or scheme.get("name") or scheme_id,
+            "run_id": run_id,
+            "status": status,
+            "output_count": len(run_outputs),
+            "error": first_error,
+            "enable_figure_reference": bool(enable_figure_reference),
+        },
+        actor=actor,
     )
 
     return {

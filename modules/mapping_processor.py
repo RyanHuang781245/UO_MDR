@@ -338,6 +338,7 @@ def process_mapping_excel(
     optional_header_aliases = {
         "item_type": ["類型", "Type", "擷取類型"],
         "include_title": ["包含標題", "是否包含標題", "顯示標題", "Include Title", "Include Caption"],
+        "insert_mode": ["插入方式", "模板插入方式", "Template Mode", "Insert Mode"],
     }
     header_row = None
     max_row = ws.max_row or 0
@@ -585,6 +586,36 @@ def process_mapping_excel(
             return "copy_folder"
         if text in {"add text", "text", "文字", "加入文字", "新增文字"}:
             return "add_text"
+        if text in {
+            "numbered heading",
+            "arabic heading",
+            "insert numbered heading",
+            "insert_numbered_heading",
+            "阿拉伯數字標題",
+            "數字標題",
+            "插入阿拉伯數字標題",
+            "插入數字標題",
+        }:
+            return "numbered_heading"
+        if text in {
+            "roman heading",
+            "insert roman heading",
+            "insert_roman_heading",
+            "羅馬數字標題",
+            "羅馬標題",
+            "插入羅馬數字標題",
+        }:
+            return "roman_heading"
+        if text in {
+            "bulleted heading",
+            "bullet heading",
+            "insert bulleted heading",
+            "insert_bulleted_heading",
+            "項目符號標題",
+            "符號標題",
+            "插入項目符號標題",
+        }:
+            return "bulleted_heading"
         if text in {"pdf image", "pdf images", "pdfimage", "pdf_img", "pdf圖片", "pdf图", "pdf 圖片", "pdf 图片"}:
             return "pdf_image"
         if text in {"add image", "image", "圖片", "图片", "加入圖片", "新增圖片", "加入图片", "新增图片"}:
@@ -683,6 +714,8 @@ def process_mapping_excel(
             return "Extract all"
         if item_type == "add_text":
             return "Append text"
+        if item_type in {"numbered_heading", "roman_heading", "bulleted_heading"}:
+            return "Append heading"
         if item_type == "copy_file":
             return "Copy file"
         if item_type == "copy_folder":
@@ -806,6 +839,8 @@ def process_mapping_excel(
         src_base = os.path.basename(src) if src else ""
         if action == "Append text":
             return src
+        if action == "Append heading":
+            return src
         if action == "Add Image":
             return src_base or src
         if action in {"Copy file", "Copy folder"}:
@@ -893,11 +928,102 @@ def process_mapping_excel(
                 options[key] = value
         return core, options, ""
 
+    def _parse_template_mode(raw_value: str) -> tuple[str, str]:
+        text = (raw_value or "").strip()
+        if not text:
+            return "insert_after", ""
+        normalized = re.sub(r"\s+", "", text).lower()
+        if normalized in {
+            "insert_after",
+            "insertafter",
+            "after",
+            "append",
+            "段落後新增",
+            "插入於該段落後方",
+            "插入該段落後",
+            "新增於段落後",
+        }:
+            return "insert_after", ""
+        if normalized in {
+            "replace",
+            "取代",
+            "取代該段落",
+            "替換",
+            "替換該段落",
+        }:
+            return "replace", ""
+        return "insert_after", f"插入方式欄位值無效: {text}"
+
+    def _parse_heading_instruction(
+        raw_instruction: str,
+        item_type: str,
+    ) -> tuple[dict[str, Any], str]:
+        raw = (raw_instruction or "").strip()
+        if not raw:
+            return {}, ""
+        parts = _split_quoted_tokens(raw, delimiter="|")
+        core = (parts[0] if parts else "").strip()
+        core_normalized = re.sub(r"\s+", " ", core).strip().lower()
+        allowed_cores = {
+            "numbered_heading": {
+                "numbered heading",
+                "arabic heading",
+                "insert numbered heading",
+                "阿拉伯數字標題",
+                "數字標題",
+                "插入阿拉伯數字標題",
+            },
+            "roman_heading": {
+                "roman heading",
+                "insert roman heading",
+                "羅馬數字標題",
+                "羅馬標題",
+                "插入羅馬數字標題",
+            },
+            "bulleted_heading": {
+                "bulleted heading",
+                "bullet heading",
+                "insert bulleted heading",
+                "項目符號標題",
+                "符號標題",
+                "插入項目符號標題",
+            },
+        }.get(item_type, set())
+        if core_normalized and core_normalized not in allowed_cores and core_normalized != "add heading":
+            return {}, f"標題類型操作欄位值無效: {core}"
+
+        options: dict[str, Any] = {}
+        for token in parts[1:]:
+            if not token:
+                continue
+            if "=" not in token:
+                return options, f"無效參數語法: {token}"
+            key_raw, value_raw = token.split("=", 1)
+            key = key_raw.strip().lower()
+            value = _strip_matching_quotes(value_raw.strip())
+            if key == "level":
+                try:
+                    options["level"] = int(value)
+                except ValueError:
+                    return options, f"level 必須是整數: {value}"
+            elif key == "bold":
+                options["bold"] = value
+            elif key == "font_size":
+                try:
+                    options["font_size"] = float(value)
+                except ValueError:
+                    return options, f"font_size 必須是數字: {value}"
+            else:
+                return options, f"不支援的標題參數: {key_raw.strip()}"
+        return options, ""
+
     def _attach_mapping_meta(params: Dict[str, Any], row_num: int, action: str, detail: str) -> Dict[str, Any]:
         params["mapping_row"] = row_num
         params["mapping_action_label"] = action
         params["mapping_detail_label"] = detail
         return params
+
+    text_insert_item_types = {"add_text", "numbered_heading", "roman_heading", "bulleted_heading"}
 
     for row_num, row in enumerate(
         ws.iter_rows(min_row=header_row + 1, values_only=True),
@@ -920,6 +1046,7 @@ def process_mapping_excel(
         insert_label = _cell(col_idx.get("insert", 5))
         item_type = _normalize_item_type(_cell(col_idx.get("item_type", -1)), instruction=instruction)
         include_title, include_title_error = _parse_include_title(_cell(col_idx.get("include_title", -1)))
+        template_mode, template_mode_error = _parse_template_mode(_cell(col_idx.get("insert_mode", -1)))
 
         action_label = _guess_action(instruction, item_type=item_type)
         detail_label = _build_detail(
@@ -933,7 +1060,10 @@ def process_mapping_excel(
         if include_title_error:
             _log("error", include_title_error, row_num, action_label, detail_label)
             continue
-        if not instruction and item_type not in {"extract_all", "pdf_image", "add_text", "add_image", "copy_file", "copy_folder"}:
+        if template_mode_error:
+            _log("error", template_mode_error, row_num, action_label, detail_label)
+            continue
+        if not instruction and item_type not in {"extract_all", "pdf_image", "add_image", "copy_file", "copy_folder", *text_insert_item_types}:
             _log("error", "缺失操作", row_num, action_label, detail_label)
             continue
         if not out_name and item_type not in {"copy_file", "copy_folder"}:
@@ -942,11 +1072,11 @@ def process_mapping_excel(
         if out_name and item_type not in {"copy_file", "copy_folder"} and not out_name.lower().endswith(".docx"):
             _log("error", "輸出文件檔名需包含 .docx 副檔名", row_num, action_label, detail_label)
             continue
-        if item_type != "add_text" and not src_name:
+        if item_type not in text_insert_item_types and not src_name:
             _log("error", "缺少輸入文件檔名", row_num, action_label, detail_label)
             continue
-        if item_type == "add_text" and not src_name:
-            _log("error", "Add Text 需要文字內容", row_num, action_label, detail_label)
+        if item_type in text_insert_item_types and not src_name:
+            _log("error", "文字/標題插入需要文字內容", row_num, action_label, detail_label)
             continue
         if insert_label and not template_name:
             _log("warn", "由於模板文件為空，插入段落將被忽略。", row_num)
@@ -1194,7 +1324,7 @@ def process_mapping_excel(
             params = {"input_file": infile, "align": "center"}
             if template_path is not None:
                 params["template_index"] = target_idx
-                params["template_mode"] = "insert_after"
+                params["template_mode"] = template_mode
             _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": "insert_image", "params": params})
             _log("info", f"add image: {src_name} into {out_name}", row_num)
@@ -1207,10 +1337,30 @@ def process_mapping_excel(
             params = {"text": src_name}
             if template_path is not None:
                 params["template_index"] = target_idx
-                params["template_mode"] = "insert_after"
+                params["template_mode"] = template_mode
             _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": "insert_text", "params": params})
             _log("info", f"append text into {out_name}", row_num)
+            continue
+
+        if item_type in {"numbered_heading", "roman_heading", "bulleted_heading"}:
+            heading_options, heading_error = _parse_heading_instruction(instruction, item_type)
+            if heading_error:
+                _log("error", heading_error, row_num, action_label, detail_label)
+                continue
+            step_type = {
+                "numbered_heading": "insert_numbered_heading",
+                "roman_heading": "insert_roman_heading",
+                "bulleted_heading": "insert_bulleted_heading",
+            }[item_type]
+            params = {"text": src_name}
+            params.update(heading_options)
+            if template_path is not None:
+                params["template_index"] = target_idx
+                params["template_mode"] = template_mode
+            _attach_mapping_meta(params, row_num, action_label, detail_label)
+            groups[group_key]["steps"].append({"type": step_type, "params": params})
+            _log("info", f"append heading into {out_name}", row_num)
             continue
 
         if item_type == "extract_all":
@@ -1224,7 +1374,7 @@ def process_mapping_excel(
             params = {"input_file": infile}
             if template_path is not None:
                 params["template_index"] = target_idx
-                params["template_mode"] = "insert_after"
+                params["template_mode"] = template_mode
             _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": "extract_word_all_content", "params": params})
             _log("info", f"extract all: {src_name}", row_num)
@@ -1400,7 +1550,7 @@ def process_mapping_excel(
                 _log("info", f"extract figure: {src_name} ({target_hint})", row_num)
             if template_path is not None:
                 params["template_index"] = target_idx
-                params["template_mode"] = "insert_after"
+                params["template_mode"] = template_mode
             _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": step_type, "params": params})
             continue
@@ -1420,7 +1570,7 @@ def process_mapping_excel(
             params = {"input_file": infile}
             if template_path is not None:
                 params["template_index"] = target_idx
-                params["template_mode"] = "insert_after"
+                params["template_mode"] = template_mode
             _attach_mapping_meta(params, row_num, action_label, detail_label)
             groups[group_key]["steps"].append({"type": "extract_pdf_pages_as_images", "params": params})
             _log("info", f"extract pdf pages as images: {src_name}", row_num)
@@ -1480,7 +1630,7 @@ def process_mapping_excel(
             step_type = "extract_word_chapter"
         if template_path is not None:
             params["template_index"] = target_idx
-            params["template_mode"] = "insert_after"
+            params["template_mode"] = template_mode
         _attach_mapping_meta(params, row_num, action_label, detail_label)
         groups[group_key]["steps"].append({"type": step_type, "params": params})
 

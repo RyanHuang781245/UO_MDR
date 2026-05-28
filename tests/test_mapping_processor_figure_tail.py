@@ -31,6 +31,15 @@ def _write_mapping(path: Path, rows: list[list[str]]) -> None:
     wb.save(path)
 
 
+def _write_mapping_with_headers(path: Path, headers: list[str], rows: list[list[str]]) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    wb.save(path)
+
+
 def _run_validate_mapping(
     tmp_path: Path,
     operation: str,
@@ -192,6 +201,56 @@ def test_mapping_type_add_text_blank_operation_creates_insert_text(tmp_path: Pat
     assert _first_step_type(log_data) == "insert_text"
     params = _first_step_params(log_data)
     assert params.get("text") == "這是一段說明文字"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_insert_mode_replace_is_passed_to_template_step(tmp_path: Path) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    template_path = files_dir / "Template.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("Anchor")
+    doc.save(template_path)
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    headers = [*HEADERS, "插入方式"]
+    rows = [["替換文字", "Add Text", "Add Text", "", "out", "result.docx", "Template.docx", "Anchor", "取代該段落"]]
+    _write_mapping_with_headers(mapping_path, headers, rows)
+
+    result = process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=True,
+    )
+
+    with open(log_dir / result["log_file"], "r", encoding="utf-8") as f:
+        log_data = json.load(f)
+    params = _first_step_params(log_data)
+    assert params.get("template_mode") == "replace"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_heading_type_creates_matching_insert_heading_step(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "Roman Heading | level=0 | bold=false | font_size=14",
+        item_type="Roman Heading",
+        source_name="Scope",
+        source_files=[],
+    )
+    assert _first_step_type(log_data) == "insert_roman_heading"
+    params = _first_step_params(log_data)
+    assert params.get("text") == "Scope"
+    assert params.get("level") == 0
+    assert params.get("bold") == "false"
+    assert params.get("font_size") == 14.0
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 

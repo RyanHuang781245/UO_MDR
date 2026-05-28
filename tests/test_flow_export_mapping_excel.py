@@ -68,7 +68,7 @@ def test_export_flow_mapping_excel_matches_mapping_headers_and_rows(app, client)
     ws = wb.active
     assert ws.title == "Mapping定義"
 
-    assert [ws.cell(1, i).value for i in range(1, 9)] == [
+    assert [ws.cell(1, i).value for i in range(1, 10)] == [
         "輸入檔案名稱/資料夾名稱/文字內容",
         "擷取類型",
         "擷取段落",
@@ -77,10 +77,11 @@ def test_export_flow_mapping_excel_matches_mapping_headers_and_rows(app, client)
         "輸出檔案名稱",
         "模板文件",
         "插入段落名稱",
+        "插入方式",
     ]
     assert ws.cell(1, 1).fill.fill_type == "solid"
     assert ws.cell(1, 1).font.bold is True
-    assert [ws.cell(2, i).value for i in range(1, 9)] == [
+    assert [ws.cell(2, i).value for i in range(1, 10)] == [
         "source\\section1.docx",
         "All",
         "All",
@@ -89,8 +90,9 @@ def test_export_flow_mapping_excel_matches_mapping_headers_and_rows(app, client)
         "Product Description.docx",
         "Device Description_Template.docx",
         None,
+        None,
     ]
-    assert [ws.cell(3, i).value for i in range(1, 9)] == [
+    assert [ws.cell(3, i).value for i in range(1, 10)] == [
         "assets\\logo.png",
         "Copy File",
         "logo",
@@ -99,8 +101,9 @@ def test_export_flow_mapping_excel_matches_mapping_headers_and_rows(app, client)
         "logo-final",
         None,
         None,
+        None,
     ]
-    assert [ws.cell(4, i).value for i in range(1, 9)] == [
+    assert [ws.cell(4, i).value for i in range(1, 10)] == [
         "Appendix Note",
         "Add Text",
         "Add Text",
@@ -109,10 +112,11 @@ def test_export_flow_mapping_excel_matches_mapping_headers_and_rows(app, client)
         "Product Description.docx",
         "Device Description_Template.docx",
         None,
+        None,
     ]
     assert ws.cell(2, 1).alignment.horizontal == "left"
-    assert ws.cell(2, 1).fill.fgColor.rgb == ws.cell(1, 1).fill.fgColor.rgb
-    assert ws.cell(2, 6).fill.fgColor.rgb == ws.cell(1, 6).fill.fgColor.rgb
+    assert ws.cell(2, 1).fill.fill_type == "solid"
+    assert ws.cell(2, 6).fill.fill_type == "solid"
 
 
 def test_export_flow_mapping_excel_chapter_operation_includes_title_and_subtitle(app, client) -> None:
@@ -332,6 +336,54 @@ def test_export_flow_mapping_excel_populates_insert_label_from_template_index(ap
     wb = load_workbook(filename=BytesIO(response.data))
     ws = wb.active
     assert ws.cell(2, 8).value == "a) Product Description"
+
+
+def test_export_flow_mapping_excel_preserves_insert_mode_and_heading_type(app, client, monkeypatch) -> None:
+    task_id = "flow-export-mapping-heading-mode"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    files_dir = task_dir / "files"
+    (files_dir / "templates").mkdir(parents=True, exist_ok=True)
+    (task_dir / "flows").mkdir(parents=True, exist_ok=True)
+    (files_dir / "templates" / "Template.docx").write_bytes(b"dummy")
+
+    flow_payload = {
+        "steps": [
+            {
+                "type": "insert_roman_heading",
+                "params": {
+                    "text": "Scope",
+                    "level": "0",
+                    "bold": "true",
+                    "font_size": "12",
+                    "template_index": "3",
+                    "template_mode": "replace",
+                },
+            }
+        ],
+        "template_file": "templates/Template.docx",
+        "output_filename": "out/result.docx",
+    }
+    (task_dir / "flows" / "FlowHeading.json").write_text(json.dumps(flow_payload, ensure_ascii=False), encoding="utf-8")
+
+    monkeypatch.setattr(
+        "app.blueprints.flows.flow_crud_routes.parse_template_paragraphs",
+        lambda _path: [{"index": 3, "display": "b)", "text": "Placeholder"}],
+    )
+
+    with app.test_request_context():
+        url = url_for("flow_crud_bp.export_flow_mapping", task_id=task_id, flow_name="FlowHeading")
+
+    response = client.get(url)
+    assert response.status_code == 200
+
+    wb = load_workbook(filename=BytesIO(response.data))
+    ws = wb.active
+    assert ws.cell(2, 2).value == "Roman Heading"
+    assert ws.cell(2, 3).value == "Roman Heading | level=0 | bold=true | font_size=12"
+    assert ws.cell(2, 8).value == "b) Placeholder"
+    assert ws.cell(2, 9).value == "取代該段落"
 
 
 def test_export_flow_mapping_excel_uses_figure_table_type_for_table_wrapped_figure(app, client) -> None:

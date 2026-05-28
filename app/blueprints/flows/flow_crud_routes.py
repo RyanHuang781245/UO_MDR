@@ -170,6 +170,17 @@ def _resolve_template_insert_label(params: dict, template_insert_map: dict[int, 
     return label or str(idx)
 
 
+def _mapping_template_mode_label(params: dict, template_name: str, insert_label: str) -> str:
+    if not template_name:
+        return ""
+    raw_mode = str(params.get("template_mode") or "").strip()
+    if raw_mode == "replace":
+        return "取代該段落"
+    if raw_mode == "insert_after" or insert_label:
+        return "段落後新增"
+    return ""
+
+
 def _compose_template_insert_label(display: str, text: str) -> str:
     disp = str(display or "").strip()
     body = str(text or "").strip()
@@ -196,6 +207,7 @@ def _flow_step_to_mapping_row(
     out_path = os.path.dirname(flow_output_rel).replace("/", "\\") if flow_output_rel else ""
     out_name = os.path.basename(flow_output_rel) if flow_output_rel else ""
     insert_label = _resolve_template_insert_label(params, template_insert_map)
+    insert_mode = _mapping_template_mode_label(params, template_name, insert_label)
 
     if stype == "extract_word_all_content":
         return {
@@ -207,6 +219,7 @@ def _flow_step_to_mapping_row(
             "out_name": out_name,
             "template": template_name,
             "insert": insert_label,
+            "insert_mode": insert_mode,
         }
     if stype == "extract_word_chapter":
         chapter = _build_extract_target(params)
@@ -223,6 +236,7 @@ def _flow_step_to_mapping_row(
             "out_name": out_name,
             "template": template_name,
             "insert": insert_label,
+            "insert_mode": insert_mode,
         }
     if stype == "extract_specific_figure_from_word":
         return {
@@ -234,6 +248,7 @@ def _flow_step_to_mapping_row(
             "out_name": out_name,
             "template": template_name,
             "insert": insert_label,
+            "insert_mode": insert_mode,
         }
     if stype == "extract_specific_table_from_word":
         return {
@@ -245,6 +260,7 @@ def _flow_step_to_mapping_row(
             "out_name": out_name,
             "template": template_name,
             "insert": insert_label,
+            "insert_mode": insert_mode,
         }
     if stype == "extract_pdf_pages_as_images":
         return {
@@ -256,6 +272,7 @@ def _flow_step_to_mapping_row(
             "out_name": out_name,
             "template": template_name,
             "insert": insert_label,
+            "insert_mode": insert_mode,
         }
     if stype == "insert_image":
         return {
@@ -267,8 +284,9 @@ def _flow_step_to_mapping_row(
             "out_name": out_name,
             "template": template_name,
             "insert": insert_label,
+            "insert_mode": insert_mode,
         }
-    if stype in {"insert_text", "insert_roman_heading", "insert_bulleted_heading", "insert_numbered_heading"}:
+    if stype == "insert_text":
         return {
             "source": str(params.get("text") or "").strip(),
             "item_type": "Add Text",
@@ -278,6 +296,31 @@ def _flow_step_to_mapping_row(
             "out_name": out_name,
             "template": template_name,
             "insert": insert_label,
+            "insert_mode": insert_mode,
+        }
+    if stype in {"insert_roman_heading", "insert_bulleted_heading", "insert_numbered_heading"}:
+        heading_type_map = {
+            "insert_numbered_heading": "Numbered Heading",
+            "insert_roman_heading": "Roman Heading",
+            "insert_bulleted_heading": "Bulleted Heading",
+        }
+        operation_parts = [heading_type_map[stype]]
+        if stype in {"insert_numbered_heading", "insert_roman_heading"}:
+            operation_parts.append(f"level={str(params.get('level', 0)).strip() or '0'}")
+        if "bold" in params:
+            operation_parts.append(f"bold={str(params.get('bold')).strip()}")
+        if "font_size" in params:
+            operation_parts.append(f"font_size={str(params.get('font_size')).strip()}")
+        return {
+            "source": str(params.get("text") or "").strip(),
+            "item_type": heading_type_map[stype],
+            "operation": " | ".join(operation_parts),
+            "include_title": "",
+            "out_path": out_path,
+            "out_name": out_name,
+            "template": template_name,
+            "insert": insert_label,
+            "insert_mode": insert_mode,
         }
     if stype == "copy_files":
         return {
@@ -289,6 +332,7 @@ def _flow_step_to_mapping_row(
             "out_name": str(params.get("target_name") or "").strip(),
             "template": "",
             "insert": "",
+            "insert_mode": "",
         }
     if stype == "copy_directory":
         return {
@@ -300,6 +344,7 @@ def _flow_step_to_mapping_row(
             "out_name": str(params.get("target_name") or "").strip(),
             "template": "",
             "insert": "",
+            "insert_mode": "",
         }
     return None
 
@@ -350,6 +395,7 @@ def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> byt
         "輸出檔案名稱",
         "模板文件",
         "插入段落名稱",
+        "插入方式",
     ]
 
     wb = Workbook()
@@ -395,6 +441,7 @@ def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> byt
                 row["out_name"],
                 row["template"],
                 row["insert"],
+                row["insert_mode"],
             ]
         )
     for row_idx in range(2, ws.max_row + 1):
@@ -416,6 +463,7 @@ def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> byt
     ws.column_dimensions["F"].width = 54
     ws.column_dimensions["G"].width = 54
     ws.column_dimensions["H"].width = 54
+    ws.column_dimensions["I"].width = 18
 
     stream = BytesIO()
     wb.save(stream)

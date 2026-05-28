@@ -1,11 +1,24 @@
 ﻿{% extends "base.html" %}
 {% block enable_sidebar %}false{% endblock %}
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-5">
-    <h1 class="h4 mb-3">登入</h1>
+<style>
+  .login-page-shell {
+    min-height: calc(100vh - 112px - 3rem);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 0;
+  }
+  .login-card-wrap {
+    width: min(100%, 526px);
+  }
+</style>
+<div class="login-page-shell">
+  <div class="login-card-wrap">
+    <!-- <h1 class="h4 mb-3">登入</h1> -->
     <form method="post" class="card card-body shadow-sm">
       {{ form.hidden_tag() }}
+      <h1 class="h3 fw-bold mb-3">登入系統</h1>
       <div class="mb-3">
         <label class="form-label">工號</label>
         <input class="form-control" name="username" autocomplete="username" required>

@@ -23,6 +23,8 @@
   }
   .launcher-card__tile {
     /* background: linear-gradient(145deg, #5ec3a0 0%, #43b48c 100%); */
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-border);
     border-radius: 1rem;
     min-height: 180px;
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
@@ -34,12 +36,31 @@
   .launcher-card:hover .launcher-card__tile,
   .launcher-card:focus-visible .launcher-card__tile {
     transform: translateY(-4px);
+    border-color: var(--bs-blue-600);
     box-shadow: 0 16px 30px rgba(15, 23, 42, 0.2);
   }
   .launcher-card__icon {
     font-size: 4rem;
     color: #000000;
     line-height: 1;
+    transition: color 0.2s ease, transform 0.2s ease;
+  }
+  .launcher-card:hover .launcher-card__icon,
+  .launcher-card:focus-visible .launcher-card__icon {
+    transform: scale(1.04);
+  }
+  [data-bs-theme="dark"] .launcher-card__icon {
+    color: #ffffff;
+  }
+  [data-bs-theme="dark"] .launcher-card__tile {
+    background: rgba(30, 41, 59, 0.7);
+    border-color: #475569;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  }
+  [data-bs-theme="dark"] .launcher-card:hover .launcher-card__tile,
+  [data-bs-theme="dark"] .launcher-card:focus-visible .launcher-card__tile {
+    border-color: #93c5fd;
+    box-shadow: 0 16px 30px rgba(0, 0, 0, 0.36);
   }
   .launcher-card__label {
     margin-top: 1rem;
@@ -70,8 +91,8 @@
 <section class="launcher-shell">
   <div class="w-100">
     <div class="launcher-intro">
-      <h1 class="h3 fw-bold mb-2">功能入口</h1>
-      <p>選擇要進入的工作區</p>
+      <!-- <h1 class="h3 fw-bold mb-2">功能入口</h1> -->
+      <h1 class="fw-bold mb-2">功能入口</h1>
     </div>
     <div class="launcher-grid">
       <a class="launcher-card" href="{{ url_for('tasks_bp.tasks') }}">

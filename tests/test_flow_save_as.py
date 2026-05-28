@@ -113,3 +113,35 @@ def test_flow_save_as_rejects_existing_name(app, client) -> None:
 
     assert response.status_code == 400
     assert "流程名稱已存在" in response.get_data(as_text=True)
+
+
+def test_flow_save_redirect_keeps_saved_flow_loaded(app, client) -> None:
+    task_id = "flow-save-redirect"
+    tdir = Path(app.config["TASK_FOLDER"]) / task_id
+    if tdir.exists():
+        import shutil
+        shutil.rmtree(tdir)
+    files_dir = tdir / "files"
+    flow_dir = tdir / "flows"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    flow_dir.mkdir(parents=True, exist_ok=True)
+
+    with app.test_request_context():
+        url = url_for("flow_execution_bp.run_flow", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={
+            "action": "save",
+            "flow_name": "預防性存檔流程",
+            "ordered_ids": "",
+            "template_file": "",
+            "output_filename": "",
+            "document_format": "default",
+            "line_spacing": "1.5",
+            "apply_formatting": "true",
+        },
+    )
+
+    assert response.status_code == 302
+    assert "flow=%E9%A0%90%E9%98%B2%E6%80%A7%E5%AD%98%E6%AA%94%E6%B5%81%E7%A8%8B" in response.headers["Location"]

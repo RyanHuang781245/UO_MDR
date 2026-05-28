@@ -775,6 +775,44 @@ def test_flow_builder_shows_undo_last_restore_only_once(app, client) -> None:
     assert "撤銷版本回復" not in second_html
 
 
+def test_flow_builder_includes_image_picker_extension_group(app, client) -> None:
+    task_id = "flow-image-picker"
+    tdir = Path(app.config["TASK_FOLDER"]) / task_id
+    if tdir.exists():
+        shutil.rmtree(tdir)
+    files_dir = tdir / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "sample.jpg").write_bytes(b"jpg")
+
+    with app.test_request_context():
+        url = url_for("flow_builder_bp.flow_builder", task_id=task_id)
+
+    response = client.get(url)
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'image: { mode: "file", key: "image"' in html
+    assert 'extensions: ["png", "jpg", "jpeg", "bmp", "gif"]' in html
+    assert 'statusLabel: "圖片檔"' in html
+
+
+def test_flow_builder_shows_new_flow_button(app, client) -> None:
+    task_id = "flow-new-button"
+    tdir = Path(app.config["TASK_FOLDER"]) / task_id
+    if tdir.exists():
+        shutil.rmtree(tdir)
+    (tdir / "files").mkdir(parents=True, exist_ok=True)
+
+    with app.test_request_context():
+        url = url_for("flow_builder_bp.flow_builder", task_id=task_id)
+
+    response = client.get(url)
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="newFlowBtn"' in html
+    assert "新建流程" in html
+    assert "buildNewFlowUrl()" in html
+
+
 def test_restore_before_restore_sets_undo_success_flash(app, client) -> None:
     task_id = "flow-version-undo-flash"
     tdir = Path(app.config["TASK_FOLDER"]) / task_id

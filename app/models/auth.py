@@ -93,6 +93,22 @@ class AuditLog(db.Model):
         return f"[{self.created_at}] {self.work_id} - {self.action}"
 
 
+class SystemErrorLog(db.Model):
+    __tablename__ = "system_error_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
+    level = db.Column(db.String(20), nullable=False, server_default="ERROR")
+    component = db.Column(db.String(200), nullable=False)
+    message = db.Column(db.String(500), nullable=False)
+    error_type = db.Column(db.String(200))
+    detail = db.Column(db.Text)
+    task_id = db.Column(db.String(100))
+
+    def __str__(self) -> str:
+        return f"[{self.created_at}] {self.level} {self.component} - {self.message}"
+
+
 @dataclass(frozen=True)
 class LDAPProfile:
     work_id: str
@@ -129,6 +145,23 @@ def ensure_schema() -> None:
                             created_at DATETIME2 NOT NULL CONSTRAINT DF_audit_logs_created_at DEFAULT(SYSDATETIME()),
                             action NVARCHAR(200) NOT NULL,
                             work_id NVARCHAR(100) NULL,
+                            detail NVARCHAR(MAX) NULL,
+                            task_id NVARCHAR(100) NULL
+                        );
+                        """
+                    )
+                )
+            if "system_error_logs" not in existing_tables:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE system_error_logs (
+                            id INT IDENTITY(1,1) PRIMARY KEY,
+                            created_at DATETIME2 NOT NULL CONSTRAINT DF_system_error_logs_created_at DEFAULT(SYSDATETIME()),
+                            level NVARCHAR(20) NOT NULL CONSTRAINT DF_system_error_logs_level DEFAULT('ERROR'),
+                            component NVARCHAR(200) NOT NULL,
+                            message NVARCHAR(500) NOT NULL,
+                            error_type NVARCHAR(200) NULL,
                             detail NVARCHAR(MAX) NULL,
                             task_id NVARCHAR(100) NULL
                         );
@@ -192,6 +225,23 @@ def ensure_schema() -> None:
                             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                             action VARCHAR(200) NOT NULL,
                             work_id VARCHAR(100) NULL,
+                            detail TEXT NULL,
+                            task_id VARCHAR(100) NULL
+                        );
+                        """
+                    )
+                )
+            if "system_error_logs" not in existing_tables:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE system_error_logs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            level VARCHAR(20) NOT NULL DEFAULT 'ERROR',
+                            component VARCHAR(200) NOT NULL,
+                            message VARCHAR(500) NOT NULL,
+                            error_type VARCHAR(200) NULL,
                             detail TEXT NULL,
                             task_id VARCHAR(100) NULL
                         );

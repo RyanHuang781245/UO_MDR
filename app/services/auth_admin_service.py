@@ -21,6 +21,7 @@ from app.models.auth import (
     ROLE_LABELS_ZH,
     AuditLog,
     Role,
+    SystemErrorLog,
     User,
     UserRole,
     commit_session,
@@ -303,6 +304,18 @@ def _build_audit_entry(log: AuditLog, detail: dict) -> dict:
         "status_badge": _build_audit_status_badge(status),
         "badges": _build_audit_badges(task_id=str(log.task_id or "").strip(), action_name=action_name, detail=detail),
         "summary_lines": _build_audit_summary_lines(action_name=action_name, detail=detail),
+    }
+
+
+def _build_system_error_entry(log: SystemErrorLog, detail: dict) -> dict:
+    return {
+        "ts": log.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "level": (log.level or "ERROR").strip().upper(),
+        "component": (log.component or "").strip(),
+        "message": (log.message or "").strip(),
+        "error_type": (log.error_type or "").strip(),
+        "detail": detail,
+        "task_id": (log.task_id or "").strip(),
     }
 
 
@@ -1062,10 +1075,117 @@ class AuditLogView(BaseView):
         )
 
 
+class SystemErrorLogView(BaseView):
+    extra_css = ADMIN_CUSTOM_CSS
+
+    def is_accessible(self):
+        return user_is_admin(current_user)
+
+    def inaccessible_callback(self, name, **kwargs):
+        if current_user.is_authenticated:
+            abort(403)
+        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
+
+    def _get_db_logs(
+        self,
+        task_id: Optional[str] = None,
+        page: int = 1,
+        per_page: int = 50,
+        q: Optional[str] = None,
+        component: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> tuple[list[dict], dict]:
+        query = SystemErrorLog.query
+
+        if task_id:
+            query = query.filter_by(task_id=task_id)
+        if component:
+            query = query.filter(SystemErrorLog.component.ilike(f"%{component}%"))
+        if q:
+            search = f"%{q}%"
+            query = query.filter(
+                (SystemErrorLog.component.ilike(search))
+                | (SystemErrorLog.message.ilike(search))
+                | (SystemErrorLog.error_type.ilike(search))
+                | (SystemErrorLog.detail.ilike(search))
+            )
+        if start_date:
+            try:
+                dt_start = datetime.strptime(f"{start_date} 00:00:00", "%Y-%m-%d %H:%M:%S")
+                query = query.filter(SystemErrorLog.created_at >= dt_start)
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                dt_end = datetime.strptime(f"{end_date} 23:59:59", "%Y-%m-%d %H:%M:%S")
+                query = query.filter(SystemErrorLog.created_at <= dt_end)
+            except ValueError:
+                pass
+
+        total_count = query.count()
+        total_pages = (total_count + per_page - 1) // per_page
+        page = max(1, min(page, total_pages)) if total_pages > 0 else 1
+
+        logs = query.order_by(SystemErrorLog.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+
+        entries = []
+        for log in logs:
+            try:
+                detail = json.loads(log.detail) if log.detail else {}
+            except Exception:
+                detail = {"raw": log.detail}
+            entries.append(_build_system_error_entry(log, detail))
+
+        pagination = {
+            "total_count": total_count,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+        }
+        return entries, pagination
+
+    @expose("/", methods=["GET"])
+    def index(self):
+        task_id = (request.args.get("task_id") or "").strip()
+        q = (request.args.get("q") or "").strip()
+        component = (request.args.get("component") or "").strip()
+        start_date = (request.args.get("start_date") or "").strip()
+        end_date = (request.args.get("end_date") or "").strip()
+
+        try:
+            page = int(request.args.get("page", 1))
+        except (ValueError, TypeError):
+            page = 1
+
+        entries, pagination = self._get_db_logs(
+            task_id=task_id if task_id else None,
+            page=page,
+            q=q if q else None,
+            component=component if component else None,
+            start_date=start_date if start_date else None,
+            end_date=end_date if end_date else None,
+        )
+
+        return self.render(
+            "admin/system_error_logs.html",
+            task_id=task_id,
+            q=q,
+            component=component,
+            start_date=start_date,
+            end_date=end_date,
+            entries=entries,
+            pagination=pagination,
+        )
+
+
 def init_admin(app) -> Admin:
     admin = Admin(app, name="系統管理", url="/admin", index_view=SecureAdminIndexView())
     admin.add_view(SystemSettingView(name="系統設定", endpoint="system_settings", url="system-settings"))
     admin.add_view(UserAdminView(User, db.session, name="使用者列表"))
     admin.add_view(ADSearchView(name="帳號搜尋", endpoint="ad_search", url="ad-search"))
     admin.add_view(AuditLogView(name="操作紀錄", endpoint="audit_logs", url="audit-logs"))
+    admin.add_view(SystemErrorLogView(name="系統錯誤", endpoint="system_error_logs", url="system-error-logs"))
     return admin

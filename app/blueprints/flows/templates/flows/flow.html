@@ -5,9 +5,9 @@
 
 <div class="container-fluid px-0">
     <div class="mb-3 d-flex justify-content-between align-items-center">
-        <div>
-            <h1 class="h3 mb-1 fw-bold">流程管理</h1>
-        </div>
+      <div>
+        <h1 class="h3 mb-1 fw-bold">流程管理</h1>
+      </div>
     </div>
 
     <ul class="nav nav-tabs nav-tabs-custom mb-4" id="flowTabs" role="tablist">
@@ -125,10 +125,6 @@
                                     <i class="bi bi-folder text-primary"></i>
                                     檔案結構
                                 </button>
-                                <button class="btn btn-white flow-toolbar-btn d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
-                                    <i class="bi bi-arrows-collapse text-primary"></i>
-                                    全部收合
-                                </button>
                                 <div class="form-check form-switch flow-toolbar-switch d-inline-flex align-items-center mb-0 px-3 py-1 rounded">
                                     <input class="form-check-input mt-0 ms-0 me-2" type="checkbox" role="switch" id="toggleRuleVisibilitySwitch">
                                     <label class="form-check-label small text-muted mb-0" for="toggleRuleVisibilitySwitch">顯示擷取規則</label>
@@ -139,6 +135,14 @@
                                 </div>
                             </div>
                             <div class="flow-toolbar-group flow-toolbar-group-end flow-toolbar-group-actions">
+                                <button class="btn btn-white flow-toolbar-btn d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
+                                    <i class="bi bi-arrows-collapse text-primary"></i>
+                                    全部收合
+                                </button>
+                                <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="newFlowBtn" {% if is_version_preview %}disabled{% endif %}>
+                                    <i class="bi bi-plus-square"></i>
+                                    新建流程
+                                </button>
                                 <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" id="saveFlowBtn" type="submit" name="action" value="save" {% if is_version_preview %}disabled{% endif %}>
                                     <i class="bi bi-save"></i>
                                     保存流程
@@ -2601,9 +2605,53 @@ async function loadTemplateFromServer(formData){
 
 let isInitialising = true;
 let isDirty = false;
+const FLOW_BUILDER_SCROLL_STORAGE_KEY = `flowBuilderScroll:${TASK_ID}`;
 function markDirty(){
   if (IS_VERSION_PREVIEW) return;
   if (!isInitialising) isDirty = true;
+}
+function rememberFlowBuilderScroll(action){
+  if (!['save', 'save_as'].includes(action)) return;
+  const flowName = (action === 'save_as' ? saveAsNameInput?.value : flowNameInput?.value) || '';
+  try {
+    sessionStorage.setItem(FLOW_BUILDER_SCROLL_STORAGE_KEY, JSON.stringify({
+      action,
+      flowName: String(flowName).trim(),
+      scrollY: window.scrollY || window.pageYOffset || 0,
+    }));
+  } catch (err) {
+    console.warn('Failed to persist flow builder scroll position', err);
+  }
+}
+function restoreFlowBuilderScroll(){
+  let raw = null;
+  try {
+    raw = sessionStorage.getItem(FLOW_BUILDER_SCROLL_STORAGE_KEY);
+  } catch (err) {
+    return;
+  }
+  if (!raw) return;
+  try {
+    sessionStorage.removeItem(FLOW_BUILDER_SCROLL_STORAGE_KEY);
+    const saved = JSON.parse(raw);
+    if (!saved || !['save', 'save_as'].includes(saved.action)) return;
+    const currentFlowName = String({{ (loaded_name or '')|tojson }} || '').trim();
+    const savedFlowName = String(saved.flowName || '').trim();
+    if (savedFlowName && currentFlowName && savedFlowName !== currentFlowName) return;
+    const scrollY = Number(saved.scrollY);
+    if (!Number.isFinite(scrollY) || scrollY < 0) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'auto' });
+      });
+    });
+  } catch (err) {
+    try {
+      sessionStorage.removeItem(FLOW_BUILDER_SCROLL_STORAGE_KEY);
+    } catch (_err) {
+      // Ignore storage cleanup failures.
+    }
+  }
 }
 window.addEventListener('beforeunload', function(e){
   if (IS_VERSION_PREVIEW) return;
@@ -2613,6 +2661,7 @@ window.addEventListener('beforeunload', function(e){
 });
 const flowForm = document.getElementById('flow_form');
 const flowNameInput = document.getElementById('flowNameInput');
+const newFlowBtn = document.getElementById('newFlowBtn');
 const enableOutputFilenameInput = document.getElementById('enableOutputFilenameInput');
 const enableOutputFilenameHidden = document.getElementById('enableOutputFilenameHidden');
 const outputFilenameRequiredMarker = document.getElementById('outputFilenameRequiredMarker');
@@ -2728,6 +2777,7 @@ flowForm.addEventListener('submit', (e) => {
       return;
     }
   }
+  rememberFlowBuilderScroll(action);
   isDirty = false;
 });
 flowForm.addEventListener('input', markDirty);
@@ -2828,13 +2878,31 @@ function isAvailableDirPath(value){
   return dirOptions.some((item) => normalizeBrowserRelPath(item) === normalized);
 }
 
+const STEP_FILE_ACCEPT_MAP = {
+  docx: { mode: "file", key: "docx", extensions: ["docx"], statusLabel: ".docx" },
+  pdf: { mode: "file", key: "pdf", extensions: ["pdf"], statusLabel: ".pdf" },
+  zip: { mode: "file", key: "zip", extensions: ["zip"], statusLabel: ".zip" },
+  excel: { mode: "file", key: "excel", extensions: ["xlsx", "xls"], statusLabel: "Excel 檔" },
+  image: { mode: "file", key: "image", extensions: ["png", "jpg", "jpeg", "bmp", "gif"], statusLabel: "圖片檔" },
+  dir: { mode: "dir", key: "dir", extensions: [], statusLabel: "" },
+  path: { mode: "mixed", key: "path", extensions: [], statusLabel: "" },
+};
+
 function parseFileAccept(accept){
   const raw = String(accept || "file:docx");
-  const ext = (raw.split(":")[1] || "").toLowerCase();
+  const acceptKey = (raw.split(":")[1] || "").toLowerCase();
+  const meta = STEP_FILE_ACCEPT_MAP[acceptKey] || {
+    mode: "file",
+    key: acceptKey,
+    extensions: acceptKey ? [acceptKey] : [],
+    statusLabel: acceptKey ? `.${acceptKey}` : "",
+  };
   return {
     raw,
-    mode: ext === "dir" ? "dir" : ext === "path" ? "mixed" : "file",
-    ext
+    mode: meta.mode,
+    ext: meta.key,
+    extensions: Array.isArray(meta.extensions) ? [...meta.extensions] : [],
+    statusLabel: meta.statusLabel || "",
   };
 }
 
@@ -2896,6 +2964,8 @@ const stepFileState = {
   accept: "file:docx",
   mode: "file",
   ext: "docx",
+  extensions: ["docx"],
+  statusLabel: ".docx",
   browserMode: "file",
   scope: "files",
   currentRel: "",
@@ -3055,9 +3125,10 @@ function syncCopyTargetNameState(card, changedField = ""){
 function isAllowedStepFileEntry(path){
   if (stepFileState.mode === "dir") return false;
   if (stepFileState.mode === "mixed") return true;
-  const ext = stepFileState.ext;
-  if (!ext || ext === "file") return true;
-  return path.toLowerCase().endsWith(`.${ext}`);
+  const extensions = Array.isArray(stepFileState.extensions) ? stepFileState.extensions : [];
+  if (!extensions.length) return true;
+  const lowerPath = String(path || "").toLowerCase();
+  return extensions.some((ext) => lowerPath.endsWith(`.${String(ext).toLowerCase()}`));
 }
 
 function renderStepFileEntries(){
@@ -3162,8 +3233,8 @@ function renderStepFileEntries(){
   }
   stepFileEntryList.appendChild(fragment);
 
-  if (stepFileState.mode === "file" && stepFileState.ext && stepFileState.ext !== "file"){
-    setStepFileStatus(`僅顯示 .${stepFileState.ext}`);
+  if (stepFileState.mode === "file" && stepFileState.statusLabel){
+    setStepFileStatus(`僅顯示 ${stepFileState.statusLabel}`);
   } else {
     setStepFileStatus("");
   }
@@ -3262,6 +3333,8 @@ function openStepFileBrowser(input, accept, browserScope = "files"){
   stepFileState.accept = parsed.raw;
   stepFileState.mode = parsed.mode;
   stepFileState.ext = parsed.ext;
+  stepFileState.extensions = parsed.extensions;
+  stepFileState.statusLabel = parsed.statusLabel;
   stepFileState.scope = browserScope === "output" ? "output" : "files";
   stepFileState.browserMode = resolveStepFileBrowserMode(input, parsed);
   stepFileState.dirs = [];
@@ -4360,6 +4433,17 @@ function buildSaveAsNameSuggestion() {
   return suggested.slice(0, 50);
 }
 
+function buildNewFlowUrl() {
+  const nextUrl = new URL(`{{ url_for('flow_builder_bp.flow_builder', task_id=task.id) }}`, window.location.origin);
+  nextUrl.searchParams.set('flow_tab', 'builder');
+  return nextUrl.toString();
+}
+
+function openNewFlowBuilder() {
+  if (IS_VERSION_PREVIEW) return;
+  window.location.href = buildNewFlowUrl();
+}
+
 function syncAddStepDropdownViewport() {
   if (!addStepDropdownBtn || !addStepDropdownMenu) return;
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
@@ -4878,6 +4962,10 @@ if (saveAsFlowBtn) {
     }
   });
 }
+
+if (newFlowBtn) {
+  newFlowBtn.addEventListener('click', openNewFlowBuilder);
+}
 if (PRESET_FLOW){
   for (const st of PRESET_FLOW){
     addStep(st.type, st.params);
@@ -4968,6 +5056,7 @@ if (flowNameInput && flowNameCount) {
   updateCount();
 }
 
+restoreFlowBuilderScroll();
 isInitialising = false;
 </script>
 

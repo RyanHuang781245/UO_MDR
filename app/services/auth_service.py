@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.extensions import login_manager
 from app.models.auth import db, ensure_schema, seed_roles
+from app.services.audit_service import record_system_error
 from app.services.auth_admin_service import init_admin
 from app.services.auth_hooks_service import register_auth_context, register_login_enforcement
 from app.services.authn_service import (
@@ -21,8 +22,13 @@ def bootstrap_auth(app) -> None:
             ensure_schema()
             seed_roles()
             bootstrap_admins()
-        except Exception:
+        except Exception as exc:
             db.session.rollback()
+            record_system_error(
+                "auth.init",
+                "Auth initialization failed",
+                exc=exc,
+            )
             app.logger.exception("Auth initialization failed")
 
 

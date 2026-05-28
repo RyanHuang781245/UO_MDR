@@ -1,0 +1,161 @@
+{% extends "admin/base.html" %}
+
+{% block body %}
+<div class="container-fluid">
+  <style>
+    .system-error-table thead th {
+      background: #f8fafc;
+      font-size: 0.875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--bs-gray-500);
+      border-bottom: 2px solid var(--bs-gray-200);
+      padding: 0.75rem 1rem;
+      white-space: nowrap;
+    }
+
+    .system-error-table td {
+      font-size: 0.875rem;
+      padding: 0.75rem 1rem;
+      vertical-align: middle !important;
+    }
+
+    .system-error-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid rgba(185, 28, 28, 0.2);
+    }
+  </style>
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0 font-weight-bold">系統錯誤</h3>
+  </div>
+
+  <form method="get" class="filter-bar shadow-sm mb-4">
+    <div class="input-group input-group-sm" style="max-width: 200px;">
+      <div class="input-group-prepend">
+        <span class="input-group-text bg-white border-right-0"><i class="fas fa-fingerprint text-muted"></i></span>
+      </div>
+      <input type="text" name="task_id" value="{{ task_id or '' }}" class="form-control border-left-0" placeholder="任務 ID">
+    </div>
+
+    <div class="input-group input-group-sm" style="max-width: 240px;">
+      <div class="input-group-prepend">
+        <span class="input-group-text bg-light border-right-0"><i class="fas fa-cubes text-muted"></i></span>
+      </div>
+      <input type="text" name="component" value="{{ component or '' }}" class="form-control border-left-0" placeholder="component">
+    </div>
+
+    <div class="input-group input-group-sm" style="max-width: 220px;">
+      <div class="input-group-prepend">
+        <span class="input-group-text bg-light border-right-0"><i class="fas fa-search text-muted"></i></span>
+      </div>
+      <input type="text" name="q" value="{{ q or '' }}" class="form-control border-left-0" placeholder="訊息/錯誤類型">
+    </div>
+
+    <div class="input-group input-group-sm d-none d-lg-flex" style="flex: 0 0 300px;">
+      <div class="input-group-prepend">
+        <span class="input-group-text bg-light"><i class="fas fa-calendar-alt text-muted"></i></span>
+      </div>
+      <input type="date" name="start_date" value="{{ start_date or '' }}" class="form-control" title="開始日期">
+      <div class="input-group-prepend input-group-append">
+        <span class="input-group-text bg-light px-2 border-left-0 border-right-0 text-muted small">至</span>
+      </div>
+      <input type="date" name="end_date" value="{{ end_date or '' }}" class="form-control" title="結束日期">
+    </div>
+
+    <button type="submit" class="btn btn-sm btn-dark px-3 ml-auto">
+      <i class="fas fa-filter mr-1"></i> 套用篩選
+    </button>
+    <a href="{{ url_for('system_error_logs.index') }}" class="btn btn-sm btn-outline-secondary px-3">
+      <i class="fas fa-undo mr-1"></i> 重設
+    </a>
+  </form>
+
+  {% if entries %}
+  <div class="main-card">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 system-error-table">
+        <thead>
+          <tr>
+            <th style="width: 16%;">時間</th>
+            <th style="width: 10%;">等級</th>
+            <th style="width: 16%;">Component</th>
+            <th style="width: 16%;">錯誤類型</th>
+            <th>訊息</th>
+            <th style="width: 10%;">任務 ID</th>
+            <th class="text-right pe-4">詳情</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in entries %}
+          {% set detail = e.get('detail', {}) %}
+          <tr>
+            <td class="text-muted font-monospace">{{ e.get('ts', '') }}</td>
+            <td><span class="system-error-badge">{{ e.get('level', 'ERROR') }}</span></td>
+            <td><code class="font-monospace text-primary">{{ e.get('component', '') }}</code></td>
+            <td>{{ e.get('error_type', '') or '-' }}</td>
+            <td>{{ e.get('message', '') }}</td>
+            <td><code class="font-monospace">{{ e.get('task_id', '') or '-' }}</code></td>
+            <td class="text-right pe-4">
+              <button class="btn btn-xs btn-outline-secondary shadow-sm" type="button" data-toggle="collapse" data-target="#detail-{{ loop.index }}" aria-expanded="false">
+                <i class="fas fa-code"></i>
+              </button>
+            </td>
+          </tr>
+          <tr class="collapse" id="detail-{{ loop.index }}">
+            <td colspan="7" class="bg-light px-4 py-3 border-top-0">
+              <div class="rounded bg-dark p-3 shadow-inner">
+                <pre class="text-light mb-0 small" style="white-space: pre-wrap; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;">{{ detail|tojson(indent=2) }}</pre>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pagination and pagination.total_pages > 1 %}
+    <div class="px-4 py-3 border-top d-flex justify-content-between align-items-center bg-light bg-opacity-25">
+      <div class="text-muted small">
+        顯示第 {{ (pagination.page - 1) * pagination.per_page + 1 }} - {{ [pagination.page * pagination.per_page, pagination.total_count]|min }} 筆，共 {{ pagination.total_count }} 筆
+      </div>
+      <nav>
+        <ul class="pagination pagination-sm mb-0 gap-1">
+          <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link rounded-2 shadow-sm" href="{{ url_for('system_error_logs.index', page=pagination.page-1, task_id=task_id, q=q, component=component, start_date=start_date, end_date=end_date) if pagination.has_prev else '#' }}">上一頁</a>
+          </li>
+
+          {% set start_p = [1, pagination.page - 2]|max %}
+          {% set end_p = [pagination.total_pages, start_p + 4]|min %}
+          {% set start_p = [1, end_p - 4]|max %}
+
+          {% for p in range(start_p, end_p + 1) %}
+          <li class="page-item {% if p == pagination.page %}active{% endif %}">
+            <a class="page-link rounded-2 shadow-sm" href="{{ url_for('system_error_logs.index', page=p, task_id=task_id, q=q, component=component, start_date=start_date, end_date=end_date) }}">{{ p }}</a>
+          </li>
+          {% endfor %}
+
+          <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link rounded-2 shadow-sm" href="{{ url_for('system_error_logs.index', page=pagination.page+1, task_id=task_id, q=q, component=component, start_date=start_date, end_date=end_date) if pagination.has_next else '#' }}">下一頁</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="alert alert-light border shadow-sm text-center py-5">
+    <i class="fas fa-check-circle text-success fs-2 d-block mb-3"></i>
+    目前沒有系統錯誤紀錄。
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -10,12 +10,18 @@ from flask import current_app
 
 from app.models.auth import User
 from app.models.settings import SystemSetting
+from app.services.audit_service import record_system_error
 
 
 def _get_system_settings() -> SystemSetting | None:
     try:
         return SystemSetting.query.order_by(SystemSetting.id).first()
-    except Exception:
+    except Exception as exc:
+        record_system_error(
+            "notification.settings_load",
+            "Failed to load system settings for notifications",
+            exc=exc,
+        )
         current_app.logger.exception("Failed to load system settings")
         return None
 
@@ -52,7 +58,13 @@ def _send_email(to_addrs: Iterable[str], subject: str, body: str) -> bool:
         server.ehlo()
         server.sendmail(sender, to_list, msg.as_string())
         return True
-    except Exception:
+    except Exception as exc:
+        record_system_error(
+            "notification.send_email",
+            "Failed to send notification email",
+            exc=exc,
+            detail={"recipient_count": len(to_list), "smtp_host": host or "", "smtp_port": port},
+        )
         current_app.logger.exception("Failed to send notification email")
         return False
     finally:

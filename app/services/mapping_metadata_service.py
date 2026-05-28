@@ -17,6 +17,7 @@ from app.models.mapping_metadata import (
     TaskFileState,
     ensure_schema,
 )
+from app.services.audit_service import record_system_error
 from app.services.execution_service import MAPPING_OPERATION_JOB, MAPPING_SCHEME_RUN_JOB, get_job_payload, get_job_result_payload
 
 
@@ -34,7 +35,14 @@ def _load_mapping_run_meta(task_id: str, run_id: str) -> dict:
         with open(meta_path, "r", encoding="utf-8") as f:
             payload = json.load(f)
         return payload if isinstance(payload, dict) else {}
-    except Exception:
+    except Exception as exc:
+        record_system_error(
+            "mapping_metadata.load_run_meta",
+            "Failed to load mapping run metadata file",
+            exc=exc,
+            task_id=task_id,
+            detail={"run_id": run_id, "meta_path": meta_path},
+        )
         current_app.logger.exception("Failed to load mapping run meta for %s/%s", task_id, run_id)
         return {}
 
@@ -43,8 +51,13 @@ def init_mapping_metadata(app) -> None:
     with app.app_context():
         try:
             ensure_schema()
-        except Exception:
+        except Exception as exc:
             db.session.rollback()
+            record_system_error(
+                "mapping_metadata.init_schema",
+                "Mapping metadata initialization failed",
+                exc=exc,
+            )
             app.logger.exception("Mapping metadata initialization failed")
 
 

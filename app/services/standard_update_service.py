@@ -19,6 +19,7 @@ from app.models.standard_update import (
     StandardUpdateRecord,
     ensure_schema as ensure_standard_update_schema,
 )
+from app.services.audit_service import record_system_error
 from app.services.task_service import deduplicate_name, list_files
 from app.services.user_context_service import get_actor_info
 
@@ -80,8 +81,13 @@ def init_standard_update_store(app) -> None:
     with app.app_context():
         try:
             ensure_standard_update_schema()
-        except Exception:
+        except Exception as exc:
             db.session.rollback()
+            record_system_error(
+                "standard_update.init_schema",
+                "Standard update schema initialization failed",
+                exc=exc,
+            )
             app.logger.exception("Standard update schema initialization failed")
 
 
@@ -737,8 +743,15 @@ def save_standard_update(task_id: str, meta: dict) -> None:
             db.session.add(record)
         _apply_meta_to_standard_update_record(record, payload)
         commit_session()
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
+        record_system_error(
+            "standard_update.persist_meta",
+            "Failed to persist standard update metadata",
+            exc=exc,
+            task_id=task_id,
+            detail={"task_name": payload.get("name") or task_id},
+        )
         current_app.logger.exception("Failed to persist standard update metadata")
         raise
 
@@ -769,8 +782,14 @@ def delete_standard_update(task_id: str) -> None:
         if record:
             db.session.delete(record)
             commit_session()
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
+        record_system_error(
+            "standard_update.delete_db",
+            "Failed to delete standard update DB record",
+            exc=exc,
+            task_id=task_id,
+        )
         current_app.logger.exception("Failed to delete standard update DB record")
 
 
@@ -1051,8 +1070,14 @@ def activate_harmonised_release(
             "downloaded_at": record.downloaded_at.strftime("%Y-%m-%d %H:%M") if record.downloaded_at else resolved_downloaded_at.strftime("%Y-%m-%d %H:%M"),
             "source_url": record.source_url or "",
         }
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
+        record_system_error(
+            "standard_update.activate_release",
+            "Failed to activate harmonised release",
+            exc=exc,
+            detail={"path": abs_path, "version_label": resolved_version},
+        )
         current_app.logger.exception("Failed to activate harmonised release")
         return {}
 

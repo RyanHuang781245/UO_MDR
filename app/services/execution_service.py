@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models.execution import JobArtifactRecord, JobEventRecord, JobRecord, TaskExecutionLock, ensure_schema
+from app.services.audit_service import record_system_error
 
 JOB_STATUS_QUEUED = "queued"
 JOB_STATUS_CLAIMED = "claimed"
@@ -62,8 +63,13 @@ def init_execution_metadata(app) -> None:
     with app.app_context():
         try:
             ensure_schema()
-        except Exception:
+        except Exception as exc:
             db.session.rollback()
+            record_system_error(
+                "execution.init_metadata",
+                "Execution metadata initialization failed",
+                exc=exc,
+            )
             app.logger.exception("Execution metadata initialization failed")
 
 
@@ -750,7 +756,27 @@ def run_worker_loop(
     interval = float(default_poll_interval() if poll_interval is None else poll_interval)
 
     while True:
-        did_work = process_next_job(app, worker_id=worker_id)
+        try:
+            did_work = process_next_job(app, worker_id=worker_id)
+        except Exception as exc:
+            with app.app_context():
+                record_system_error(
+                    "worker.loop",
+                    "Unhandled worker loop exception",
+                    exc=exc,
+                    detail={
+                        "worker_id": worker_id,
+                        "processed_jobs": processed,
+                        "once": once,
+                        "max_jobs": max_jobs,
+                        "poll_interval": interval,
+                    },
+                )
+                current_app.logger.exception("Unhandled worker loop exception: worker_id=%s", worker_id)
+            if once:
+                raise
+            time.sleep(max(interval, 0.1))
+            continue
         if did_work:
             processed += 1
             if once:

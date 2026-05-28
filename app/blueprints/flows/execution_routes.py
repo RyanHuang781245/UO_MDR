@@ -137,7 +137,14 @@ def run_flow(task_id):
             )
         _touch_task_last_edit(task_id)
         if action == "save":
-            return redirect(url_for("flow_builder_bp.flow_builder", task_id=task_id, fpage=request.form.get("fpage")))
+            return redirect(
+                url_for(
+                    "flow_builder_bp.flow_builder",
+                    task_id=task_id,
+                    flow=target_flow_name,
+                    fpage=request.form.get("fpage"),
+                )
+            )
         if action in {"save_as", "save_version"}:
             return redirect(url_for("flow_builder_bp.flow_builder", task_id=task_id, flow=target_flow_name))
 

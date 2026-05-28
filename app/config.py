@@ -28,6 +28,8 @@ class BaseConfig:
     APP_LOG_STDOUT = parse_bool(os.environ.get("APP_LOG_STDOUT"), True)
     APP_LOG_MAX_BYTES = int(os.environ.get("APP_LOG_MAX_BYTES") or 10 * 1024 * 1024)
     APP_LOG_BACKUP_COUNT = int(os.environ.get("APP_LOG_BACKUP_COUNT") or 10)
+    AUDIT_LOG_RETENTION_DAYS = int(os.environ.get("AUDIT_LOG_RETENTION_DAYS") or 180)
+    SYSTEM_ERROR_DB_MIN_LEVEL = (os.environ.get("SYSTEM_ERROR_DB_MIN_LEVEL") or "ERROR").strip().upper()
     REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED = (
         os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or ""
     ).strip()

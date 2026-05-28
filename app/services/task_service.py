@@ -13,6 +13,7 @@ from app.extensions import db
 from app.models.auth import ROLE_ADMIN, commit_session, user_has_role
 from app.models.settings import SystemSetting
 from app.models.task import TaskRecord, ensure_schema as ensure_task_schema
+from app.services.audit_service import record_system_error
 
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
@@ -112,7 +113,12 @@ def enforce_max_copy_size(path: str):
                 max_bytes = None
             else:
                 max_bytes = mb * 1024 * 1024
-    except Exception:
+    except Exception as exc:
+        record_system_error(
+            "task.settings_load",
+            "Failed to load NAS size limit from system settings",
+            exc=exc,
+        )
         current_app.logger.exception("Failed to load NAS size limit from system settings")
     if not max_bytes:
         return
@@ -239,8 +245,13 @@ def list_tasks():
             for (task_id,) in db.session.query(TaskRecord.id).all()
             if str(task_id or "").strip()
         }
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
+        record_system_error(
+            "task.list_existing_ids",
+            "Failed to load existing task ids from DB",
+            exc=exc,
+        )
         current_app.logger.exception("Failed to load existing task ids from DB")
     for tid, tdir, meta_path in _iter_task_dirs():
         name = tid
@@ -305,8 +316,13 @@ def init_task_store(app) -> None:
     with app.app_context():
         try:
             ensure_task_schema()
-        except Exception:
+        except Exception as exc:
             db.session.rollback()
+            record_system_error(
+                "task.init_schema",
+                "Task schema initialization failed",
+                exc=exc,
+            )
             app.logger.exception("Task schema initialization failed")
 
 
@@ -339,8 +355,15 @@ def record_task_in_db(
             task.created_at = created_at
         commit_session()
         return True
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
+        record_system_error(
+            "task.record_db",
+            "Failed to record task in DB",
+            exc=exc,
+            task_id=task_id,
+            detail={"task_name": name or task_id},
+        )
         current_app.logger.exception("Failed to record task in DB")
         if raise_on_error:
             raise
@@ -353,7 +376,12 @@ def delete_task_record(task_id: str) -> None:
         if task:
             db.session.delete(task)
             commit_session()
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
+        record_system_error(
+            "task.delete_db",
+            "Failed to delete task record",
+            exc=exc,
+            task_id=task_id,
+        )
         current_app.logger.exception("Failed to delete task record")
-

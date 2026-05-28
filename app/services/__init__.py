@@ -1,5 +1,6 @@
 from . import (
     auth_service,
+    audit_service,
     execution_service,
     flow_service,
     flow_version_service,
@@ -15,6 +16,7 @@ from . import (
 
 __all__ = [
     "auth_service",
+    "audit_service",
     "execution_service",
     "flow_service",
     "flow_version_service",

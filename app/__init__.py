@@ -3,7 +3,8 @@
 import os
 from pathlib import Path
 
-from flask import Flask, render_template
+from flask import Flask, render_template, request
+from werkzeug.exceptions import HTTPException
 
 from app.blueprints import register_blueprints
 from app.config import CONFIG_MAP, BaseConfig
@@ -11,6 +12,7 @@ from app.extensions import db, ldap_manager, login_manager
 from app.logging_config import configure_app_logging
 from app.services import (
     auth_service,
+    audit_service,
     execution_service,
     mapping_metadata_service,
     nas_service,
@@ -77,6 +79,32 @@ def _prepare_common_dirs(app: Flask) -> None:
     os.makedirs(app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"], exist_ok=True)
 
 
+def _register_error_handlers(app: Flask) -> None:
+    @app.errorhandler(403)
+    def forbidden(_exc):
+        return render_template("403.html"), 403
+
+    @app.errorhandler(Exception)
+    def unhandled_exception(exc: Exception):
+        if isinstance(exc, HTTPException):
+            code = int(getattr(exc, "code", 500) or 500)
+            if code < 500:
+                return exc
+        audit_service.record_system_error(
+            "web.unhandled_exception",
+            "Unhandled web exception",
+            exc=exc,
+            task_id=str((getattr(request, "view_args", {}) or {}).get("task_id") or "").strip() or None,
+            detail={
+                "path": request.path,
+                "method": request.method,
+                "query_string": request.query_string.decode("utf-8", errors="ignore"),
+                "endpoint": request.endpoint or "",
+            },
+        )
+        return "Internal Server Error", 500
+
+
 def create_job_app(config_name: str | None = None) -> Flask:
     base_dir = Path(__file__).resolve().parents[1]
     load_dotenv_if_present(str(base_dir))
@@ -87,6 +115,7 @@ def create_job_app(config_name: str | None = None) -> Flask:
     configure_app_logging(app, role="worker")
     _configure_app(app, base_dir)
     db.init_app(app)
+    audit_service.register_audit_cli(app)
     standard_update_service.init_standard_update_store(app)
     system_service.init_system_settings(app)
     _prepare_common_dirs(app)
@@ -104,6 +133,7 @@ def create_app(config_name: str | None = None, *, init_auth: bool = True) -> Fla
     _configure_app(app, base_dir)
 
     db.init_app(app)
+    audit_service.register_audit_cli(app)
     if init_auth:
         login_manager.init_app(app)
         if app.config.get("AUTH_ENABLED", True):
@@ -122,9 +152,6 @@ def create_app(config_name: str | None = None, *, init_auth: bool = True) -> Fla
         auth_service.init_auth(app)
     execution_service.register_execution_cli(app)
     register_blueprints(app)
-
-    @app.errorhandler(403)
-    def forbidden(_exc):
-        return render_template("403.html"), 403
+    _register_error_handlers(app)
 
     return app

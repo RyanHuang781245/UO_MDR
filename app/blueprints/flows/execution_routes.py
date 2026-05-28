@@ -40,7 +40,7 @@ def run_flow(task_id):
     files_dir = os.path.join(tdir, "files")
     if not os.path.isdir(files_dir):
         abort(404)
-    action = request.form.get("action", "run")
+    action = request.form.get("action", "save")
     flow_name = request.form.get("flow_name", "").strip()
     save_as_name = request.form.get("save_as_name", "").strip()
     version_name = request.form.get("version_name", "").strip()
@@ -143,10 +143,18 @@ def run_flow(task_id):
                     task_id=task_id,
                     flow=target_flow_name,
                     fpage=request.form.get("fpage"),
+                    save_status="saved",
                 )
             )
         if action in {"save_as", "save_version"}:
-            return redirect(url_for("flow_builder_bp.flow_builder", task_id=task_id, flow=target_flow_name))
+            return redirect(
+                url_for(
+                    "flow_builder_bp.flow_builder",
+                    task_id=task_id,
+                    flow=target_flow_name,
+                    save_status="saved",
+                )
+            )
 
     runtime_steps = []
     for step in workflow:

@@ -135,27 +135,28 @@
                                 </div>
                             </div>
                             <div class="flow-toolbar-group flow-toolbar-group-end flow-toolbar-group-actions">
-                                <button class="btn btn-white flow-toolbar-btn d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
-                                    <i class="bi bi-arrows-collapse text-primary"></i>
-                                    全部收合
-                                </button>
-                                <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="newFlowBtn" {% if is_version_preview %}disabled{% endif %}>
-                                    <i class="bi bi-plus-square"></i>
-                                    新建流程
-                                </button>
-                                <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" id="saveFlowBtn" type="submit" name="action" value="save" {% if is_version_preview %}disabled{% endif %}>
-                                    <i class="bi bi-save"></i>
-                                    保存流程
-                                </button>
-                                <button class="btn btn-secondary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn" {% if is_version_preview %}disabled{% endif %}>
-                                    <i class="bi bi-files"></i>
-                                    另存流程
-                                </button>
-                                <button class="btn btn-success d-inline-flex align-items-center gap-1 fw-bold" id="runFlowBtn" type="submit" name="action" value="run" {% if is_version_preview %}disabled{% endif %}>
-                                    <i class="bi bi-play-fill"></i>
-                                    執行流程
-                                </button>
-                                <button class="d-none" type="submit" name="action" value="save_as" id="saveAsSubmitTrigger">另存流程</button>
+                              <span class="flow-save-status" id="flowSaveStatus" role="status" aria-live="polite">{{ "已保存" if loaded_name else "尚未保存" }}</span>
+                              <button class="btn btn-white flow-toolbar-btn d-inline-flex align-items-center gap-1" type="button" id="toggleAllStepsBtn">
+                                  <i class="bi bi-arrows-collapse text-primary"></i>
+                                  全部收合
+                              </button>
+                              <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="newFlowBtn" {% if is_version_preview %}disabled{% endif %}>
+                                  <i class="bi bi-plus-square"></i>
+                                  新建流程
+                              </button>
+                              <button class="btn btn-primary d-inline-flex align-items-center gap-1 fw-bold" id="saveFlowBtn" type="submit" name="action" value="save" {% if is_version_preview %}disabled{% endif %}>
+                                  <i class="bi bi-save"></i>
+                                  保存流程
+                              </button>
+                              <button class="btn btn-secondary d-inline-flex align-items-center gap-1 fw-bold" type="button" id="saveAsFlowBtn" {% if is_version_preview %}disabled{% endif %}>
+                                  <i class="bi bi-files"></i>
+                                  另存流程
+                              </button>
+                              <button class="btn btn-success d-inline-flex align-items-center gap-1 fw-bold" id="runFlowBtn" type="submit" name="action" value="run" {% if is_version_preview %}disabled{% endif %}>
+                                  <i class="bi bi-play-fill"></i>
+                                  執行流程
+                              </button>
+                              <button class="d-none" type="submit" name="action" value="save_as" id="saveAsSubmitTrigger">另存流程</button>
                             </div>
                         </div>
                     </div>
@@ -859,6 +860,39 @@
   box-shadow: none;
   backdrop-filter: none;
 }
+.flow-save-status {
+  min-width: 8.75rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--bs-gray-500);
+  background: var(--app-card-bg);
+  text-align: center;
+  white-space: nowrap;
+}
+.flow-save-status.is-saving {
+  color: var(--bs-blue-600);
+  border-color: var(--bs-blue-100);
+  background: var(--bs-blue-50);
+}
+.flow-save-status.is-saved {
+  color: var(--bs-emerald-700);
+  border-color: rgba(16, 185, 129, 0.24);
+  background: var(--bs-emerald-50);
+}
+.flow-save-status.is-dirty {
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.12);
+}
+[data-bs-theme="dark"] .flow-save-status.is-dirty {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.36);
+  background: rgba(251, 191, 36, 0.12);
+}
 .flow-toolbar-group .btn,
 .flow-toolbar-group .dropdown {
   flex: 0 0 auto;
@@ -964,6 +998,10 @@
     top: 64px;
     right: 0.75rem;
     justify-content: flex-start;
+  }
+  .flow-save-status {
+    min-width: 100%;
+    order: 20;
   }
 }
 .flow-version-name-truncate {
@@ -2620,7 +2658,10 @@ let isDirty = false;
 const FLOW_BUILDER_SCROLL_STORAGE_KEY = `flowBuilderScroll:${TASK_ID}`;
 function markDirty(){
   if (IS_VERSION_PREVIEW) return;
-  if (!isInitialising) isDirty = true;
+  if (!isInitialising) {
+    isDirty = true;
+    setFlowSaveStatus("dirty");
+  }
 }
 function rememberFlowBuilderScroll(action){
   if (!['save', 'save_as'].includes(action)) return;
@@ -2691,7 +2732,54 @@ const addStepDropdownMenu = document.getElementById('addStepDropdownMenu');
 const addStepDropdown = addStepDropdownBtn?.closest('.dropdown') || null;
 const openTemplateModalBtn = document.getElementById('openTemplateModalBtn');
 const saveFlowBtn = document.getElementById('saveFlowBtn');
+const flowSaveStatus = document.getElementById('flowSaveStatus');
 const runFlowBtn = document.getElementById('runFlowBtn');
+const originalSaveFlowBtnHtml = saveFlowBtn?.innerHTML || '';
+let flowSaveStatusTimer = null;
+function formatFlowSaveTime(date = new Date()){
+  return date.toLocaleTimeString('zh-TW', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+function setFlowSaveStatus(state, detail = ''){
+  if (!flowSaveStatus) return;
+  if (flowSaveStatusTimer) {
+    clearTimeout(flowSaveStatusTimer);
+    flowSaveStatusTimer = null;
+  }
+  flowSaveStatus.classList.remove('is-saving', 'is-saved', 'is-dirty');
+  if (state === 'saving') {
+    flowSaveStatus.classList.add('is-saving');
+    flowSaveStatus.textContent = '儲存中...';
+    return;
+  }
+  if (state === 'saved') {
+    flowSaveStatus.classList.add('is-saved');
+    flowSaveStatus.textContent = `已保存 ${detail || formatFlowSaveTime()}`;
+    flowSaveStatusTimer = setTimeout(() => {
+      if (isDirty) return;
+      flowSaveStatus.classList.remove('is-saved');
+      flowSaveStatus.textContent = '已保存';
+    }, 5000);
+    return;
+  }
+  if (state === 'dirty') {
+    flowSaveStatus.classList.add('is-dirty');
+    flowSaveStatus.textContent = '有未保存變更';
+    return;
+  }
+  flowSaveStatus.textContent = detail || '尚未保存';
+}
+function setSaveSubmitting(isSubmitting){
+  if (!saveFlowBtn) return;
+  saveFlowBtn.disabled = !!isSubmitting;
+  saveFlowBtn.innerHTML = isSubmitting
+    ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> 儲存中...'
+    : originalSaveFlowBtnHtml;
+}
 const NON_NEGATIVE_STEP_FIELDS = new Set(["target_figure_index", "target_table_index"]);
 function normalizeNonNegativeStepInput(input) {
   if (!input) return true;
@@ -2776,9 +2864,10 @@ flowForm.addEventListener('submit', (e) => {
     alert('章節內圖片序號與章節內表格序號不可為負數');
     return;
   }
-  const action = e.submitter?.value;
+  const action = e.submitter?.value || 'save';
   if (['save', 'save_as', 'run'].includes(action) && validateFlowForm(action).length) {
     e.preventDefault();
+    setSaveSubmitting(false);
     return;
   }
   if (action === 'run') {
@@ -2786,8 +2875,13 @@ flowForm.addEventListener('submit', (e) => {
       .some(el => ['copy_files', 'copy_directory'].includes(el.value));
     if (hasCopy && !confirm('此流程包含複製步驟，確定要執行嗎？')) {
       e.preventDefault();
+      setSaveSubmitting(false);
       return;
     }
+  }
+  if (['save', 'save_as', 'save_version'].includes(action)) {
+    setFlowSaveStatus('saving');
+    setSaveSubmitting(true);
   }
   rememberFlowBuilderScroll(action);
   isDirty = false;
@@ -5118,6 +5212,14 @@ if (flowNameInput && flowNameCount) {
 
 restoreFlowBuilderScroll();
 isInitialising = false;
+(() => {
+  const currentUrl = new URL(window.location.href);
+  if (currentUrl.searchParams.get('save_status') === 'saved') {
+    setFlowSaveStatus('saved');
+    currentUrl.searchParams.delete('save_status');
+    window.history.replaceState(null, '', currentUrl.toString());
+  }
+})();
 </script>
 
 {% endblock %}

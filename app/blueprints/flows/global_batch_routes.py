@@ -207,12 +207,28 @@ def _list_global_batch_statuses(limit: int = 100) -> list[dict]:
         results = status.get("results") or []
         ok_count = sum(1 for item in results if item.get("ok"))
         fail_count = sum(1 for item in results if not item.get("ok"))
+        actor = status.get("actor") or {}
+        if isinstance(actor, dict):
+            actor_work_id = (actor.get("work_id") or "").strip()
+            actor_label = (actor.get("label") or "").strip()
+        else:
+            actor_work_id = ""
+            actor_label = str(actor or "").strip()
+        if not actor_label and not actor_work_id:
+            record = db.session.get(JobRecord, batch_id)
+            if record:
+                actor_work_id = (record.created_by_work_id or "").strip()
+                actor_label = (record.created_by_label or "").strip()
+        actor_display = actor_label or actor_work_id or "-"
         items.append(
             {
                 "id": batch_id,
                 "status": (status.get("status") or "unknown").lower(),
                 "created_at": created_at,
                 "completed_at": status.get("completed_at") or "",
+                "actor_work_id": actor_work_id,
+                "actor_label": actor_label,
+                "actor_display": actor_display,
                 "current_task_name": status.get("current_task_name") or "",
                 "task_count": len(items_in_batch),
                 "ok_count": ok_count,

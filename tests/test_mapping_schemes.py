@@ -9,6 +9,7 @@ import pytest
 from flask import url_for
 
 from app import create_app
+from app.blueprints.flows.global_batch_routes import _write_global_batch_status
 from app.blueprints.tasks.mapping_scheme_helpers import save_mapping_scheme, set_scheduled_mapping_scheme
 from app.extensions import ldap_manager
 from app.services.global_batch_items import encode_batch_item
@@ -328,6 +329,33 @@ def test_global_batch_page_accepts_saved_mapping_scheme(app, client) -> None:
     assert "流程" in html
     assert task_id in html
     assert "附錄圖片擷取" not in html
+
+
+def test_global_batch_history_shows_actor(app, client, tmp_path) -> None:
+    app.config["TASK_FOLDER"] = str(tmp_path)
+    batch_id = "actorhist"
+    _write_global_batch_status(
+        batch_id,
+        {
+            "id": batch_id,
+            "status": "completed",
+            "created_at": "2026-05-28 09:30:00",
+            "tasks": ["task-actor"],
+            "items": [{"kind": "task", "task_id": "task-actor", "label": "Task Actor / 全部流程"}],
+            "actor": {"work_id": "A123", "label": "A123 Tester"},
+            "results": [{"ok": True}],
+        },
+    )
+
+    with app.test_request_context():
+        url = url_for("global_batch_bp.global_batch_page")
+
+    response = client.get(url)
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "執行人員" in html
+    assert "A123 Tester" in html
 
 
 def test_global_batch_run_executes_saved_mapping_scheme(app, client, monkeypatch) -> None:

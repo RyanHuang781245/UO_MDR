@@ -971,6 +971,7 @@
                 <th class="text-center">執行狀態</th>
                 <th class="text-center">項目數</th>
                 <th class="text-center">成功 / 失敗</th>
+                <th class="text-center">執行人員</th>
                 <th class="text-center">建立時間</th>
                 <th class="text-center">操作</th>
               </tr>
@@ -1006,6 +1007,7 @@
                   <span class="text-muted mx-1">/</span>
                   <span class="text-danger fw-bold">{{ item.fail_count }}</span>
                 </td>
+                <td class="text-center text-muted small">{{ item.actor_display }}</td>
                 <td class="text-center text-muted small font-monospace">{{ item.created_at }}</td>
                 <td class="text-center">
                   <div class="d-flex justify-content-center gap-1">
@@ -1044,7 +1046,7 @@
               </tr>
               {% else %}
               <tr>
-                <td colspan="6" class="text-center text-muted py-5">
+                <td colspan="7" class="text-center text-muted py-5">
                   <i class="bi bi-calendar-x fs-2 d-block mb-2 opacity-25"></i>
                   尚未有執行歷史紀錄
                 </td>

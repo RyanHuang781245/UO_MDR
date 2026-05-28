@@ -2319,6 +2319,18 @@ function buildInsertMenu(sid, position){
     .join('');
 }
 
+function buildReplaceMenu(sid, currentType){
+  return ORDERED_STEP_KEYS
+    .filter((key) => SUPPORTED_STEPS[key])
+    .map((key) => {
+      const isCurrent = key === currentType;
+      const activeClass = isCurrent ? " active" : "";
+      const suffix = isCurrent ? " <span class=\"small\">(目前)</span>" : "";
+      return `<li><a class="dropdown-item${activeClass}" href="#" onclick="replaceStep('${sid}', '${key}'); return false;">${SUPPORTED_STEPS[key].label}${suffix}</a></li>`;
+    })
+    .join('');
+}
+
 function bindSubheadingToggle(card){
   const subheadingToggle = card.querySelector(".toggle-subheading");
   const subheadingInputWrap = card.querySelector(".subheading-input");
@@ -3511,6 +3523,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
 
   const menuBefore = buildInsertMenu(sid, 'before');
   const menuAfter = buildInsertMenu(sid, 'after');
+  const menuReplace = buildReplaceMenu(sid, typeKey);
 
   const isWordExtractStep = typeKey === "extract_word_chapter";
 
@@ -3611,6 +3624,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <div class="btn-group">
           <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" title="插入下方"><i class="bi bi-arrow-bar-down"></i></button>
           <ul class="dropdown-menu">${menuAfter}</ul>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="更換步驟"><i class="bi bi-arrow-left-right"></i></button>
+          <ul class="dropdown-menu">${menuReplace}</ul>
         </div>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')" title="上移"><i class="bi bi-arrow-up"></i></button>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')" title="下移"><i class="bi bi-arrow-down"></i></button>
@@ -3804,7 +3821,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     card.addEventListener("change", updateSummary);
     if (IS_VERSION_PREVIEW) applyReadonlyToStepCard(card);
 
-    return;
+    return card;
   }
 
   const targetTitleRaw = preset["use_chapter_title"];
@@ -4219,6 +4236,10 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
           <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" title="插入下方"><i class="bi bi-arrow-bar-down"></i></button>
           <ul class="dropdown-menu">${menuAfter}</ul>
         </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="更換步驟"><i class="bi bi-arrow-left-right"></i></button>
+          <ul class="dropdown-menu">${menuReplace}</ul>
+        </div>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveUp('${sid}')" title="上移"><i class="bi bi-arrow-up"></i></button>
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="moveDown('${sid}')" title="下移"><i class="bi bi-arrow-down"></i></button>
         <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeStep('${sid}')" title="刪除"><i class="bi bi-trash"></i></button>
@@ -4329,6 +4350,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     sourceInput.addEventListener("change", () => syncCopyTargetNameState(card, "source_dir"));
   }
   if (IS_VERSION_PREVIEW) applyReadonlyToStepCard(card);
+  return card;
 }
 function applyReadonlyToStepCard(card){
   if (!card) return;
@@ -4359,6 +4381,44 @@ function removeStep(sid){
   const el = document.querySelector(`.card[data-sid="${sid}"]`);
   if (el) el.remove();
   updateOrder();
+}
+function collectStepPreset(card){
+  if (!card) return {};
+  const sid = card.dataset.sid || "";
+  if (!sid) return {};
+  card.querySelectorAll(".chapter-ref").forEach(syncChapterRefInput);
+  card.querySelectorAll(".continuous-end-ref").forEach(syncExplicitEndRefInput);
+  const prefix = `step_${sid}_`;
+  const preset = {};
+  card.querySelectorAll(`[name^="${prefix}"]`).forEach((field) => {
+    const name = field.getAttribute("name") || "";
+    const key = name.slice(prefix.length);
+    if (!key || key === "type") return;
+    if ((field.type === "checkbox" || field.type === "radio") && !field.checked) return;
+    preset[key] = field.value;
+  });
+  return preset;
+}
+function replaceStep(sid, nextType){
+  if (IS_VERSION_PREVIEW) return;
+  const currentCard = document.querySelector(`.card[data-sid="${sid}"]`);
+  const spec = SUPPORTED_STEPS[nextType];
+  if (!currentCard || !spec) return;
+  const currentType = currentCard.querySelector(`input[name="step_${sid}_type"]`)?.value || "";
+  if (currentType === nextType) return;
+  const preset = collectStepPreset(currentCard);
+  const nextCard = addStep(nextType, preset, sid, "before");
+  currentCard.remove();
+  updateOrder();
+  if (nextCard) {
+    nextCard.classList.remove("step-moved-highlight");
+    void nextCard.offsetWidth;
+    nextCard.classList.add("step-moved-highlight");
+    setTimeout(() => {
+      nextCard.classList.remove("step-moved-highlight");
+    }, 1200);
+    nextCard.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 }
 function moveStep(sid, direction){
   if (IS_VERSION_PREVIEW) return;

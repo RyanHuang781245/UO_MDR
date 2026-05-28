@@ -30,6 +30,18 @@ from .mapping_routes import _safe_uploaded_filename
 TASK_TEXT_LIMIT = 50
 
 
+def _parse_task_id_csv(value: str | None) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw_id in (value or "").split(","):
+        task_id = raw_id.strip()
+        if not task_id or task_id in seen:
+            continue
+        seen.add(task_id)
+        result.append(task_id)
+    return result
+
+
 def _validate_limited_text(value: str, label: str, *, required: bool = False) -> str | None:
     normalized = (value or "").strip()
     if required and not normalized:
@@ -49,6 +61,15 @@ def _wants_json_response() -> bool:
 def _build_task_listing_context() -> dict:
     task_list_all = list_tasks()
     pin_scope_key, _ = _get_actor_info()
+    pinned_task_ids = _parse_task_id_csv(request.args.get("pinned_task_ids"))
+    if pinned_task_ids:
+        pinned_order = {task_id: index for index, task_id in enumerate(pinned_task_ids)}
+        task_list_all.sort(
+            key=lambda task: (
+                0 if task.get("id") in pinned_order else 1,
+                pinned_order.get(task.get("id"), 0),
+            )
+        )
 
     page = request.args.get("page", 1, type=int)
     per_page = 10
@@ -76,6 +97,11 @@ def _build_task_listing_context() -> dict:
         "pagination": pagination,
         "all_task_ids": [(t.get("id") or "").strip() for t in task_list_all if (t.get("id") or "").strip()],
         "pin_scope_key": pin_scope_key or "anonymous",
+        "pinned_task_ids": ",".join(
+            task_id
+            for task_id in pinned_task_ids
+            if any((t.get("id") or "").strip() == task_id for t in task_list_all)
+        ),
         "allowed_nas_roots": get_configured_nas_roots(),
         "total_tasks": total_count,
     }

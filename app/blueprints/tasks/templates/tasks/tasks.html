@@ -377,17 +377,17 @@
             <nav>
                 <ul class="pagination pagination-sm mb-0 gap-1">
                     <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page-1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items')) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page-1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items'), pinned_task_ids=request.args.get('pinned_task_ids')) if pagination.has_prev else '#' }}" title="上一頁"><i class="bi bi-chevron-left"></i></a>
                     </li>
                     {% for p in range(1, pagination.total_pages + 1) %}
                         {% if p >= pagination.page - 2 and p <= pagination.page + 2 %}
                         <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=p, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items')) }}">{{ p }}</a>
+                            <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=p, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items'), pinned_task_ids=request.args.get('pinned_task_ids')) }}">{{ p }}</a>
                         </li>
                         {% endif %}
                     {% endfor %}
                     <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page+1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items')) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
+                        <a class="page-link rounded-2" href="{{ url_for('tasks_bp.tasks', page=pagination.page+1, append_to_batch=request.args.get('append_to_batch'), existing_task_ids=request.args.get('existing_task_ids'), existing_batch_items=request.args.get('existing_batch_items'), pinned_task_ids=request.args.get('pinned_task_ids')) if pagination.has_next else '#' }}" title="下一頁"><i class="bi bi-chevron-right"></i></a>
                     </li>
                 </ul>
             </nav>
@@ -1522,6 +1522,47 @@ function initTaskDescDrawer(){
       }
   }
 
+  function pinnedIdsCsv() {
+      return Array.from(pinnedTaskIds)
+          .filter(id => allTaskIds.includes(id))
+          .join(',');
+  }
+
+  function normalizeTaskIdCsv(value) {
+      const seen = new Set();
+      return String(value || '')
+          .split(',')
+          .map(v => v.trim())
+          .filter(id => {
+              if (!id || !allTaskIds.includes(id) || seen.has(id)) return false;
+              seen.add(id);
+              return true;
+          })
+          .join(',');
+  }
+
+  function applyPinnedUrlParam(url, options = {}) {
+      const csv = pinnedIdsCsv();
+      if (csv) url.searchParams.set('pinned_task_ids', csv);
+      else url.searchParams.delete('pinned_task_ids');
+      if (options.forceFirstPage) url.searchParams.set('page', '1');
+  }
+
+  function syncPinnedUrlState(options = {}) {
+      const url = new URL(window.location.href);
+      const before = url.toString();
+      applyPinnedUrlParam(url, options);
+      const queryCsv = normalizeTaskIdCsv(pageUrlParams.get('pinned_task_ids') || '');
+      const currentCsv = pinnedIdsCsv();
+      if (queryCsv === currentCsv && url.toString() === before) return false;
+      if (options.reload) {
+          window.location.href = url.toString();
+      } else {
+          window.history.replaceState(null, '', url.toString());
+      }
+      return true;
+  }
+
   function refreshPinState() {
       const rows = Array.from(taskTableBody?.querySelectorAll('.task-row') || []);
       rows.sort((a, b) => {
@@ -1553,10 +1594,15 @@ function initTaskDescDrawer(){
       if (allTaskIds.includes(id)) selectedTaskIds.add(id);
   });
   loadPinnedTaskIds();
+  normalizeTaskIdCsv(pageUrlParams.get('pinned_task_ids') || '')
+      .split(',')
+      .filter(Boolean)
+      .forEach(id => pinnedTaskIds.add(id));
   Array.from(pinnedTaskIds).forEach(id => {
       if (!allTaskIds.includes(id)) pinnedTaskIds.delete(id);
   });
   savePinnedTaskIds();
+  if (syncPinnedUrlState({ reload: true })) return;
   Array.from(taskTableBody?.querySelectorAll('.task-row') || []).forEach((row, index) => {
       row.dataset.defaultOrder = String(index);
   });
@@ -1586,6 +1632,7 @@ function initTaskDescDrawer(){
               url.searchParams.delete('existing_task_ids');
               url.searchParams.delete('existing_batch_items');
           }
+          applyPinnedUrlParam(url);
           link.href = url.toString();
       });
   }
@@ -1606,6 +1653,7 @@ function initTaskDescDrawer(){
           url.searchParams.delete('existing_task_ids');
           url.searchParams.delete('existing_batch_items');
       }
+      applyPinnedUrlParam(url);
       window.history.replaceState(null, '', url.toString());
   }
 
@@ -1672,6 +1720,7 @@ function initTaskDescDrawer(){
           if (pinnedTaskIds.has(tid)) pinnedTaskIds.delete(tid);
           else pinnedTaskIds.add(tid);
           savePinnedTaskIds();
+          if (syncPinnedUrlState({ reload: true, forceFirstPage: true })) return;
           updateTaskUI();
       });
 

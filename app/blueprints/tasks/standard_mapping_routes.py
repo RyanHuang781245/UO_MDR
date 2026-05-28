@@ -194,9 +194,9 @@ def _parse_target_chapter_ref(values, *, limit_to_chapter: bool) -> str:
     return target_chapter_ref
 
 
-def _parse_target_table_index(values, *, limit_to_chapter: bool) -> tuple[int, ...] | None:
-    raw_value = str(values.get("target_table_index") or "").strip()
-    if not limit_to_chapter or not raw_value:
+def _parse_table_index_expression(raw_value: str) -> tuple[int, ...] | None:
+    raw_value = str(raw_value or "").strip()
+    if not raw_value:
         return None
     resolved: list[int] = []
     seen: set[int] = set()
@@ -231,6 +231,53 @@ def _parse_target_table_index(values, *, limit_to_chapter: bool) -> tuple[int, .
     return tuple(resolved)
 
 
+def _parse_target_table_index(values, *, limit_to_chapter: bool) -> tuple[int, ...] | None:
+    if not limit_to_chapter:
+        return None
+    return _parse_table_index_expression(str(values.get("target_table_index") or "").strip())
+
+
+def _get_form_list(values, name: str) -> list[str]:
+    if hasattr(values, "getlist"):
+        return [str(item).strip() for item in values.getlist(name)]
+    value = str(values.get(name) or "").strip()
+    return [value] if value else []
+
+
+def _parse_target_scopes(values, *, limit_to_chapter: bool) -> tuple[dict, ...]:
+    if not limit_to_chapter:
+        return ()
+
+    selected_refs = _get_form_list(values, "target_scope_chapter_ref")
+    manual_refs = _get_form_list(values, "manual_target_scope_chapter_ref")
+    table_indexes = _get_form_list(values, "target_scope_table_index")
+    has_scope_rows = bool(selected_refs or manual_refs or table_indexes)
+
+    if has_scope_rows:
+        scopes: list[dict] = []
+        row_count = max(len(selected_refs), len(manual_refs), len(table_indexes))
+        for index in range(row_count):
+            selected_ref = selected_refs[index] if index < len(selected_refs) else ""
+            manual_ref = manual_refs[index] if index < len(manual_refs) else ""
+            table_index_text = table_indexes[index] if index < len(table_indexes) else ""
+            chapter_ref = manual_ref or selected_ref
+            if not chapter_ref and table_index_text:
+                raise ValueError("已輸入表格索引時，請同時選擇或輸入指定章節")
+            if not chapter_ref:
+                continue
+            scopes.append({
+                "chapter_ref": chapter_ref,
+                "table_indexes": _parse_table_index_expression(table_index_text),
+            })
+        if not scopes:
+            raise ValueError("請選擇或輸入指定章節")
+        return tuple(scopes)
+
+    chapter_ref = _parse_target_chapter_ref(values, limit_to_chapter=limit_to_chapter)
+    table_index = _parse_target_table_index(values, limit_to_chapter=limit_to_chapter)
+    return ({"chapter_ref": chapter_ref, "table_indexes": table_index},) if chapter_ref else ()
+
+
 def _format_target_table_index_display(value) -> str:
     if value is None or value == "":
         return ""
@@ -244,6 +291,36 @@ def _format_target_table_index_display(value) -> str:
                 parts.append(text)
         return ",".join(parts)
     return str(value).strip()
+
+
+def _format_target_scopes_display(scopes) -> str:
+    parts: list[str] = []
+    for scope in scopes or []:
+        if not isinstance(scope, dict):
+            continue
+        chapter_ref = str(scope.get("chapter_ref") or scope.get("target_chapter_ref") or "").strip()
+        if not chapter_ref:
+            continue
+        table_text = _format_target_table_index_display(scope.get("table_indexes") or scope.get("target_table_index"))
+        parts.append(f"{chapter_ref}（表格 {table_text}）" if table_text else chapter_ref)
+    return "；".join(parts)
+
+
+def _normalize_target_scope_rows(scopes) -> list[dict]:
+    rows: list[dict] = []
+    for scope in scopes or []:
+        if not isinstance(scope, dict):
+            continue
+        chapter_ref = str(scope.get("chapter_ref") or scope.get("target_chapter_ref") or "").strip()
+        if not chapter_ref:
+            continue
+        table_indexes = scope.get("table_indexes") if "table_indexes" in scope else scope.get("target_table_index")
+        rows.append({
+            "chapter_ref": chapter_ref,
+            "table_indexes": table_indexes,
+            "table_index_display": _format_target_table_index_display(table_indexes),
+        })
+    return rows
 
 
 def _load_chapter_options(files_dir: str, selected_word: str) -> tuple[list[dict], str]:
@@ -332,6 +409,7 @@ def _render_standard_mapping_page(
     limit_to_chapter: bool = False,
     target_chapter_ref: str = "",
     target_table_index: tuple[int, ...] | list[int] | int | None = None,
+    target_scopes: tuple[dict, ...] | list[dict] | None = None,
     manual_target_chapter_ref: str = "",
     manual_header_mappings: dict[int, dict[str, str]] | None = None,
 ):
@@ -353,6 +431,16 @@ def _render_standard_mapping_page(
     iso_priority_positions = {label: index + 1 for index, label in enumerate(active_iso_priority)}
     interactive_rows = len({item.get("row_key", "") for item in reference_payload.values() if item.get("row_key")})
     table_checks = (preview_result or {}).get("table_checks", [])
+    active_target_scopes = list((preview_result or {}).get("target_scopes") or target_scopes or [])
+    active_target_scope_display = (preview_result or {}).get("target_scope_display") or _format_target_scopes_display(active_target_scopes)
+    active_target_chapter_ref = (preview_result or {}).get("target_chapter_ref", target_chapter_ref)
+    active_target_table_index = (preview_result or {}).get("target_table_index", target_table_index)
+    if not active_target_scopes and active_target_chapter_ref:
+        active_target_scopes = [{
+            "chapter_ref": active_target_chapter_ref,
+            "table_indexes": active_target_table_index,
+        }]
+    active_target_scope_rows = _normalize_target_scope_rows(active_target_scopes)
     return render_template(
         "tasks/standard_mapping.html",
         task_id=task_id,
@@ -378,10 +466,12 @@ def _render_standard_mapping_page(
         standard_priority_fields=_STANDARD_PRIORITY_FIELDS,
         required_headers=active_required_headers,
         default_required_headers=DEFAULT_REQUIRED_HEADERS,
-        limit_to_chapter=bool((preview_result or {}).get("target_chapter_ref") or limit_to_chapter),
-        target_chapter_ref=(preview_result or {}).get("target_chapter_ref", target_chapter_ref),
-        target_table_index=(preview_result or {}).get("target_table_index", target_table_index),
-        target_table_index_display=_format_target_table_index_display((preview_result or {}).get("target_table_index", target_table_index)),
+        limit_to_chapter=bool(active_target_scope_rows or active_target_chapter_ref or limit_to_chapter),
+        target_chapter_ref=active_target_chapter_ref,
+        target_table_index=active_target_table_index,
+        target_table_index_display=_format_target_table_index_display(active_target_table_index),
+        target_scopes=active_target_scope_rows,
+        target_scope_display=active_target_scope_display,
         manual_target_chapter_ref=manual_target_chapter_ref,
         scope_table_count=(preview_result or {}).get("scope_table_count", 0),
         chapter_options=chapter_options,
@@ -407,8 +497,9 @@ def task_standard_mapping(task_id):
             manual_header_mappings = _parse_manual_header_mappings(request.values)
             limit_to_chapter = _parse_limit_to_chapter(request.values)
             manual_target_chapter_ref = str(request.values.get("manual_target_chapter_ref") or "").strip()
-            target_chapter_ref = _parse_target_chapter_ref(request.values, limit_to_chapter=limit_to_chapter)
-            target_table_index = _parse_target_table_index(request.values, limit_to_chapter=limit_to_chapter)
+            target_scopes = _parse_target_scopes(request.values, limit_to_chapter=limit_to_chapter)
+            target_chapter_ref = _format_target_scopes_display(target_scopes)
+            target_table_index = None
         except ValueError as exc:
             flash(str(exc), "danger")
             iso_priority = DEFAULT_ISO_PRIORITY
@@ -417,6 +508,7 @@ def task_standard_mapping(task_id):
             limit_to_chapter = False
             target_chapter_ref = ""
             target_table_index = None
+            target_scopes = ()
             manual_target_chapter_ref = ""
             manual_header_mappings = {}
         return _render_standard_mapping_page(
@@ -430,6 +522,7 @@ def task_standard_mapping(task_id):
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
+            target_scopes=target_scopes,
             manual_target_chapter_ref=manual_target_chapter_ref,
             manual_header_mappings=manual_header_mappings,
         )
@@ -445,8 +538,9 @@ def task_standard_mapping(task_id):
         manual_header_mappings = _parse_manual_header_mappings(request.form)
         limit_to_chapter = _parse_limit_to_chapter(request.form)
         manual_target_chapter_ref = str(request.form.get("manual_target_chapter_ref") or "").strip()
-        target_chapter_ref = _parse_target_chapter_ref(request.form, limit_to_chapter=limit_to_chapter)
-        target_table_index = _parse_target_table_index(request.form, limit_to_chapter=limit_to_chapter)
+        target_scopes = _parse_target_scopes(request.form, limit_to_chapter=limit_to_chapter)
+        target_chapter_ref = _format_target_scopes_display(target_scopes)
+        target_table_index = None
     except ValueError as exc:
         flash(str(exc), "danger")
         return _render_standard_mapping_page(
@@ -460,6 +554,7 @@ def task_standard_mapping(task_id):
             limit_to_chapter=False,
             target_chapter_ref="",
             target_table_index=None,
+            target_scopes=(),
             manual_target_chapter_ref="",
             manual_header_mappings={},
         )
@@ -469,8 +564,7 @@ def task_standard_mapping(task_id):
         if action == "inspect_headers":
             result = inspect_document_tables(
                 word_path,
-                target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
-                target_table_index=target_table_index if limit_to_chapter else None,
+                target_scopes=target_scopes if limit_to_chapter else None,
                 manual_header_mappings=manual_header_mappings,
             )
             _record_task_standard_mapping_audit(
@@ -480,6 +574,7 @@ def task_standard_mapping(task_id):
                     "word_path": selected_word,
                     "target_chapter_ref": target_chapter_ref,
                     "target_table_index": _format_target_table_index_display(target_table_index),
+                    "target_scopes": list(target_scopes),
                     "manual_header_mapping_count": len(manual_header_mappings),
                     "table_count": len(result.get("table_checks") or []),
                 },
@@ -488,8 +583,7 @@ def task_standard_mapping(task_id):
         else:
             inspection_result = inspect_document_tables(
                 word_path,
-                target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
-                target_table_index=target_table_index if limit_to_chapter else None,
+                target_scopes=target_scopes if limit_to_chapter else None,
                 manual_header_mappings=manual_header_mappings,
             )
             if _has_unresolved_manual_mapping(inspection_result.get("table_checks")):
@@ -506,6 +600,7 @@ def task_standard_mapping(task_id):
                     limit_to_chapter=limit_to_chapter,
                     target_chapter_ref=target_chapter_ref,
                     target_table_index=target_table_index,
+                    target_scopes=target_scopes,
                     manual_target_chapter_ref=manual_target_chapter_ref,
                     manual_header_mappings=manual_header_mappings,
                 )
@@ -520,8 +615,7 @@ def task_standard_mapping(task_id):
                 iso_priority=iso_priority,
                 enabled_standard_levels=enabled_standard_levels,
                 required_headers=required_headers,
-                target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
-                target_table_index=target_table_index if limit_to_chapter else None,
+                target_scopes=target_scopes if limit_to_chapter else None,
                 manual_header_mappings=manual_header_mappings,
             )
             preview_stats = _build_stats(result.get("report", []))
@@ -534,6 +628,7 @@ def task_standard_mapping(task_id):
                     "harmonised_excel_path": selected_harmonised_excel,
                     "target_chapter_ref": target_chapter_ref,
                     "target_table_index": _format_target_table_index_display(target_table_index),
+                    "target_scopes": list(target_scopes),
                     "manual_header_mapping_count": len(manual_header_mappings),
                     "updated_count": preview_stats.get("updated", 0),
                     "same_count": preview_stats.get("same", 0),
@@ -555,6 +650,7 @@ def task_standard_mapping(task_id):
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
+            target_scopes=target_scopes,
             manual_target_chapter_ref=manual_target_chapter_ref,
             manual_header_mappings=manual_header_mappings,
         )
@@ -569,6 +665,7 @@ def task_standard_mapping(task_id):
                 "harmonised_excel_path": selected_harmonised_excel,
                 "target_chapter_ref": target_chapter_ref,
                 "target_table_index": _format_target_table_index_display(target_table_index),
+                "target_scopes": list(target_scopes),
                 "manual_header_mapping_count": len(manual_header_mappings),
                 "error": str(exc),
             },
@@ -585,6 +682,7 @@ def task_standard_mapping(task_id):
             limit_to_chapter=limit_to_chapter,
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
+            target_scopes=target_scopes,
             manual_target_chapter_ref=manual_target_chapter_ref,
             manual_header_mappings=manual_header_mappings,
         )
@@ -601,6 +699,7 @@ def task_standard_mapping(task_id):
         limit_to_chapter=limit_to_chapter,
         target_chapter_ref=target_chapter_ref,
         target_table_index=target_table_index,
+        target_scopes=target_scopes,
         manual_target_chapter_ref=manual_target_chapter_ref,
         manual_header_mappings=manual_header_mappings,
     )
@@ -612,6 +711,12 @@ def task_standard_mapping_download(task_id):
     selected_word = (request.form.get("word_path") or "").strip()
     selected_excel = (request.form.get("excel_path") or "").strip()
     selected_harmonised_excel = (request.form.get("harmonised_excel_path") or "").strip()
+    manual_header_mappings: dict[int, dict[str, str]] = {}
+    limit_to_chapter = False
+    manual_target_chapter_ref = ""
+    target_chapter_ref = ""
+    target_table_index = None
+    target_scopes: tuple[dict, ...] = ()
 
     try:
         iso_priority = _parse_iso_priority(request.form)
@@ -620,8 +725,8 @@ def task_standard_mapping_download(task_id):
         manual_header_mappings = _parse_manual_header_mappings(request.form)
         limit_to_chapter = _parse_limit_to_chapter(request.form)
         manual_target_chapter_ref = str(request.form.get("manual_target_chapter_ref") or "").strip()
-        target_chapter_ref = _parse_target_chapter_ref(request.form, limit_to_chapter=limit_to_chapter)
-        target_table_index = _parse_target_table_index(request.form, limit_to_chapter=limit_to_chapter)
+        target_scopes = _parse_target_scopes(request.form, limit_to_chapter=limit_to_chapter)
+        target_chapter_ref = _format_target_scopes_display(target_scopes)
         word_path = _safe_task_file(files_dir, selected_word, {".docx"})
         excel_path = _safe_task_file(files_dir, selected_excel, _ALLOWED_EXCEL_EXTENSIONS)
         harmonised_reference_path = _safe_task_file(files_dir, selected_harmonised_excel, _ALLOWED_EXCEL_EXTENSIONS) if selected_harmonised_excel else None
@@ -630,8 +735,7 @@ def task_standard_mapping_download(task_id):
         edit_map = _parse_edit_map(request.form.get("edits_json", ""))
         inspection_result = inspect_document_tables(
             word_path,
-            target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
-            target_table_index=target_table_index if limit_to_chapter else None,
+            target_scopes=target_scopes if limit_to_chapter else None,
             manual_header_mappings=manual_header_mappings,
         )
         if _has_unresolved_manual_mapping(inspection_result.get("table_checks")):
@@ -648,6 +752,7 @@ def task_standard_mapping_download(task_id):
                 limit_to_chapter=limit_to_chapter,
                 target_chapter_ref=target_chapter_ref,
                 target_table_index=target_table_index,
+                target_scopes=target_scopes,
                 manual_target_chapter_ref=manual_target_chapter_ref,
                 manual_header_mappings=manual_header_mappings,
             )
@@ -669,8 +774,7 @@ def task_standard_mapping_download(task_id):
             iso_priority=iso_priority,
             enabled_standard_levels=enabled_standard_levels,
             required_headers=required_headers,
-            target_chapter_ref=target_chapter_ref if limit_to_chapter else "",
-            target_table_index=target_table_index if limit_to_chapter else None,
+            target_scopes=target_scopes if limit_to_chapter else None,
             manual_header_mappings=manual_header_mappings,
         )
         download_stats = _build_stats(inspection_result.get("report", []))
@@ -683,6 +787,7 @@ def task_standard_mapping_download(task_id):
                 "harmonised_excel_path": selected_harmonised_excel,
                 "target_chapter_ref": target_chapter_ref,
                 "target_table_index": _format_target_table_index_display(target_table_index),
+                "target_scopes": list(target_scopes),
                 "manual_header_mapping_count": len(manual_header_mappings),
                 "updated_count": download_stats.get("updated", 0),
                 "same_count": download_stats.get("same", 0),
@@ -700,6 +805,7 @@ def task_standard_mapping_download(task_id):
                 "harmonised_excel_path": selected_harmonised_excel,
                 "target_chapter_ref": target_chapter_ref,
                 "target_table_index": _format_target_table_index_display(target_table_index),
+                "target_scopes": list(target_scopes),
                 "manual_header_mapping_count": len(manual_header_mappings),
                 "error": str(exc),
             },
@@ -729,6 +835,7 @@ def task_standard_mapping_download(task_id):
                 "harmonised_excel_path": selected_harmonised_excel,
                 "target_chapter_ref": target_chapter_ref,
                 "target_table_index": _format_target_table_index_display(target_table_index),
+                "target_scopes": list(target_scopes),
                 "manual_header_mapping_count": len(manual_header_mappings),
                 "error": str(exc),
             },

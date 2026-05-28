@@ -52,6 +52,7 @@ class BaseConfig:
     JOB_STALE_AFTER_SECONDS = int(os.environ.get("JOB_STALE_AFTER_SECONDS") or 21600)
 
     AUTH_ENABLED = parse_bool(os.environ.get("AUTH_ENABLED"), True)
+    SESSION_COOKIE_NAME = os.environ.get("SESSION_COOKIE_NAME", "uo_mdr_session")
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = parse_bool(os.environ.get("SESSION_COOKIE_SECURE"), False)

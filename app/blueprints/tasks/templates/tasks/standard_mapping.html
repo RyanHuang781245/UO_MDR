@@ -520,6 +520,26 @@
     gap: 0.75rem;
     margin-top: 0.75rem;
   }
+  .standard-target-scope-row {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1.1fr) minmax(12rem, 1fr) minmax(10rem, 0.8fr) auto;
+    gap: 0.75rem;
+    align-items: end;
+  }
+  .standard-target-scope-row__actions {
+    display: flex;
+    align-items: center;
+    min-height: 2.375rem;
+  }
+  .standard-target-scope-actions {
+    display: flex;
+    justify-content: flex-start;
+  }
+  @media (max-width: 991.98px) {
+    .standard-target-scope-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
   .standard-preview-bar {
     display: flex;
     align-items: flex-start;
@@ -1069,6 +1089,10 @@
       position: static;
       margin-top: 0.75rem;
     }
+    .standard-manual-mapping-spacer,
+    .standard-manual-mapping-svg {
+      display: none;
+    }
     .standard-preview-navigator {
       position: static;
       flex-direction: column;
@@ -1154,22 +1178,52 @@
       max-height: 4.8rem;
     }
     .reference-tooltip {
-      width: calc(100vw - 24px);
+      inset: auto 0 0 0 !important;
+      width: auto;
+      max-width: none;
+      padding: 0 0.75rem 0.75rem;
     }
     .preview-cell.has-reference::after {
       top: 0.8rem;
       right: 0.8rem;
     }
     .reference-tooltip-card {
-      border-radius: 1.2rem;
-      max-height: calc(100vh - 84px);
+      border-radius: 1rem 1rem 0.875rem 0.875rem;
+      max-height: calc(100dvh - 1.5rem);
+    }
+    .reference-tooltip-header {
+      flex-wrap: wrap;
+      padding: 0.875rem;
+    }
+    .reference-tooltip-status {
+      white-space: normal;
+      text-align: center;
+    }
+    .reference-tooltip-grid {
+      grid-template-columns: 1fr;
+      gap: 0.25rem;
+      padding: 0.875rem;
+    }
+    .reference-tooltip-value {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .reference-tooltip-section {
+      padding: 0.875rem;
     }
     .reference-candidate__actions {
       width: 100%;
       align-items: stretch;
     }
+    .reference-edit-actions {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .reference-edit-actions .btn {
+      width: 100%;
+    }
     .reference-candidate-list {
-      max-height: calc(100vh - 360px);
+      max-height: min(45dvh, 320px);
     }
   }
   [data-bs-theme="dark"] .standard-summary-card,
@@ -1471,54 +1525,71 @@
                         指定章節下的表格
                       </label>
                     </div>
-                    <div class="standard-chapter-scope__fields">
+                    <div class="standard-chapter-scope__fields" id="targetScopeRows">
+                      {% set scope_rows = target_scopes if target_scopes else [{'chapter_ref': target_chapter_ref, 'table_index_display': target_table_index_display}] %}
+                      {% for scope in scope_rows %}
+                      {% set matching_scope_options = chapter_options|selectattr('value', 'equalto', scope.chapter_ref)|list %}
+                      <div class="standard-target-scope-row" data-target-scope-row>
+                        <div>
+                          <label class="form-label small fw-bold text-uppercase text-muted">指定章節</label>
+                          <select
+                            class="form-select form-control-custom rounded-2"
+                            name="target_scope_chapter_ref"
+                            data-target-scope-control
+                            {% if not limit_to_chapter %}disabled{% endif %}
+                          >
+                            <option value="">請選擇章節</option>
+                            {% for option in chapter_options %}
+                              <option value="{{ option.value }}" {% if option.value == scope.chapter_ref %}selected{% endif %}>
+                                {{ option.label }}
+                              </option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <div>
+                          <label class="form-label small fw-bold text-uppercase text-muted">手動輸入章節</label>
+                          <input
+                            class="form-control form-control-custom rounded-2"
+                            name="manual_target_scope_chapter_ref"
+                            value="{{ scope.chapter_ref if scope.chapter_ref and not matching_scope_options else '' }}"
+                            placeholder="例如 4.5 Applicable Standards and Guidance Documents"
+                            data-target-scope-control
+                            {% if not limit_to_chapter %}disabled{% endif %}
+                          >
+                        </div>
+                        <div>
+                          <label class="form-label small fw-bold text-uppercase text-muted">章節內表格索引</label>
+                          <input
+                            class="form-control form-control-custom rounded-2"
+                            name="target_scope_table_index"
+                            type="text"
+                            value="{{ scope.table_index_display or '' }}"
+                            placeholder="留白表示處理該章節所有表格，例如 1,3,5 或 2-4"
+                            data-target-scope-control
+                            {% if not limit_to_chapter %}disabled{% endif %}
+                          >
+                        </div>
+                        <div class="standard-target-scope-row__actions">
+                          <button class="btn btn-outline-danger btn-sm" type="button" data-remove-target-scope {% if not limit_to_chapter %}disabled{% endif %}>
+                            <i class="bi bi-trash"></i>
+                          </button>
+                        </div>
+                      </div>
+                      {% endfor %}
+                      <div class="standard-target-scope-actions">
+                        <button class="btn btn-outline-primary btn-sm" type="button" id="addTargetScopeBtn" {% if not limit_to_chapter %}disabled{% endif %}>
+                          <i class="bi bi-plus-lg"></i>
+                          新增章節
+                        </button>
+                      </div>
                       <div>
-                        <label class="form-label small fw-bold text-uppercase text-muted" for="targetChapterRef">指定章節</label>
-                        <select
-                          class="form-select form-control-custom rounded-2"
-                          id="targetChapterRef"
-                          name="target_chapter_ref"
-                          {% if not limit_to_chapter %}disabled{% endif %}
-                        >
-                          <option value="">請選擇章節</option>
-                          {% for option in chapter_options %}
-                            <option value="{{ option.value }}" {% if option.value == target_chapter_ref %}selected{% endif %}>
-                              {{ option.label }}
-                            </option>
-                          {% endfor %}
-                        </select>
                         {% if chapter_options_error %}
                           <div class="small text-danger mt-2">{{ chapter_options_error }}</div>
                         {% elif chapter_options %}
-                          <div class="small text-muted mt-2">已自動掃描 {{ chapter_options|length }} 個可選章節</div>
+                          <div class="small text-muted mt-2">已自動掃描 {{ chapter_options|length }} 個可選章節；手動值會優先於同列下拉選單</div>
                         {% else %}
-                          <div class="small text-muted mt-2">請先選擇 Word 文件以載入章節清單</div>
+                          <div class="small text-muted mt-2">請先選擇 Word 文件以載入章節清單；表格索引可輸入逗號清單或範圍，例如 1,3,5 或 2-4</div>
                         {% endif %}
-                      </div>
-                      <div>
-                        <label class="form-label small fw-bold text-uppercase text-muted" for="manualTargetChapterRef">手動輸入章節</label>
-                        <input
-                          class="form-control form-control-custom rounded-2"
-                          id="manualTargetChapterRef"
-                          name="manual_target_chapter_ref"
-                          value="{{ manual_target_chapter_ref }}"
-                          placeholder="自動掃描找不到時可手動輸入，例如 4.5 Applicable Standards and Guidance Documents"
-                          {% if not limit_to_chapter %}disabled{% endif %}
-                        >
-                        <div class="small text-muted mt-2">有填手動值時，會優先使用手動輸入，不使用下拉選單</div>
-                      </div>
-                      <div>
-                        <label class="form-label small fw-bold text-uppercase text-muted" for="targetTableIndex">章節內表格索引</label>
-                        <input
-                          class="form-control form-control-custom rounded-2"
-                          id="targetTableIndex"
-                          name="target_table_index"
-                          type="text"
-                          value="{{ target_table_index_display or '' }}"
-                          placeholder="留白表示處理該章節所有表格，例如 1,3,5 或 2-4"
-                          {% if not limit_to_chapter %}disabled{% endif %}
-                        >
-                        <div class="small text-muted mt-2">可輸入逗號清單或範圍，例如 1,3,5 或 2-4；留白則處理該章節全部表格</div>
                       </div>
                     </div>
                   </div>
@@ -1626,7 +1697,7 @@
                                   <div class="standard-manual-mapping-spacer"></div>
 
                                   <div class="standard-manual-mapping-column">
-                                    <div class="standard-manual-mapping-column__title">{{ table_check.table_label }} 掃描標題</div>
+                                    <div class="standard-manual-mapping-column__title">{{ table_check.table_scan_label or table_check.table_label }} 掃描標題</div>
                                     <div class="standard-manual-mapping-list">
                                       {% for option in table_check.header_options %}
                                         <button
@@ -1656,7 +1727,7 @@
                     </div>
                   {% else %}
                     <div class="standard-manual-mapping-empty">
-                      目前還沒有掃描結果先按「欄位檢查」或「更新標準清單」，這裡就會顯示每張表掃描到的標頭與可調整的手動對應欄位
+                      目前還沒有掃描結果，先按「欄位檢查」，這裡就會顯示每張表掃描到的標頭與可調整的手動對應欄位
                     </div>
                   {% endif %}
                 </div>
@@ -1664,20 +1735,27 @@
             </details>
           </div>
           <div class="d-flex justify-content-end gap-2 flex-wrap">
+            {% if table_checks and has_unresolved_manual_mapping %}
+              <div class="small text-muted w-100 text-end">
+                完成手動對應欄位後，請再按一次「欄位檢查」，成功後才會顯示「更新標準清單」
+              </div>
+            {% endif %}
             <button class="btn btn-outline-primary fw-bold px-3" id="inspectHeadersBtn" type="submit" name="action" value="inspect_headers">
               <i class="bi bi-search"></i>
               欄位檢查
             </button>
-            <button class="btn btn-primary fw-bold px-3" id="previewSubmitBtn" type="submit" name="action" value="preview" {% if has_unresolved_manual_mapping %}disabled title="請先完成手動對應欄位設定"{% endif %}>
-              <span data-submit-default>
-                <i class="bi bi-arrow-repeat"></i>
-                更新標準清單
-              </span>
-              <span data-submit-loading class="d-none">
-                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
-                更新中...
-              </span>
-            </button>
+            {% if table_checks and not has_unresolved_manual_mapping %}
+              <button class="btn btn-primary fw-bold px-3" id="previewSubmitBtn" type="submit" name="action" value="preview">
+                <span data-submit-default>
+                  <i class="bi bi-arrow-repeat"></i>
+                  更新標準清單
+                </span>
+                <span data-submit-loading class="d-none">
+                  <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                  更新中...
+                </span>
+              </button>
+            {% endif %}
           </div>
         </form>
       {% endif %}
@@ -1777,7 +1855,7 @@
       <div class="standard-preview-bar">
         <div class="standard-preview-bar__main">
           <div class="standard-preview-bar__title mb-2">
-            目前規則：核心編號比對後，先比年份，再依 {{ iso_priority | join(' > ') }}{% if target_chapter_ref %}，限定章節 {{ target_chapter_ref }}{% if target_table_index_display %}，表格索引 {{ target_table_index_display }}{% endif %}{% endif %}
+            目前規則：核心編號比對後，先比年份，再依 {{ iso_priority | join(' > ') }}{% if target_scope_display %}，限定 {{ target_scope_display }}{% elif target_chapter_ref %}，限定章節 {{ target_chapter_ref }}{% if target_table_index_display %}，表格索引 {{ target_table_index_display }}{% endif %}{% endif %}
           </div>
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
@@ -1866,6 +1944,11 @@
       <input type="hidden" name="target_chapter_ref" value="{{ target_chapter_ref }}">
       <input type="hidden" name="manual_target_chapter_ref" value="{{ manual_target_chapter_ref }}">
       <input type="hidden" name="target_table_index" value="{{ target_table_index_display or '' }}">
+      {% for scope in target_scopes %}
+        <input type="hidden" name="target_scope_chapter_ref" value="{{ scope.chapter_ref }}">
+        <input type="hidden" name="manual_target_scope_chapter_ref" value="">
+        <input type="hidden" name="target_scope_table_index" value="{{ scope.table_index_display or '' }}">
+      {% endfor %}
       {% for header_name in required_headers %}
         <input type="hidden" name="required_headers" value="{{ header_name }}">
       {% endfor %}
@@ -2131,30 +2214,63 @@
       });
       const chapterToggle = document.getElementById("limitToChapter");
       if (chapterToggle?.checked) params.set("limit_to_chapter", "1");
-      const manualChapterInput = document.getElementById("manualTargetChapterRef");
-      const manualChapterRef = (manualChapterInput?.value || "").trim();
-      if (manualChapterRef) params.set("manual_target_chapter_ref", manualChapterRef);
+      document.querySelectorAll("[data-target-scope-row]").forEach((row) => {
+        const selectedRef = (row.querySelector('select[name="target_scope_chapter_ref"]')?.value || "").trim();
+        const manualRef = (row.querySelector('input[name="manual_target_scope_chapter_ref"]')?.value || "").trim();
+        const tableIndex = (row.querySelector('input[name="target_scope_table_index"]')?.value || "").trim();
+        if (selectedRef || manualRef || tableIndex) {
+          params.append("target_scope_chapter_ref", selectedRef);
+          params.append("manual_target_scope_chapter_ref", manualRef);
+          params.append("target_scope_table_index", tableIndex);
+        }
+      });
       window.location.href = params.toString() ? `${refreshUrl}?${params.toString()}` : refreshUrl;
     });
   }
 
   const limitToChapterToggle = document.getElementById("limitToChapter");
-  const targetChapterRefInput = document.getElementById("targetChapterRef");
-  const manualTargetChapterRefInput = document.getElementById("manualTargetChapterRef");
-  const targetTableIndexInput = document.getElementById("targetTableIndex");
-  if (limitToChapterToggle && targetChapterRefInput && manualTargetChapterRefInput && targetTableIndexInput) {
+  const targetScopeRows = document.getElementById("targetScopeRows");
+  const addTargetScopeBtn = document.getElementById("addTargetScopeBtn");
+  if (limitToChapterToggle && targetScopeRows) {
+    const getTargetScopeRowEls = () => Array.from(targetScopeRows.querySelectorAll("[data-target-scope-row]"));
     const syncChapterScopeState = () => {
-      targetChapterRefInput.disabled = !limitToChapterToggle.checked;
-      manualTargetChapterRefInput.disabled = !limitToChapterToggle.checked;
-      targetTableIndexInput.disabled = !limitToChapterToggle.checked;
+      const rows = getTargetScopeRowEls();
+      targetScopeRows.querySelectorAll("[data-target-scope-control]").forEach((control) => {
+        control.disabled = !limitToChapterToggle.checked;
+      });
+      targetScopeRows.querySelectorAll("[data-remove-target-scope]").forEach((button) => {
+        button.disabled = !limitToChapterToggle.checked || rows.length <= 1;
+      });
+      if (addTargetScopeBtn) addTargetScopeBtn.disabled = !limitToChapterToggle.checked;
       if (!limitToChapterToggle.checked) {
-        targetChapterRefInput.value = "";
-        manualTargetChapterRefInput.value = "";
-        targetTableIndexInput.value = "";
+        targetScopeRows.querySelectorAll("[data-target-scope-control]").forEach((control) => {
+          control.value = "";
+        });
       }
+    };
+    const addTargetScopeRow = () => {
+      const rows = getTargetScopeRowEls();
+      const sourceRow = rows[0];
+      if (!sourceRow) return;
+      const clone = sourceRow.cloneNode(true);
+      clone.querySelectorAll("[data-target-scope-control]").forEach((control) => {
+        control.value = "";
+      });
+      const actions = targetScopeRows.querySelector(".standard-target-scope-actions");
+      targetScopeRows.insertBefore(clone, actions || null);
+      syncChapterScopeState();
     };
     syncChapterScopeState();
     limitToChapterToggle.addEventListener("change", syncChapterScopeState);
+    addTargetScopeBtn?.addEventListener("click", addTargetScopeRow);
+    targetScopeRows.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-remove-target-scope]");
+      if (!button) return;
+      const row = button.closest("[data-target-scope-row]");
+      if (!row || getTargetScopeRowEls().length <= 1) return;
+      row.remove();
+      syncChapterScopeState();
+    });
   }
 
   document.querySelectorAll("[data-open-settings]").forEach((link) => {
@@ -2962,8 +3078,10 @@
     const width = tooltip.offsetWidth || 460;
     const height = tooltip.offsetHeight || 240;
     if (window.innerWidth <= 767) {
-      tooltip.style.left = "12px";
-      tooltip.style.top = `${Math.max(64, window.innerHeight - height - 12)}px`;
+      tooltip.style.left = "";
+      tooltip.style.right = "";
+      tooltip.style.top = "";
+      tooltip.style.bottom = "";
       return;
     }
     let left = event.clientX + 20;

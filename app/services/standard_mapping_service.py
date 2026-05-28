@@ -686,6 +686,18 @@ def build_plain_replacement_segments(old_text: str, new_text: str) -> list[tuple
     return [(normalized_new, True)]
 
 
+def build_preserve_original_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
+    normalized_old = normalize_text(old_text)
+    normalized_new = normalize_text(new_text)
+    if normalized_old == normalized_new:
+        return [(normalized_new, False)]
+    if normalized_old and normalized_new:
+        return [(f"{normalized_old} ", False), (normalized_new, True)]
+    if normalized_new:
+        return [(normalized_new, True)]
+    return [(normalized_old, False)]
+
+
 def get_first_run_properties(tc: etree._Element) -> etree._Element | None:
     rpr = tc.find(".//w:r/w:rPr", namespaces=NS)
     return copy.deepcopy(rpr) if rpr is not None else None
@@ -1333,7 +1345,63 @@ def inspect_document_sections(word_path: str) -> list[dict]:
     return options
 
 
-def resolve_target_table_indexes(
+def normalize_target_scopes(target_scopes: list[dict] | tuple[dict, ...] | None) -> list[dict]:
+    normalized: list[dict] = []
+    for scope in target_scopes or []:
+        if not isinstance(scope, dict):
+            continue
+        chapter_ref = normalize_text(
+            scope.get("chapter_ref")
+            or scope.get("target_chapter_ref")
+            or scope.get("ref")
+            or ""
+        )
+        if not chapter_ref:
+            continue
+        table_indexes = (
+            scope.get("table_indexes")
+            if "table_indexes" in scope
+            else scope.get("target_table_index")
+        )
+        normalized.append({
+            "chapter_ref": chapter_ref,
+            "table_indexes": table_indexes,
+        })
+    return normalized
+
+
+def _target_scope_display(target_scopes: list[dict]) -> str:
+    parts: list[str] = []
+    for scope in target_scopes:
+        chapter_ref = normalize_text(scope.get("chapter_ref", ""))
+        if not chapter_ref:
+            continue
+        table_indexes = scope.get("table_indexes")
+        table_text = ""
+        if isinstance(table_indexes, int):
+            table_text = str(table_indexes)
+        elif isinstance(table_indexes, (list, tuple, set)):
+            table_text = ",".join(str(item).strip() for item in table_indexes if str(item).strip())
+        elif table_indexes is not None and table_indexes != "":
+            table_text = str(table_indexes).strip()
+        parts.append(f"{chapter_ref}（表格 {table_text}）" if table_text else chapter_ref)
+    return "；".join(parts)
+
+
+def _effective_label_scopes(
+    normalized_target_scopes: list[dict],
+    target_chapter_ref: str = "",
+    target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
+) -> list[dict]:
+    if normalized_target_scopes:
+        return normalized_target_scopes
+    chapter_ref = normalize_text(target_chapter_ref)
+    if not chapter_ref:
+        return []
+    return [{"chapter_ref": chapter_ref, "table_indexes": target_table_index}]
+
+
+def _resolve_single_target_table_indexes(
     document_tree: etree._ElementTree,
     *,
     document_xml_path: str,
@@ -1453,6 +1521,112 @@ def resolve_target_table_indexes(
     return {table_index_map[id(tbl)] for tbl in scoped_tables if id(tbl) in table_index_map}
 
 
+def _format_scope_table_label(chapter_ref: str, table_index: int, *, explicit_index: bool = False) -> str:
+    chapter_ref = normalize_text(chapter_ref)
+    label = "表格索引" if explicit_index else "表格"
+    return f"{chapter_ref} - {label} {table_index}"
+
+
+def resolve_target_table_label_map(
+    document_tree: etree._ElementTree,
+    *,
+    document_xml_path: str,
+    target_scopes: list[dict] | tuple[dict, ...] | None = None,
+) -> dict[int, str]:
+    normalized_scopes = normalize_target_scopes(target_scopes)
+    if not normalized_scopes:
+        return {}
+
+    label_map: dict[int, str] = {}
+    for scope in normalized_scopes:
+        chapter_ref = scope["chapter_ref"]
+        scoped_indexes = _resolve_single_target_table_indexes(
+            document_tree,
+            document_xml_path=document_xml_path,
+            target_chapter_ref=chapter_ref,
+        ) or set()
+        scoped_index_list = sorted(scoped_indexes)
+        table_indexes = scope.get("table_indexes")
+
+        if table_indexes is not None:
+            requested_indexes = [int(table_indexes)] if isinstance(table_indexes, int) else [int(item) for item in table_indexes]
+            for requested_index in requested_indexes:
+                if requested_index <= 0 or requested_index > len(scoped_index_list):
+                    continue
+                label_map.setdefault(
+                    scoped_index_list[requested_index - 1],
+                    _format_scope_table_label(chapter_ref, requested_index, explicit_index=True),
+                )
+            continue
+
+        for scope_table_number, table_index in enumerate(scoped_index_list, start=1):
+            label_map.setdefault(table_index, _format_scope_table_label(chapter_ref, scope_table_number))
+    return label_map
+
+
+def resolve_target_table_scan_label_map(
+    document_tree: etree._ElementTree,
+    *,
+    document_xml_path: str,
+    target_scopes: list[dict] | tuple[dict, ...] | None = None,
+) -> dict[int, str]:
+    normalized_scopes = normalize_target_scopes(target_scopes)
+    if not normalized_scopes:
+        return {}
+
+    label_map: dict[int, str] = {}
+    for scope in normalized_scopes:
+        scoped_indexes = _resolve_single_target_table_indexes(
+            document_tree,
+            document_xml_path=document_xml_path,
+            target_chapter_ref=scope["chapter_ref"],
+        ) or set()
+        scoped_index_list = sorted(scoped_indexes)
+        table_indexes = scope.get("table_indexes")
+
+        if table_indexes is not None:
+            requested_indexes = [int(table_indexes)] if isinstance(table_indexes, int) else [int(item) for item in table_indexes]
+            for requested_index in requested_indexes:
+                if requested_index <= 0 or requested_index > len(scoped_index_list):
+                    continue
+                label_map.setdefault(scoped_index_list[requested_index - 1], f"表格索引 {requested_index}")
+            continue
+
+        for scope_table_number, table_index in enumerate(scoped_index_list, start=1):
+            label_map.setdefault(table_index, f"表格 {scope_table_number}")
+    return label_map
+
+
+def resolve_target_table_indexes(
+    document_tree: etree._ElementTree,
+    *,
+    document_xml_path: str,
+    target_chapter_ref: str = "",
+    target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
+    target_scopes: list[dict] | tuple[dict, ...] | None = None,
+) -> set[int] | None:
+    normalized_scopes = normalize_target_scopes(target_scopes)
+    if normalized_scopes:
+        resolved: set[int] = set()
+        for scope in normalized_scopes:
+            scoped_indexes = _resolve_single_target_table_indexes(
+                document_tree,
+                document_xml_path=document_xml_path,
+                target_chapter_ref=scope["chapter_ref"],
+                target_table_index=scope.get("table_indexes"),
+            )
+            if scoped_indexes:
+                resolved.update(scoped_indexes)
+        return resolved
+
+    return _resolve_single_target_table_indexes(
+        document_tree,
+        document_xml_path=document_xml_path,
+        target_chapter_ref=target_chapter_ref,
+        target_table_index=target_table_index,
+    )
+
+
 def expand_row_to_logical_cells(parsed_row: list[dict]) -> list[dict | None]:
     if not parsed_row:
         return []
@@ -1553,14 +1727,20 @@ def inspect_table_headers(
     tree: etree._ElementTree,
     allowed_table_indexes: set[int] | None = None,
     manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
+    table_label_map: dict[int, str] | None = None,
+    table_scan_label_map: dict[int, str] | None = None,
 ) -> list[dict]:
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
     checks = []
     active_manual_mappings = normalize_manual_header_mappings(manual_header_mappings)
+    active_label_map = table_label_map or {}
+    active_scan_label_map = table_scan_label_map or {}
     for table_index, tbl in enumerate(tables):
         if allowed_table_indexes is not None and table_index not in allowed_table_indexes:
             continue
+        table_label = active_label_map.get(table_index) or f"表格 {table_index + 1}"
+        table_scan_label = active_scan_label_map.get(table_index) or f"表格 {table_index + 1}"
         parsed_rows = parse_table_rows(tbl)
         best_match = None
         header_options = get_row_header_options(parsed_rows[0]) if parsed_rows else []
@@ -1575,7 +1755,8 @@ def inspect_table_headers(
             if detected_headers:
                 best_match = {
                     "table_index": table_index,
-                    "table_label": f"表格 {table_index + 1}",
+                    "table_label": table_label,
+                    "table_scan_label": table_scan_label,
                     "header_row_index": 0,
                     "detected_headers": detected_headers,
                     "is_processable": all(header in detected_headers for header in DEFAULT_REQUIRED_HEADERS),
@@ -1600,7 +1781,8 @@ def inspect_table_headers(
         if best_match is None:
             checks.append({
                 "table_index": table_index,
-                "table_label": f"表格 {table_index + 1}",
+                "table_label": table_label,
+                "table_scan_label": table_scan_label,
                 "header_row_index": None,
                 "detected_headers": [],
                 "is_processable": manual_mapping_ready,
@@ -1741,6 +1923,7 @@ def build_preview_tables(
     required_headers: list[str] | tuple[str, ...] | None = None,
     allowed_table_indexes: set[int] | None = None,
     manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
+    table_label_map: dict[int, str] | None = None,
 ) -> tuple[list[dict], dict]:
     root = tree.getroot()
     tables = root.xpath(".//w:tbl", namespaces=NS)
@@ -1749,6 +1932,7 @@ def build_preview_tables(
     table_number = 0
     active_required_headers = normalize_required_headers(required_headers)
     active_manual_mappings = normalize_manual_header_mappings(manual_header_mappings)
+    active_label_map = table_label_map or {}
 
     for table_index, tbl in enumerate(tables):
         if allowed_table_indexes is not None and table_index not in allowed_table_indexes:
@@ -1864,7 +2048,7 @@ def build_preview_tables(
             })
 
         preview_tables.append({
-            "title": f"表格 {table_number}",
+            "title": active_label_map.get(table_index) or f"表格 {table_number}",
             "rows": rows_data,
         })
 
@@ -1876,9 +2060,11 @@ def inspect_document_tables(
     *,
     target_chapter_ref: str = "",
     target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
+    target_scopes: list[dict] | tuple[dict, ...] | None = None,
     manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> dict:
     normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
+    normalized_target_scopes = normalize_target_scopes(target_scopes)
     with tempfile.TemporaryDirectory() as tmpdir:
         unzip_docx(word_path, tmpdir)
         document_xml_path = os.path.join(tmpdir, "word", "document.xml")
@@ -1888,16 +2074,32 @@ def inspect_document_tables(
             document_xml_path=document_xml_path,
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
+            target_scopes=normalized_target_scopes,
+        )
+        table_label_map = resolve_target_table_label_map(
+            tree,
+            document_xml_path=document_xml_path,
+            target_scopes=_effective_label_scopes(normalized_target_scopes, target_chapter_ref, target_table_index),
+        )
+        table_scan_label_map = resolve_target_table_scan_label_map(
+            tree,
+            document_xml_path=document_xml_path,
+            target_scopes=_effective_label_scopes(normalized_target_scopes, target_chapter_ref, target_table_index),
         )
         table_checks = inspect_table_headers(
             tree,
             allowed_table_indexes=allowed_table_indexes,
             manual_header_mappings=normalized_manual_header_mappings,
+            table_label_map=table_label_map,
+            table_scan_label_map=table_scan_label_map,
         )
+        target_scope_display = _target_scope_display(normalized_target_scopes)
         return {
             "table_checks": table_checks,
-            "target_chapter_ref": normalize_text(target_chapter_ref),
-            "target_table_index": target_table_index,
+            "target_chapter_ref": target_scope_display or normalize_text(target_chapter_ref),
+            "target_table_index": None if normalized_target_scopes else target_table_index,
+            "target_scopes": normalized_target_scopes,
+            "target_scope_display": target_scope_display,
             "scope_table_count": len(allowed_table_indexes or []),
             "inspection_only": True,
             "manual_header_mappings": {
@@ -1921,6 +2123,7 @@ def process_document(
     required_headers: list[str] | tuple[str, ...] | None = None,
     target_chapter_ref: str = "",
     target_table_index: int | list[int] | tuple[int, ...] | set[int] | None = None,
+    target_scopes: list[dict] | tuple[dict, ...] | None = None,
     manual_header_mappings: dict[int | str, dict[str, str]] | None = None,
 ) -> dict:
     override_map = override_map or {}
@@ -1929,6 +2132,7 @@ def process_document(
     normalized_enabled_levels = normalize_enabled_standard_levels(enabled_standard_levels)
     normalized_required_headers = normalize_required_headers(required_headers)
     normalized_manual_header_mappings = normalize_manual_header_mappings(manual_header_mappings)
+    normalized_target_scopes = normalize_target_scopes(target_scopes)
     excel_index = load_excel_index(excel_path)
     harmonised_reference_index = load_harmonised_reference_index(harmonised_reference_path)
     regulation_reference_index = load_regulation_reference_index(regulation_reference_path)
@@ -1941,11 +2145,24 @@ def process_document(
             document_xml_path=document_xml_path,
             target_chapter_ref=target_chapter_ref,
             target_table_index=target_table_index,
+            target_scopes=normalized_target_scopes,
+        )
+        table_label_map = resolve_target_table_label_map(
+            tree,
+            document_xml_path=document_xml_path,
+            target_scopes=_effective_label_scopes(normalized_target_scopes, target_chapter_ref, target_table_index),
+        )
+        table_scan_label_map = resolve_target_table_scan_label_map(
+            tree,
+            document_xml_path=document_xml_path,
+            target_scopes=_effective_label_scopes(normalized_target_scopes, target_chapter_ref, target_table_index),
         )
         table_checks = inspect_table_headers(
             tree,
             allowed_table_indexes=allowed_table_indexes,
             manual_header_mappings=normalized_manual_header_mappings,
+            table_label_map=table_label_map,
+            table_scan_label_map=table_scan_label_map,
         )
         tree, records = parse_word_tables_for_update(
             document_xml_path,
@@ -2167,9 +2384,11 @@ def process_document(
             normalized_required_headers,
             allowed_table_indexes=allowed_table_indexes,
             manual_header_mappings=normalized_manual_header_mappings,
+            table_label_map=table_label_map,
         )
         if output_path:
             zip_to_docx(tmpdir, output_path)
+        target_scope_display = _target_scope_display(normalized_target_scopes)
         return {
             "report": report,
             "updated_count": updated_count,
@@ -2187,8 +2406,10 @@ def process_document(
             },
             "edit_map": normalized_edit_map,
             "table_checks": table_checks,
-            "target_chapter_ref": normalize_text(target_chapter_ref),
-            "target_table_index": target_table_index,
+            "target_chapter_ref": target_scope_display or normalize_text(target_chapter_ref),
+            "target_table_index": None if normalized_target_scopes else target_table_index,
+            "target_scopes": normalized_target_scopes,
+            "target_scope_display": target_scope_display,
             "scope_table_count": len(allowed_table_indexes or []),
             "inspection_only": False,
         }

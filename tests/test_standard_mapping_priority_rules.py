@@ -2,6 +2,7 @@ import os
 import tempfile
 import zipfile
 
+from docx import Document
 from lxml import etree
 
 from app.services.standard_mapping_service import (
@@ -15,8 +16,15 @@ from app.services.standard_mapping_service import (
     is_harmonised_standard,
     normalize_harmonised_standard_text,
     normalize_iso_priority,
+    resolve_target_table_label_map,
+    resolve_target_table_scan_label_map,
     resolve_target_table_indexes,
 )
+
+
+def _add_single_cell_table(doc: Document, text: str) -> None:
+    table = doc.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = text
 
 
 def test_normalize_iso_priority_expands_full_priority_order():
@@ -367,3 +375,99 @@ def test_resolve_target_table_indexes_keeps_standards_applied_table_after_up_to_
         )
 
     assert result == {0}
+
+
+def test_resolve_target_table_indexes_accepts_multiple_chapter_scopes(tmp_path):
+    src = tmp_path / "multi_scope.docx"
+    doc = Document()
+    doc.add_heading("1 First Section", level=1)
+    _add_single_cell_table(doc, "first")
+    doc.add_heading("2 Second Section", level=1)
+    _add_single_cell_table(doc, "second-a")
+    _add_single_cell_table(doc, "second-b")
+    doc.add_heading("3 Third Section", level=1)
+    _add_single_cell_table(doc, "third")
+    doc.save(src)
+
+    extracted = tmp_path / "extracted"
+    extracted.mkdir()
+    with zipfile.ZipFile(src, "r") as archive:
+        archive.extractall(extracted)
+
+    document_xml_path = extracted / "word" / "document.xml"
+    tree = etree.parse(str(document_xml_path))
+
+    result = resolve_target_table_indexes(
+        tree,
+        document_xml_path=str(document_xml_path),
+        target_scopes=[
+            {"chapter_ref": "1 First Section"},
+            {"chapter_ref": "2 Second Section", "table_indexes": (2,)},
+            {"chapter_ref": "3 Third Section"},
+        ],
+    )
+
+    assert result == {0, 2, 3}
+
+
+def test_resolve_target_table_label_map_uses_chapter_and_optional_scope_index(tmp_path):
+    src = tmp_path / "multi_scope_labels.docx"
+    doc = Document()
+    doc.add_heading("1 First Section", level=1)
+    _add_single_cell_table(doc, "first")
+    doc.add_heading("2 Second Section", level=1)
+    _add_single_cell_table(doc, "second-a")
+    _add_single_cell_table(doc, "second-b")
+    doc.save(src)
+
+    extracted = tmp_path / "extracted_labels"
+    extracted.mkdir()
+    with zipfile.ZipFile(src, "r") as archive:
+        archive.extractall(extracted)
+
+    document_xml_path = extracted / "word" / "document.xml"
+    tree = etree.parse(str(document_xml_path))
+
+    result = resolve_target_table_label_map(
+        tree,
+        document_xml_path=str(document_xml_path),
+        target_scopes=[
+            {"chapter_ref": "1 First Section"},
+            {"chapter_ref": "2 Second Section", "table_indexes": (2,)},
+        ],
+    )
+
+    assert result[0] == "1 First Section - 表格 1"
+    assert result[2] == "2 Second Section - 表格索引 2"
+    assert 1 not in result
+
+
+def test_resolve_target_table_scan_label_map_omits_long_chapter_title(tmp_path):
+    src = tmp_path / "multi_scope_scan_labels.docx"
+    doc = Document()
+    doc.add_heading("1 Very Long Section Name That Should Not Compress The Board", level=1)
+    _add_single_cell_table(doc, "first")
+    doc.add_heading("2 Second Section", level=1)
+    _add_single_cell_table(doc, "second-a")
+    _add_single_cell_table(doc, "second-b")
+    doc.save(src)
+
+    extracted = tmp_path / "extracted_scan_labels"
+    extracted.mkdir()
+    with zipfile.ZipFile(src, "r") as archive:
+        archive.extractall(extracted)
+
+    document_xml_path = extracted / "word" / "document.xml"
+    tree = etree.parse(str(document_xml_path))
+
+    result = resolve_target_table_scan_label_map(
+        tree,
+        document_xml_path=str(document_xml_path),
+        target_scopes=[
+            {"chapter_ref": "1 Very Long Section Name That Should Not Compress The Board"},
+            {"chapter_ref": "2 Second Section", "table_indexes": (2,)},
+        ],
+    )
+
+    assert result[0] == "表格 1"
+    assert result[2] == "表格索引 2"

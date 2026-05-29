@@ -371,6 +371,7 @@ const HTML_PREVIEW_URL = {{ html_preview_url|tojson }};
 const TITLES_TO_HIDE = {{ titles_to_hide|tojson }};
 const PAGE_SOURCE_MAP = {{ page_source_map|tojson }};
 const PARAGRAPH_TRACE = {{ paragraph_trace|tojson }};
+const PROVENANCE_PREVIEW_LABEL_PREFIX = {{ provenance_preview_label_prefix|tojson }};
 
 const pdfViewerShell = document.getElementById('pdfViewerShell');
 const pdfViewerFrame = document.getElementById('pdfViewerFrame');
@@ -405,7 +406,11 @@ function openSourcePdf(source) {
 function extractSourceLabel(rawText) {
   const normalized = String(rawText || '').replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
-  const match = normalized.match(/^(?:來源|Source)\s*:\s*(.+)$/i);
+  const normalizedPrefix = String(PROVENANCE_PREVIEW_LABEL_PREFIX || '').replace(/\s+/g, ' ').trim();
+  if (normalizedPrefix && normalized.startsWith(normalizedPrefix)) {
+    return normalized.slice(normalizedPrefix.length).trim();
+  }
+  const match = normalized.match(/^(?:\([^)]*\)\s*)?(?:來源|Source)\s*:\s*(.+)$/i);
   return match ? match[1].trim() : '';
 }
 

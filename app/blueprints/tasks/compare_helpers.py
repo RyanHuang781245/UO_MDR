@@ -899,10 +899,13 @@ def _extract_preview_page_sources(
         seen_sources.add(source_file)
         unique_sources.append(source_file)
 
-    label_patterns = [
-        (source_file, _normalize_trace_text(f"{PROVENANCE_PREVIEW_LABEL_PREFIX}{source_file}"))
-        for source_file in unique_sources
-    ]
+    label_patterns: list[tuple[str, str]] = []
+    for source_file in unique_sources:
+        prefixed_pattern = _normalize_trace_text(f"{PROVENANCE_PREVIEW_LABEL_PREFIX}{source_file}")
+        legacy_pattern = _normalize_trace_text(f"來源: {source_file}")
+        for pattern in (prefixed_pattern, legacy_pattern):
+            if pattern:
+                label_patterns.append((source_file, pattern))
 
     page_sources: list[list[str]] = []
     for page_text in page_texts:

@@ -23,6 +23,7 @@ from app.services.flow_service import (
 )
 from app.services.task_service import load_task_context as _load_task_context
 from app.utils import normalize_docx_output_filename
+from modules.docx_provenance import PROVENANCE_PREVIEW_LABEL_PREFIX
 
 from .blueprint import tasks_bp
 from .compare_helpers import (
@@ -264,6 +265,7 @@ def task_compare(task_id, job_id):
         titles_to_hide=titles_to_hide,
         paragraph_trace=paragraph_trace,
         page_source_map=page_source_map,
+        provenance_preview_label_prefix=PROVENANCE_PREVIEW_LABEL_PREFIX,
         preview_messages=list(dict.fromkeys(preview_messages)),
         back_link=url_for("tasks_bp.task_result", task_id=task_id, job_id=job_id),
         download_url=url_for("tasks_bp.task_download", task_id=task_id, job_id=job_id, kind="docx"),

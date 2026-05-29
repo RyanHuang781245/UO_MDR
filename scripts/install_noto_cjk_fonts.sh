@@ -18,6 +18,54 @@ Options:
 EOF
 }
 
+run_as_root() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    echo "Missing sudo; please install required system packages manually." >&2
+    return 1
+  fi
+}
+
+install_system_dependencies() {
+  local packages=()
+
+  if ! command -v curl >/dev/null 2>&1; then
+    packages+=(curl)
+  fi
+
+  if ! command -v fc-cache >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      packages+=(fontconfig)
+    elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+      packages+=(fontconfig)
+    else
+      echo "fc-cache is required to refresh the font cache." >&2
+      echo "Please install fontconfig manually and re-run this script." >&2
+      exit 1
+    fi
+  fi
+
+  if [[ ${#packages[@]} -eq 0 ]]; then
+    return
+  fi
+
+  echo "Installing system dependencies: ${packages[*]}"
+  if command -v apt-get >/dev/null 2>&1; then
+    run_as_root apt-get update
+    run_as_root apt-get install -y "${packages[@]}"
+  elif command -v dnf >/dev/null 2>&1; then
+    run_as_root dnf install -y "${packages[@]}"
+  elif command -v yum >/dev/null 2>&1; then
+    run_as_root yum install -y "${packages[@]}"
+  else
+    echo "No supported package manager found. Please install: ${packages[*]}" >&2
+    exit 1
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --force)
@@ -39,6 +87,8 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+install_system_dependencies
 
 if ! command -v curl >/dev/null 2>&1; then
   echo "curl is required to download Noto CJK fonts." >&2

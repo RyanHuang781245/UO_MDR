@@ -16,6 +16,7 @@ from app.services import (
     execution_service,
     mapping_metadata_service,
     nas_service,
+    operations_service,
     standard_update_service,
     system_service,
     task_service,
@@ -116,6 +117,7 @@ def create_job_app(config_name: str | None = None) -> Flask:
     _configure_app(app, base_dir)
     db.init_app(app)
     audit_service.register_audit_cli(app)
+    operations_service.register_operations_cli(app)
     standard_update_service.init_standard_update_store(app)
     system_service.init_system_settings(app)
     _prepare_common_dirs(app)
@@ -134,6 +136,7 @@ def create_app(config_name: str | None = None, *, init_auth: bool = True) -> Fla
 
     db.init_app(app)
     audit_service.register_audit_cli(app)
+    operations_service.register_operations_cli(app)
     if init_auth:
         login_manager.init_app(app)
         if app.config.get("AUTH_ENABLED", True):

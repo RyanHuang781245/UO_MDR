@@ -45,6 +45,10 @@ class BaseConfig:
     ).strip()
     ALLOWED_SOURCE_ROOTS = []
     APP_ENV = os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or "development"
+    AUTO_SCHEMA_MANAGEMENT = parse_bool(
+        os.environ.get("AUTO_SCHEMA_MANAGEMENT"),
+        str(APP_ENV).strip().lower() != "production",
+    )
     JOB_EXECUTOR_MODE = (os.environ.get("JOB_EXECUTOR_MODE") or "worker").strip().lower() or "worker"
     JOB_POLL_INTERVAL_SECONDS = float(os.environ.get("JOB_POLL_INTERVAL_SECONDS") or 2)
     JOB_HEARTBEAT_INTERVAL_SECONDS = float(os.environ.get("JOB_HEARTBEAT_INTERVAL_SECONDS") or 10)
@@ -79,6 +83,8 @@ class BaseConfig:
 
 
 class TestingConfig(BaseConfig):
+    APP_ENV = "testing"
+    AUTO_SCHEMA_MANAGEMENT = True
     TESTING = True
     AUTH_ENABLED = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
@@ -88,10 +94,14 @@ class TestingConfig(BaseConfig):
 
 
 class DevelopmentConfig(BaseConfig):
+    APP_ENV = "development"
+    AUTO_SCHEMA_MANAGEMENT = parse_bool(os.environ.get("AUTO_SCHEMA_MANAGEMENT"), True)
     DEBUG = True
 
 
 class ProductionConfig(BaseConfig):
+    APP_ENV = "production"
+    AUTO_SCHEMA_MANAGEMENT = parse_bool(os.environ.get("AUTO_SCHEMA_MANAGEMENT"), False)
     DEBUG = False
 
 

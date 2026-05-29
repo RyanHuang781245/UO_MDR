@@ -9,6 +9,7 @@ from sqlalchemy import or_
 
 from app.extensions import db
 from app.models.nas import NasRoot, ensure_schema as ensure_nas_schema
+from app.services.schema_control import auto_schema_management_enabled, tables_exist
 from app.utils import parse_bool
 
 def load_allowed_roots_from_env():
@@ -209,7 +210,11 @@ def init_nas_config(app) -> None:
 
     with app.app_context():
         try:
-            ensure_nas_schema()
+            if auto_schema_management_enabled(app):
+                ensure_nas_schema()
+            elif not tables_exist("nas_roots"):
+                app.logger.info("Skipping NAS schema bootstrap because AUTO_SCHEMA_MANAGEMENT is disabled.")
+                return
             env, platform = _get_env_platform()
             changed = False
 

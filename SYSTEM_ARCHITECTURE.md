@@ -51,11 +51,17 @@ Provide **either** a full SQLAlchemy URL or individual MSSQL settings. The app w
   - Optional: `MSSQL_ENCRYPT=0/1` (ODBC Driver 18 預設 Encrypt=Yes；若憑證不受信任可搭配 `MSSQL_TRUST_SERVER_CERT=1`)
 
 ### Initialization
-Run once to create tables and seed default roles/permissions:
-- `flask --app app.py init-rbac`
+Production startup no longer assumes it may create or alter schema. Operators should run migrations explicitly, then use:
+- `alembic -c alembic.ini upgrade head`
+- `flask --app app.py schema-preflight`
+- `flask --app app.py seed-bootstrap`
 
-Create the first user (interactive):
-- `flask --app app.py create-user`
+For legacy environments that already have the schema, take a backup and use:
+- `alembic -c alembic.ini stamp 0001_baseline_schema`
+
+`schema-preflight` verifies required tables exist for the current configuration.
+
+`seed-bootstrap` inserts default roles/admin bootstrap data and system defaults, but does not create tables.
 
 ### Testing toggle
 Auth can be disabled for local testing/CI by setting:

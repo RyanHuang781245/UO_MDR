@@ -1,0 +1,18 @@
+[Unit]
+Description=UO_Regulations Jobs Worker
+After=network.target
+
+[Service]
+Type=simple
+User={{APP_USER}}
+Group=www-data
+WorkingDirectory={{APP_ROOT}}
+EnvironmentFile={{ENV_FILE}}
+Environment="PATH={{APP_ROOT}}/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+Environment="APP_ENV=production"
+ExecStart={{APP_ROOT}}/.venv/bin/flask --app app.py jobs-worker
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

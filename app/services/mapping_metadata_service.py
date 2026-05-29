@@ -19,6 +19,7 @@ from app.models.mapping_metadata import (
 )
 from app.services.audit_service import record_system_error
 from app.services.execution_service import MAPPING_OPERATION_JOB, MAPPING_SCHEME_RUN_JOB, get_job_payload, get_job_result_payload
+from app.services.schema_control import auto_schema_management_enabled
 
 
 def _load_mapping_run_meta(task_id: str, run_id: str) -> dict:
@@ -48,6 +49,9 @@ def _load_mapping_run_meta(task_id: str, run_id: str) -> dict:
 
 
 def init_mapping_metadata(app) -> None:
+    if not auto_schema_management_enabled(app):
+        app.logger.info("Skipping mapping metadata schema bootstrap because AUTO_SCHEMA_MANAGEMENT is disabled.")
+        return
     with app.app_context():
         try:
             ensure_schema()

@@ -5,6 +5,7 @@ from app.models.auth import db, ensure_schema, seed_roles
 from app.services.audit_service import record_system_error
 from app.services.auth_admin_service import init_admin
 from app.services.auth_hooks_service import register_auth_context, register_login_enforcement
+from app.services.schema_control import auto_schema_management_enabled, tables_exist
 from app.services.authn_service import (
     LDAPUserInfo,
     bootstrap_admins,
@@ -19,7 +20,11 @@ from app.services.authz_service import sanitize_next_url, user_has_permission, u
 def bootstrap_auth(app) -> None:
     with app.app_context():
         try:
-            ensure_schema()
+            if auto_schema_management_enabled(app):
+                ensure_schema()
+            elif not tables_exist("users", "roles", "user_roles"):
+                app.logger.info("Skipping auth schema bootstrap because AUTO_SCHEMA_MANAGEMENT is disabled.")
+                return
             seed_roles()
             bootstrap_admins()
         except Exception as exc:

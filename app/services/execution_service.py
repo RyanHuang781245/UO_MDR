@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from app.extensions import db
 from app.models.execution import JobArtifactRecord, JobEventRecord, JobRecord, TaskExecutionLock, ensure_schema
 from app.services.audit_service import record_system_error
+from app.services.schema_control import auto_schema_management_enabled
 
 JOB_STATUS_QUEUED = "queued"
 JOB_STATUS_CLAIMED = "claimed"
@@ -60,6 +61,9 @@ class JobCanceledError(RuntimeError):
 
 
 def init_execution_metadata(app) -> None:
+    if not auto_schema_management_enabled(app):
+        app.logger.info("Skipping execution schema bootstrap because AUTO_SCHEMA_MANAGEMENT is disabled.")
+        return
     with app.app_context():
         try:
             ensure_schema()

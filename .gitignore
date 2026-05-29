@@ -13,6 +13,7 @@ test.py
 uv.lock
 .vscode/
 .env
+.env.staging
 .playwright_env/
 node_modules/
 AGENTS.md

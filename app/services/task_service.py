@@ -14,6 +14,7 @@ from app.models.auth import ROLE_ADMIN, commit_session, user_has_role
 from app.models.settings import SystemSetting
 from app.models.task import TaskRecord, ensure_schema as ensure_task_schema
 from app.services.audit_service import record_system_error
+from app.services.schema_control import auto_schema_management_enabled
 
 ALLOWED_DOCX = {".docx"}
 ALLOWED_PDF = {".pdf"}
@@ -313,6 +314,9 @@ def list_tasks():
 
 
 def init_task_store(app) -> None:
+    if not auto_schema_management_enabled(app):
+        app.logger.info("Skipping task schema bootstrap because AUTO_SCHEMA_MANAGEMENT is disabled.")
+        return
     with app.app_context():
         try:
             ensure_task_schema()

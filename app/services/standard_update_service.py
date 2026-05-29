@@ -20,6 +20,7 @@ from app.models.standard_update import (
     ensure_schema as ensure_standard_update_schema,
 )
 from app.services.audit_service import record_system_error
+from app.services.schema_control import auto_schema_management_enabled
 from app.services.task_service import deduplicate_name, list_files
 from app.services.user_context_service import get_actor_info
 
@@ -78,6 +79,9 @@ def _safe_uploaded_filename(filename: str, default_stem: str = "upload") -> str:
 
 
 def init_standard_update_store(app) -> None:
+    if not auto_schema_management_enabled(app):
+        app.logger.info("Skipping standard update schema bootstrap because AUTO_SCHEMA_MANAGEMENT is disabled.")
+        return
     with app.app_context():
         try:
             ensure_standard_update_schema()

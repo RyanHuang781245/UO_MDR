@@ -5,6 +5,7 @@ Flask-LDAP3-Login>=0.9.0
 Flask-Login>=0.6.3
 Flask-SQLAlchemy>=3.1.1
 SQLAlchemy>=2.0
+alembic>=1.13.2
 pyodbc>=4.0
 python-dotenv>=1.0
 python-docx==1.1.2

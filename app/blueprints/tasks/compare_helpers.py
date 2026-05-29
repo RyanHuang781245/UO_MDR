@@ -147,6 +147,16 @@ def _ensure_pdf_preview(source_path: str, job_dir: str, subdir: str) -> tuple[st
     except (ValueError, TypeError, json.JSONDecodeError):
         pass
 
+    if source_path.lower().endswith(".pdf"):
+        try:
+            shutil.copyfile(source_path, pdf_path)
+            with open(pdf_meta_path, "w", encoding="utf-8") as meta_file:
+                json.dump(expected_meta, meta_file, ensure_ascii=False, indent=2)
+            return pdf_rel, None
+        except Exception:
+            current_app.logger.exception("Unexpected error while preparing PDF preview for %s", source_path)
+            return None, "建立 PDF 預覽時發生錯誤"
+
     libreoffice_bin = _find_libreoffice_binary()
     if not libreoffice_bin:
         return None, "找不到 LibreOffice，無法建立 PDF 預覽"

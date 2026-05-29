@@ -377,6 +377,9 @@ def _record_regulation_primary_switch_audit(
 class SecureAdminIndexView(AdminIndexView):
     extra_css = ADMIN_CUSTOM_CSS
 
+    def is_visible(self):
+        return False
+
     def is_accessible(self):
         return user_is_admin(current_user)
 
@@ -384,6 +387,10 @@ class SecureAdminIndexView(AdminIndexView):
         if current_user.is_authenticated:
             abort(403)
         return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
+
+    @expose("/")
+    def index(self):
+        return redirect(url_for("system_settings.index"))
 
 
 class SecureModelView(ModelView):

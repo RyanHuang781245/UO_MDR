@@ -107,7 +107,7 @@
   .batch-card-header {
     padding: 1rem 1.25rem;
     border-bottom: 1px solid var(--app-border);
-    background: rgba(248, 250, 252, 0.72);
+    background: var(--app-table-thead-bg);
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -358,7 +358,7 @@
 
   .batch-result-toggle:hover,
   .batch-result-toggle:focus-visible {
-    background: rgba(248, 250, 252, 0.78);
+    background: var(--app-bg);
     outline: none;
   }
 
@@ -447,7 +447,7 @@
     border: 1px solid var(--app-border);
     border-radius: 0.85rem;
     padding: 0.85rem 0.9rem;
-    background: rgba(248, 250, 252, 0.62);
+    background: var(--app-bg);
   }
 
   .batch-subrun-main {
@@ -633,6 +633,88 @@
     background: var(--bs-blue-50);
     color: var(--bs-blue-600);
     outline: none;
+  }
+
+  [data-bs-theme="dark"] .batch-queue-card,
+  [data-bs-theme="dark"] .batch-results-card {
+    border-color: #475569;
+    box-shadow: 0 1px 0 rgba(148, 163, 184, 0.16);
+  }
+
+  [data-bs-theme="dark"] .batch-card-header {
+    background: rgba(15, 23, 42, 0.42);
+    border-bottom-color: #475569;
+  }
+
+  [data-bs-theme="dark"] .batch-card-title,
+  [data-bs-theme="dark"] .batch-result-name,
+  [data-bs-theme="dark"] .batch-subrun-name {
+    color: #f8fafc;
+  }
+
+  [data-bs-theme="dark"] .batch-card-subtitle,
+  [data-bs-theme="dark"] .batch-mode-helper,
+  [data-bs-theme="dark"] .batch-queue-empty,
+  [data-bs-theme="dark"] .batch-results-empty,
+  [data-bs-theme="dark"] .batch-result-meta-chip,
+  [data-bs-theme="dark"] .batch-result-pending-note,
+  [data-bs-theme="dark"] .batch-section-label,
+  [data-bs-theme="dark"] .batch-subrun-subtext,
+  [data-bs-theme="dark"] .batch-subrun-note,
+  [data-bs-theme="dark"] .batch-subrun-meta-line {
+    color: #cbd5e1;
+  }
+
+  [data-bs-theme="dark"] .batch-flow-handle,
+  [data-bs-theme="dark"] .batch-empty-stat,
+  [data-bs-theme="dark"] .batch-result-meta-chip,
+  [data-bs-theme="dark"] .batch-subrun-row {
+    background: rgba(15, 23, 42, 0.42);
+    border-color: #475569;
+  }
+
+  [data-bs-theme="dark"] .batch-queue-item,
+  [data-bs-theme="dark"] .batch-result-card {
+    background: #1e293b;
+    border-color: #475569;
+  }
+
+  [data-bs-theme="dark"] .batch-result-card.is-success {
+    border-color: rgba(52, 211, 153, 0.42);
+  }
+
+  [data-bs-theme="dark"] .batch-result-card.is-failed {
+    border-color: rgba(248, 113, 113, 0.5);
+  }
+
+  [data-bs-theme="dark"] .batch-result-card.is-pending {
+    border-color: #64748b;
+  }
+
+  [data-bs-theme="dark"] .batch-queue-item:hover,
+  [data-bs-theme="dark"] .batch-result-toggle:hover,
+  [data-bs-theme="dark"] .batch-result-toggle:focus-visible {
+    background: rgba(30, 41, 59, 0.86);
+    border-color: #60a5fa;
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.24);
+  }
+
+  [data-bs-theme="dark"] .batch-result-card.is-open .batch-result-toggle {
+    border-bottom-color: #475569;
+  }
+
+  [data-bs-theme="dark"] .batch-result-arrow {
+    color: #bfdbfe;
+  }
+
+  [data-bs-theme="dark"] .batch-empty-stat strong,
+  [data-bs-theme="dark"] .batch-subrun-meta-line strong {
+    color: #f8fafc;
+  }
+
+  [data-bs-theme="dark"] .batch-subrun-note.is-error,
+  [data-bs-theme="dark"] .batch-subrun-meta-line.is-error {
+    color: #fca5a5;
   }
 
   @media (max-width: 1279.98px) {

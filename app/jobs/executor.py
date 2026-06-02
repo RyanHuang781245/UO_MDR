@@ -277,7 +277,7 @@ def enqueue_single_flow_job(
         task_id=task_id,
         target_name=target_name,
         actor=actor,
-        queue_name="heavy",
+        queue_name="flow",
         job_id=job_id,
         artifact_root=os.path.join(task_id, "jobs").replace("\\", "/"),
     )

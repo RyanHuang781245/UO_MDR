@@ -9,6 +9,7 @@ from lxml import etree
 from modules.docx_merger import merge_word_docs
 from modules.docx_provenance import (
     _installed_font_families,
+    annotate_docx_with_provenance,
     _resolve_linux_east_asia_font,
     apply_final_provenance,
     build_provenance_descriptor,
@@ -20,7 +21,10 @@ from modules.template_manager import render_template_with_mappings
 from modules.workflow import run_workflow
 
 
-_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+_NS = {
+    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+}
 
 
 def _create_docx(path: Path, paragraphs: list[str] | None = None) -> None:
@@ -28,6 +32,39 @@ def _create_docx(path: Path, paragraphs: list[str] | None = None) -> None:
     for text in paragraphs or []:
         doc.add_paragraph(text)
     doc.save(path)
+
+
+def _convert_first_inline_picture_to_anchor(path: Path) -> None:
+    with ZipFile(path, "r") as zf:
+        parts = {name: zf.read(name) for name in zf.namelist()}
+    root = etree.fromstring(parts["word/document.xml"])
+    inline = root.xpath("//wp:inline", namespaces=_NS)[0]
+    inline.tag = "{%s}anchor" % _NS["wp"]
+    simple_pos = etree.Element("{%s}simplePos" % _NS["wp"])
+    simple_pos.set("x", "0")
+    simple_pos.set("y", "0")
+    position_h = etree.Element("{%s}positionH" % _NS["wp"])
+    position_h.set("relativeFrom", "column")
+    pos_offset_h = etree.SubElement(position_h, "{%s}posOffset" % _NS["wp"])
+    pos_offset_h.text = "0"
+    position_v = etree.Element("{%s}positionV" % _NS["wp"])
+    position_v.set("relativeFrom", "paragraph")
+    pos_offset_v = etree.SubElement(position_v, "{%s}posOffset" % _NS["wp"])
+    pos_offset_v.text = "0"
+    wrap_none = etree.Element("{%s}wrapNone" % _NS["wp"])
+    inline.insert(0, wrap_none)
+    inline.insert(0, position_v)
+    inline.insert(0, position_h)
+    inline.insert(0, simple_pos)
+    parts["word/document.xml"] = etree.tostring(
+        root,
+        xml_declaration=True,
+        encoding="UTF-8",
+        standalone="yes",
+    )
+    with ZipFile(path, "w") as zf:
+        for name, data in parts.items():
+            zf.writestr(name, data)
 
 
 def _create_table_docx(path: Path, rows: list[list[str]]) -> None:
@@ -227,6 +264,142 @@ def test_extract_provenance_block_trace_uses_metadata_for_empty_figure_paragraph
     )
 
 
+def test_create_provenance_preview_docx_inlines_floating_figure_images(tmp_path: Path) -> None:
+    result_path = tmp_path / "result.docx"
+    preview_path = tmp_path / "preview.docx"
+    image_path = tmp_path / "pixel.png"
+    image_path.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sX9n0cAAAAASUVORK5CYII="
+        )
+    )
+    doc = DocxDocument()
+    doc.add_paragraph().add_run().add_picture(str(image_path), width=Inches(0.2))
+    doc.save(result_path)
+    _convert_first_inline_picture_to_anchor(result_path)
+
+    desc = build_provenance_descriptor(1)
+    apply_final_provenance(
+        str(result_path),
+        [
+            {
+                **desc,
+                "fragment_path": str(result_path),
+                "content_type": "figure",
+                "source_id": "src_000001",
+            }
+        ],
+    )
+
+    created = create_provenance_preview_docx(
+        str(result_path),
+        str(preview_path),
+        {
+            "src_000001": {
+                **desc,
+                "source_file": "Figure Source.docx",
+                "source_step": "extract_specific_figure_from_word",
+                "content_type": "figure",
+            }
+        },
+    )
+
+    assert created is True
+    with ZipFile(preview_path, "r") as zf:
+        root = etree.fromstring(zf.read("word/document.xml"))
+    assert not root.xpath("//wp:anchor", namespaces=_NS)
+    assert root.xpath("//wp:inline", namespaces=_NS)
+    paragraph_texts = [
+        paragraph.text.strip()
+        for paragraph in DocxDocument(str(preview_path)).paragraphs
+        if paragraph.text.strip()
+    ]
+    assert paragraph_texts[0] == "(此說明不會出現在實際輸出文件)來源: Figure Source.docx"
+
+
+def test_create_provenance_preview_docx_skips_blank_bookmark_start_paragraph(tmp_path: Path) -> None:
+    result_path = tmp_path / "result.docx"
+    preview_path = tmp_path / "preview.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("")
+    doc.add_paragraph("Real source paragraph")
+    doc.save(result_path)
+
+    desc = build_provenance_descriptor(1)
+    assert annotate_docx_with_provenance(
+        str(result_path),
+        bookmark_start=str(desc["bookmark_start"]),
+        bookmark_end=str(desc["bookmark_end"]),
+        bookmark_id=int(desc["bookmark_id"]),
+    )
+
+    created = create_provenance_preview_docx(
+        str(result_path),
+        str(preview_path),
+        {
+            "src_000001": {
+                **desc,
+                "source_file": "Alpha.docx",
+                "source_step": "extract_word_chapter",
+                "content_type": "paragraph",
+            }
+        },
+    )
+
+    assert created is True
+    preview_doc = DocxDocument(str(preview_path))
+    assert preview_doc.paragraphs[0].text == ""
+    assert preview_doc.paragraphs[1].text == "(此說明不會出現在實際輸出文件)來源: Alpha.docx"
+    assert preview_doc.paragraphs[2].text == "Real source paragraph"
+
+
+def test_create_provenance_preview_docx_uses_result_block_ranges_over_open_bookmarks(tmp_path: Path) -> None:
+    result_path = tmp_path / "result.docx"
+    preview_path = tmp_path / "preview.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("Figure A")
+    doc.add_paragraph("Caption A")
+    doc.add_paragraph("Figure B")
+    doc.add_paragraph("Caption B")
+    doc.add_paragraph("Template prompt must not inherit source A")
+    doc.save(result_path)
+
+    first_desc = build_provenance_descriptor(1)
+    second_desc = build_provenance_descriptor(2)
+    created = create_provenance_preview_docx(
+        str(result_path),
+        str(preview_path),
+        {
+            "src_000001": {
+                **first_desc,
+                "source_file": "A.docx",
+                "content_type": "figure",
+                "result_block_start": 0,
+                "result_block_end": 1,
+            },
+            "src_000002": {
+                **second_desc,
+                "source_file": "B.docx",
+                "content_type": "figure",
+                "result_block_start": 2,
+                "result_block_end": 3,
+            },
+        },
+    )
+
+    assert created is True
+    paragraph_texts = [paragraph.text for paragraph in DocxDocument(str(preview_path)).paragraphs]
+    assert paragraph_texts == [
+        "(此說明不會出現在實際輸出文件)來源: A.docx",
+        "Figure A",
+        "Caption A",
+        "(此說明不會出現在實際輸出文件)來源: B.docx",
+        "Figure B",
+        "Caption B",
+        "Template prompt must not inherit source A",
+    ]
+
+
 def test_create_provenance_preview_docx_inserts_labels_without_highlighting_body_text(
     monkeypatch,
     tmp_path: Path,
@@ -289,12 +462,16 @@ def test_create_provenance_preview_docx_inserts_labels_without_highlighting_body
     preview_doc = DocxDocument(str(preview_path))
     paragraph_texts = [paragraph.text.strip() for paragraph in preview_doc.paragraphs if paragraph.text.strip()]
 
-    assert "來源: Alpha.docx" in paragraph_texts
-    assert "來源: Beta.docx" in paragraph_texts
+    assert "(此說明不會出現在實際輸出文件)來源: Alpha.docx" in paragraph_texts
+    assert "(此說明不會出現在實際輸出文件)來源: Beta.docx" in paragraph_texts
     assert "Alpha source paragraph" in paragraph_texts
     assert "Beta source paragraph" in paragraph_texts
-    assert paragraph_texts.index("來源: Alpha.docx") < paragraph_texts.index("Alpha source paragraph")
-    assert paragraph_texts.index("來源: Beta.docx") < paragraph_texts.index("Beta source paragraph")
+    assert paragraph_texts.index(
+        "(此說明不會出現在實際輸出文件)來源: Alpha.docx"
+    ) < paragraph_texts.index("Alpha source paragraph")
+    assert paragraph_texts.index(
+        "(此說明不會出現在實際輸出文件)來源: Beta.docx"
+    ) < paragraph_texts.index("Beta source paragraph")
 
     with ZipFile(preview_path, "r") as zf:
         root = etree.fromstring(zf.read("word/document.xml"))

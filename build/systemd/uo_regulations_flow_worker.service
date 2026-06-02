@@ -1,0 +1,18 @@
+[Unit]
+Description=UO_Regulations Flow Jobs Worker
+After=network.target
+
+[Service]
+Type=simple
+User=NE025
+Group=www-data
+WorkingDirectory=/home/NE025/UO_MDR
+EnvironmentFile=/home/NE025/UO_MDR/.env
+Environment="PATH=/home/NE025/UO_MDR/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+Environment="APP_ENV=production"
+ExecStart=/home/NE025/UO_MDR/.venv/bin/flask --app app.py jobs-worker --queue flow
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

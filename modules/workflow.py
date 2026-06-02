@@ -222,13 +222,27 @@ def _renumber_chapter_headings(docx_path: str) -> None:
         doc.save(docx_path)
 
 
+def _replace_paragraph_text_preserving_runs(para: DocxParagraph, new_text: str) -> None:
+    """Replace paragraph text while keeping existing run formatting when possible."""
+    runs = list(para.runs)
+    if not runs:
+        para.text = new_text
+        return
+    remaining = str(new_text or "")
+    for run in runs[:-1]:
+        old_len = len(run.text or "")
+        run.text = remaining[:old_len]
+        remaining = remaining[old_len:]
+    runs[-1].text = remaining
+
+
 def _renumber_figure_table_labels(docx_path: str, *, _allow_second_pass: bool = True) -> None:
     """Renumber Figure/Table captions and simple in-text references from 1."""
     _materialize_numbered_caption_prefixes(docx_path)
     doc = DocxDocument(docx_path)
 
     prefix_pattern = r"(Figure|Fig\.?|圖|图|Table|Tab\.?|表)"
-    number_pattern = r"\d+(?:-\d+)*"
+    number_pattern = r"\d+(?:[\.-]\d+)*"
     caption_regex = re.compile(
         rf"^\s*{prefix_pattern}([\s\u00A0]*)({number_pattern})",
         re.IGNORECASE,
@@ -332,7 +346,7 @@ def _renumber_figure_table_labels(docx_path: str, *, _allow_second_pass: bool = 
         else:
             updated_para = ref_regex.sub(_ref_repl, para_text)
         if updated_para != para_text:
-            para.text = updated_para
+            _replace_paragraph_text_preserving_runs(para, updated_para)
 
     # Pass 3: remove orphan caption-only paragraphs (e.g., lone "Figure 4.")
     # when there is no adjacent drawing object.
@@ -540,13 +554,12 @@ SUPPORTED_STEPS = {
     },
     "insert_text": {
         "label": "插入純文字段落",
-        "inputs": ["text", "align", "bold", "font_size", "page_break_before", "template_index", "template_mode"],
+        "inputs": ["text", "align", "bold", "font_size", "template_index", "template_mode"],
         "accepts": {
             "text": "text",
             "align": "align",
             "bold": "bool",
             "font_size": "float",
-            "page_break_before": "bool",
             "template_index": "text",
             "template_mode": "text",
         }

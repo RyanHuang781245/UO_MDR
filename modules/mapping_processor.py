@@ -1017,6 +1017,47 @@ def process_mapping_excel(
                 return options, f"不支援的標題參數: {key_raw.strip()}"
         return options, ""
 
+    def _parse_insert_instruction(
+        raw_instruction: str,
+        item_type: str,
+    ) -> tuple[dict[str, Any], str]:
+        raw = (raw_instruction or "").strip()
+        if not raw:
+            return {}, ""
+        parts = _split_quoted_tokens(raw, delimiter="|")
+        core = (parts[0] if parts else "").strip()
+        core_normalized = re.sub(r"\s+", " ", core).strip().lower()
+        allowed_cores = {
+            "add_text": {"add text", "insert text", "文字", "插入文字", "插入純文字段落"},
+            "add_image": {"image", "add image", "insert image", "圖片", "插入圖片", "插入圖片檔"},
+        }.get(item_type, set())
+        if core_normalized and core_normalized not in allowed_cores:
+            return {}, f"類型 {item_type.replace('_', ' ').title()} 時，操作欄位值無效: {core}"
+
+        options: dict[str, Any] = {}
+        allowed_params = {
+            "add_text": {"align", "bold", "font_size"},
+            "add_image": {"align"},
+        }.get(item_type, set())
+        for token in parts[1:]:
+            if not token:
+                continue
+            if "=" not in token:
+                return options, f"無效參數語法: {token}"
+            key_raw, value_raw = token.split("=", 1)
+            key = key_raw.strip().lower()
+            value = _strip_matching_quotes(value_raw.strip())
+            if key not in allowed_params:
+                return options, f"不支援的插入參數: {key_raw.strip()}"
+            if key == "font_size":
+                try:
+                    options["font_size"] = float(value)
+                except ValueError:
+                    return options, f"font_size 必須是數字: {value}"
+            else:
+                options[key] = value
+        return options, ""
+
     def _attach_mapping_meta(params: Dict[str, Any], row_num: int, action: str, detail: str) -> Dict[str, Any]:
         params["mapping_row"] = row_num
         params["mapping_action_label"] = action
@@ -1307,8 +1348,9 @@ def process_mapping_excel(
             groups[group_key] = {"steps": [], "parsed": parsed, "template": template_path}
 
         if item_type == "add_image":
-            if instruction and instruction.lower() not in {"", "image", "add image"}:
-                _log("error", f"類型 Add Image 時，操作欄僅支援留白: {instruction}", row_num, action_label, detail_label)
+            insert_options, insert_error = _parse_insert_instruction(instruction, item_type)
+            if insert_error:
+                _log("error", insert_error, row_num, action_label, detail_label)
                 continue
             # Resolve image file from task_files_dir
             infile, resolve_error = _resolve_any_file(task_files_dir, src_name)
@@ -1321,7 +1363,7 @@ def process_mapping_excel(
                 allowed_text = ", ".join(sorted(allowed_exts))
                 _log("error", f"Add Image 僅支援圖片格式: {allowed_text}", row_num, action_label, detail_label)
                 continue
-            params = {"input_file": infile, "align": "center"}
+            params = {"input_file": infile, "align": insert_options.get("align") or "center"}
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = template_mode
@@ -1331,10 +1373,12 @@ def process_mapping_excel(
             continue
 
         if item_type == "add_text":
-            if instruction and instruction.lower() != "add text":
-                _log("error", f"類型 Add Text 時，操作欄僅支援留白或 Add Text: {instruction}", row_num, action_label, detail_label)
+            insert_options, insert_error = _parse_insert_instruction(instruction, item_type)
+            if insert_error:
+                _log("error", insert_error, row_num, action_label, detail_label)
                 continue
             params = {"text": src_name}
+            params.update(insert_options)
             if template_path is not None:
                 params["template_index"] = target_idx
                 params["template_mode"] = template_mode
@@ -1626,7 +1670,7 @@ def process_mapping_excel(
                 detail_parts.append(f"end title {end_title}")
             if subheading:
                 detail_parts.append(f"subheading {subheading}")
-            _log(f"Extract chapter: {src_name} ({', '.join(detail_parts)})", row_num)
+            _log("info", f"extract chapter: {src_name} ({', '.join(detail_parts)})", row_num)
             step_type = "extract_word_chapter"
         if template_path is not None:
             params["template_index"] = target_idx

@@ -353,6 +353,152 @@ def test_flow_version_list_and_count_only_include_manual_snapshots(app, client) 
     assert _flow_version_count(str(flow_dir), "版本流程") == 1
 
 
+def test_flow_version_list_marks_current_manual_snapshot(app, client) -> None:
+    task_id = "flow-version-current-marker"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    flow_dir = task_dir / "flows"
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+
+    current_payload = {
+        "created": "2026-03-24 11:00",
+        "steps": [{"type": "insert_text_after", "params": {"text": "current"}}],
+        "template_file": "",
+        "document_format": "default",
+        "line_spacing": "1.5",
+        "apply_formatting": True,
+        "output_filename": "",
+    }
+    old_payload = {
+        **current_payload,
+        "steps": [{"type": "insert_text_after", "params": {"text": "old"}}],
+    }
+    _write_flow(flow_dir / "版本流程.json", current_payload)
+
+    versions_dir = flow_dir / "_versions" / "版本流程"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    current_base = "20260324110000_current"
+    old_base = "20260324100000_old"
+    (versions_dir / f"{current_base}.json").write_text(json.dumps(current_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    (versions_dir / f"{old_base}.json").write_text(json.dumps(old_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    from app.services.flow_version_service import flow_content_hash
+
+    (versions_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "versions": [
+                    {
+                        "id": "current-version",
+                        "name": "目前版本",
+                        "slug": "current",
+                        "base_name": current_base,
+                        "created_at": "2026-03-24T11:00:00",
+                        "created_by": "",
+                        "flow_name": "版本流程",
+                        "source": "manual_snapshot",
+                        "content_hash": flow_content_hash(current_payload),
+                    },
+                    {
+                        "id": "old-version",
+                        "name": "舊版本",
+                        "slug": "old",
+                        "base_name": old_base,
+                        "created_at": "2026-03-24T10:00:00",
+                        "created_by": "",
+                        "flow_name": "版本流程",
+                        "source": "manual_snapshot",
+                        "content_hash": flow_content_hash(old_payload),
+                    },
+                ]
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("flow_version_api_bp.list_flow_versions", task_id=task_id, flow_name="版本流程")
+
+    response = client.get(url)
+    assert response.status_code == 200
+    versions = response.get_json()["versions"]
+    marker_by_id = {item["id"]: item["is_current"] for item in versions}
+    assert marker_by_id == {"current-version": True, "old-version": False}
+
+
+def test_flow_version_limit_does_not_count_before_restore_backup(app, client) -> None:
+    task_id = "flow-version-limit-with-restore-backup"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    flow_dir = task_dir / "flows"
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "created": "2026-03-24 11:00",
+        "steps": [{"type": "insert_text_after", "params": {"text": "current"}}],
+        "template_file": "",
+        "document_format": "default",
+        "line_spacing": "1.5",
+        "apply_formatting": True,
+        "output_filename": "",
+    }
+    _write_flow(flow_dir / "版本流程.json", payload)
+
+    versions_dir = flow_dir / "_versions" / "版本流程"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    backup_base = "20260324120000_before_restore"
+    (versions_dir / f"{backup_base}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    versions = [
+        {
+            "id": "backup-1",
+            "name": "回復前備份",
+            "slug": "before_restore",
+            "base_name": backup_base,
+            "created_at": "2026-03-24T12:00:00",
+            "created_by": "",
+            "flow_name": "版本流程",
+            "source": "before_restore",
+            "content_hash": "backup-hash",
+        }
+    ]
+    for index in range(19):
+        base_name = f"2026032411{index:02d}00_manual_snapshot"
+        (versions_dir / f"{base_name}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        versions.append(
+            {
+                "id": f"manual-{index}",
+                "name": f"v{index}",
+                "slug": f"v{index}",
+                "base_name": base_name,
+                "created_at": f"2026-03-24T11:{index:02d}:00",
+                "created_by": "",
+                "flow_name": "版本流程",
+                "source": "manual_snapshot",
+                "content_hash": f"manual-hash-{index}",
+            }
+        )
+    (versions_dir / "metadata.json").write_text(
+        json.dumps({"versions": sorted(versions, key=lambda item: item["created_at"], reverse=True)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("flow_version_api_bp.create_flow_version", task_id=task_id, flow_name="版本流程")
+
+    response = client.post(url, data={"version_name": "v19"})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["version_count"] == 20
+
+    metadata = _version_metadata(flow_dir, "版本流程")
+    assert sum(1 for item in metadata["versions"] if item["source"] == "manual_snapshot") == 20
+    assert sum(1 for item in metadata["versions"] if item["source"] == "before_restore") == 1
+    assert len(metadata["versions"]) == 21
+
+
 def test_create_flow_version_endpoint_creates_manual_snapshot(app, client) -> None:
     task_id = "flow-version-create-endpoint"
     tdir = Path(app.config["TASK_FOLDER"]) / task_id

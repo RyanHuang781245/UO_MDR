@@ -195,6 +195,16 @@ def _compose_template_insert_label(display: str, text: str) -> str:
     return disp or body
 
 
+def _mapping_operation_with_params(base: str, params: dict, keys: list[str]) -> str:
+    parts = [base]
+    for key in keys:
+        if key in params:
+            value = str(params.get(key) or "").strip()
+            if value:
+                parts.append(f"{key}={value}")
+    return " | ".join(parts)
+
+
 def _flow_step_to_mapping_row(
     step: dict,
     flow_output_rel: str,
@@ -278,7 +288,7 @@ def _flow_step_to_mapping_row(
         return {
             "source": _normalize_flow_source_for_mapping(params.get("input_file"), files_dir),
             "item_type": "Add Image",
-            "operation": "",
+            "operation": _mapping_operation_with_params("Add Image", params, ["align"]),
             "include_title": "",
             "out_path": out_path,
             "out_name": out_name,
@@ -290,7 +300,7 @@ def _flow_step_to_mapping_row(
         return {
             "source": str(params.get("text") or "").strip(),
             "item_type": "Add Text",
-            "operation": "Add Text",
+            "operation": _mapping_operation_with_params("Add Text", params, ["align", "bold", "font_size"]),
             "include_title": "",
             "out_path": out_path,
             "out_name": out_name,
@@ -349,13 +359,7 @@ def _flow_step_to_mapping_row(
     return None
 
 
-def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> bytes:
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
-    except Exception as exc:  # pragma: no cover
-        raise RuntimeError("openpyxl is required to export Mapping Excel") from exc
-
+def _build_mapping_rows_for_flow(flow_data: dict | list, files_dir: str) -> list[dict]:
     if isinstance(flow_data, dict):
         steps = list(flow_data.get("steps") or [])
         output_filename, output_error = normalize_docx_output_path(flow_data.get("output_filename"), default="")
@@ -386,6 +390,28 @@ def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> byt
         template_name = ""
         template_insert_map = {}
 
+    rows = []
+    for step in steps:
+        row = _flow_step_to_mapping_row(step, output_filename, files_dir, template_name, template_insert_map)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str, *, source_flow_name: str = "") -> bytes:
+    return _build_mapping_workbook_from_rows(
+        _build_mapping_rows_for_flow(flow_data, files_dir),
+        source_flow_name=source_flow_name,
+    )
+
+
+def _build_mapping_workbook_from_rows(rows: list[dict], *, source_flow_name: str = "") -> bytes:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("openpyxl is required to export Mapping Excel") from exc
+
     headers = [
         "輸入檔案名稱/資料夾名稱/文字內容",
         "擷取類型",
@@ -397,6 +423,8 @@ def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> byt
         "插入段落名稱",
         "插入方式",
     ]
+    if source_flow_name:
+        headers = ["來源流程", *headers]
 
     wb = Workbook()
     ws = wb.active
@@ -416,10 +444,11 @@ def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> byt
     data_alignment = Alignment(horizontal="left", vertical="center")
     data_border_style = header_border_style
     data_header_border = Border(left=data_border_style, right=data_border_style, top=data_border_style, bottom=data_border_style)
+    input_column_indexes = {1, 2, 3, 4, 5} if source_flow_name else {1, 2, 3, 4}
 
     for col_idx in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col_idx)
-        if col_idx in {0, 1, 2, 3, 4}:
+        if col_idx in input_column_indexes:
             cell.fill = header_input_fill
         else:
             cell.fill = header_output_fill
@@ -427,27 +456,27 @@ def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> byt
         cell.alignment = header_alignment
         cell.border = header_border
         
-    for step in steps:
-        row = _flow_step_to_mapping_row(step, output_filename, files_dir, template_name, template_insert_map)
-        if not row:
-            continue
+    for row in rows:
+        row_values = [
+            row["source"],
+            row["item_type"],
+            row["operation"],
+            row["include_title"],
+            row["out_path"],
+            row["out_name"],
+            row["template"],
+            row["insert"],
+            row["insert_mode"],
+        ]
+        if source_flow_name:
+            row_values = [row.get("source_flow") or "", *row_values]
         ws.append(
-            [
-                row["source"],
-                row["item_type"],
-                row["operation"],
-                row["include_title"],
-                row["out_path"],
-                row["out_name"],
-                row["template"],
-                row["insert"],
-                row["insert_mode"],
-            ]
+            row_values
         )
     for row_idx in range(2, ws.max_row + 1):
         for col_idx in range(1, len(headers) + 1):
             cell = ws.cell(row=row_idx, column=col_idx)
-            if col_idx in {1, 2, 3, 4}:
+            if col_idx in input_column_indexes:
                 cell.fill = data_input_fill
             else:
                 cell.fill = data_output_fill
@@ -455,15 +484,27 @@ def _build_mapping_workbook_bytes(flow_data: dict | list, files_dir: str) -> byt
             cell.alignment = data_alignment
             cell.border = data_header_border
 
-    ws.column_dimensions["A"].width = 143
-    ws.column_dimensions["B"].width = 18
-    ws.column_dimensions["C"].width = 80
-    ws.column_dimensions["D"].width = 10
-    ws.column_dimensions["E"].width = 54
-    ws.column_dimensions["F"].width = 54
-    ws.column_dimensions["G"].width = 54
-    ws.column_dimensions["H"].width = 54
-    ws.column_dimensions["I"].width = 18
+    if source_flow_name:
+        ws.column_dimensions["A"].width = 36
+        ws.column_dimensions["B"].width = 143
+        ws.column_dimensions["C"].width = 18
+        ws.column_dimensions["D"].width = 80
+        ws.column_dimensions["E"].width = 10
+        ws.column_dimensions["F"].width = 54
+        ws.column_dimensions["G"].width = 54
+        ws.column_dimensions["H"].width = 54
+        ws.column_dimensions["I"].width = 54
+        ws.column_dimensions["J"].width = 18
+    else:
+        ws.column_dimensions["A"].width = 143
+        ws.column_dimensions["B"].width = 18
+        ws.column_dimensions["C"].width = 80
+        ws.column_dimensions["D"].width = 10
+        ws.column_dimensions["E"].width = 54
+        ws.column_dimensions["F"].width = 54
+        ws.column_dimensions["G"].width = 54
+        ws.column_dimensions["H"].width = 54
+        ws.column_dimensions["I"].width = 18
 
     stream = BytesIO()
     wb.save(stream)
@@ -487,6 +528,47 @@ def export_flow_mapping(task_id, flow_name):
         BytesIO(payload),
         as_attachment=True,
         download_name=f"{flow_name}_mapping.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@flow_crud_bp.post("/export-mapping/merged", endpoint="export_merged_flow_mapping")
+def export_merged_flow_mapping(task_id):
+    task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    flow_dir = os.path.join(task_dir, "flows")
+    files_dir = os.path.join(task_dir, "files")
+    selected_flow_names = [str(name or "").strip() for name in request.form.getlist("flow_names")]
+    selected_flow_names = [name for name in selected_flow_names if name]
+    if not selected_flow_names:
+        return "請至少選擇一個流程", 400
+
+    rows: list[dict] = []
+    exported_names: list[str] = []
+    for flow_name in selected_flow_names:
+        flow_path = os.path.join(flow_dir, f"{flow_name}.json")
+        if not os.path.isfile(flow_path):
+            return f"找不到流程：{flow_name}", 404
+        with open(flow_path, "r", encoding="utf-8") as f:
+            flow_data = json.load(f)
+        flow_rows = _build_mapping_rows_for_flow(flow_data, files_dir)
+        for row in flow_rows:
+            row["source_flow"] = flow_name
+        rows.extend(flow_rows)
+        exported_names.append(flow_name)
+
+    if not rows:
+        return "選取的流程沒有可匯出的 Mapping 步驟", 400
+
+    payload = _build_mapping_workbook_from_rows(rows, source_flow_name="來源流程")
+    _record_flow_audit(
+        "flow_export_mapping_merged",
+        task_id,
+        {"flows": exported_names, "export_type": "mapping_excel"},
+    )
+    return send_file(
+        BytesIO(payload),
+        as_attachment=True,
+        download_name="merged_mapping.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 

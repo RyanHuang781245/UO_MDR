@@ -204,6 +204,38 @@ def test_mapping_type_add_text_blank_operation_creates_insert_text(tmp_path: Pat
     assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
+def test_mapping_type_add_text_operation_params_are_passed_to_insert_text(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "Add Text | align=right | bold=false | font_size=13",
+        item_type="Add Text",
+        source_name="這是一段說明文字",
+        source_files=[],
+    )
+    assert _first_step_type(log_data) == "insert_text"
+    params = _first_step_params(log_data)
+    assert params.get("text") == "這是一段說明文字"
+    assert params.get("align") == "right"
+    assert params.get("bold") == "false"
+    assert params.get("font_size") == 13.0
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
+def test_mapping_type_add_image_operation_params_are_passed_to_insert_image(tmp_path: Path) -> None:
+    result, log_data = _run_validate_mapping(
+        tmp_path,
+        "Add Image | align=left",
+        item_type="Add Image",
+        source_name="logo.png",
+        source_files=["logo.png"],
+    )
+    assert _first_step_type(log_data) == "insert_image"
+    params = _first_step_params(log_data)
+    assert params.get("input_file", "").endswith("logo.png")
+    assert params.get("align") == "left"
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
+
+
 def test_mapping_insert_mode_replace_is_passed_to_template_step(tmp_path: Path) -> None:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"
@@ -262,7 +294,7 @@ def test_mapping_type_add_text_rejects_other_operation(tmp_path: Path) -> None:
         source_name="這是一段說明文字",
         source_files=[],
     )
-    assert any("類型 Add Text 時，操作欄僅支援留白或 Add Text" in msg for msg in result.get("logs", []))
+    assert any("類型 Add Text 時，操作欄位值無效" in msg for msg in result.get("logs", []))
     runs = log_data.get("runs") or []
     assert runs
     assert all(not (run.get("workflow_log") or []) for run in runs)

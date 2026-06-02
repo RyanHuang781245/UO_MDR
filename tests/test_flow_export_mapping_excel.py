@@ -119,6 +119,76 @@ def test_export_flow_mapping_excel_matches_mapping_headers_and_rows(app, client)
     assert ws.cell(2, 6).fill.fill_type == "solid"
 
 
+def test_export_merged_flow_mapping_excel_includes_source_flow_column(app, client) -> None:
+    task_id = "flow-export-merged-mapping-xlsx"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    (task_dir / "flows").mkdir(parents=True, exist_ok=True)
+
+    flow_a = {
+        "steps": [
+            {"type": "extract_word_all_content", "params": {"input_file": "source/a.docx"}},
+        ],
+        "output_filename": "out/a.docx",
+    }
+    flow_b = {
+        "steps": [
+            {"type": "insert_text", "params": {"text": "Note from B"}},
+        ],
+        "output_filename": "out/b.docx",
+    }
+    (task_dir / "flows" / "FlowA.json").write_text(json.dumps(flow_a, ensure_ascii=False), encoding="utf-8")
+    (task_dir / "flows" / "FlowB.json").write_text(json.dumps(flow_b, ensure_ascii=False), encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_crud_bp.export_merged_flow_mapping", task_id=task_id)
+
+    response = client.post(url, data={"flow_names": ["FlowB", "FlowA"]})
+    assert response.status_code == 200
+    assert "merged_mapping.xlsx" in response.headers.get("Content-Disposition", "")
+
+    wb = load_workbook(filename=BytesIO(response.data))
+    ws = wb.active
+    assert [ws.cell(1, i).value for i in range(1, 11)] == [
+        "來源流程",
+        "輸入檔案名稱/資料夾名稱/文字內容",
+        "擷取類型",
+        "擷取段落",
+        "包含標題",
+        "輸出路徑",
+        "輸出檔案名稱",
+        "模板文件",
+        "插入段落名稱",
+        "插入方式",
+    ]
+    assert [ws.cell(2, i).value for i in range(1, 11)] == [
+        "FlowB",
+        "Note from B",
+        "Add Text",
+        "Add Text",
+        None,
+        "out",
+        "b.docx",
+        None,
+        None,
+        None,
+    ]
+    assert [ws.cell(3, i).value for i in range(1, 11)] == [
+        "FlowA",
+        "source\\a.docx",
+        "All",
+        "All",
+        "Y",
+        "out",
+        "a.docx",
+        None,
+        None,
+        None,
+    ]
+
+
 def test_export_flow_mapping_excel_chapter_operation_includes_title_and_subtitle(app, client) -> None:
     task_id = "flow-export-mapping-chapter-title"
     task_dir = Path(app.config["TASK_FOLDER"]) / task_id
@@ -384,6 +454,57 @@ def test_export_flow_mapping_excel_preserves_insert_mode_and_heading_type(app, c
     assert ws.cell(2, 3).value == "Roman Heading | level=0 | bold=true | font_size=12"
     assert ws.cell(2, 8).value == "b) Placeholder"
     assert ws.cell(2, 9).value == "取代該段落"
+
+
+def test_export_flow_mapping_excel_includes_insert_text_and_image_params(app, client) -> None:
+    task_id = "flow-export-mapping-insert-params"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    (task_dir / "files").mkdir(parents=True, exist_ok=True)
+    (task_dir / "flows").mkdir(parents=True, exist_ok=True)
+
+    flow_payload = {
+        "steps": [
+            {
+                "type": "insert_text",
+                "params": {
+                    "text": "Appendix Note",
+                    "align": "right",
+                    "bold": "false",
+                    "font_size": "13",
+                },
+            },
+            {
+                "type": "insert_image",
+                "params": {
+                    "input_file": "assets/logo.png",
+                    "align": "left",
+                },
+            },
+        ],
+        "output_filename": "out/result.docx",
+    }
+    (task_dir / "flows" / "FlowInsertParams.json").write_text(json.dumps(flow_payload, ensure_ascii=False), encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_crud_bp.export_flow_mapping", task_id=task_id, flow_name="FlowInsertParams")
+
+    response = client.get(url)
+    assert response.status_code == 200
+
+    wb = load_workbook(filename=BytesIO(response.data))
+    ws = wb.active
+    assert [ws.cell(2, i).value for i in range(1, 4)] == [
+        "Appendix Note",
+        "Add Text",
+        "Add Text | align=right | bold=false | font_size=13",
+    ]
+    assert [ws.cell(3, i).value for i in range(1, 4)] == [
+        "assets\\logo.png",
+        "Add Image",
+        "Add Image | align=left",
+    ]
 
 
 def test_export_flow_mapping_excel_uses_figure_table_type_for_table_wrapped_figure(app, client) -> None:

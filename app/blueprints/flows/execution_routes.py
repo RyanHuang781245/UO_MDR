@@ -143,6 +143,7 @@ def run_flow(task_id):
                     task_id=task_id,
                     flow=target_flow_name,
                     fpage=request.form.get("fpage"),
+                    flow_tab="builder",
                     save_status="saved",
                 )
             )
@@ -152,6 +153,7 @@ def run_flow(task_id):
                     "flow_builder_bp.flow_builder",
                     task_id=task_id,
                     flow=target_flow_name,
+                    flow_tab="builder",
                     save_status="saved",
                 )
             )

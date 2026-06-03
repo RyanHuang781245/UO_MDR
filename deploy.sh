@@ -11,6 +11,7 @@ BRANCH="${DEPLOY_BRANCH:-main}"
 RUN_GIT_PULL="${RUN_GIT_PULL:-0}"
 RUN_DB_BACKUP="${RUN_DB_BACKUP:-0}"
 INSTALL_SYSTEMD_UNITS="${INSTALL_SYSTEMD_UNITS:-1}"
+MANAGE_SYSTEMD_SERVICES="${MANAGE_SYSTEMD_SERVICES:-auto}"
 WEB_WORKERS="${WEB_WORKERS:-2}"
 WEB_BIND="${WEB_BIND:-127.0.0.1:8000}"
 UPDATE_ON_CALENDAR="${UPDATE_ON_CALENDAR:-daily}"
@@ -41,6 +42,31 @@ require_cmd() {
     echo "Command not found: $cmd" >&2
     exit 127
   fi
+}
+
+systemd_available() {
+  command -v systemctl >/dev/null 2>&1 \
+    && [[ "$(ps -p 1 -o comm= 2>/dev/null | tr -d '[:space:]')" == "systemd" ]] \
+    && [[ -d /run/systemd/system ]]
+}
+
+should_manage_systemd() {
+  case "$MANAGE_SYSTEMD_SERVICES" in
+    1|true|yes)
+      return 0
+      ;;
+    0|false|no)
+      return 1
+      ;;
+    auto)
+      systemd_available
+      ;;
+    *)
+      echo "Invalid MANAGE_SYSTEMD_SERVICES value: $MANAGE_SYSTEMD_SERVICES" >&2
+      echo "Use auto, 1, or 0." >&2
+      exit 64
+      ;;
+  esac
 }
 
 log "進入專案目錄"
@@ -81,19 +107,28 @@ require_file "$VENV_PYTHON"
 require_file "$ALEMBIC_BIN"
 require_file "$FLASK_BIN"
 
+if should_manage_systemd; then
+  SYSTEMD_ENABLED=1
+else
+  SYSTEMD_ENABLED=0
+  log "未偵測到可用的 systemd，略過 systemd unit 安裝與服務啟停"
+fi
+
 if [[ "$RUN_DB_BACKUP" == "1" ]]; then
   log "執行部署前資料庫備份"
   bash "$APP_DIR/scripts/backup_mssql_full.sh"
 fi
 
-log "停止排程 timer，避免部署中觸發"
-sudo systemctl stop "$TIMER_SERVICE" || true
+if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
+  log "停止排程 timer，避免部署中觸發"
+  sudo systemctl stop "$TIMER_SERVICE" || true
 
-log "停止應用服務"
-sudo systemctl stop "$WORKER_SERVICE" || true
-sudo systemctl stop "$APP_NAME" || true
+  log "停止應用服務"
+  sudo systemctl stop "$WORKER_SERVICE" || true
+  sudo systemctl stop "$APP_NAME" || true
+fi
 
-if [[ "$INSTALL_SYSTEMD_UNITS" == "1" ]]; then
+if [[ "$INSTALL_SYSTEMD_UNITS" == "1" && "$SYSTEMD_ENABLED" == "1" ]]; then
   log "安裝或更新 systemd units"
   sudo bash "$APP_DIR/scripts/install_systemd_units.sh" \
     --install \
@@ -102,6 +137,8 @@ if [[ "$INSTALL_SYSTEMD_UNITS" == "1" ]]; then
     --web-bind "$WEB_BIND" \
     --web-workers "$WEB_WORKERS" \
     --update-on-calendar "$UPDATE_ON_CALENDAR"
+elif [[ "$INSTALL_SYSTEMD_UNITS" == "1" ]]; then
+  log "略過 systemd units 安裝；目前環境無可用 systemd"
 fi
 
 if [[ "$ENABLE_NGINX" == "1" ]]; then
@@ -123,23 +160,27 @@ log "驗證 schema"
 log "初始化預設資料"
 "$FLASK_BIN" --app app.py seed-bootstrap
 
-log "啟動 Web service"
-sudo systemctl restart "$APP_NAME"
+if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
+  log "啟動 Web service"
+  sudo systemctl restart "$APP_NAME"
 
-log "啟動 Worker service"
-sudo systemctl restart "$WORKER_SERVICE"
+  log "啟動 Worker service"
+  sudo systemctl restart "$WORKER_SERVICE"
 
-log "啟動 Timer"
-sudo systemctl restart "$TIMER_SERVICE"
+  log "啟動 Timer"
+  sudo systemctl restart "$TIMER_SERVICE"
 
-if [[ "$ENABLE_NGINX" == "1" ]]; then
-  log "重新載入 Nginx"
-  sudo systemctl reload nginx
+  if [[ "$ENABLE_NGINX" == "1" ]]; then
+    log "重新載入 Nginx"
+    sudo systemctl reload nginx
+  fi
+
+  log "查看服務狀態"
+  sudo systemctl status "$APP_NAME" --no-pager
+  sudo systemctl status "$WORKER_SERVICE" --no-pager
+  sudo systemctl status "$TIMER_SERVICE" --no-pager
+else
+  log "略過服務啟動與狀態檢查；請在容器內手動執行 gunicorn/flask worker，或用 docker compose 管理程序"
 fi
-
-log "查看服務狀態"
-sudo systemctl status "$APP_NAME" --no-pager
-sudo systemctl status "$WORKER_SERVICE" --no-pager
-sudo systemctl status "$TIMER_SERVICE" --no-pager
 
 log "部署完成"

@@ -8,7 +8,7 @@ Group=www-data
 WorkingDirectory={{APP_ROOT}}
 EnvironmentFile={{ENV_FILE}}
 Environment="PATH={{APP_ROOT}}/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
-ExecStart={{APP_ROOT}}/.venv/bin/gunicorn --workers 4 --worker-class gthread --threads 4 --timeout 300 --bind {{WEB_BIND}} --user {{APP_USER}} --group www-data -m 007 --error-logfile - wsgi:app
+ExecStart={{APP_ROOT}}/.venv/bin/gunicorn --workers {{WEB_WORKERS}} --worker-class gthread --threads 4 --timeout 300 --bind {{WEB_BIND}} --user {{APP_USER}} --group www-data -m 007 --error-logfile - wsgi:app
 Restart=always
 RestartSec=5
 

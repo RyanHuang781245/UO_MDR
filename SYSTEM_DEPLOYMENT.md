@@ -190,6 +190,16 @@ RUN_GIT_PULL=1 DEPLOY_BRANCH=main RUN_DB_BACKUP=1 bash deploy.sh
 ENABLE_NGINX=1 RUN_DB_BACKUP=1 bash deploy.sh
 ```
 
+Docker 或一般 container 測試環境通常不會以 systemd 作為 PID 1，因此 `deploy.sh`
+會自動略過 systemd unit 安裝、服務啟停與狀態檢查，只執行環境同步、
+migration、schema preflight 與 seed/bootstrap。也可以明確指定：
+
+```bash
+MANAGE_SYSTEMD_SERVICES=0 INSTALL_SYSTEMD_UNITS=0 bash deploy.sh
+```
+
+若要測試完整 systemd 部署流程，建議使用 Ubuntu VM。
+
 ## 6. 部署後檢查
 
 檢查服務狀態：

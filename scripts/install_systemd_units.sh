@@ -10,6 +10,7 @@ UNIT_TARGET_DIR="/etc/systemd/system"
 APP_USER="$(stat -c '%U' "$APP_ROOT")"
 ENV_FILE="$APP_ROOT/.env"
 WEB_BIND="unix:uo_regulations.sock"
+WEB_WORKERS="4"
 UPDATE_ON_CALENDAR="*-*-* 8:00:00"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 
@@ -26,6 +27,7 @@ Options:
   --app-user USER           systemd User=. Default: owner of app root
   --env-file PATH           EnvironmentFile=. Default: <app-root>/.env
   --web-bind TARGET         Gunicorn bind. Default: unix:uo_regulations.sock
+  --web-workers N           Gunicorn worker count. Default: 4
   --update-on-calendar EXPR systemd timer OnCalendar. Default: *-*-* 8:00:00
   --help                    Show this help
 
@@ -65,6 +67,10 @@ while [[ $# -gt 0 ]]; do
       WEB_BIND="$2"
       shift 2
       ;;
+    --web-workers)
+      WEB_WORKERS="$2"
+      shift 2
+      ;;
     --update-on-calendar)
       UPDATE_ON_CALENDAR="$2"
       shift 2
@@ -102,7 +108,7 @@ require_path "$ENV_FILE" "Environment file"
 
 mkdir -p "$OUTPUT_DIR"
 
-export APP_ROOT APP_USER ENV_FILE WEB_BIND UPDATE_ON_CALENDAR TEMPLATE_DIR OUTPUT_DIR
+export APP_ROOT APP_USER ENV_FILE WEB_BIND WEB_WORKERS UPDATE_ON_CALENDAR TEMPLATE_DIR OUTPUT_DIR
 
 python3 - <<'PY'
 from __future__ import annotations
@@ -117,6 +123,7 @@ mapping = {
     "APP_USER": os.environ["APP_USER"],
     "ENV_FILE": os.environ["ENV_FILE"],
     "WEB_BIND": os.environ["WEB_BIND"],
+    "WEB_WORKERS": os.environ["WEB_WORKERS"],
     "UPDATE_ON_CALENDAR": os.environ["UPDATE_ON_CALENDAR"],
 }
 

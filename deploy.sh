@@ -3,7 +3,10 @@ set -euo pipefail
 
 APP_NAME="uo_regulations"
 WORKER_SERVICE="uo_regulations_jobs_worker"
+FLOW_WORKER_SERVICE="uo_regulations_flow_worker"
+BATCH_WORKER_SERVICE="uo_regulations_batch_worker"
 TIMER_SERVICE="adoption-standard-update.timer"
+WORKER_SERVICES=("$WORKER_SERVICE" "$FLOW_WORKER_SERVICE" "$BATCH_WORKER_SERVICE")
 APP_DIR="/home/NE025/UO_MDR"
 ENV_FILE="$APP_DIR/.env"
 APP_ROOT="$APP_DIR"
@@ -124,7 +127,9 @@ if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
   sudo systemctl stop "$TIMER_SERVICE" || true
 
   log "停止應用服務"
-  sudo systemctl stop "$WORKER_SERVICE" || true
+  for service in "${WORKER_SERVICES[@]}"; do
+    sudo systemctl stop "$service" || true
+  done
   sudo systemctl stop "$APP_NAME" || true
 fi
 
@@ -164,8 +169,10 @@ if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
   log "啟動 Web service"
   sudo systemctl restart "$APP_NAME"
 
-  log "啟動 Worker service"
-  sudo systemctl restart "$WORKER_SERVICE"
+  log "啟動 Worker services"
+  for service in "${WORKER_SERVICES[@]}"; do
+    sudo systemctl restart "$service"
+  done
 
   log "啟動 Timer"
   sudo systemctl restart "$TIMER_SERVICE"
@@ -177,7 +184,9 @@ if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
 
   log "查看服務狀態"
   sudo systemctl status "$APP_NAME" --no-pager
-  sudo systemctl status "$WORKER_SERVICE" --no-pager
+  for service in "${WORKER_SERVICES[@]}"; do
+    sudo systemctl status "$service" --no-pager
+  done
   sudo systemctl status "$TIMER_SERVICE" --no-pager
 else
   log "略過服務啟動與狀態檢查；請在容器內手動執行 gunicorn/flask worker，或用 docker compose 管理程序"

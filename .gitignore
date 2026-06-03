@@ -4,7 +4,8 @@ __pycache__/
 output/
 logs/
 task_store/
-word_all_images/
+backups/
+build/
 images/
 test_file/
 standard_update_store

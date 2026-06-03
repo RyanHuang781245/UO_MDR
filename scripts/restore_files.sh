@@ -6,6 +6,12 @@ BACKUP_ROOT="${BACKUP_ROOT:-$APP_ROOT/backups/files}"
 SKIP_PRE_RESTORE_BACKUP="${SKIP_PRE_RESTORE_BACKUP:-0}"
 RESTORE_ARCHIVE="${RESTORE_ARCHIVE:-${1:-}}"
 CONFIRM="${2:-}"
+TMP_CONTENTS_FILE="$(mktemp)"
+
+cleanup() {
+  rm -f "$TMP_CONTENTS_FILE"
+}
+trap cleanup EXIT
 
 log() {
   printf '[%s] %s\n' "$(date '+%F %T')" "$1"
@@ -61,12 +67,28 @@ else
 fi
 
 log "Validating archive structure"
-tar -tzf "$RESTORE_ARCHIVE" >/dev/null
+tar -tzf "$RESTORE_ARCHIVE" > "$TMP_CONTENTS_FILE"
+if grep -Eq '(^/|(^|/)\.\.(/|$))' "$TMP_CONTENTS_FILE"; then
+  echo "Restore archive contains unsafe paths: $RESTORE_ARCHIVE" >&2
+  exit 65
+fi
 
 if [[ "$SKIP_PRE_RESTORE_BACKUP" != "1" ]]; then
   log "Creating current-state backup before restore"
   APP_ROOT="$APP_ROOT" BACKUP_ROOT="$BACKUP_ROOT" bash "$(dirname "${BASH_SOURCE[0]}")/backup.sh"
 fi
+
+log "Clearing managed restore paths"
+while IFS= read -r path; do
+  [[ -n "$path" ]] || continue
+  rm -rf -- "$APP_ROOT/$path"
+done <<'EOF'
+.env
+task_store
+standard_update_store
+harmonised_store
+deploy/systemd
+EOF
 
 log "Restoring files into: $APP_ROOT"
 tar -xzf "$RESTORE_ARCHIVE" -C "$APP_ROOT"

@@ -284,7 +284,8 @@ bash scripts/restore_files.sh backups/files/uochcldc01_files_2026-06-03_090100.t
 2. 如果旁邊有 `.sha256`，會驗證 checksum
 3. 檢查 tar archive 結構
 4. 還原前自動執行 `scripts/backup.sh` 保存目前狀態
-5. 解壓到 `/home/NE025/UO_MDR`
+5. 清除檔案備份管理的還原範圍：`.env`、`task_store`、`standard_update_store`、`harmonised_store`、`deploy/systemd`
+6. 解壓到 `/home/NE025/UO_MDR`
 
 如果要跳過還原前檔案備份：
 

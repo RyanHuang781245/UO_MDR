@@ -201,7 +201,7 @@ bash scripts/restore_files.sh backups/files/host_files_2026-06-02_120000.tar.gz 
 ```
 
 The script verifies the adjacent `.sha256` file when present, creates a current-state file backup before restore,
-then extracts the archive into `APP_ROOT`.
+clears the managed file restore paths, then extracts the archive into `APP_ROOT`.
 
 To skip the current-state backup:
 

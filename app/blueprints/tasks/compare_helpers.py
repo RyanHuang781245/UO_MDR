@@ -34,7 +34,7 @@ _LIBREOFFICE_CANDIDATES = (
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
 )
-_PROVENANCE_PREVIEW_DOCX_CACHE_VERSION = 8
+_PROVENANCE_PREVIEW_DOCX_CACHE_VERSION = 10
 _PAGE_SOURCE_MAP_CACHE_VERSION = 14
 _PDF_PREVIEW_CACHE_VERSION = 1
 _HTML_PREVIEW_CACHE_VERSION = 3
@@ -619,6 +619,8 @@ def _build_provenance_source_lookup(entries: list[dict]) -> dict[str, dict[str, 
             "bookmark_id": provenance.get("bookmark_id"),
             "fragment_path": str(provenance.get("fragment_path") or entry.get("output_docx") or ""),
             "fragment_order": provenance.get("fragment_order"),
+            "result_block_start": provenance.get("result_block_start"),
+            "result_block_end": provenance.get("result_block_end"),
             "template_index": provenance.get("template_index", entry.get("template_index")),
             "template_mode": provenance.get("template_mode", entry.get("template_mode")),
             "primary_probe_texts": _collect_provenance_probe_texts(entry),

@@ -12,7 +12,8 @@ from lxml import etree
 from flask import current_app, has_app_context
 
 _W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-_NS = {"w": _W_NS}
+_WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+_NS = {"w": _W_NS, "wp": _WP_NS}
 _PROVENANCE_PREFIX = "prov_src_"
 _PROVENANCE_CACHE_VERSION = 1
 PROVENANCE_PREVIEW_LABEL_PREFIX = "(此說明不會出現在實際輸出文件)來源: "
@@ -51,6 +52,13 @@ def _qn(tag: str) -> str:
     if prefix != "w":
         raise ValueError(f"Unsupported namespace prefix: {prefix}")
     return f"{{{_W_NS}}}{local}"
+
+
+def _wp_qn(tag: str) -> str:
+    prefix, local = tag.split(":", 1)
+    if prefix != "wp":
+        raise ValueError(f"Unsupported namespace prefix: {prefix}")
+    return f"{{{_WP_NS}}}{local}"
 
 
 def _normalize_trace_text(text: str) -> str:
@@ -428,6 +436,78 @@ def _make_preview_label_paragraph(source_label: str) -> etree._Element:
     return paragraph
 
 
+def _convert_floating_drawings_to_inline(block: etree._Element) -> int:
+    converted = 0
+    for anchor in list(block.xpath(".//wp:anchor", namespaces=_NS)):
+        inline = etree.Element(_wp_qn("wp:inline"))
+        for attr_name in ("distT", "distB", "distL", "distR"):
+            value = anchor.get(attr_name)
+            if value is not None:
+                inline.set(attr_name, value)
+
+        for child in list(anchor):
+            if child.tag in {
+                _wp_qn("wp:simplePos"),
+                _wp_qn("wp:positionH"),
+                _wp_qn("wp:positionV"),
+                _wp_qn("wp:wrapNone"),
+                _wp_qn("wp:wrapSquare"),
+                _wp_qn("wp:wrapTight"),
+                _wp_qn("wp:wrapThrough"),
+                _wp_qn("wp:wrapTopAndBottom"),
+            }:
+                continue
+            inline.append(child)
+
+        parent = anchor.getparent()
+        if parent is None:
+            continue
+        parent.replace(anchor, inline)
+        converted += 1
+    return converted
+
+
+def _has_preview_visible_content(block: etree._Element) -> bool:
+    text = _normalize_trace_text("".join(block.xpath(".//w:t/text()", namespaces=_NS)))
+    if text:
+        return True
+    return bool(block.xpath(".//*[local-name()='drawing' or local-name()='pict']"))
+
+
+def _started_provenance_source_ids(
+    block: etree._Element,
+    bookmark_name_to_source_id: dict[str, str],
+) -> list[str]:
+    source_ids: list[str] = []
+    for node in block.xpath(".//w:bookmarkStart", namespaces=_NS):
+        bookmark_name = str(node.get(_qn("w:name")) or "")
+        source_id = bookmark_name_to_source_id.get(bookmark_name)
+        if source_id:
+            source_ids.append(source_id)
+    return source_ids
+
+
+def _source_ranges_from_lookup(source_lookup: dict[str, dict[str, Any]]) -> list[tuple[int, int, str]]:
+    ranges: list[tuple[int, int, str]] = []
+    for source_id, meta in source_lookup.items():
+        try:
+            start = int(meta.get("result_block_start"))
+            end = int(meta.get("result_block_end"))
+        except (TypeError, ValueError):
+            continue
+        if start < 0 or end < start:
+            continue
+        ranges.append((start, end, str(source_id)))
+    return sorted(ranges, key=lambda item: (item[0], item[1]))
+
+
+def _source_id_for_block_index(block_index: int, source_ranges: list[tuple[int, int, str]]) -> str:
+    for start, end, source_id in source_ranges:
+        if start <= block_index <= end:
+            return source_id
+    return ""
+
+
 def _apply_highlight_to_block(block: etree._Element, highlight_color: str) -> None:
     if not highlight_color:
         return
@@ -485,15 +565,12 @@ def create_provenance_preview_docx(
     bookmark_id_to_source_id: dict[str, str] = {}
     active_sources: list[str] = []
     previous_visible_source_id = ""
-    for block in list(_iter_body_blocks(body)):
-        start_names = [
-            str(node.get(_qn("w:name")) or "")
-            for node in block.xpath(".//w:bookmarkStart", namespaces=_NS)
-        ]
-        for bookmark_name in start_names:
-            source_id = bookmark_name_to_source_id.get(bookmark_name)
-            if source_id:
-                active_sources.append(source_id)
+    source_ranges = _source_ranges_from_lookup(source_lookup)
+    for block_index, block in enumerate(list(_iter_body_blocks(body))):
+        started_source_ids = _started_provenance_source_ids(block, bookmark_name_to_source_id)
+        if started_source_ids:
+            active_sources = []
+        active_sources.extend(started_source_ids)
         for node in block.xpath(".//w:bookmarkStart", namespaces=_NS):
             bookmark_name = str(node.get(_qn("w:name")) or "")
             source_id = bookmark_name_to_source_id.get(bookmark_name)
@@ -501,13 +578,18 @@ def create_provenance_preview_docx(
             if source_id and bookmark_id:
                 bookmark_id_to_source_id[bookmark_id] = source_id
 
-        source_id = active_sources[-1] if active_sources else ""
+        source_id = _source_id_for_block_index(block_index, source_ranges)
+        if not source_id:
+            source_id = active_sources[-1] if active_sources else ""
         if source_id:
             meta = source_lookup.get(source_id, {})
             source_label = str(meta.get("source_file") or "未知來源")
-            if source_id != previous_visible_source_id:
+            content_type = str(meta.get("content_type") or "")
+            if content_type in {"figure", "pdf_image"}:
+                _convert_floating_drawings_to_inline(block)
+            if _has_preview_visible_content(block) and source_id != previous_visible_source_id:
                 block.addprevious(_make_preview_label_paragraph(source_label))
-            previous_visible_source_id = source_id
+                previous_visible_source_id = source_id
         else:
             previous_visible_source_id = ""
 
@@ -970,17 +1052,13 @@ def extract_provenance_block_trace(
     active_sources: list[str] = []
     trace: list[dict[str, Any]] = []
     block_index = 0
+    source_ranges = _source_ranges_from_lookup(source_lookup)
 
-    for block in _iter_body_blocks(body):
-        start_names = [
-            str(node.get(_qn("w:name")) or "")
-            for node in block.xpath(".//w:bookmarkStart", namespaces=_NS)
-        ]
-        for bookmark_name in start_names:
-            source_id = bookmark_name_to_source_id.get(bookmark_name)
-            if not source_id:
-                continue
-            active_sources.append(source_id)
+    for body_block_index, block in enumerate(_iter_body_blocks(body)):
+        started_source_ids = _started_provenance_source_ids(block, bookmark_name_to_source_id)
+        if started_source_ids:
+            active_sources = []
+        active_sources.extend(started_source_ids)
         for node in block.xpath(".//w:bookmarkStart", namespaces=_NS):
             bookmark_name = str(node.get(_qn("w:name")) or "")
             source_id = bookmark_name_to_source_id.get(bookmark_name)
@@ -988,7 +1066,9 @@ def extract_provenance_block_trace(
             if source_id and bookmark_id:
                 bookmark_id_to_source_id[bookmark_id] = source_id
 
-        source_id = active_sources[-1] if active_sources else ""
+        source_id = _source_id_for_block_index(body_block_index, source_ranges)
+        if not source_id:
+            source_id = active_sources[-1] if active_sources else ""
         meta = source_lookup.get(source_id, {}) if source_id else {}
         source_file = str(meta.get("source_file") or "未知來源") if source_id else "未知來源"
         source_step = str(meta.get("source_step") or "") if source_id else ""

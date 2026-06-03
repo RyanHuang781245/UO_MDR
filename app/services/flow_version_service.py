@@ -36,8 +36,16 @@ def flow_content_hash(payload: dict) -> str:
 
 
 def _prune_flow_versions(versions_dir: str, versions: list[dict]) -> list[dict]:
-    kept = versions[:FLOW_VERSION_LIMIT]
-    removed = versions[FLOW_VERSION_LIMIT:]
+    kept = []
+    removed = []
+    manual_count = 0
+    for item in versions:
+        if (item.get("source") or "").strip() == "manual_snapshot":
+            manual_count += 1
+            if manual_count > FLOW_VERSION_LIMIT:
+                removed.append(item)
+                continue
+        kept.append(item)
     for item in removed:
         base_name = item.get("base_name")
         if not base_name:
@@ -247,6 +255,14 @@ def rename_flow_version_entry(
 def build_flow_version_context(flow_dir: str, flow_name: str) -> list[dict]:
     versions_dir = flow_versions_dir(flow_dir, flow_name)
     metadata = load_version_metadata(versions_dir)
+    current_hash = ""
+    flow_path = os.path.join(flow_dir, f"{flow_name}.json")
+    if os.path.isfile(flow_path):
+        try:
+            with open(flow_path, "r", encoding="utf-8") as f:
+                current_hash = flow_content_hash(json.load(f))
+        except Exception:
+            current_hash = ""
     context = []
     for item in sorted(metadata.get("versions", []), key=lambda version: version.get("created_at", ""), reverse=True):
         if (item.get("source") or "").strip() != "manual_snapshot":
@@ -272,6 +288,7 @@ def build_flow_version_context(flow_dir: str, flow_name: str) -> list[dict]:
                 "created_at_display": created_display,
                 "created_by": item.get("created_by") or "",
                 "source": flow_version_source_label(item.get("source") or ""),
+                "is_current": bool(current_hash and item.get("content_hash") == current_hash),
             }
         )
     return context

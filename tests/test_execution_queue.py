@@ -14,7 +14,7 @@ from app.extensions import ldap_manager
 from app.extensions import db
 from app.jobs.executor import enqueue_single_flow_job
 from app.models.execution import JobArtifactRecord, JobRecord
-from app.services.execution_service import MAPPING_OPERATION_JOB, cancel_job, enqueue_job, retry_job, run_job_by_id
+from app.services.execution_service import MAPPING_OPERATION_JOB, cancel_job, claim_next_job, enqueue_job, retry_job, run_job_by_id
 
 
 @pytest.fixture
@@ -70,6 +70,7 @@ def test_enqueue_single_flow_job_runs_inline_and_persists_job_metadata(app, monk
     assert record.status == "completed"
     assert record.job_type == "flow_single"
     assert record.task_id == task_id
+    assert record.queue_name == "flow"
 
     job_dir = task_dir / "jobs" / job_id
     meta = json.loads((job_dir / "meta.json").read_text(encoding="utf-8"))
@@ -80,6 +81,34 @@ def test_enqueue_single_flow_job_runs_inline_and_persists_job_metadata(app, monk
     artifact_types = {item.artifact_type for item in artifacts}
     assert "result_docx" in artifact_types
     assert "log_json" in artifact_types
+
+
+def test_claim_next_job_respects_queue_filter(app, monkeypatch) -> None:
+    monkeypatch.setitem(app.config, "JOB_EXECUTOR_MODE", "worker")
+
+    flow_job_id = enqueue_job(
+        "queue-filter-flow",
+        {},
+        queue_name="flow",
+        job_id="qflow001",
+    )
+    batch_job_id = enqueue_job(
+        "queue-filter-batch",
+        {},
+        queue_name="batch",
+        job_id="qbatch01",
+    )
+
+    claimed = claim_next_job("worker-flow", queue_names=["flow"])
+    assert claimed is not None
+    assert claimed.job_id == flow_job_id
+    assert claimed.queue_name == "flow"
+    assert claimed.status == "claimed"
+
+    db.session.expire_all()
+    batch_record = db.session.get(JobRecord, batch_job_id)
+    assert batch_record is not None
+    assert batch_record.status == "queued"
 
 
 def test_enqueue_single_flow_job_forwards_enable_figure_reference_flag(app, monkeypatch) -> None:

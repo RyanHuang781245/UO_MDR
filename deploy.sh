@@ -17,6 +17,8 @@ UPDATE_ON_CALENDAR="${UPDATE_ON_CALENDAR:-daily}"
 NGINX_FILE="${NGINX_FILE:-$APP_DIR/deploy/nginx.conf}"
 NGINX_SITE_NAME="${NGINX_SITE_NAME:-$APP_NAME}"
 ENABLE_NGINX="${ENABLE_NGINX:-0}"
+UV_BIN="${UV_BIN:-uv}"
+UV_SYNC_ARGS="${UV_SYNC_ARGS:---frozen}"
 VENV_PYTHON="$APP_DIR/.venv/bin/python"
 ALEMBIC_BIN="$APP_DIR/.venv/bin/alembic"
 FLASK_BIN="$APP_DIR/.venv/bin/flask"
@@ -45,9 +47,6 @@ log "進入專案目錄"
 cd "$APP_DIR"
 
 require_file "$ENV_FILE"
-require_file "$VENV_PYTHON"
-require_file "$ALEMBIC_BIN"
-require_file "$FLASK_BIN"
 
 log "載入正式環境變數"
 set -a
@@ -74,8 +73,13 @@ if [[ "$RUN_GIT_PULL" == "1" ]]; then
   git pull origin "$BRANCH"
 fi
 
-log "安裝 Python 套件"
-"$VENV_PYTHON" -m pip install -r requirements.txt
+log "建立或同步 Python uv 虛擬環境"
+require_cmd "$UV_BIN"
+"$UV_BIN" sync $UV_SYNC_ARGS
+
+require_file "$VENV_PYTHON"
+require_file "$ALEMBIC_BIN"
+require_file "$FLASK_BIN"
 
 if [[ "$RUN_DB_BACKUP" == "1" ]]; then
   log "執行部署前資料庫備份"

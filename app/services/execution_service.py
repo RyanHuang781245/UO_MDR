@@ -82,13 +82,25 @@ def register_execution_cli(app) -> None:
     @click.option("--once", is_flag=True, help="Process at most one job and exit.")
     @click.option("--max-jobs", default=0, type=int, help="Stop after processing this many jobs. 0 means unlimited.")
     @click.option("--poll-interval", default=None, type=float, help="Override polling interval in seconds.")
-    def jobs_worker_command(once: bool, max_jobs: int, poll_interval: float | None) -> None:
+    @click.option(
+        "--queue",
+        "queue_names",
+        multiple=True,
+        help="Only process jobs from this queue. Can be passed multiple times.",
+    )
+    def jobs_worker_command(
+        once: bool,
+        max_jobs: int,
+        poll_interval: float | None,
+        queue_names: tuple[str, ...],
+    ) -> None:
         app_obj = current_app._get_current_object()
         processed = run_worker_loop(
             app_obj,
             once=once,
             max_jobs=max_jobs if max_jobs > 0 else None,
             poll_interval=poll_interval,
+            queue_names=list(queue_names),
         )
         click.echo(f"processed_jobs={processed}")
 
@@ -739,10 +751,14 @@ def _run_claimed_job(job: JobRecord, worker_id: str) -> bool:
             release_task_lock(job.task_id, job.job_id)
 
 
-def process_next_job(app, worker_id: str | None = None) -> bool:
+def process_next_job(
+    app,
+    worker_id: str | None = None,
+    queue_names: list[str] | tuple[str, ...] | None = None,
+) -> bool:
     with app.app_context():
         worker_id = worker_id or build_worker_id()
-        record = claim_next_job(worker_id)
+        record = claim_next_job(worker_id, queue_names=list(queue_names or []))
         if not record:
             return False
         return _run_claimed_job(record, worker_id)
@@ -754,14 +770,19 @@ def run_worker_loop(
     once: bool = False,
     max_jobs: int | None = None,
     poll_interval: float | None = None,
+    queue_names: list[str] | tuple[str, ...] | None = None,
 ) -> int:
     processed = 0
     worker_id = build_worker_id()
     interval = float(default_poll_interval() if poll_interval is None else poll_interval)
+    queue_names = [q.strip() for q in (queue_names or []) if q and q.strip()]
 
     while True:
         try:
-            did_work = process_next_job(app, worker_id=worker_id)
+            if queue_names:
+                did_work = process_next_job(app, worker_id=worker_id, queue_names=queue_names)
+            else:
+                did_work = process_next_job(app, worker_id=worker_id)
         except Exception as exc:
             with app.app_context():
                 record_system_error(
@@ -774,6 +795,7 @@ def run_worker_loop(
                         "once": once,
                         "max_jobs": max_jobs,
                         "poll_interval": interval,
+                        "queue_names": queue_names,
                     },
                 )
                 current_app.logger.exception("Unhandled worker loop exception: worker_id=%s", worker_id)

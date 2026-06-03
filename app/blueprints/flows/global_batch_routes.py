@@ -492,7 +492,7 @@ def _run_tasks_batch(batch_id: str, payload: dict) -> dict:
                 task_id=tid or None,
                 target_name=_batch_item_label(item),
                 actor=actor,
-                queue_name="heavy",
+                queue_name="batch",
                 parent_job_id=batch_id,
             )
             child_record = db.session.get(JobRecord, child_job_id)
@@ -673,7 +673,7 @@ def run_global_batch():
         },
         target_name=batch_id,
         actor={"work_id": work_id, "label": label},
-        queue_name="heavy",
+        queue_name="batch",
         job_id=batch_id,
     )
 

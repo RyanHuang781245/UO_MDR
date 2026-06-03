@@ -95,8 +95,8 @@
                                     <label class="form-check-label small fw-bold text-uppercase text-muted" for="enableOutputFilenameInput">輸出檔案路徑<span class="required-marker {% if not output_filename %}d-none{% endif %}" id="outputFilenameRequiredMarker" aria-hidden="true">*</span></label>
                                 </div>
                                 <div id="outputFilenameField">
-                                    <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="例 : Device Description/Annex 3_Device Description.docx" value="{{ output_filename or '' }}" maxlength="120" title='可輸入相對路徑與檔名，系統會自動補上 .docx' {% if is_version_preview %}disabled{% endif %}>
-                                    <div class="form-text text-end small">流程完成後輸出至輸出存放空間。仍可從已保存流程下載輸出文件</div>
+                                    <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="例 : Device Description/Annex 3_Device Description.docx" value="{{ output_filename or '' }}" title='可輸入相對路徑與檔名，系統會自動補上 .docx' {% if is_version_preview %}disabled{% endif %}>
+                                    <div class="form-text text-end small">流程完成後輸出至輸出存放空間；未輸入副檔名時會自動補上 .docx</div>
                                 </div>
                             </div>
                         </div>
@@ -177,18 +177,34 @@
             <div class="main-card">
                 <div class="flow-section-header px-4 py-3 border-bottom d-flex justify-content-between align-items-center">
                     <h5 class="fw-bold mb-0">已保存流程</h5>
-                    <div class="text-muted small">共 <span>{{ flow_pagination.total_count }}</span> 筆流程 (第 {{ flow_pagination.page }} / {{ flow_pagination.total_pages }} 頁)</div>
+                    <div class="d-flex align-items-center gap-3">
+                        <button class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1" type="button" id="mergeFlowMappingBtn" disabled>
+                            <i class="bi bi-file-earmark-spreadsheet text-primary"></i>
+                            合併匯出 Mapping
+                        </button>
+                        <button class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1" type="button" id="clearSelectedFlowsBtn" disabled>
+                            <i class="bi bi-x-circle text-primary"></i>
+                            清除選取
+                        </button>
+                        <div class="text-muted small" id="selectedFlowCountLabel">已選 0 筆</div>
+                        <div class="text-muted small">共 <span>{{ flow_pagination.total_count }}</span> 筆流程 (第 {{ flow_pagination.page }} / {{ flow_pagination.total_pages }} 頁)</div>
+                    </div>
                 </div>
+                <form id="mergeFlowMappingForm" action="{{ url_for('flow_crud_bp.export_merged_flow_mapping', task_id=task.id) }}" method="post" class="d-none"></form>
                 <div>
                     <div class="table-responsive">
                         <table class="table mb-0 align-middle saved-flows-table">
                             <colgroup>
+                                <col style="width: 52px;">
                                 <col>
                                 <col class="saved-flows-col-created">
                                 <col class="saved-flows-col-actions">
                             </colgroup>
                             <thead>
                                 <tr>
+                                    <th class="py-3 text-center">
+                                        <input class="form-check-input" type="checkbox" id="selectAllSavedFlows" aria-label="全選本頁流程">
+                                    </th>
                                     <th class="fw-bold text-uppercase text-muted py-3 text-start ps-4" style="font-size: 0.875rem; letter-spacing: 0.05em;">流程名稱</th>
                                     <th class="fw-bold text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">建立時間</th>
                                     <th class="text-uppercase text-muted py-3" style="font-size: 0.875rem; letter-spacing: 0.05em;">操作</th>
@@ -197,6 +213,9 @@
                             <tbody id="flowTableBody">
                                 {% for f in flows %}
                                 <tr data-flow="{{ f.name }}">
+                                    <td class="text-center">
+                                        <input class="form-check-input saved-flow-select" type="checkbox" value="{{ f.name }}" aria-label="選擇流程 {{ f.name }}">
+                                    </td>
                                     <td class="text-start ps-4">
                                         <span class="fw-bold text-primary flow-name-truncate" style="font-size: 0.875rem;" title="{{ f.name }}">{{ f.name }}</span>
                                     </td>
@@ -237,7 +256,7 @@
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="3" class="text-center py-5 text-muted">
+                                    <td colspan="4" class="text-center py-5 text-muted">
                                         <i class="bi bi-inbox fs-2 d-block mb-2"></i>
                                         尚無流程
                                     </td>
@@ -308,6 +327,10 @@
                         <i class="bi bi-file-zip text-primary"></i>
                         下載 ZIP
                       </a>
+                      <button class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1" type="button" id="copyOutputRootPathBtn">
+                        <i class="bi bi-clipboard text-primary"></i>
+                        複製根路徑
+                      </button>
                       <button class="btn btn-sm btn-white border d-inline-flex align-items-center gap-1 text-danger" type="button" id="clearOutputTreeBtn">
                         <i class="bi bi-trash"></i>
                         清除目錄
@@ -329,6 +352,25 @@
 </div>
 
 <!-- Modals -->
+<div class="modal fade" id="mergeFlowMappingModal" tabindex="-1" aria-labelledby="mergeFlowMappingModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="mergeFlowMappingModalLabel">排序合併順序</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-3">Mapping Excel 會依照下列順序合併流程</div>
+        <div class="list-group" id="mergeFlowOrderList"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary fw-bold" id="confirmMergeFlowMappingBtn">匯出 Mapping</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="importFlowModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -617,6 +659,7 @@
           <table class="table mb-0 align-middle flow-versions-table">
             <colgroup>
               <col>
+              <col class="flow-versions-col-current">
               <col class="flow-versions-col-created">
               <col class="flow-versions-col-created-by">
               <col class="flow-versions-col-actions">
@@ -624,13 +667,14 @@
             <thead>
               <tr>
                 <th class="ps-4 small fw-bold text-uppercase text-muted py-3">版本名稱</th>
+                <th class="small fw-bold text-uppercase text-muted py-3 text-center">狀態</th>
                 <th class="small fw-bold text-uppercase text-muted py-3">建立時間</th>
                 <th class="small fw-bold text-uppercase text-muted py-3">建立者</th>
                 <th class="pe-4 small fw-bold text-uppercase text-muted py-3 text-center">操作</th>
               </tr>
             </thead>
             <tbody id="flowVersionsTableBody">
-              <tr><td colspan="4" class="text-center py-5 text-muted">尚未載入版本資料</td></tr>
+              <tr><td colspan="5" class="text-center py-5 text-muted">尚未載入版本資料</td></tr>
             </tbody>
           </table>
         </div>
@@ -1016,6 +1060,9 @@
   width: 100%;
   table-layout: fixed;
 }
+.flow-versions-col-current {
+  width: 130px;
+}
 .flow-versions-col-created {
   width: 150px;
 }
@@ -1350,6 +1397,8 @@ const outputFileTreeRoot = document.getElementById("outputFileTreeRoot");
 const outputFileTreeStatus = document.getElementById("outputFileTreeStatus");
 const refreshOutputTreeBtn = document.getElementById("refreshOutputTreeBtn");
 const clearOutputTreeBtn = document.getElementById("clearOutputTreeBtn");
+const copyOutputRootPathBtn = document.getElementById("copyOutputRootPathBtn");
+const outputTreeOpenPaths = new Set();
 const BOOL_DEFAULTS = {
   include_caption: "true",
   use_chapter_title: "false",
@@ -1472,6 +1521,18 @@ function createOutputFileNode(entry, level){
   const actions = document.createElement("div");
   actions.className = "d-flex align-items-center gap-2 flex-shrink-0";
 
+  const copyPathBtn = document.createElement("button");
+  copyPathBtn.type = "button";
+  copyPathBtn.className = "btn btn-sm btn-outline-secondary";
+  copyPathBtn.innerHTML = '<i class="bi bi-clipboard"></i>';
+  copyPathBtn.title = "複製路徑";
+  copyPathBtn.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await copyOutputPath(entry.path || "");
+  });
+  actions.appendChild(copyPathBtn);
+
   const downloadLink = document.createElement("a");
   downloadLink.className = "btn btn-sm btn-outline-secondary";
   downloadLink.href = `${TASK_FILE_DOWNLOAD_URL}?${new URLSearchParams({ scope: "output", path: entry.path || "" }).toString()}`;
@@ -1514,6 +1575,49 @@ function formatFileSize(size){
   return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function buildOutputPath(relPath = ""){
+  const root = String(TASK_OUTPUT_ROOT || "").trim();
+  const rel = String(relPath || "").trim().replace(/^[/\\]+/, "");
+  if (!root) return rel;
+  if (!rel) return root;
+  const separator = root.includes("\\") ? "\\" : "/";
+  return `${root.replace(/[\\/]+$/, "")}${separator}${rel.replace(/[\\/]/g, separator)}`;
+}
+
+async function copyTextToClipboard(text){
+  if (!text) return false;
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    return document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
+}
+
+async function copyOutputPath(relPath = ""){
+  const path = buildOutputPath(relPath);
+  if (!path) {
+    setOutputFileTreeStatus("找不到可複製的路徑", "danger");
+    return;
+  }
+  try{
+    const copied = await copyTextToClipboard(path);
+    setOutputFileTreeStatus(copied ? "已複製路徑" : "複製失敗", copied ? "success" : "danger");
+  }catch(err){
+    setOutputFileTreeStatus("複製失敗", "danger");
+  }
+}
+
 async function postOutputAction(url, payload){
   const resp = await fetch(url, {
     method: "POST",
@@ -1527,6 +1631,45 @@ async function postOutputAction(url, payload){
   return data;
 }
 
+function rememberOutputTreeState(){
+  if (!outputFileTreeRoot) return;
+  outputTreeOpenPaths.clear();
+  outputFileTreeRoot.querySelectorAll('.file-tree-item.dir.is-open[data-path]').forEach((item) => {
+    const path = String(item.dataset.path || '').trim();
+    if (path) outputTreeOpenPaths.add(path);
+  });
+}
+
+function setOutputDirOpenState(item, row, path, isOpen){
+  item.classList.toggle("is-open", isOpen);
+  row.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  if (!path) return;
+  if (isOpen) outputTreeOpenPaths.add(path);
+  else outputTreeOpenPaths.delete(path);
+}
+
+function replaceOutputTreePathPrefix(oldPath, newPath){
+  const oldPrefix = `${oldPath}/`;
+  const updates = [];
+  outputTreeOpenPaths.forEach((path) => {
+    if (path === oldPath) updates.push([path, newPath]);
+    else if (path.startsWith(oldPrefix)) updates.push([path, `${newPath}/${path.slice(oldPrefix.length)}`]);
+  });
+  updates.forEach(([from, to]) => {
+    outputTreeOpenPaths.delete(from);
+    if (to) outputTreeOpenPaths.add(to);
+  });
+}
+
+function forgetOutputTreePathPrefix(path){
+  const prefix = `${path}/`;
+  Array.from(outputTreeOpenPaths).forEach((openPath) => {
+    if (openPath === path || openPath.startsWith(prefix)) {
+      outputTreeOpenPaths.delete(openPath);
+    }
+  });
+}
+
 async function renameOutputEntry(entry){
   const currentName = String(entry?.name || "").trim();
   const path = String(entry?.path || "").trim();
@@ -1536,8 +1679,10 @@ async function renameOutputEntry(entry){
   if (!nextName.trim() || nextName.trim() === currentName) return;
   setOutputFileTreeStatus("重新命名中...");
   try{
-    await postOutputAction(TASK_ENTRY_RENAME_URL, { path, name: nextName.trim() });
-    await loadOutputFileTreeRoot();
+    rememberOutputTreeState();
+    const data = await postOutputAction(TASK_ENTRY_RENAME_URL, { path, name: nextName.trim() });
+    if (data.path) replaceOutputTreePathPrefix(path, data.path);
+    await loadOutputFileTreeRoot({ preserveState: true, captureState: false });
     setOutputFileTreeStatus("已重新命名");
   }catch(err){
     setOutputFileTreeStatus(err.message || "重新命名失敗", "danger");
@@ -1551,8 +1696,10 @@ async function deleteOutputEntry(entry){
   if (!window.confirm(`確定刪除「${currentName}」嗎？`)) return;
   setOutputFileTreeStatus("刪除中...");
   try{
+    rememberOutputTreeState();
     await postOutputAction(TASK_ENTRY_DELETE_URL, { path });
-    await loadOutputFileTreeRoot();
+    forgetOutputTreePathPrefix(path);
+    await loadOutputFileTreeRoot({ preserveState: true, captureState: false });
     setOutputFileTreeStatus("已刪除");
   }catch(err){
     setOutputFileTreeStatus(err.message || "刪除失敗", "danger");
@@ -1564,7 +1711,8 @@ async function clearOutputTree(){
   setOutputFileTreeStatus("清除中...");
   try{
     await postOutputAction(TASK_SCOPE_CLEAR_URL, {});
-    await loadOutputFileTreeRoot();
+    outputTreeOpenPaths.clear();
+    await loadOutputFileTreeRoot({ preserveState: false });
     setOutputFileTreeStatus("已清除全部輸出");
   }catch(err){
     setOutputFileTreeStatus(err.message || "清除失敗", "danger");
@@ -1713,6 +1861,18 @@ function createScopedDirNode(entry, level, statusSetter, scope){
   const actions = document.createElement("div");
   actions.className = "d-flex align-items-center gap-2 flex-shrink-0";
   if (scope === "output"){
+    const copyPathBtn = document.createElement("button");
+    copyPathBtn.type = "button";
+    copyPathBtn.className = "btn btn-sm btn-outline-secondary";
+    copyPathBtn.innerHTML = '<i class="bi bi-clipboard"></i>';
+    copyPathBtn.title = "複製路徑";
+    copyPathBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await copyOutputPath(entry.path || "");
+    });
+    actions.appendChild(copyPathBtn);
+
     const zipLink = document.createElement("a");
     zipLink.className = "btn btn-sm btn-outline-secondary";
     zipLink.href = `${TASK_SCOPE_ZIP_URL}?${new URLSearchParams({ scope: "output", path: entry.path || "" }).toString()}`;
@@ -1754,8 +1914,7 @@ function createScopedDirNode(entry, level, statusSetter, scope){
       return;
     }
     if (item.classList.contains("is-open")){
-      item.classList.remove("is-open");
-      row.setAttribute("aria-expanded", "false");
+      setOutputDirOpenState(item, row, entry.path, false);
       return;
     }
     if (item.dataset.loaded !== "1"){
@@ -1769,8 +1928,7 @@ function createScopedDirNode(entry, level, statusSetter, scope){
         label.classList.remove("text-muted");
       }
     }
-    item.classList.add("is-open");
-    row.setAttribute("aria-expanded", "true");
+    setOutputDirOpenState(item, row, entry.path, true);
   };
 
   row.addEventListener("click", (event) => {
@@ -1787,6 +1945,11 @@ function createScopedDirNode(entry, level, statusSetter, scope){
   left.append(caret, label);
   row.append(left, meta, actions);
   item.append(row, childList);
+  if (scope === "output" && outputTreeOpenPaths.has(entry.path)){
+    setTimeout(() => {
+      toggle().catch((err) => statusSetter(err.message || "載入檔案結構失敗", "danger"));
+    }, 0);
+  }
   return item;
 }
 
@@ -1849,8 +2012,13 @@ flowFileTreeModalEl?.addEventListener("show.bs.modal", () => {
   loadFlowFileTreeRoot();
 });
 
-async function loadOutputFileTreeRoot(){
+async function loadOutputFileTreeRoot({ preserveState = true, captureState = true } = {}){
   if (!outputFileTreeRoot) return;
+  if (preserveState) {
+    if (captureState) rememberOutputTreeState();
+  } else {
+    outputTreeOpenPaths.clear();
+  }
   setOutputFileTreeStatus("載入檔案結構中...");
   try{
     await populateScopedOutputTree("", outputFileTreeRoot, 0, "output");
@@ -1928,9 +2096,6 @@ const FIELD_META = {
   use_chapter_title: {
     label: "指定子標題內容"
   },
-  page_break_before: {
-    label: "段落前換頁"
-  },
   explicit_end_title: {
     label: "結束章節與標題",
     placeholder: "例如 2. Materials"
@@ -1974,6 +2139,15 @@ const RUN_JOB_ID = {{ job_id|tojson }};
 const CURRENT_FLOW_PAGE = {{ flow_pagination.page|tojson }};
 const runStatusContainer = document.getElementById("runStatusContainer");
 const runStatusStorageKey = `flowRunStatus:${TASK_ID}`;
+const mergeFlowMappingForm = document.getElementById("mergeFlowMappingForm");
+const mergeFlowMappingBtn = document.getElementById("mergeFlowMappingBtn");
+const clearSelectedFlowsBtn = document.getElementById("clearSelectedFlowsBtn");
+const selectedFlowCountLabel = document.getElementById("selectedFlowCountLabel");
+const selectAllSavedFlows = document.getElementById("selectAllSavedFlows");
+const selectedSavedFlowsStorageKey = `selectedSavedFlows:${TASK_ID}`;
+const mergeFlowMappingModalEl = document.getElementById("mergeFlowMappingModal");
+const mergeFlowOrderList = document.getElementById("mergeFlowOrderList");
+const confirmMergeFlowMappingBtn = document.getElementById("confirmMergeFlowMappingBtn");
 const applyFormattingModal = document.getElementById("applyFormattingModal");
 const applyFormattingForm = document.getElementById("applyFormattingForm");
 const applyFormattingTitle = document.getElementById("applyFormattingModalLabel");
@@ -1991,6 +2165,243 @@ if (applyFormattingModal) {
 }
 
 const { submitPostForm, escapeHtml } = window.UiUtils;
+
+function loadSelectedSavedFlowNames(){
+  try {
+    const parsed = JSON.parse(localStorage.getItem(selectedSavedFlowsStorageKey) || "[]");
+    return Array.isArray(parsed) ? parsed.map((name) => String(name || "").trim()).filter(Boolean) : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveSelectedSavedFlowNames(names){
+  const uniqueNames = Array.from(new Set((names || []).map((name) => String(name || "").trim()).filter(Boolean)));
+  try {
+    localStorage.setItem(selectedSavedFlowsStorageKey, JSON.stringify(uniqueNames));
+  } catch (err) {
+    // Ignore storage failures; current page checkboxes still reflect the visible selection.
+  }
+  return uniqueNames;
+}
+
+function clearSelectedSavedFlowNames(){
+  try {
+    localStorage.removeItem(selectedSavedFlowsStorageKey);
+  } catch (err) {
+    // Ignore storage failures.
+  }
+}
+
+function isFlowManagementUrl(url){
+  try {
+    const parsed = new URL(url, window.location.href);
+    const flowPath = `/tasks/${encodeURIComponent(TASK_ID)}/flows`;
+    return parsed.origin === window.location.origin
+      && (parsed.pathname === flowPath || parsed.pathname.startsWith(`${flowPath}/`));
+  } catch (err) {
+    return false;
+  }
+}
+
+let keepSavedFlowSelectionOnPagehide = false;
+
+function markSavedFlowSelectionPagehideBehavior(keep){
+  keepSavedFlowSelectionOnPagehide = !!keep;
+  window.setTimeout(() => {
+    keepSavedFlowSelectionOnPagehide = false;
+  }, 1500);
+}
+
+document.addEventListener("click", (event) => {
+  const link = event.target?.closest?.("a[href]");
+  if (!link) return;
+  const href = link.getAttribute("href") || "";
+  if (!href || href.startsWith("#") || link.target) return;
+  markSavedFlowSelectionPagehideBehavior(isFlowManagementUrl(link.href));
+});
+
+document.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (!form || !form.action) return;
+  markSavedFlowSelectionPagehideBehavior(isFlowManagementUrl(form.action));
+});
+
+window.addEventListener("pagehide", () => {
+  if (keepSavedFlowSelectionOnPagehide) return;
+  clearSelectedSavedFlowNames();
+});
+
+function getSelectedSavedFlowNames(){
+  const storedNames = loadSelectedSavedFlowNames();
+  const pageSelections = Array.from(document.querySelectorAll(".saved-flow-select:checked"))
+    .map((input) => String(input.value || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set([...storedNames, ...pageSelections]));
+}
+
+function applyStoredSavedFlowSelection(){
+  const selectedNames = new Set(loadSelectedSavedFlowNames());
+  document.querySelectorAll(".saved-flow-select").forEach((input) => {
+    input.checked = selectedNames.has(String(input.value || "").trim());
+  });
+}
+
+function renderMergeFlowOrderList(names){
+  if (!mergeFlowOrderList) return;
+  mergeFlowOrderList.replaceChildren();
+  names.forEach((name, index) => {
+    const item = document.createElement("div");
+    item.className = "list-group-item d-flex align-items-center gap-2";
+    item.dataset.flowName = name;
+
+    const order = document.createElement("span");
+    order.className = "badge bg-secondary flex-shrink-0";
+    order.textContent = String(index + 1);
+
+    const label = document.createElement("div");
+    label.className = "fw-semibold text-primary text-truncate flex-grow-1";
+    label.textContent = name;
+    label.title = name;
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "btn btn-sm btn-outline-secondary";
+    upBtn.innerHTML = '<i class="bi bi-arrow-up"></i>';
+    upBtn.title = "上移";
+    upBtn.disabled = index === 0;
+    upBtn.addEventListener("click", () => moveMergeFlowOrderItem(index, -1));
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "btn btn-sm btn-outline-secondary";
+    downBtn.innerHTML = '<i class="bi bi-arrow-down"></i>';
+    downBtn.title = "下移";
+    downBtn.disabled = index === names.length - 1;
+    downBtn.addEventListener("click", () => moveMergeFlowOrderItem(index, 1));
+
+    item.append(order, label, upBtn, downBtn);
+    mergeFlowOrderList.appendChild(item);
+  });
+}
+
+function getMergeFlowOrderNames(){
+  return Array.from(mergeFlowOrderList?.querySelectorAll("[data-flow-name]") || [])
+    .map((item) => String(item.dataset.flowName || "").trim())
+    .filter(Boolean);
+}
+
+function moveMergeFlowOrderItem(index, delta){
+  const names = getMergeFlowOrderNames();
+  const nextIndex = index + delta;
+  if (nextIndex < 0 || nextIndex >= names.length) return;
+  const [item] = names.splice(index, 1);
+  names.splice(nextIndex, 0, item);
+  saveSelectedSavedFlowNames(names);
+  renderMergeFlowOrderList(names);
+  syncMergeFlowMappingControls();
+}
+
+function submitMergedFlowMapping(names){
+  if (!mergeFlowMappingForm) return;
+  mergeFlowMappingForm.replaceChildren();
+  names.forEach((name) => {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "flow_names";
+    input.value = name;
+    mergeFlowMappingForm.appendChild(input);
+  });
+  markSavedFlowSelectionPagehideBehavior(isFlowManagementUrl(mergeFlowMappingForm.action));
+  mergeFlowMappingForm.submit();
+}
+
+function syncMergeFlowMappingControls(){
+  const checkboxes = Array.from(document.querySelectorAll(".saved-flow-select"));
+  const selectedNames = loadSelectedSavedFlowNames();
+  const selectedCount = selectedNames.length;
+  if (mergeFlowMappingBtn) {
+    mergeFlowMappingBtn.disabled = selectedCount === 0;
+    mergeFlowMappingBtn.title = selectedCount ? `已選擇 ${selectedCount} 個流程` : "請先勾選流程";
+  }
+  if (clearSelectedFlowsBtn) {
+    clearSelectedFlowsBtn.disabled = selectedCount === 0;
+  }
+  if (selectedFlowCountLabel) {
+    selectedFlowCountLabel.textContent = `已選 ${selectedCount} 筆`;
+  }
+  if (selectAllSavedFlows) {
+    const selectedSet = new Set(selectedNames);
+    const selectedOnPage = checkboxes.filter((input) => selectedSet.has(String(input.value || "").trim())).length;
+    selectAllSavedFlows.checked = checkboxes.length > 0 && selectedOnPage === checkboxes.length;
+    selectAllSavedFlows.indeterminate = selectedOnPage > 0 && selectedOnPage < checkboxes.length;
+  }
+}
+
+document.querySelectorAll(".saved-flow-select").forEach((input) => {
+  input.addEventListener("change", () => {
+    const selectedSet = new Set(loadSelectedSavedFlowNames());
+    const flowName = String(input.value || "").trim();
+    if (flowName) {
+      if (input.checked) selectedSet.add(flowName);
+      else selectedSet.delete(flowName);
+    }
+    saveSelectedSavedFlowNames(Array.from(selectedSet));
+    syncMergeFlowMappingControls();
+  });
+});
+if (selectAllSavedFlows) {
+  selectAllSavedFlows.addEventListener("change", () => {
+    const selectedSet = new Set(loadSelectedSavedFlowNames());
+    document.querySelectorAll(".saved-flow-select").forEach((input) => {
+      input.checked = selectAllSavedFlows.checked;
+      const flowName = String(input.value || "").trim();
+      if (!flowName) return;
+      if (selectAllSavedFlows.checked) selectedSet.add(flowName);
+      else selectedSet.delete(flowName);
+    });
+    saveSelectedSavedFlowNames(Array.from(selectedSet));
+    syncMergeFlowMappingControls();
+  });
+}
+if (clearSelectedFlowsBtn) {
+  clearSelectedFlowsBtn.addEventListener("click", () => {
+    clearSelectedSavedFlowNames();
+    document.querySelectorAll(".saved-flow-select").forEach((input) => {
+      input.checked = false;
+    });
+    syncMergeFlowMappingControls();
+  });
+}
+if (mergeFlowMappingBtn && mergeFlowMappingForm) {
+  mergeFlowMappingBtn.addEventListener("click", () => {
+    const names = getSelectedSavedFlowNames();
+    if (!names.length) {
+      alert("請先選擇要合併匯出的流程");
+      return;
+    }
+    saveSelectedSavedFlowNames(names);
+    renderMergeFlowOrderList(names);
+    if (mergeFlowMappingModalEl && typeof bootstrap !== "undefined") {
+      bootstrap.Modal.getOrCreateInstance(mergeFlowMappingModalEl).show();
+    } else {
+      submitMergedFlowMapping(names);
+    }
+  });
+}
+if (confirmMergeFlowMappingBtn) {
+  confirmMergeFlowMappingBtn.addEventListener("click", () => {
+    const names = getMergeFlowOrderNames();
+    if (!names.length) {
+      alert("請先選擇要合併匯出的流程");
+      return;
+    }
+    saveSelectedSavedFlowNames(names);
+    submitMergedFlowMapping(names);
+  });
+}
+applyStoredSavedFlowSelection();
+syncMergeFlowMappingControls();
 
 function buildLabelHtml(label, required = false){
   const safeLabel = escapeHtml(String(label ?? ""));
@@ -2102,6 +2513,24 @@ function readNamedFieldValue(scope, fieldName){
   const el = scope?.querySelector?.(`[name="${fieldName}"]`);
   if (!el) return '';
   return String(el.value ?? '').trim();
+}
+
+const INVALID_FLOW_NAME_CHARS_RE = /[\\/:*?"<>|]/;
+const WINDOWS_RESERVED_FLOW_NAMES = new Set([
+  'CON', 'PRN', 'AUX', 'NUL',
+  'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+  'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
+]);
+function getFlowNameValidationMessage(name, { requiredMessage = null } = {}){
+  const text = String(name || '').trim();
+  if (!text) return requiredMessage;
+  if (text.length > 50) return '流程名稱最多 50 字';
+  if (text === '.' || text === '..') return '流程名稱不合法';
+  if ([...text].some((ch) => ch.charCodeAt(0) < 32)) return '流程名稱含有不可見控制字元';
+  if (INVALID_FLOW_NAME_CHARS_RE.test(text)) return '流程名稱不可包含 \\ / : * ? " < > |';
+  if (text.endsWith(' ') || text.endsWith('.')) return '流程名稱結尾不可為空白或句點';
+  if (WINDOWS_RESERVED_FLOW_NAMES.has(text.toUpperCase())) return '流程名稱為系統保留字，請更換名稱';
+  return null;
 }
 
 function evaluateValidationCondition(values, condition){
@@ -2217,6 +2646,16 @@ function validateFlowForm(action){
           : '缺少必填欄位';
     errors.push({ target: field, message });
   });
+  const flowNameError = getFlowNameValidationMessage(readNamedFieldValue(flowForm, 'flow_name'));
+  if (flowNameError) {
+    errors.push({ target: 'flow_name', message: flowNameError });
+  }
+  if (action === 'save_as') {
+    const saveAsNameError = getFlowNameValidationMessage(readNamedFieldValue(flowForm, 'save_as_name'));
+    if (saveAsNameError) {
+      errors.push({ target: 'save_as_name', message: saveAsNameError });
+    }
+  }
 
   const flowValues = {
     enable_output_filename: enableOutputFilenameInput?.checked ? 'true' : 'false',
@@ -2656,6 +3095,9 @@ async function loadTemplateFromServer(formData){
 let isInitialising = true;
 let isDirty = false;
 const FLOW_BUILDER_SCROLL_STORAGE_KEY = `flowBuilderScroll:${TASK_ID}`;
+if ('scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual';
+}
 function markDirty(){
   if (IS_VERSION_PREVIEW) return;
   if (!isInitialising) {
@@ -2664,7 +3106,7 @@ function markDirty(){
   }
 }
 function rememberFlowBuilderScroll(action){
-  if (!['save', 'save_as'].includes(action)) return;
+  if (!['save', 'save_as', 'save_version'].includes(action)) return;
   const flowName = (action === 'save_as' ? saveAsNameInput?.value : flowNameInput?.value) || '';
   try {
     sessionStorage.setItem(FLOW_BUILDER_SCROLL_STORAGE_KEY, JSON.stringify({
@@ -2687,17 +3129,21 @@ function restoreFlowBuilderScroll(){
   try {
     sessionStorage.removeItem(FLOW_BUILDER_SCROLL_STORAGE_KEY);
     const saved = JSON.parse(raw);
-    if (!saved || !['save', 'save_as'].includes(saved.action)) return;
+    if (!saved || !['save', 'save_as', 'save_version'].includes(saved.action)) return;
     const currentFlowName = String({{ (loaded_name or '')|tojson }} || '').trim();
     const savedFlowName = String(saved.flowName || '').trim();
     if (savedFlowName && currentFlowName && savedFlowName !== currentFlowName) return;
     const scrollY = Number(saved.scrollY);
     if (!Number.isFinite(scrollY) || scrollY < 0) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, behavior: 'auto' });
-      });
-    });
+    let attempts = 0;
+    const restore = () => {
+      window.scrollTo({ top: scrollY, behavior: 'auto' });
+      attempts += 1;
+      if (attempts < 8 && Math.abs((window.scrollY || window.pageYOffset || 0) - scrollY) > 2) {
+        requestAnimationFrame(restore);
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(restore));
   } catch (err) {
     try {
       sessionStorage.removeItem(FLOW_BUILDER_SCROLL_STORAGE_KEY);
@@ -2780,6 +3226,12 @@ function setSaveSubmitting(isSubmitting){
     ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> 儲存中...'
     : originalSaveFlowBtnHtml;
 }
+window.addEventListener('pageshow', (event) => {
+  if (!event.persisted || !flowSaveStatus?.classList.contains('is-saving')) return;
+  setSaveSubmitting(false);
+  isDirty = true;
+  setFlowSaveStatus('dirty');
+});
 const NON_NEGATIVE_STEP_FIELDS = new Set(["target_figure_index", "target_table_index"]);
 function normalizeNonNegativeStepInput(input) {
   if (!input) return true;
@@ -2826,12 +3278,37 @@ function syncOutputFilenameField({ clearOnHide = false } = {}) {
     outputFilenameInput.disabled = IS_VERSION_PREVIEW || !enabled;
   }
 }
+function normalizeOutputFilenameInput() {
+  if (!outputFilenameInput || outputFilenameInput.disabled || !enableOutputFilenameInput?.checked) return;
+  const rawValue = String(outputFilenameInput.value || "").trim();
+  if (!rawValue) {
+    outputFilenameInput.value = "";
+    return;
+  }
+  const normalizedSlashes = rawValue.replace(/\\/g, "/");
+  const slashIndex = normalizedSlashes.lastIndexOf("/");
+  const directoryPart = slashIndex >= 0 ? normalizedSlashes.slice(0, slashIndex + 1) : "";
+  const filePart = slashIndex >= 0 ? normalizedSlashes.slice(slashIndex + 1) : normalizedSlashes;
+  if (!filePart || filePart.includes(".")) {
+    outputFilenameInput.value = rawValue;
+    return;
+  }
+  outputFilenameInput.value = `${directoryPart}${filePart}.docx`;
+}
 if (enableOutputFilenameInput) {
   syncOutputFilenameField();
   enableOutputFilenameInput.addEventListener('change', () => {
     syncOutputFilenameField({ clearOnHide: !enableOutputFilenameInput.checked });
     markDirty();
   });
+}
+if (outputFilenameInput) {
+  outputFilenameInput.addEventListener('blur', () => {
+    const before = outputFilenameInput.value;
+    normalizeOutputFilenameInput();
+    if (outputFilenameInput.value !== before) markDirty();
+  });
+  outputFilenameInput.addEventListener('change', normalizeOutputFilenameInput);
 }
 if (enableFigureReferenceSwitch && enableFigureReferenceInput) {
   const syncEnableFigureReference = () => {
@@ -2851,6 +3328,7 @@ flowForm.addEventListener('submit', (e) => {
   }
   flowForm.querySelectorAll(".chapter-ref").forEach(syncChapterRefInput);
   flowForm.querySelectorAll(".continuous-end-ref").forEach(syncExplicitEndRefInput);
+  normalizeOutputFilenameInput();
   let hasNegativeIndex = false;
   NON_NEGATIVE_STEP_FIELDS.forEach((key) => {
     flowForm.querySelectorAll(`input[name$="_${key}"]`).forEach((input) => {
@@ -3449,7 +3927,7 @@ function openStepFileBrowser(input, accept, browserScope = "files"){
 
   const existing = normalizeBrowserRelPath(input.value);
   if (stepFileState.mode === "dir"){
-    stepFileState.currentRel = existing;
+    stepFileState.currentRel = stepFileState.scope === "output" && existing ? getParentRelPath(existing) : existing;
     stepFileState.selectedRel = input.value.trim() ? existing : null;
   } else if (stepFileState.mode === "mixed"){
     if (isAvailableDirPath(input.value)){
@@ -3560,7 +4038,13 @@ if (stepFileApplyBtn){
 
 if (refreshOutputTreeBtn){
   refreshOutputTreeBtn.addEventListener("click", () => {
-    loadOutputFileTreeRoot();
+    loadOutputFileTreeRoot({ preserveState: true });
+  });
+}
+
+if (copyOutputRootPathBtn){
+  copyOutputRootPathBtn.addEventListener("click", () => {
+    copyOutputPath("");
   });
 }
 
@@ -3791,7 +4275,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
               </div>
               <label class="form-label">${buildLabelHtml(subheadingLabel, true)}</label>
               <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
-              <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
+              <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題(前方無編碼標題)進行內容擷取</div>
             </div>
           </div>
 
@@ -4014,7 +4498,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                         </div>
                         <label class="form-label">${buildLabelHtml(label, true)}</label>
                         <input class="form-control subtitle-input" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}">
-                        <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
+                        <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題(前方無編碼標題)進行內容擷取</div>
                       </div>
                     </div>
                   </div>`;
@@ -4081,7 +4565,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
     if (accept === "bool"){
       const boolDefault = BOOL_DEFAULTS[k] || "true";
       const boolVal = val === "" ? boolDefault : val;
-      if (k === "ignore_toc" || k === "ignore_header_footer" || k === "use_chapter_title" || k === "subheading_strict_match" || k === "include_caption" || k === "allow_table_figure_container" || k === "bold" || k === "page_break_before"){
+      if (k === "ignore_toc" || k === "ignore_header_footer" || k === "use_chapter_title" || k === "subheading_strict_match" || k === "include_caption" || k === "allow_table_figure_container" || k === "bold"){
         const checked = boolVal !== "false" ? "checked" : "";
         const hiddenVal = boolVal !== "false" ? "true" : "false";
         const inputId = `step_${sid}_${k}_chk`;
@@ -4229,7 +4713,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <div class="col-md-6 subheading-input" style="${subtitleHideStyle}">
           <label class="form-label">${buildLabelHtml(subtitleLabel, true)}</label>
           <input class="form-control subtitle-input" name="step_${sid}_target_subtitle" value="${subtitleVal}" placeholder="${subtitlePlaceholder}">
-          <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
+          <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題(前方無編碼標題)進行內容擷取</div>
         </div>
         <div>
           <div class="small text-muted">${buildLabelHtml(atLeastOneGroupLabel, true)}，以下至少填寫一項</div>
@@ -4703,8 +5187,9 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('請輸入流程名稱');
         return;
       }
-      if (newName.length > 50) {
-        alert('流程名稱長度不可超過 50 字');
+      const nameError = getFlowNameValidationMessage(newName);
+      if (nameError) {
+        alert(nameError);
         return;
       }
       submitPostForm(`/tasks/${TASK_ID}/flows/rename/${current}`, { name: newName, fpage: String(CURRENT_FLOW_PAGE) });
@@ -4756,8 +5241,9 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('請輸入流程名稱');
         return;
       }
-      if (newName.length > 50) {
-        alert('流程名稱長度不可超過 50 字');
+      const nameError = getFlowNameValidationMessage(newName);
+      if (nameError) {
+        alert(nameError);
         return;
       }
       if (saveAsNameInput) saveAsNameInput.value = newName;
@@ -4872,19 +5358,20 @@ function renameFlow(current){
   } else {
     const name = prompt('輸入新流程名稱 (最多 50 字)', current);
     if(!name) return;
-    if (name.length > 50) {
-      alert('流程名稱長度不可超過 50 字');
+    const nameError = getFlowNameValidationMessage(name);
+    if (nameError) {
+      alert(nameError);
       return;
     }
     const renameUrl = `{{ url_for('flow_crud_bp.rename_flow', task_id=task.id, flow_name='__FLOW__') }}`.replace('__FLOW__', encodeURIComponent(current));
-    submitPostForm(renameUrl, { name, fpage: String(CURRENT_FLOW_PAGE) });
+    submitPostForm(renameUrl, { name: name.trim(), fpage: String(CURRENT_FLOW_PAGE) });
   }
 }
 
 function renderFlowVersionsRows(flowName, versions){
   if (!flowVersionsTableBody) return;
   if (!versions.length){
-    flowVersionsTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-muted">尚無可用版本</td></tr>';
+    flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">尚無可用版本</td></tr>';
     return;
   }
   flowVersionsTableBody.innerHTML = versions.map(v => `
@@ -4892,12 +5379,13 @@ function renderFlowVersionsRows(flowName, versions){
       <td class="ps-4">
         <div class="fw-semibold text-primary flow-version-name-truncate" title="${escapeHtml(v.name || '')}">${escapeHtml(v.name || '')}</div>
       </td>
+      <td class="text-center">${v.is_current ? '<span class="badge bg-success-subtle text-success">目前使用中</span>' : ''}</td>
       <td class="font-monospace small text-muted">${escapeHtml(v.created_at_display || '')}</td>
       <td class="small text-muted">${escapeHtml(v.created_by || '') || '-'}</td>
       <td class="pe-4 text-center">
         <div class="flow-version-actions">
           <a class="btn btn-sm btn-outline-secondary" href="${v.view_url}">檢視</a>
-          <button class="btn btn-sm btn-primary" type="button" data-restore-url="${v.restore_url}" data-version-name="${escapeHtml(v.name || '')}">回復</button>
+          <button class="btn btn-sm btn-primary" type="button" data-restore-url="${v.restore_url}" data-version-name="${escapeHtml(v.name || '')}" ${v.is_current ? 'disabled title="目前已使用此版本"' : ''}>回復</button>
           <button class="btn btn-sm btn-outline-secondary" type="button" data-rename-url="${v.rename_url}" data-version-id="${v.id}" data-version-name="${escapeHtml(v.name || '')}">重新命名</button>
           <button class="btn btn-sm btn-outline-danger" type="button" data-delete-url="${v.delete_url}" data-version-name="${escapeHtml(v.name || '')}">刪除</button>
         </div>
@@ -4980,7 +5468,7 @@ async function openFlowVersions(flowName){
   if (flowVersionsCurrentName) flowVersionsCurrentName.textContent = flowName;
   if (flowVersionsStatus) flowVersionsStatus.textContent = '載入中...';
   if (flowVersionsTableBody) {
-    flowVersionsTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-muted">版本資料載入中...</td></tr>';
+    flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted">版本資料載入中...</td></tr>';
   }
   if (flowVersionsModal) flowVersionsModal.show();
   try {
@@ -4995,7 +5483,7 @@ async function openFlowVersions(flowName){
   } catch (err) {
     if (flowVersionsStatus) flowVersionsStatus.textContent = err.message || '載入版本失敗';
     if (flowVersionsTableBody) {
-      flowVersionsTableBody.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-danger">載入版本失敗</td></tr>';
+      flowVersionsTableBody.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-danger">載入版本失敗</td></tr>';
     }
   }
 }
@@ -5105,8 +5593,9 @@ if (saveAsFlowBtn) {
     } else {
       const name = prompt('輸入另存流程名稱 (最多 50 字)', buildSaveAsNameSuggestion());
       if (!name) return;
-      if (name.length > 50) {
-        alert('流程名稱長度不可超過 50 字');
+      const nameError = getFlowNameValidationMessage(name);
+      if (nameError) {
+        alert(nameError);
         return;
       }
       if (saveAsNameInput) saveAsNameInput.value = name.trim();

@@ -2,6 +2,7 @@ from pathlib import Path
 import zipfile
 
 from docx import Document as DocxDocument
+from docx.shared import Pt
 from lxml import etree
 
 from modules.workflow import run_workflow
@@ -440,6 +441,105 @@ def test_workflow_result_renumbers_figure_captions_and_references(
         entry.get("type") == "postprocess_renumber_figure_table" and entry.get("status") == "ok"
         for entry in result["log_json"]
     )
+
+
+def test_workflow_result_renumbers_dotted_table_captions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    src = tmp_path / "source.docx"
+    _create_docx(src)
+    call_idx = {"value": 0}
+
+    def fake_extract_specific_table_from_word(*args, **_kwargs):
+        call_idx["value"] += 1
+        out_path = Path(str(args[1]))
+        doc = DocxDocument()
+        if call_idx["value"] == 1:
+            doc.add_paragraph("Table 6.1. Direct body-contact materials")
+        else:
+            doc.add_paragraph("Table 6.3 Chemical characterization results")
+        doc.add_table(rows=1, cols=1).cell(0, 0).text = "demo"
+        doc.save(out_path)
+
+    monkeypatch.setattr(
+        "modules.workflow.extract_specific_table_from_word",
+        fake_extract_specific_table_from_word,
+    )
+
+    steps = [
+        {
+            "type": "extract_specific_table_from_word",
+            "params": {
+                "input_file": str(src),
+                "target_chapter_section": "6.1.2",
+                "target_caption_label": "Table 6.1",
+                "include_caption": "true",
+            },
+        },
+        {
+            "type": "extract_specific_table_from_word",
+            "params": {
+                "input_file": str(src),
+                "target_chapter_section": "6.1.2",
+                "target_caption_label": "Table 6.3",
+                "include_caption": "true",
+            },
+        },
+    ]
+    result = run_workflow(steps, str(tmp_path / "job_renumber_dotted_table"))
+
+    output_doc = DocxDocument(result["result_docx"])
+    lines = [p.text.strip() for p in output_doc.paragraphs if p.text.strip()]
+
+    assert "Table 1. Direct body-contact materials" in lines
+    assert "Table 2 Chemical characterization results" in lines
+    assert "Table 1.1. Direct body-contact materials" not in lines
+    assert "Table 2.3 Chemical characterization results" not in lines
+
+
+def test_workflow_renumber_preserves_caption_run_font(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    src = tmp_path / "source.docx"
+    _create_docx(src)
+
+    def fake_extract_specific_table_from_word(*args, **_kwargs):
+        out_path = Path(str(args[1]))
+        doc = DocxDocument()
+        para = doc.add_paragraph()
+        run = para.add_run("Table 6.1. Direct body-contact materials")
+        run.font.name = "Arial"
+        run.font.size = Pt(10)
+        doc.add_table(rows=1, cols=1).cell(0, 0).text = "demo"
+        doc.save(out_path)
+
+    monkeypatch.setattr(
+        "modules.workflow.extract_specific_table_from_word",
+        fake_extract_specific_table_from_word,
+    )
+
+    steps = [
+        {
+            "type": "extract_specific_table_from_word",
+            "params": {
+                "input_file": str(src),
+                "target_chapter_section": "6.1.2",
+                "target_caption_label": "Table 6.1",
+                "include_caption": "true",
+            },
+        }
+    ]
+    result = run_workflow(steps, str(tmp_path / "job_renumber_preserve_font"))
+
+    output_doc = DocxDocument(result["result_docx"])
+    caption = next(p for p in output_doc.paragraphs if p.text.strip())
+    run = caption.runs[0]
+
+    assert caption.text == "Table 1. Direct body-contact materials"
+    assert run.font.name == "Arial"
+    assert run.font.size == Pt(10)
 
 
 def test_workflow_result_renumbers_numbering_style_figure_captions(

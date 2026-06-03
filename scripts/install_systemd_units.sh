@@ -133,13 +133,15 @@ if [[ "$INSTALL_MODE" -eq 1 ]]; then
   mkdir -p "$UNIT_TARGET_DIR"
   install -m 0644 "$OUTPUT_DIR"/uo_regulations.service "$UNIT_TARGET_DIR"/uo_regulations.service
   install -m 0644 "$OUTPUT_DIR"/uo_regulations_jobs_worker.service "$UNIT_TARGET_DIR"/uo_regulations_jobs_worker.service
+  install -m 0644 "$OUTPUT_DIR"/uo_regulations_flow_worker.service "$UNIT_TARGET_DIR"/uo_regulations_flow_worker.service
+  install -m 0644 "$OUTPUT_DIR"/uo_regulations_batch_worker.service "$UNIT_TARGET_DIR"/uo_regulations_batch_worker.service
   install -m 0644 "$OUTPUT_DIR"/adoption-standard-update.service "$UNIT_TARGET_DIR"/adoption-standard-update.service
   install -m 0644 "$OUTPUT_DIR"/adoption-standard-update.timer "$UNIT_TARGET_DIR"/adoption-standard-update.timer
   "$SYSTEMCTL_BIN" daemon-reload
   echo "Installed unit files into $UNIT_TARGET_DIR"
   echo "Next:"
-  echo "  sudo systemctl enable uo_regulations uo_regulations_jobs_worker adoption-standard-update.timer"
-  echo "  sudo systemctl start uo_regulations uo_regulations_jobs_worker adoption-standard-update.timer"
+  echo "  sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker adoption-standard-update.timer"
+  echo "  sudo systemctl start uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker adoption-standard-update.timer"
 else
   echo "Rendered unit files into $OUTPUT_DIR"
 fi

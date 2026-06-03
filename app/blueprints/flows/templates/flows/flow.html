@@ -4275,7 +4275,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
               </div>
               <label class="form-label">${buildLabelHtml(subheadingLabel, true)}</label>
               <input class="form-control" name="step_${sid}_target_subtitle" value="${subheadingVal}" placeholder="${subheadingPlaceholder}">
-              <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
+              <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題(前方無編碼標題)進行內容擷取</div>
             </div>
           </div>
 
@@ -4498,7 +4498,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                         </div>
                         <label class="form-label">${buildLabelHtml(label, true)}</label>
                         <input class="form-control subtitle-input" name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}">
-                        <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
+                        <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題(前方無編碼標題)進行內容擷取</div>
                       </div>
                     </div>
                   </div>`;
@@ -4713,7 +4713,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         <div class="col-md-6 subheading-input" style="${subtitleHideStyle}">
           <label class="form-label">${buildLabelHtml(subtitleLabel, true)}</label>
           <input class="form-control subtitle-input" name="step_${sid}_target_subtitle" value="${subtitleVal}" placeholder="${subtitlePlaceholder}">
-          <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題進行內容擷取</div>
+          <div class="form-text">提示：啟用此功能後，系統將僅針對該標題下的小標題(前方無編碼標題)進行內容擷取</div>
         </div>
         <div>
           <div class="small text-muted">${buildLabelHtml(atLeastOneGroupLabel, true)}，以下至少填寫一項</div>

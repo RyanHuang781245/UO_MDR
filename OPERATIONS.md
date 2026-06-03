@@ -118,11 +118,11 @@ Requirements:
 - `MSSQL_BACKUP_DIR` must be a path writable by the SQL Server service account
 
 Required environment variables:
-- `SQLCMD_SERVER`
-- `SQLCMD_USER`
-- `SQLCMD_PASSWORD`
-- `MSSQL_DATABASE`
+- `DATABASE_URL` or the split `SQLCMD_SERVER`/`SQLCMD_USER`/`SQLCMD_PASSWORD`/`MSSQL_DATABASE` values
 - `MSSQL_BACKUP_DIR`
+
+The script auto-loads the project `.env` and can derive the `sqlcmd` connection values from a SQLAlchemy
+`mssql+pyodbc://...` `DATABASE_URL`.
 
 Optional:
 - `BACKUP_FILE_NAME`
@@ -159,11 +159,11 @@ This script:
 - returns the DB to `MULTI_USER`
 
 Required environment variables:
-- `SQLCMD_SERVER`
-- `SQLCMD_USER`
-- `SQLCMD_PASSWORD`
-- `MSSQL_DATABASE`
+- `DATABASE_URL` or the split `SQLCMD_SERVER`/`SQLCMD_USER`/`SQLCMD_PASSWORD`/`MSSQL_DATABASE` values
 - `MSSQL_BACKUP_FILE`
+
+The script auto-loads the project `.env` and can derive the `sqlcmd` connection values from a SQLAlchemy
+`mssql+pyodbc://...` `DATABASE_URL`.
 
 Example:
 
@@ -188,6 +188,26 @@ If deployment fails after schema or app rollout:
 3. Revert application code to the previous release.
 4. Start services.
 5. Verify login, task listing, file operations, and background worker health.
+
+## File restore
+
+Use [scripts/restore_files.sh](/home/NE025/UO_MDR/scripts/restore_files.sh) to restore a file archive created by
+[scripts/backup.sh](/home/NE025/UO_MDR/scripts/backup.sh).
+
+Example:
+
+```bash
+bash scripts/restore_files.sh backups/files/host_files_2026-06-02_120000.tar.gz --yes
+```
+
+The script verifies the adjacent `.sha256` file when present, creates a current-state file backup before restore,
+then extracts the archive into `APP_ROOT`.
+
+To skip the current-state backup:
+
+```bash
+SKIP_PRE_RESTORE_BACKUP=1 bash scripts/restore_files.sh backups/files/host_files_2026-06-02_120000.tar.gz --yes
+```
 
 ## Validation checklist
 

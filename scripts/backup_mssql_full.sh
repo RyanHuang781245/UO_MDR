@@ -2,6 +2,9 @@
 set -euo pipefail
 
 SQLCMD_BIN="${SQLCMD_BIN:-sqlcmd}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_ROOT="${APP_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+ENV_FILE="${ENV_FILE:-$APP_ROOT/.env}"
 SQLCMD_SERVER="${SQLCMD_SERVER:-}"
 SQLCMD_USER="${SQLCMD_USER:-}"
 SQLCMD_PASSWORD="${SQLCMD_PASSWORD:-}"
@@ -24,6 +27,22 @@ sql_escape() {
 identifier_escape() {
   printf "%s" "$1" | sed 's/]/]]/g'
 }
+
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+if [[ -n "${DATABASE_URL:-${RBAC_DATABASE_URL:-}}" ]]; then
+  PYTHON_BIN="${PYTHON_BIN:-}"
+  if [[ -z "$PYTHON_BIN" && -x "$APP_ROOT/.venv/bin/python" ]]; then
+    PYTHON_BIN="$APP_ROOT/.venv/bin/python"
+  fi
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
+  eval "$("$PYTHON_BIN" "$SCRIPT_DIR/mssql_url_to_sqlcmd_env.py")"
+fi
 
 command -v "$SQLCMD_BIN" >/dev/null 2>&1 || {
   echo "sqlcmd not found: $SQLCMD_BIN" >&2

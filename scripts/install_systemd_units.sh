@@ -7,8 +7,10 @@ TEMPLATE_DIR="$APP_ROOT/deploy/systemd"
 OUTPUT_DIR=""
 INSTALL_MODE=0
 UNIT_TARGET_DIR="/etc/systemd/system"
-APP_USER="$(stat -c '%U' "$APP_ROOT")"
+APP_USER="${APP_USER:-}"
+APP_USER_EXPLICIT=0
 ENV_FILE="$APP_ROOT/.env"
+ENV_FILE_EXPLICIT=0
 WEB_BIND="unix:uo_regulations.sock"
 WEB_WORKERS="4"
 UPDATE_ON_CALENDAR="*-*-* 8:00:00"
@@ -57,10 +59,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --app-user)
       APP_USER="$2"
+      APP_USER_EXPLICIT=1
       shift 2
       ;;
     --env-file)
       ENV_FILE="$2"
+      ENV_FILE_EXPLICIT=1
       shift 2
       ;;
     --web-bind)
@@ -86,6 +90,16 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+TEMPLATE_DIR="$APP_ROOT/deploy/systemd"
+
+if [[ "$APP_USER_EXPLICIT" -eq 0 && -z "$APP_USER" ]]; then
+  APP_USER="$(stat -c '%U' "$APP_ROOT")"
+fi
+
+if [[ "$ENV_FILE_EXPLICIT" -eq 0 ]]; then
+  ENV_FILE="$APP_ROOT/.env"
+fi
 
 if [[ -z "$OUTPUT_DIR" ]]; then
   OUTPUT_DIR="$APP_ROOT/build/systemd"

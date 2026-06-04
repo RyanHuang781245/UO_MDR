@@ -7,9 +7,10 @@ FLOW_WORKER_SERVICE="uo_regulations_flow_worker"
 BATCH_WORKER_SERVICE="uo_regulations_batch_worker"
 TIMER_SERVICE="adoption-standard-update.timer"
 WORKER_SERVICES=("$WORKER_SERVICE" "$FLOW_WORKER_SERVICE" "$BATCH_WORKER_SERVICE")
-APP_DIR="/home/NE025/UO_MDR"
-ENV_FILE="$APP_DIR/.env"
-APP_ROOT="$APP_DIR"
+APP_DIR="${APP_DIR:-/home/NE025/UO_MDR}"
+APP_ROOT="${APP_ROOT:-$APP_DIR}"
+ENV_FILE="${ENV_FILE:-$APP_ROOT/.env}"
+APP_USER="${APP_USER:-}"
 BRANCH="${DEPLOY_BRANCH:-main}"
 RUN_GIT_PULL="${RUN_GIT_PULL:-0}"
 RUN_DB_BACKUP="${RUN_DB_BACKUP:-0}"
@@ -18,14 +19,14 @@ MANAGE_SYSTEMD_SERVICES="${MANAGE_SYSTEMD_SERVICES:-auto}"
 WEB_WORKERS="${WEB_WORKERS:-2}"
 WEB_BIND="${WEB_BIND:-127.0.0.1:8000}"
 UPDATE_ON_CALENDAR="${UPDATE_ON_CALENDAR:-daily}"
-NGINX_FILE="${NGINX_FILE:-$APP_DIR/deploy/nginx.conf}"
+NGINX_FILE="${NGINX_FILE:-$APP_ROOT/deploy/nginx.conf}"
 NGINX_SITE_NAME="${NGINX_SITE_NAME:-$APP_NAME}"
 ENABLE_NGINX="${ENABLE_NGINX:-0}"
 UV_BIN="${UV_BIN:-uv}"
 UV_SYNC_ARGS="${UV_SYNC_ARGS:---frozen}"
-VENV_PYTHON="$APP_DIR/.venv/bin/python"
-ALEMBIC_BIN="$APP_DIR/.venv/bin/alembic"
-FLASK_BIN="$APP_DIR/.venv/bin/flask"
+VENV_PYTHON="$APP_ROOT/.venv/bin/python"
+ALEMBIC_BIN="$APP_ROOT/.venv/bin/alembic"
+FLASK_BIN="$APP_ROOT/.venv/bin/flask"
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%F %T')" "$1"
@@ -73,7 +74,7 @@ should_manage_systemd() {
 }
 
 log "進入專案目錄"
-cd "$APP_DIR"
+cd "$APP_ROOT"
 
 require_file "$ENV_FILE"
 
@@ -119,7 +120,7 @@ fi
 
 if [[ "$RUN_DB_BACKUP" == "1" ]]; then
   log "執行部署前資料庫備份"
-  bash "$APP_DIR/scripts/backup_mssql_full.sh"
+  bash "$APP_ROOT/scripts/backup_mssql_full.sh"
 fi
 
 if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
@@ -135,13 +136,19 @@ fi
 
 if [[ "$INSTALL_SYSTEMD_UNITS" == "1" && "$SYSTEMD_ENABLED" == "1" ]]; then
   log "安裝或更新 systemd units"
-  sudo bash "$APP_DIR/scripts/install_systemd_units.sh" \
-    --install \
-    --app-root "$APP_ROOT" \
-    --env-file "$ENV_FILE" \
-    --web-bind "$WEB_BIND" \
-    --web-workers "$WEB_WORKERS" \
+  systemd_args=(
+    --install
+    --app-root "$APP_ROOT"
+    --env-file "$ENV_FILE"
+    --web-bind "$WEB_BIND"
+    --web-workers "$WEB_WORKERS"
     --update-on-calendar "$UPDATE_ON_CALENDAR"
+  )
+  if [[ -n "$APP_USER" ]]; then
+    systemd_args+=(--app-user "$APP_USER")
+  fi
+  sudo bash "$APP_ROOT/scripts/install_systemd_units.sh" \
+    "${systemd_args[@]}"
 elif [[ "$INSTALL_SYSTEMD_UNITS" == "1" ]]; then
   log "略過 systemd units 安裝；目前環境無可用 systemd"
 fi

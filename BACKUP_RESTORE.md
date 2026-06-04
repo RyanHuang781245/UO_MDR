@@ -131,12 +131,13 @@ bash scripts/backup.sh
 - `harmonised_store`
 - `deploy/systemd`
 
-注意事項：檔案備份不會將 `task_store` 中完整任務檔案與執行結果進行備份，會保留任務設定、流程與 mapping 設定。也就是會排除：
+注意事項：檔案備份不會將 `task_store` 中完整任務檔案、執行結果與 Mapping 相關資料進行備份，會保留任務設定與流程。也就是會排除：
 - `task_store/*/files/*`
 - `task_store/*/jobs/*`
-- `task_store/*/mapping_job/*`
+- `task_store/*/mappings`
+- `task_store/*/mapping_job`
 
-其中 `task_store/*/mappings/*` 是 mapping 設定，會備份；`task_store/*/mapping_job/*` 是 mapping 執行產物，會排除。
+其中 `task_store/*/mappings` 是 Mapping 方案設定，`task_store/*/mapping_job` 是 Mapping 執行產物；兩者都會排除，避免還原後 Mapping 方案與附件內容或資料庫狀態不一致。
 
 
 ## 5. 建議備份策略
@@ -583,7 +584,8 @@ curl -i http://127.0.0.1/tasks | sed -n '1,20p'
 
 - `task_store/*/files/*` 不會被一般檔案備份包含
 - `task_store/*/jobs/*` 不會被一般檔案備份包含
-- `task_store/*/mapping_job/*` 不會被一般檔案備份包含
+- `task_store/*/mappings` 不會被一般檔案備份包含
+- `task_store/*/mapping_job` 不會被一般檔案備份包含
 - `.bak` 會先落在 SQL Server 主機，不會自動搬回 VM
 - 尚未有統一的備份 manifest
 - 尚未有自動遠端保存流程

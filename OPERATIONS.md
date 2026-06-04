@@ -14,10 +14,12 @@ Use this order for production deployments:
 
 ## systemd unit generation
 
-Use the repo script to render or install the 4 unit files:
+Use the repo script to render or install the systemd unit files:
 
 - `uo_regulations.service`
 - `uo_regulations_jobs_worker.service`
+- `uo_regulations_flow_worker.service`
+- `uo_regulations_batch_worker.service`
 - `adoption-standard-update.service`
 - `adoption-standard-update.timer`
 
@@ -38,16 +40,35 @@ Useful overrides:
 ```bash
 sudo bash scripts/install_systemd_units.sh \
   --install \
+  --app-root /home/NE025/UO_MDR \
   --env-file /home/NE025/UO_MDR/.env \
   --web-bind 127.0.0.1:8000 \
   --web-workers 2 \
   --update-on-calendar 'daily'
 ```
 
+If `--app-user` is not provided, the script uses the owner of `--app-root` for systemd `User=`.
+Use `--app-user USER` only when the service should run as a different account.
+
 After install:
 
 ```bash
-sudo systemctl enable uo_regulations uo_regulations_jobs_worker adoption-standard-update.timer
+sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker adoption-standard-update.timer
+```
+
+## Nginx site config
+
+The app deployment manages only the UO MDR site config, not the global nginx config.
+
+- Keep `/etc/nginx/nginx.conf` as a manually maintained host-level file.
+- Ensure `/etc/nginx/nginx.conf` includes `/etc/nginx/sites-enabled/*`.
+- Keep the app site template in `deploy/nginx.conf.template`.
+- Run `ENABLE_NGINX=1 bash deploy.sh` to render `build/nginx/uo_regulations`, copy it to `/etc/nginx/sites-available/uo_regulations`, update the enabled-site symlink, run `nginx -t`, and reload nginx.
+
+For deployments outside the default path:
+
+```bash
+APP_ROOT=/home/NE025/UO_MDR ENABLE_NGINX=1 bash deploy.sh
 ```
 
 Recommended command sequence:

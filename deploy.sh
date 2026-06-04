@@ -19,8 +19,9 @@ MANAGE_SYSTEMD_SERVICES="${MANAGE_SYSTEMD_SERVICES:-auto}"
 WEB_WORKERS="${WEB_WORKERS:-2}"
 WEB_BIND="${WEB_BIND:-127.0.0.1:8000}"
 UPDATE_ON_CALENDAR="${UPDATE_ON_CALENDAR:-daily}"
-NGINX_FILE="${NGINX_FILE:-$APP_ROOT/deploy/nginx.conf}"
+NGINX_TEMPLATE="${NGINX_TEMPLATE:-$APP_ROOT/deploy/nginx.conf.template}"
 NGINX_SITE_NAME="${NGINX_SITE_NAME:-$APP_NAME}"
+NGINX_FILE="${NGINX_FILE:-$APP_ROOT/build/nginx/$NGINX_SITE_NAME}"
 ENABLE_NGINX="${ENABLE_NGINX:-0}"
 UV_BIN="${UV_BIN:-uv}"
 UV_SYNC_ARGS="${UV_SYNC_ARGS:---frozen}"
@@ -155,6 +156,22 @@ fi
 
 if [[ "$ENABLE_NGINX" == "1" ]]; then
   require_cmd nginx
+  require_file "$NGINX_TEMPLATE"
+  mkdir -p "$(dirname "$NGINX_FILE")"
+  log "產生 Nginx 站台設定"
+  APP_ROOT="$APP_ROOT" NGINX_TEMPLATE="$NGINX_TEMPLATE" NGINX_FILE="$NGINX_FILE" python3 - <<'PY'
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+template_path = Path(os.environ["NGINX_TEMPLATE"])
+output_path = Path(os.environ["NGINX_FILE"])
+content = template_path.read_text(encoding="utf-8")
+content = content.replace("{{APP_ROOT}}", os.environ["APP_ROOT"])
+output_path.write_text(content, encoding="utf-8")
+print(output_path)
+PY
   require_file "$NGINX_FILE"
   log "複製 Nginx 設定"
   sudo cp "$NGINX_FILE" "/etc/nginx/sites-available/$NGINX_SITE_NAME"

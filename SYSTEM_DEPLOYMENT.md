@@ -26,6 +26,9 @@
 /home/NE025/UO_MDR
 ├── .env
 ├── deploy.sh
+├── deploy/
+│   ├── nginx.conf.template
+│   └── systemd/
 ├── scripts/
 │   ├── backup_mssql_full.sh
 │   ├── restore_mssql_replace.sh
@@ -159,7 +162,7 @@ bash deploy.sh
 
 部署腳本會做：
 
-1. 進入 `/home/NE025/UO_MDR`
+1. 進入 `APP_ROOT`，預設 `/home/NE025/UO_MDR`
 2. 載入 `.env`
 3. 執行 `uv sync --frozen` 建立或同步 Python `.venv`
 4. 視設定執行部署前 DB 備份
@@ -178,6 +181,18 @@ bash deploy.sh
 RUN_DB_BACKUP=1 bash deploy.sh
 ```
 
+如果部署目錄不是預設路徑，可用 `APP_ROOT` 指定；systemd `User=` 會預設使用 `APP_ROOT` 的目錄 owner：
+
+```bash
+APP_ROOT=/home/NE025/UO_MDR RUN_DB_BACKUP=1 bash deploy.sh
+```
+
+如果 systemd 執行使用者要與目錄 owner 不同，可明確指定 `APP_USER`：
+
+```bash
+APP_ROOT=/opt/UO_MDR APP_USER=uoapp RUN_DB_BACKUP=1 bash deploy.sh
+```
+
 如果部署前要先 git pull：
 
 ```bash
@@ -189,6 +204,12 @@ RUN_GIT_PULL=1 DEPLOY_BRANCH=main RUN_DB_BACKUP=1 bash deploy.sh
 ```bash
 ENABLE_NGINX=1 RUN_DB_BACKUP=1 bash deploy.sh
 ```
+
+Nginx 分工：
+
+- `/etc/nginx/nginx.conf` 是全域設定，部署腳本不會修改；初次建機或需要調整全域效能參數時手動維護。
+- `deploy/nginx.conf.template` 是 UO MDR site config template，`ENABLE_NGINX=1` 時會以 `APP_ROOT` 產生 `build/nginx/uo_regulations`。
+- 產生後的 site config 會複製到 `/etc/nginx/sites-available/uo_regulations`，並建立或更新 `/etc/nginx/sites-enabled/uo_regulations` symlink。
 
 Docker 或一般 container 測試環境通常不會以 systemd 作為 PID 1，因此 `deploy.sh`
 會自動略過 systemd unit 安裝、服務啟停與狀態檢查，只執行環境同步、
@@ -250,6 +271,7 @@ Location: /auth/login?next=/tasks
 ```bash
 sudo nginx -t
 ls -l /etc/nginx/sites-enabled
+sudo sed -n '1,120p' /etc/nginx/sites-available/uo_regulations
 ```
 
 `adoption-standard-update.service` 是 `oneshot` 服務，平常通常由 `adoption-standard-update.timer` 依排程觸發。若只是恢復排程，不要手動 `start` service；若要立即執行一次標準更新，才手動執行：
@@ -292,6 +314,12 @@ export SQLCMD_BIN='/path/to/sqlcmd'
 
 ```bash
 ls -l /etc/nginx/sites-enabled
+```
+
+確認全域 `/etc/nginx/nginx.conf` 有載入 enabled sites：
+
+```nginx
+include /etc/nginx/sites-enabled/*;
 ```
 
 確認 Nginx proxy：

@@ -2061,13 +2061,61 @@
     }
   };
 
+  const getDownloadFilename = (response) => {
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) {
+      try {
+        return decodeURIComponent(utf8Match[1].replace(/["']/g, ""));
+      } catch (error) {
+        return utf8Match[1].replace(/["']/g, "");
+      }
+    }
+    const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+    return asciiMatch ? asciiMatch[1] : "standard_mapping_updated.docx";
+  };
+
+  const triggerBlobDownload = (blob, filename) => {
+    const blobUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = blobUrl;
+    anchor.download = filename || "standard_mapping_updated.docx";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  };
+
   if (downloadForm) {
-    downloadForm.addEventListener("submit", () => {
+    downloadForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
       syncDownloadPriorityState();
       if (typeof syncInteractiveState === "function") {
         syncInteractiveState();
       }
       setSubmitButtonState(downloadSubmitBtn, true);
+
+      try {
+        const response = await fetch(downloadForm.action, {
+          method: downloadForm.method || "POST",
+          body: new FormData(downloadForm),
+          credentials: "same-origin",
+        });
+        const disposition = response.headers.get("Content-Disposition") || "";
+        if (!response.ok || !/attachment/i.test(disposition)) {
+          const html = await response.text();
+          document.open();
+          document.write(html);
+          document.close();
+          return;
+        }
+        const blob = await response.blob();
+        triggerBlobDownload(blob, getDownloadFilename(response));
+      } catch (error) {
+        window.alert("下載失敗，請稍後再試。");
+      } finally {
+        setSubmitButtonState(downloadSubmitBtn, false);
+      }
     });
   }
 

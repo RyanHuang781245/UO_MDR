@@ -17,7 +17,7 @@ def _optional_dependency_stub(feature: str):
     def _stub(*_args, **_kwargs):
         raise RuntimeError(
             f"{feature} requires optional document-processing dependencies "
-            "(e.g. spire.doc / python-docx / PyMuPDF)."
+            "(e.g. python-docx / PyMuPDF)."
         )
 
     return _stub
@@ -25,7 +25,7 @@ def _optional_dependency_stub(feature: str):
 
 try:
     from modules.workflow import SUPPORTED_STEPS, run_workflow
-except Exception:  # optional dependency (spire.doc) may be missing
+except Exception:  # optional document-processing dependencies may be missing
     SUPPORTED_STEPS = {}
     run_workflow = _optional_dependency_stub("Workflow execution")
 
@@ -46,11 +46,6 @@ except Exception:  # optional dependencies may be missing
     remove_hidden_runs = _optional_dependency_stub("remove_hidden_runs")
     hide_paragraphs_with_text = _optional_dependency_stub("hide_paragraphs_with_text")
     remove_paragraphs_with_text = _optional_dependency_stub("remove_paragraphs_with_text")
-
-try:
-    from modules.Edit_Word import renumber_figures_tables_file
-except Exception:
-    renumber_figures_tables_file = _optional_dependency_stub("renumber_figures_tables_file")
 
 try:
     from modules.translate_with_bedrock import translate_file
@@ -169,24 +164,7 @@ def save_compare_output(
     base_name="result",
     subdir=None,
 ):
-    target_dir = job_dir if not subdir else os.path.join(job_dir, subdir)
-    os.makedirs(target_dir, exist_ok=True)
-    html_path = os.path.join(target_dir, f"{base_name}.html")
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
-    from spire.doc import Document, FileFormat
-
-    doc = Document()
-    doc.LoadFromFile(html_path, FileFormat.Html)
-    doc.SaveToFile(os.path.join(target_dir, f"{base_name}.docx"), FileFormat.Docx)
-    doc.Close()
-    result_docx = os.path.join(target_dir, f"{base_name}.docx")
-    if not SKIP_DOCX_CLEANUP:
-        remove_hidden_runs(result_docx, preserve_texts=titles_to_hide)
-    apply_basic_style(result_docx)
-    if not SKIP_DOCX_CLEANUP:
-        hide_paragraphs_with_text(result_docx, titles_to_hide)
-    return html_path, result_docx
+    raise RuntimeError("Compare HTML save/export is no longer supported.")
 
 def load_version_metadata(versions_dir):
     metadata = {"versions": []}

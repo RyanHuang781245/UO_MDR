@@ -10,14 +10,7 @@ from collections import defaultdict
 from typing import Dict, List, Tuple, Any, Callable
 
 from docx import Document as DocxDocument
-from spire.doc import Document, FileFormat
 
-from .Edit_Word import (
-    renumber_figures_tables_file,
-    insert_numbered_heading,
-    insert_roman_heading,
-    insert_bulleted_heading,
-)
 from .Extract_AllFile_to_FinalWord import (
     extract_word_all_content,
     extract_word_chapter,
@@ -245,32 +238,6 @@ def _build_template_index_map(parsed: List[Dict[str, Any]]) -> Tuple[Dict[str, i
     return index_map, last_idx
 
 
-def insert_title(section, title: str):
-    """Insert *title* into *section* with appropriate heading style.
-
-    - Titles beginning with Roman numerals (e.g. ``"I."``, ``"II."``) use
-      :func:`insert_roman_heading`.
-    - Titles beginning with a ``"⚫"`` bullet use :func:`insert_bulleted_heading`.
-    - All other titles use :func:`insert_numbered_heading`.
-    """
-
-    if not title:
-        return None
-
-    # Strip leading chapter numbers like "6.4.2" from the title
-    title = re.sub(r"^[0-9]+(?:\.[0-9]+)*\s*", "", title)
-
-    roman_match = re.match(r"^[IVXLCDM]+\.\s*(.*)", title)
-    if roman_match:
-        text = roman_match.group(1).strip() or title
-        return insert_roman_heading(section, text, level=0, bold=True, font_size=12)
-
-    if title.startswith("⚫"):
-        text = title.lstrip("⚫").strip()
-        return insert_bulleted_heading(section, text, level=0, bullet_char='·', bold=True, font_size=12)
-
-    return insert_numbered_heading(section, title, level=0, bold=True, font_size=12)
-
 def process_mapping_excel(
     mapping_path: str,
     task_files_dir: str,
@@ -355,172 +322,18 @@ def process_mapping_excel(
 
 
     if header_row is None:
-        # Fallback to legacy format
-        start_row = 3 if ws.max_row and ws.max_row >= 3 else 2
-        docs: Dict[str, Tuple[Document, Any]] = {}
-        hidden_titles: Dict[str, List[str]] = defaultdict(list)
-        if validate_only or validate_extract_only:
-            for row in ws.iter_rows(min_row=start_row, values_only=True):
-                _check_canceled()
-                raw_out, _raw_title, raw_folder, raw_input, raw_instruction = row[:5]
-                out_name = str(raw_out).strip() if raw_out else ""
-                folder = str(raw_folder).strip() if raw_folder else ""
-                input_name = str(raw_input).strip() if raw_input else ""
-                instruction = str(raw_instruction).strip() if raw_instruction else ""
-                if not instruction:
-                    continue
-
-                base_dir = task_files_dir
-                if folder:
-                    found_dir = _find_directory(task_files_dir, folder)
-                    if not found_dir:
-                        logs.append(f"ERROR: {out_name or '?'} 找不到資料夾 {folder}")
-                        continue
-                    base_dir = found_dir
-
-                is_all = instruction.lower() == "all"
-                chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
-                if is_all or chapter_match:
-                    if not input_name:
-                        logs.append(f"ERROR: {out_name or '?'} 缺少來源檔名")
-                        continue
-                    infile, resolve_error = _resolve_input_file(base_dir, input_name)
-                    if not infile:
-                        logs.append(f"ERROR: {out_name or '?'} {resolve_error}")
-                        continue
-
-            log_file = None
-            if logs:
-                target_log_dir = log_dir or output_dir
-                os.makedirs(target_log_dir, exist_ok=True)
-                log_filename = "mapping_log.json"
-                log_path = os.path.join(target_log_dir, log_filename)
-                with open(log_path, "w", encoding="utf-8") as f:
-                    json.dump({"messages": logs, "runs": []}, f, ensure_ascii=False, indent=2)
-                log_file = log_filename
-            return {"logs": logs, "outputs": [], "log_file": log_file}
-
-        for row in ws.iter_rows(min_row=start_row, values_only=True):
-            _check_canceled()
-            raw_out, raw_title, raw_folder, raw_input, raw_instruction = row[:5]
-            out_name = str(raw_out).strip() if raw_out else ""
-            title = str(raw_title).strip() if raw_title else ""
-            folder = str(raw_folder).strip() if raw_folder else ""
-            input_name = str(raw_input).strip() if raw_input else ""
-            instruction = str(raw_instruction).strip() if raw_instruction else ""
-            if not instruction:
-                continue
-
-            base_dir = task_files_dir
-            if folder:
-                found_dir = _find_directory(task_files_dir, folder)
-                if not found_dir:
-                    logs.append(f"{out_name or '?'}: 找不到資料夾 {folder}")
-                    continue
-                base_dir = found_dir
-
-            is_all = instruction.lower() == "all"
-            chapter_match = re.match(r"^([0-9]+(?:\.[0-9]+)*)(?:.*)", instruction)
-
-            if is_all or chapter_match:
-                if not input_name:
-                    logs.append(f"{out_name or '?'}: 缺少來源檔名")
-                    continue
-                infile, resolve_error = _resolve_input_file(base_dir, input_name)
-                if not infile:
-                    logs.append(f"{out_name or '?'}: {resolve_error}")
-                    continue
-
-                doc, section = docs.get(out_name, (None, None))
-                if doc is None:
-                    doc = Document()
-                    section = doc.AddSection()
-                    docs[out_name] = (doc, section)
-
-                insert_title(section, title)
-
-                if is_all:
-                    extract_word_all_content(infile, output_doc=doc, section=section)
-                    logs.append(f"Extract {input_name} (all content)")
-                else:
-                    parsed_chapter, parsed_title, _parsed_sub = _parse_chapter_parts(instruction)
-                    chapter = parsed_chapter or chapter_match.group(1)
-                    title_inline = parsed_title or ""
-                    if "," in instruction and not title_inline:
-                        _prefix, after = instruction.split(",", 1)
-                        title_inline = after.strip()
-                    if title_inline:
-                        result = extract_word_chapter(
-                            infile,
-                            chapter,
-                            use_chapter_title=True,
-                            target_chapter_title=title_inline,
-                            output_doc=doc,
-                            section=section,
-                        )
-                        if isinstance(result, dict):
-                            for captured in result.get("captured_titles", []):
-                                if not isinstance(captured, str):
-                                    continue
-                                trimmed = captured.strip()
-                                if trimmed and trimmed not in hidden_titles[out_name]:
-                                    hidden_titles[out_name].append(trimmed)
-                        logs.append(f"Extract {input_name} (chapter {chapter}, title {title_inline})")
-                    else:
-                        result = extract_word_chapter(
-                            infile,
-                            chapter,
-                            output_doc=doc,
-                            section=section,
-                        )
-                        if isinstance(result, dict):
-                            for captured in result.get("captured_titles", []):
-                                if not isinstance(captured, str):
-                                    continue
-                                trimmed = captured.strip()
-                                if trimmed and trimmed not in hidden_titles[out_name]:
-                                    hidden_titles[out_name].append(trimmed)
-                        logs.append(f"Extract {input_name} (chapter {chapter})")
-            else:
-                dest = os.path.join(output_dir, out_name or "output")
-                if title:
-                    dest = os.path.join(dest, title)
-
-                search_root = base_dir
-                if input_name:
-                    if "." in os.path.basename(input_name):
-                        found, _resolve_error = _resolve_input_file(base_dir, input_name)
-                        if found:
-                            search_root = os.path.dirname(found)
-                    else:
-                        dir_path = _find_directory(base_dir, input_name)
-                        if dir_path:
-                            search_root = dir_path
-
-                keywords = [k.strip() for k in re.split(r"[,\u3001，]+", instruction) if k.strip()]
-                try:
-                    copied = copy_files(search_root, dest, keywords)
-                    kw_display = ", ".join(keywords)
-                    logs.append(
-                        f"Copied {len(copied)} files to {os.path.relpath(dest, output_dir)}"
-                        f" (keywords {kw_display})"
-                    )
-                except Exception as e:
-                    logs.append(f"Copy failed: {e}")
-
-        os.makedirs(output_dir, exist_ok=True)
-        for name, (doc, _section) in docs.items():
-            _check_canceled()
-            out_path = os.path.join(output_dir, f"{name}.docx")
-            doc.SaveToFile(out_path, FileFormat.Docx)
-            doc.Close()
-            titles = hidden_titles.get(name, [])
-            remove_hidden_runs(out_path, preserve_texts=titles)
-            renumber_figures_tables_file(out_path)
-            apply_basic_style(out_path)
-            hide_paragraphs_with_text(out_path, titles)
-            outputs.append(out_path)
-        return {"logs": logs, "outputs": outputs}
+        message = (
+            "ERROR: 找不到新版 Mapping 表頭，請使用系統下載的 Mapping 範例格式。"
+            " 舊版無表頭 Mapping 格式已停用。"
+        )
+        logs.append(message)
+        target_log_dir = log_dir or output_dir
+        os.makedirs(target_log_dir, exist_ok=True)
+        log_filename = "mapping_log.json"
+        log_path = os.path.join(target_log_dir, log_filename)
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump({"messages": logs, "runs": []}, f, ensure_ascii=False, indent=2)
+        return {"logs": logs, "outputs": [], "log_file": log_filename}
 
     # New format processing
     header_vals = [str(c.value).strip() if c is not None and c.value is not None else "" for c in ws[header_row]]

@@ -435,15 +435,6 @@ wheels = [
 ]
 
 [[package]]
-name = "plum-dispatch"
-version = "1.7.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/39/4e/f4d6b2bd80a9880989d37773f0f2e3a91a2d5352732e4ebb68b5606bca83/plum-dispatch-1.7.4.tar.gz", hash = "sha256:1c1d15b2842b5fa98405fd3dff6fad4887bdc77b60bd200e209d76ebfe9990fe", size = 56429, upload-time = "2022-10-21T06:29:20.747Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/b6/3aaa985591c63da64c7bd8c5f470442a4c00b37ad3ed057f21de14174f83/plum_dispatch-1.7.4-py3-none-any.whl", hash = "sha256:c40dbeab269bbbf972ce0dbc078380da19ebaee1a370a2c564e1814a11bde216", size = 24238, upload-time = "2022-10-21T06:29:19.054Z" },
-]
-
-[[package]]
 name = "pyasn1"
 version = "0.6.2"
 source = { registry = "https://pypi.org/simple" }
@@ -616,18 +607,6 @@ wheels = [
 ]
 
 [[package]]
-name = "spire-doc"
-version = "12.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "plum-dispatch" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/5e/da0c4036332c7d0d43426fa97b70d32868ad3adc31355c1e1f6a3c275eba/Spire.Doc-12.1.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:07235c8d63b315d0edbfeb23abd3a00176a1dbb874250e8e92ea1a3d2c90144c", size = 42370840, upload-time = "2024-01-09T06:53:07.37Z" },
-    { url = "https://files.pythonhosted.org/packages/ae/db/dcdd1cde240f48473131165ee91b38b524db1ebf0b6a46bad677fbca0237/Spire.Doc-12.1.0-py3-none-win_amd64.whl", hash = "sha256:74e582a4e329e7b106b04c0eda5facf394520de1468ab4a55165f7a94961aff5", size = 26483966, upload-time = "2024-01-09T06:52:48.901Z" },
-]
-
-[[package]]
 name = "sqlalchemy"
 version = "2.0.48"
 source = { registry = "https://pypi.org/simple" }
@@ -680,7 +659,6 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "setuptools" },
-    { name = "spire-doc" },
     { name = "sqlalchemy" },
     { name = "werkzeug" },
 ]
@@ -706,7 +684,6 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "requests", specifier = ">=2.33.1" },
     { name = "setuptools", specifier = "==80.9.0" },
-    { name = "spire-doc", specifier = "==12.1.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "werkzeug", specifier = "==3.0.1" },
 ]

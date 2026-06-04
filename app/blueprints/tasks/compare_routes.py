@@ -3,22 +3,16 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import uuid
-from datetime import datetime
 
-from flask import abort, current_app, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask import abort, current_app, jsonify, redirect, render_template, send_file, send_from_directory, url_for
 
 from app.services.flow_service import (
     SKIP_DOCX_CLEANUP,
-    clean_compare_html_content,
     collect_titles_to_hide,
-    load_titles_to_hide_from_log,
     load_version_metadata,
     remove_hidden_runs,
     remove_paragraphs_with_text,
-    save_compare_output,
     save_version_metadata,
-    sanitize_version_slug,
     translate_file,
 )
 from app.services.task_service import load_task_context as _load_task_context
@@ -274,76 +268,12 @@ def task_compare(task_id, job_id):
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/save", endpoint="task_compare_save")
 def task_compare_save(task_id, job_id):
-    task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    job_dir = os.path.join(task_dir, "jobs", job_id)
-    titles_to_hide = load_titles_to_hide_from_log(job_dir)
-    html_content = request.form.get("html")
-    if not html_content:
-        data = request.get_json(silent=True) or {}
-        html_content = data.get("html", "")
-    if not html_content:
-        return "缺少內容", 400
-    html_content = clean_compare_html_content(html_content)
-    save_compare_output(job_dir, html_content, titles_to_hide)
-    return "OK"
+    return "Compare HTML save is no longer supported.", 410
 
 
 @tasks_bp.post("/tasks/<task_id>/compare/<job_id>/save-as", endpoint="task_compare_save_as")
 def task_compare_save_as(task_id, job_id):
-    task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
-    job_dir = os.path.join(task_dir, "jobs", job_id)
-    titles_to_hide = load_titles_to_hide_from_log(job_dir)
-    payload = request.get_json(silent=True) or {}
-    html_content = payload.get("html")
-    name = payload.get("name") or ""
-    if not html_content:
-        html_content = request.form.get("html")
-        name = request.form.get("name") or name
-    if not html_content:
-        return jsonify({"error": "缺少內容"}), 400
-    version_name = (name or "").strip()
-    if not version_name:
-        return jsonify({"error": "缺少版本名稱"}), 400
-    html_content = clean_compare_html_content(html_content)
-    versions_dir = os.path.join(job_dir, "versions")
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    unique_suffix = uuid.uuid4().hex[:6]
-    version_id = f"{timestamp}_{unique_suffix}"
-    slug = sanitize_version_slug(version_name)
-    base_name = f"{version_id}_{slug}" if slug else version_id
-    save_compare_output(
-        job_dir,
-        html_content,
-        titles_to_hide,
-        base_name=base_name,
-        subdir="versions",
-    )
-    metadata = load_version_metadata(versions_dir)
-    versions = metadata.get("versions", [])
-    versions = [version for version in versions if version.get("id") != version_id]
-    created_ts = datetime.now()
-    versions.append(
-        {
-            "id": version_id,
-            "name": version_name,
-            "slug": slug,
-            "base_name": base_name,
-            "created_at": created_ts.isoformat(timespec="seconds"),
-        }
-    )
-    versions.sort(key=lambda version: version.get("created_at", ""), reverse=True)
-    metadata["versions"] = versions
-    save_version_metadata(versions_dir, metadata)
-    version_payload = {
-        "id": version_id,
-        "name": version_name,
-        "created_at_display": created_ts.strftime("%Y-%m-%d %H:%M:%S"),
-        "html_url": url_for("tasks_bp.task_view_file", task_id=task_id, job_id=job_id, filename=f"versions/{base_name}.html"),
-        "docx_url": url_for("tasks_bp.task_download_version", task_id=task_id, job_id=job_id, version_id=version_id),
-        "restore_url": url_for("tasks_bp.task_compare_restore_version", task_id=task_id, job_id=job_id, version_id=version_id),
-        "delete_url": url_for("tasks_bp.task_compare_delete_version", task_id=task_id, job_id=job_id, version_id=version_id),
-    }
-    return jsonify({"status": "ok", "version": version_payload})
+    return jsonify({"error": "Compare HTML save-as is no longer supported."}), 410
 
 
 @tasks_bp.get("/tasks/<task_id>/view/<job_id>/<path:filename>", endpoint="task_view_file")

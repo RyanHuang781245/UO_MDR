@@ -1,16 +1,13 @@
 import os
 import re
-import queue
 import tempfile
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 from uuid import uuid4
 import fitz  # PyMuPDF
 from docx import Document as DocxDocument
 from docx.shared import Pt
 from docx.enum.text import WD_LINE_SPACING
 from docx.oxml.ns import qn
-from spire.doc import *
-from spire.doc.common import *
 from modules.chapter_section_parse import (
     parse_chapter_section_expression as _parse_chapter_section_expression,
 )
@@ -41,20 +38,8 @@ def _build_output_docx_path(input_file: str, suffix: str) -> str:
     return candidate
 
 
-def _append_docx_to_section(docx_path: str, output_doc: Document, section=None):
-    target_section = section or output_doc.AddSection()
-    temp_doc = Document()
-    temp_doc.LoadFromFile(docx_path)
-    try:
-        for s_idx in range(temp_doc.Sections.Count):
-            src_section = temp_doc.Sections.get_Item(s_idx)
-            body = src_section.Body
-            for i in range(body.ChildObjects.Count):
-                cloned = body.ChildObjects.get_Item(i).Clone()
-                target_section.Body.ChildObjects.Add(cloned)
-    finally:
-        temp_doc.Close()
-    return target_section
+def _append_docx_to_section(docx_path: str, output_doc: Any, section=None):
+    raise RuntimeError("Appending extracted DOCX content to Spire documents is no longer supported.")
 
 
 def _read_first_paragraph_text(docx_path: str) -> str:
@@ -69,7 +54,7 @@ def _read_first_paragraph_text(docx_path: str) -> str:
     return ""
 
 
-def _get_paragraph_text(paragraph: Paragraph) -> str:
+def _get_paragraph_text(paragraph: Any) -> str:
     text = paragraph.ListText + " " if paragraph.ListText else ""
     for j in range(paragraph.ChildObjects.Count):
         sub = paragraph.ChildObjects.get_Item(j)
@@ -78,7 +63,7 @@ def _get_paragraph_text(paragraph: Paragraph) -> str:
     return text
 
 
-def _get_paragraph_text_stripped(paragraph: Paragraph) -> str:
+def _get_paragraph_text_stripped(paragraph: Any) -> str:
     return _get_paragraph_text(paragraph).strip()
 
 
@@ -101,6 +86,7 @@ def _hide_titles_in_section(section, titles: list[str], start_index: int = 0):
 
 
 def extract_pdf_chapter_to_table(pdf_folder_path: str, target_section: str, output_doc=None, section=None):
+    raise RuntimeError("extract_pdf_chapter_to_table is no longer supported.")
     upper_ratio = 0.1
     lower_ratio = 0.9
 
@@ -220,6 +206,7 @@ def extract_word_all_content(
 
     appended_section = None
     if output_doc is not None:
+        raise RuntimeError("output_doc append mode is no longer supported; use output_docx_path instead.")
         target_section = section or output_doc.AddSection()
         _append_docx_to_section(out_path, output_doc, target_section)
         appended_section = target_section
@@ -251,7 +238,7 @@ def _detect_image_extension(image_bytes: bytes, default_ext: str = "png") -> str
 
 
 def _save_picture_with_original_format(
-    picture: DocPicture, image_dir: str, image_count: list[int]
+    picture: Any, image_dir: str, image_count: list[int]
 ) -> str:
     """Persist ``picture.ImageBytes`` using the detected image format.
 
@@ -280,7 +267,7 @@ def _save_picture_with_original_format(
     return file_name
 
 
-def is_heading_paragraph(paragraph: Paragraph) -> bool:
+def is_heading_paragraph(paragraph: Any) -> bool:
     """Return True when the paragraph uses a Heading style."""
     style_name = getattr(paragraph, "StyleName", "") or ""
     return "heading" in style_name.lower()
@@ -366,6 +353,7 @@ def extract_word_chapter(
 
     appended_section = None
     if output_doc is not None:
+        raise RuntimeError("output_doc append mode is no longer supported; use output_docx_path instead.")
         target_section = section or output_doc.AddSection()
         start_idx = target_section.Body.ChildObjects.Count
         _append_docx_to_section(out_path, output_doc, target_section)
@@ -380,7 +368,7 @@ def extract_word_chapter(
     return result
 
 
-def is_inline_subtitle_spire(paragraph: Paragraph) -> bool:
+def is_inline_subtitle(paragraph: Any) -> bool:
     """判斷這個 Spire 段落是不是像 'Device trade name' 這種小標題。
     規則：
     - 段落有文字
@@ -433,6 +421,7 @@ def extract_word_subsection(
       3. 從小節標題「下一行開始」擷取內容（文字、圖片、表格）
       4. 遇到下一個 inline 小標題（Normal + 粗體）或者下一個章節 (1.1.2...) 就停止
     """
+    raise RuntimeError("extract_word_subsection is no longer supported.")
 
     os.makedirs(output_image_path, exist_ok=True)
 
@@ -594,6 +583,7 @@ def extract_word_subsection(
     print(f"已擷取 {outer_chapter_section} 中小節「{subsection_title}」的文字與圖片")
 
 def center_table_figure_paragraphs(input_file: str) -> bool:
+    raise RuntimeError("center_table_figure_paragraphs is no longer supported.")
     pattern = re.compile(r'^\s*(Table|Figure)\s+', re.IGNORECASE)
     doc = Document()
     try:
@@ -815,16 +805,18 @@ def extract_specific_figure_from_word(
     if not os.path.isfile(input_file):
         raise FileNotFoundError(f"input file not found: {input_file}")
 
-    append_to_spire_doc = output_doc is not None
+    append_to_doc = output_doc is not None
+    if append_to_doc:
+        raise RuntimeError("output_doc append mode is no longer supported; use output_docx_path instead.")
     effective_output_docx_path = output_docx_path
     created_temp_output = False
 
-    if append_to_spire_doc and not effective_output_docx_path:
+    if append_to_doc and not effective_output_docx_path:
         suffix = f"figure_{target_caption_label or 'extract'}"
         effective_output_docx_path = _build_output_docx_path(input_file, suffix)
         created_temp_output = True
 
-    xml_save_output = save_output or append_to_spire_doc
+    xml_save_output = save_output or append_to_doc
     result = extract_specific_figure_from_word_xml(
         input_file=input_file,
         output_docx_path=effective_output_docx_path,
@@ -842,7 +834,7 @@ def extract_specific_figure_from_word(
     )
 
     ok = bool(result.get("ok")) if return_reason and isinstance(result, dict) else bool(result)
-    if append_to_spire_doc and ok and effective_output_docx_path and os.path.isfile(effective_output_docx_path):
+    if append_to_doc and ok and effective_output_docx_path and os.path.isfile(effective_output_docx_path):
         _append_docx_to_section(effective_output_docx_path, output_doc, section)
 
     if created_temp_output and effective_output_docx_path and os.path.isfile(effective_output_docx_path):

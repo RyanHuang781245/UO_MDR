@@ -3,7 +3,6 @@ import sys
 import types
 
 from docx import Document as DocxDocument
-from spire.doc import Document, FileFormat
 
 from app.blueprints.tasks import compare_compat as task_routes
 from modules.workflow import run_workflow
@@ -15,13 +14,11 @@ def test_compare_view_includes_titles_to_hide(tmp_path: Path, app) -> None:
     app.config["TESTING"] = True
     app.config["TASK_FOLDER"] = str(tmp_path)
 
-    src = Document()
-    sec = src.AddSection()
-    sec.AddParagraph().AppendText("1.1 Sample Title")
-    sec.AddParagraph().AppendText("Body")
+    src = DocxDocument()
+    src.add_paragraph("1.1 Sample Title")
+    src.add_paragraph("Body")
     src_path = tmp_path / "source.docx"
-    src.SaveToFile(str(src_path), FileFormat.Docx)
-    src.Close()
+    src.save(src_path)
 
     task_id = "task1"
     job_id = "job1"
@@ -70,11 +67,9 @@ def test_compare_view_disambiguates_same_basename_sources(tmp_path: Path, app) -
     src_b = src_dir_b / "duplicate.docx"
 
     for target, text in ((src_a, "Alpha content"), (src_b, "Beta content")):
-        doc = Document()
-        sec = doc.AddSection()
-        sec.AddParagraph().AppendText(text)
-        doc.SaveToFile(str(target), FileFormat.Docx)
-        doc.Close()
+        doc = DocxDocument()
+        doc.add_paragraph(text)
+        doc.save(target)
 
     task_id = "task_same_name"
     job_id = "job_same_name"
@@ -273,20 +268,16 @@ def test_build_provenance_trace_distinguishes_duplicate_text_by_source_id(tmp_pa
     log_path = tmp_path / "log.json"
 
     for target in (source_a, source_b):
-        doc = Document()
-        sec = doc.AddSection()
-        sec.AddParagraph().AppendText("Shared source paragraph")
-        doc.SaveToFile(str(target), FileFormat.Docx)
-        doc.Close()
+        doc = DocxDocument()
+        doc.add_paragraph("Shared source paragraph")
+        doc.save(target)
 
     fragment_a = tmp_path / "fragment_a.docx"
     fragment_b = tmp_path / "fragment_b.docx"
     for source_path, fragment_path in ((source_a, fragment_a), (source_b, fragment_b)):
-        doc = Document()
-        sec = doc.AddSection()
-        sec.AddParagraph().AppendText("Shared source paragraph")
-        doc.SaveToFile(str(fragment_path), FileFormat.Docx)
-        doc.Close()
+        doc = DocxDocument()
+        doc.add_paragraph("Shared source paragraph")
+        doc.save(fragment_path)
 
     from modules.docx_provenance import apply_final_provenance, build_provenance_descriptor
     from modules.docx_merger import merge_word_docs

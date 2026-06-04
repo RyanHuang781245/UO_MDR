@@ -303,6 +303,15 @@ find task_store -mindepth 1 -maxdepth 1 -type d ! -name global_batches \
   -exec sh -c 'for d do mkdir -p "$d/files"; done' sh {} +
 ```
 
+一般檔案備份會排除 Mapping 方案與 Mapping 執行產物，但 MSSQL `.bak` 是完整資料庫備份，還原後資料庫可能仍保留 Mapping 相關紀錄。若使用一般檔案備份還原，請在 DB 還原與檔案還原後清除 Mapping metadata，避免頁面顯示沒有對應檔案的舊方案或舊執行紀錄：
+
+```bash
+.venv/bin/flask --app app.py cleanup-mapping-metadata
+.venv/bin/flask --app app.py cleanup-mapping-metadata --yes
+```
+
+第一行只會顯示將清除的筆數，第二行才會實際刪除。
+
 ## 9. 還原後啟動服務
 
 先跑 schema 檢查：
@@ -554,6 +563,9 @@ export MSSQL_BACKUP_FILE='D:\MSSQL\Backup\regulations_filesystem_prod_2026-06-03
 bash scripts/restore_mssql_replace.sh --yes
 
 bash scripts/restore_files.sh backups/files/uochcldc01_files_2026-06-03_090100.tar.gz --yes
+
+.venv/bin/flask --app app.py cleanup-mapping-metadata
+.venv/bin/flask --app app.py cleanup-mapping-metadata --yes
 
 .venv/bin/flask --app app.py schema-preflight
 .venv/bin/flask --app app.py seed-bootstrap

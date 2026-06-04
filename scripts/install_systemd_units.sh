@@ -160,9 +160,23 @@ if [[ "$INSTALL_MODE" -eq 1 ]]; then
   install -m 0644 "$OUTPUT_DIR"/adoption-standard-update.timer "$UNIT_TARGET_DIR"/adoption-standard-update.timer
   "$SYSTEMCTL_BIN" daemon-reload
   echo "Installed unit files into $UNIT_TARGET_DIR"
+  echo "Rendered with:"
+  echo "  APP_ROOT=$APP_ROOT"
+  echo "  APP_USER=$APP_USER"
+  echo "  ENV_FILE=$ENV_FILE"
+  echo "Installed units:"
+  echo "  uo_regulations.service"
+  echo "  uo_regulations_jobs_worker.service"
+  echo "  uo_regulations_flow_worker.service"
+  echo "  uo_regulations_batch_worker.service"
+  echo "  adoption-standard-update.service"
+  echo "  adoption-standard-update.timer"
   echo "Next:"
   echo "  sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker adoption-standard-update.timer"
   echo "  sudo systemctl start uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker adoption-standard-update.timer"
+  echo "  sudo systemctl status adoption-standard-update.service --no-pager"
+  echo "Run adoption update immediately only when needed:"
+  echo "  sudo systemctl start adoption-standard-update.service"
 else
   echo "Rendered unit files into $OUTPUT_DIR"
 fi

@@ -56,6 +56,19 @@ After install:
 sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker adoption-standard-update.timer
 ```
 
+The rendered unit files should be reviewed for the expected deployment values:
+
+```bash
+rg -n "User=|WorkingDirectory=|EnvironmentFile=" /tmp/uo-systemd
+```
+
+`adoption-standard-update.service` is installed as a `oneshot` unit. The recurring schedule is enabled through `adoption-standard-update.timer`; start the service itself only when you want to run the update immediately:
+
+```bash
+sudo systemctl status adoption-standard-update.service --no-pager
+sudo systemctl start adoption-standard-update.service
+```
+
 ## Nginx site config
 
 The app deployment manages only the UO MDR site config, not the global nginx config.

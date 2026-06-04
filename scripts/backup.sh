@@ -43,6 +43,7 @@ log "Creating archive: $ARCHIVE_PATH"
 tar -czf "$ARCHIVE_PATH" \
   --exclude='task_store/*/files/*' \
   --exclude='task_store/*/jobs/*' \
+  --exclude='task_store/*/mapping_job/*' \
   -C "$APP_ROOT" \
   -T "$TMP_INCLUDE_FILE"
 

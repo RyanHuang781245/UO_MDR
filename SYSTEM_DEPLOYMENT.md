@@ -1,33 +1,34 @@
 # 系統部署流程
 
-本文整理 UO MDR 系統的首次環境建立、正式部署、服務檢查與部署後驗證流程。
+系統首次環境建立、部署、服務檢查與部署後驗證流程
 
 ## 1. 系統組成
 
 目前系統主要由以下部分組成：
 
+- 執行環境：Python
 - Web App：Flask + Gunicorn
-- Web Service：`uo_regulations.service`
-- Worker Services：
+- 文件轉換服務：`uo_regulations.service`
+- 文件轉換排程服務：
   - `uo_regulations_jobs_worker.service`
   - `uo_regulations_flow_worker.service`
   - `uo_regulations_batch_worker.service`
-- Adoption Standard Update：
+- 標準更新服務：
   - `adoption-standard-update.service`
   - `adoption-standard-update.timer`
 - Database：MSSQL
-- File Store：`/home/NE025/UO_MDR/task_store`
-- Standard Update Store：`/home/NE025/UO_MDR/standard_update_store`
-- Harmonised Store：`/home/NE025/UO_MDR/harmonised_store`
+- 文件轉換任務存放路徑：`/UO_MDR/task_store`
+- 標準更新文件存放路徑：`/UO_MDR/standard_update_store`
+- 標準更新文任務存放路徑：`/UO_MDR/harmonised_store`
 
 重要路徑：
 
 ```text
-/home/NE025/UO_MDR
+/UO_MDR
 ├── .env
 ├── deploy.sh
 ├── deploy/
-│   ├── nginx.conf.template
+│   ├── nginx-site.conf.template
 │   └── systemd/
 ├── scripts/
 │   ├── backup_mssql_full.sh
@@ -42,12 +43,6 @@
 ```
 
 ## 2. 環境設定
-
-正式環境設定放在：
-
-```bash
-/home/NE025/UO_MDR/.env
-```
 
 資料庫連線目前使用 SQLAlchemy URL：
 
@@ -96,13 +91,8 @@ uv sync --frozen
 
 ```bash
 .venv/bin/python --version
-.venv/bin/python -c "import flask, sqlalchemy, pyodbc; print('python env ok')"
-```
-
-預期 Python 版本：
-
-```text
-Python 3.11.4
+# 建立成功會顯示 Python 3.11.4
+.venv/bin/python -c "import flask, sqlalchemy, pyodbc; print('python env ok')" # 建立成功會顯示python env ok
 ```
 
 如果 `uv sync` 因 Python 版本無法建立環境，可先手動安裝 Python 3.11.4：
@@ -121,7 +111,7 @@ bash deploy.sh
 
 ## 4. 部署前檢查
 
-進入專案：
+進入專案目錄：
 
 ```bash
 cd /home/NE025/UO_MDR
@@ -162,7 +152,7 @@ bash deploy.sh
 
 部署腳本會做：
 
-1. 進入 `APP_ROOT`，預設 `/home/NE025/UO_MDR`
+1. 進入 `APP_ROOT`，預設 `/home/NE025/UO_MDR`，如果路徑不同需修改，否則會找不到路徑
 2. 載入 `.env`
 3. 執行 `uv sync --frozen` 建立或同步 Python `.venv`
 4. 視設定執行部署前 DB 備份
@@ -208,19 +198,9 @@ ENABLE_NGINX=1 RUN_DB_BACKUP=1 bash deploy.sh
 Nginx 分工：
 
 - `/etc/nginx/nginx.conf` 是全域設定，部署腳本不會修改；初次建機或需要調整全域效能參數時手動維護。
-- `deploy/nginx.conf.template` 是 UO MDR site config template。
+- `deploy/nginx-site.conf.template` 是 UO MDR site config template。
 - `ENABLE_NGINX=1` 時，`deploy.sh` 會用 `sudo bash scripts/install_nginx_site.sh --install ...`，以 `APP_ROOT` 產生 `build/nginx/uo_regulations`。
 - 產生後的 site config 會安裝到 `/etc/nginx/sites-available/uo_regulations`，建立或更新 `/etc/nginx/sites-enabled/uo_regulations` symlink，通過 `nginx -t` 後 reload nginx。
-
-Docker 或一般 container 測試環境通常不會以 systemd 作為 PID 1，因此 `deploy.sh`
-會自動略過 systemd unit 安裝、服務啟停與狀態檢查，只執行環境同步、
-migration、schema preflight 與 seed/bootstrap。也可以明確指定：
-
-```bash
-MANAGE_SYSTEMD_SERVICES=0 INSTALL_SYSTEMD_UNITS=0 bash deploy.sh
-```
-
-若要測試完整 systemd 部署流程，建議使用 Ubuntu VM。
 
 ## 6. 部署後檢查
 

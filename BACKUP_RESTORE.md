@@ -1,6 +1,6 @@
 # 備份與還原流程
 
-本文整理 UO MDR 系統的 MSSQL `.bak` 備份、檔案備份、資料庫還原、檔案還原、還原後驗證與常見問題排查流程。
+系統資料庫備份、檔案備份、資料庫還原、檔案還原、還原後驗證與常見問題排查流程
 
 ## 1. 備份還原範圍
 
@@ -9,7 +9,7 @@
 - 資料庫備份：MSSQL `.bak`
 - 檔案備份：`scripts/backup.sh` 產生的 `.tar.gz` 與 `.sha256`
 
-重要腳本：
+運行腳本：
 
 ```text
 scripts/backup_mssql_full.sh
@@ -21,10 +21,10 @@ scripts/restore_files.sh
 重要路徑：
 
 ```text
-/home/NE025/UO_MDR/backups/files
-/home/NE025/UO_MDR/task_store
-/home/NE025/UO_MDR/standard_update_store
-/home/NE025/UO_MDR/harmonised_store
+/UO_MDR/backups/files
+/UO_MDR/task_store
+/UO_MDR/standard_update_store
+/UO_MDR/harmonised_store
 ```
 
 ## 2. 備份環境設定
@@ -49,7 +49,7 @@ MSSQL_BACKUP_DIR='D:\MSSQL\Backup'
 
 注意：`MSSQL_BACKUP_DIR` 是 SQL Server 主機看得到、且 SQL Server service account 有權限寫入的路徑，不是 VM 本機路徑。
 
-如果要指定還原檔，可在執行還原前 export：
+如果要指定還原檔，需在執行還原前 export：
 
 ```bash
 export MSSQL_BACKUP_FILE='D:\MSSQL\Backup\regulations_filesystem_prod_2026-06-03_090000_copyonly_full.bak'
@@ -67,11 +67,11 @@ scripts/backup_mssql_full.sh
 
 - 自動載入 `.env`
 - 從 `DATABASE_URL` 拆出 `SQLCMD_SERVER`、`SQLCMD_USER`、`SQLCMD_PASSWORD`、`MSSQL_DATABASE`
-- 執行 `BACKUP DATABASE`
-- 使用 `COPY_ONLY`
-- 使用 `COMPRESSION`
-- 使用 `CHECKSUM`
-- 備份完成後執行 `RESTORE VERIFYONLY WITH CHECKSUM`
+- 執行 `BACKUP DATABASE`：建立 SQL Server 資料庫完整備份
+- 使用 `COPY_ONLY`：不影響既有差異備份鏈，適合部署前或臨時備份
+- 使用 `COMPRESSION`：壓縮備份檔，降低磁碟空間使用量
+- 使用 `CHECKSUM`：備份時檢查資料頁 checksum，提早發現資料或 I/O 問題
+- 備份完成後執行 `RESTORE VERIFYONLY WITH CHECKSUM`：驗證備份檔可讀取且 checksum 正常
 
 執行：
 
@@ -94,7 +94,7 @@ backup_file=D:\MSSQL\Backup\regulations_filesystem_prod_2026-06-03_090000_copyon
 BACKUP_FILE_NAME='manual_before_deploy.bak' bash scripts/backup_mssql_full.sh
 ```
 
-如果 `.env` 內使用的是一般 app 帳號，但備份需要另一個 SQL 帳號，可覆蓋：
+如果 `.env` 內使用的是一般帳號，但備份需要另一個 SQL 帳號，可覆蓋：
 
 ```bash
 export SQLCMD_USER='backup_user'
@@ -120,34 +120,24 @@ bash scripts/backup.sh
 備份輸出位置：
 
 ```text
-/home/NE025/UO_MDR/backups/files/*.tar.gz
-/home/NE025/UO_MDR/backups/files/*.tar.gz.sha256
+/UO_MDR/backups/files/*.tar.gz
+/UO_MDR/backups/files/*.tar.gz.sha256
 ```
 
-目前會備份：
-
+備份路徑如下：
 - `.env`
 - `task_store`
 - `standard_update_store`
 - `harmonised_store`
 - `deploy/systemd`
 
-目前會排除：
-
+注意事項：檔案備份不會將 `task_store` 中完整任務檔案與執行結果進行備份，會保留任務設定、流程與 mapping 設定。也就是會排除：
 - `task_store/*/files/*`
 - `task_store/*/jobs/*`
+- `task_store/*/mapping_job/*`
 
-但會保留：
+其中 `task_store/*/mappings/*` 是 mapping 設定，會備份；`task_store/*/mapping_job/*` 是 mapping 執行產物，會排除。
 
-- `task_store/<task_id>/files/` 目錄本身
-- `task_store/<task_id>/jobs/` 目錄本身
-
-重要限制：
-
-```text
-scripts/backup.sh 不是完整任務附件備份。
-如果流程需要 task_store/<task_id>/files/* 裡面的原始檔案，必須另外從 NAS、舊 VM、完整檔案備份或其他保存位置補回。
-```
 
 ## 5. 建議備份策略
 
@@ -593,6 +583,7 @@ curl -i http://127.0.0.1/tasks | sed -n '1,20p'
 
 - `task_store/*/files/*` 不會被一般檔案備份包含
 - `task_store/*/jobs/*` 不會被一般檔案備份包含
+- `task_store/*/mapping_job/*` 不會被一般檔案備份包含
 - `.bak` 會先落在 SQL Server 主機，不會自動搬回 VM
 - 尚未有統一的備份 manifest
 - 尚未有自動遠端保存流程

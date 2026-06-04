@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-NGINX_TEMPLATE="$APP_ROOT/deploy/nginx.conf.template"
+NGINX_TEMPLATE="$APP_ROOT/deploy/nginx-site.conf.template"
 NGINX_SITE_NAME="uo_regulations"
 OUTPUT_FILE=""
 INSTALL_MODE=0
@@ -21,7 +21,7 @@ Options:
   --output-file PATH       Render site config into PATH. Default: <app-root>/build/nginx/<site-name>
   --install                Install rendered site config into nginx sites-available/sites-enabled
   --app-root PATH          Application root. Default: repo root
-  --template PATH          Nginx site template. Default: <app-root>/deploy/nginx.conf.template
+  --template PATH          Nginx site template. Default: <app-root>/deploy/nginx-site.conf.template
   --site-name NAME         Nginx site name. Default: uo_regulations
   --sites-available PATH   sites-available directory. Default: /etc/nginx/sites-available
   --sites-enabled PATH     sites-enabled directory. Default: /etc/nginx/sites-enabled

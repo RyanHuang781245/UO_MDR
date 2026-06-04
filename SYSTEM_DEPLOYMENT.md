@@ -208,8 +208,9 @@ ENABLE_NGINX=1 RUN_DB_BACKUP=1 bash deploy.sh
 Nginx 分工：
 
 - `/etc/nginx/nginx.conf` 是全域設定，部署腳本不會修改；初次建機或需要調整全域效能參數時手動維護。
-- `deploy/nginx.conf.template` 是 UO MDR site config template，`ENABLE_NGINX=1` 時會以 `APP_ROOT` 產生 `build/nginx/uo_regulations`。
-- 產生後的 site config 會複製到 `/etc/nginx/sites-available/uo_regulations`，並建立或更新 `/etc/nginx/sites-enabled/uo_regulations` symlink。
+- `deploy/nginx.conf.template` 是 UO MDR site config template。
+- `ENABLE_NGINX=1` 時，`deploy.sh` 會用 `sudo bash scripts/install_nginx_site.sh --install ...`，以 `APP_ROOT` 產生 `build/nginx/uo_regulations`。
+- 產生後的 site config 會安裝到 `/etc/nginx/sites-available/uo_regulations`，建立或更新 `/etc/nginx/sites-enabled/uo_regulations` symlink，通過 `nginx -t` 後 reload nginx。
 
 Docker 或一般 container 測試環境通常不會以 systemd 作為 PID 1，因此 `deploy.sh`
 會自動略過 systemd unit 安裝、服務啟停與狀態檢查，只執行環境同步、

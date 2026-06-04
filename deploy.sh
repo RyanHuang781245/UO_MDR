@@ -156,30 +156,14 @@ elif [[ "$INSTALL_SYSTEMD_UNITS" == "1" ]]; then
 fi
 
 if [[ "$ENABLE_NGINX" == "1" ]]; then
-  require_cmd nginx
   require_file "$NGINX_TEMPLATE"
-  mkdir -p "$(dirname "$NGINX_FILE")"
-  log "產生 Nginx 站台設定：$NGINX_TEMPLATE -> $NGINX_FILE"
-  APP_ROOT="$APP_ROOT" NGINX_TEMPLATE="$NGINX_TEMPLATE" NGINX_FILE="$NGINX_FILE" python3 - <<'PY'
-from __future__ import annotations
-
-import os
-from pathlib import Path
-
-template_path = Path(os.environ["NGINX_TEMPLATE"])
-output_path = Path(os.environ["NGINX_FILE"])
-content = template_path.read_text(encoding="utf-8")
-content = content.replace("{{APP_ROOT}}", os.environ["APP_ROOT"])
-output_path.write_text(content, encoding="utf-8")
-print(output_path)
-PY
-  require_file "$NGINX_FILE"
-  log "複製 Nginx 設定：$NGINX_FILE -> /etc/nginx/sites-available/$NGINX_SITE_NAME"
-  sudo cp "$NGINX_FILE" "/etc/nginx/sites-available/$NGINX_SITE_NAME"
-  log "更新 Nginx enabled site：/etc/nginx/sites-enabled/$NGINX_SITE_NAME -> /etc/nginx/sites-available/$NGINX_SITE_NAME"
-  sudo ln -sf "/etc/nginx/sites-available/$NGINX_SITE_NAME" "/etc/nginx/sites-enabled/$NGINX_SITE_NAME"
-  log "測試 Nginx 設定"
-  sudo nginx -t
+  log "安裝或更新 Nginx 站台設定"
+  sudo bash "$APP_ROOT/scripts/install_nginx_site.sh" \
+    --install \
+    --app-root "$APP_ROOT" \
+    --template "$NGINX_TEMPLATE" \
+    --site-name "$NGINX_SITE_NAME" \
+    --output-file "$NGINX_FILE"
 else
   log "未啟用 Nginx 設定同步；如需更新站台設定，請用 ENABLE_NGINX=1 bash deploy.sh"
 fi
@@ -204,11 +188,6 @@ if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
 
   log "啟動 Timer"
   sudo systemctl restart "$TIMER_SERVICE"
-
-  if [[ "$ENABLE_NGINX" == "1" ]]; then
-    log "重新載入 Nginx"
-    sudo systemctl reload nginx
-  fi
 
   log "查看服務狀態"
   sudo systemctl status "$APP_NAME" --no-pager

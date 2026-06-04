@@ -76,12 +76,20 @@ The app deployment manages only the UO MDR site config, not the global nginx con
 - Keep `/etc/nginx/nginx.conf` as a manually maintained host-level file.
 - Ensure `/etc/nginx/nginx.conf` includes `/etc/nginx/sites-enabled/*`.
 - Keep the app site template in `deploy/nginx.conf.template`.
-- Run `ENABLE_NGINX=1 bash deploy.sh` to render `build/nginx/uo_regulations`, copy it to `/etc/nginx/sites-available/uo_regulations`, update the enabled-site symlink, run `nginx -t`, and reload nginx.
+- Run `ENABLE_NGINX=1 bash deploy.sh`; it calls `sudo bash scripts/install_nginx_site.sh --install ...` to render `build/nginx/uo_regulations`, install it into `/etc/nginx/sites-available/uo_regulations`, update the enabled-site symlink, run `nginx -t`, and reload nginx.
 
 For deployments outside the default path:
 
 ```bash
 APP_ROOT=/home/NE025/UO_MDR ENABLE_NGINX=1 bash deploy.sh
+```
+
+Render the nginx site config for review without installing:
+
+```bash
+bash scripts/install_nginx_site.sh \
+  --app-root /home/NE025/UO_MDR \
+  --output-file /tmp/uo_regulations
 ```
 
 Recommended command sequence:

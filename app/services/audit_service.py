@@ -219,6 +219,28 @@ def cleanup_audit_logs(*, retention_days: int, dry_run: bool = False) -> dict[st
     }
 
 
+def cleanup_system_error_logs(*, retention_days: int, dry_run: bool = False) -> dict[str, Any]:
+    days = int(retention_days)
+    if days <= 0:
+        raise ValueError("retention_days must be greater than 0")
+
+    cutoff = datetime.now() - timedelta(days=days)
+    query = SystemErrorLog.query.filter(SystemErrorLog.created_at < cutoff)
+    matched_count = query.count()
+
+    if not dry_run and matched_count:
+        query.delete(synchronize_session=False)
+        db.session.commit()
+
+    return {
+        "retention_days": days,
+        "cutoff": cutoff,
+        "matched_count": matched_count,
+        "deleted_count": 0 if dry_run else matched_count,
+        "dry_run": dry_run,
+    }
+
+
 def register_audit_cli(app) -> None:
     @app.cli.command("audit-cleanup")
     @click.option("--days", default=None, type=int, help="Retention period in days. Defaults to AUDIT_LOG_RETENTION_DAYS.")
@@ -228,6 +250,21 @@ def register_audit_cli(app) -> None:
         result = cleanup_audit_logs(retention_days=retention_days, dry_run=dry_run)
         click.echo(
             "audit_cleanup "
+            f"retention_days={result['retention_days']} "
+            f"cutoff={result['cutoff'].strftime('%Y-%m-%d %H:%M:%S')} "
+            f"matched={result['matched_count']} "
+            f"deleted={result['deleted_count']} "
+            f"dry_run={'1' if result['dry_run'] else '0'}"
+        )
+
+    @app.cli.command("system-error-cleanup")
+    @click.option("--days", default=None, type=int, help="Retention period in days. Defaults to SYSTEM_ERROR_LOG_RETENTION_DAYS.")
+    @click.option("--dry-run", is_flag=True, help="Show how many rows would be deleted without deleting them.")
+    def system_error_cleanup_command(days: int | None, dry_run: bool) -> None:
+        retention_days = int(days or current_app.config.get("SYSTEM_ERROR_LOG_RETENTION_DAYS") or 180)
+        result = cleanup_system_error_logs(retention_days=retention_days, dry_run=dry_run)
+        click.echo(
+            "system_error_cleanup "
             f"retention_days={result['retention_days']} "
             f"cutoff={result['cutoff'].strftime('%Y-%m-%d %H:%M:%S')} "
             f"matched={result['matched_count']} "

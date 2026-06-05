@@ -29,6 +29,7 @@ class BaseConfig:
     APP_LOG_MAX_BYTES = int(os.environ.get("APP_LOG_MAX_BYTES") or 10 * 1024 * 1024)
     APP_LOG_BACKUP_COUNT = int(os.environ.get("APP_LOG_BACKUP_COUNT") or 10)
     AUDIT_LOG_RETENTION_DAYS = int(os.environ.get("AUDIT_LOG_RETENTION_DAYS") or 180)
+    SYSTEM_ERROR_LOG_RETENTION_DAYS = int(os.environ.get("SYSTEM_ERROR_LOG_RETENTION_DAYS") or 180)
     SYSTEM_ERROR_DB_MIN_LEVEL = (os.environ.get("SYSTEM_ERROR_DB_MIN_LEVEL") or "ERROR").strip().upper()
     REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED = (
         os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or ""
@@ -54,6 +55,7 @@ class BaseConfig:
     JOB_HEARTBEAT_INTERVAL_SECONDS = float(os.environ.get("JOB_HEARTBEAT_INTERVAL_SECONDS") or 10)
     JOB_LOCK_TTL_SECONDS = int(os.environ.get("JOB_LOCK_TTL_SECONDS") or 14400)
     JOB_STALE_AFTER_SECONDS = int(os.environ.get("JOB_STALE_AFTER_SECONDS") or 21600)
+    JOB_METADATA_RETENTION_DAYS = int(os.environ.get("JOB_METADATA_RETENTION_DAYS") or 180)
 
     AUTH_ENABLED = parse_bool(os.environ.get("AUTH_ENABLED"), True)
     SESSION_COOKIE_NAME = os.environ.get("SESSION_COOKIE_NAME", "uo_mdr_session")

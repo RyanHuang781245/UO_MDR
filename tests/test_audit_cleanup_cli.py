@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from app.extensions import db
-from app.models.auth import AuditLog, ensure_schema
-from app.services.audit_service import cleanup_audit_logs
+from app.models.auth import AuditLog, SystemErrorLog, ensure_schema
+from app.services.audit_service import cleanup_audit_logs, cleanup_system_error_logs
 
 
 def _insert_audit_log(*, action: str, created_at: datetime) -> None:
@@ -13,6 +13,20 @@ def _insert_audit_log(*, action: str, created_at: datetime) -> None:
             action=action,
             work_id="NE025",
             detail='{"status":"completed"}',
+            task_id="task-1",
+            created_at=created_at,
+        )
+    )
+    db.session.commit()
+
+
+def _insert_system_error_log(*, component: str, created_at: datetime) -> None:
+    db.session.add(
+        SystemErrorLog(
+            level="ERROR",
+            component=component,
+            message="System error",
+            detail='{"status":"failed"}',
             task_id="task-1",
             created_at=created_at,
         )
@@ -52,3 +66,37 @@ def test_audit_cleanup_cli_deletes_expired_rows(app):
         remaining_actions = [log.action for log in AuditLog.query.order_by(AuditLog.action).all()]
 
     assert remaining_actions == ["recent_action"]
+
+
+def test_cleanup_system_error_logs_dry_run_keeps_rows(app):
+    with app.app_context():
+        ensure_schema()
+        now = datetime.now()
+        _insert_system_error_log(component="old.component", created_at=now - timedelta(days=200))
+        _insert_system_error_log(component="recent.component", created_at=now - timedelta(days=5))
+
+        result = cleanup_system_error_logs(retention_days=180, dry_run=True)
+
+        assert result["matched_count"] == 1
+        assert result["deleted_count"] == 0
+        assert SystemErrorLog.query.count() == 2
+
+
+def test_system_error_cleanup_cli_deletes_expired_rows(app):
+    with app.app_context():
+        ensure_schema()
+        now = datetime.now()
+        _insert_system_error_log(component="old.component", created_at=now - timedelta(days=200))
+        _insert_system_error_log(component="recent.component", created_at=now - timedelta(days=5))
+
+    runner = app.test_cli_runner()
+    result = runner.invoke(args=["system-error-cleanup", "--days", "180"])
+
+    assert result.exit_code == 0
+    assert "matched=1" in result.output
+    assert "deleted=1" in result.output
+
+    with app.app_context():
+        remaining_components = [log.component for log in SystemErrorLog.query.order_by(SystemErrorLog.component).all()]
+
+    assert remaining_components == ["recent.component"]

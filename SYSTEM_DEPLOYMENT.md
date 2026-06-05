@@ -13,6 +13,9 @@
   - `uo_regulations_jobs_worker.service`
   - `uo_regulations_flow_worker.service`
   - `uo_regulations_batch_worker.service`
+- Metadata 清理排程服務：
+  - `uo_regulations_metadata_cleanup.service`
+  - `uo_regulations_metadata_cleanup.timer`
 - 標準更新服務：
   - `adoption-standard-update.service`
   - `adoption-standard-update.timer`
@@ -211,6 +214,8 @@ sudo systemctl status uo_regulations --no-pager
 sudo systemctl status uo_regulations_jobs_worker --no-pager
 sudo systemctl status uo_regulations_flow_worker --no-pager
 sudo systemctl status uo_regulations_batch_worker --no-pager
+sudo systemctl status uo_regulations_metadata_cleanup.service --no-pager
+sudo systemctl status uo_regulations_metadata_cleanup.timer --no-pager
 sudo systemctl status adoption-standard-update.service --no-pager
 sudo systemctl status adoption-standard-update.timer --no-pager
 ```
@@ -265,6 +270,18 @@ sudo systemctl start adoption-standard-update.service
 
 ```bash
 journalctl -u adoption-standard-update.service --no-pager -n 100
+```
+
+`uo_regulations_metadata_cleanup.service` 是 `oneshot` 服務，平常由 `uo_regulations_metadata_cleanup.timer` 依排程觸發，預設每日 03:30 執行。若要立即執行一次 metadata 清理，才手動執行：
+
+```bash
+sudo systemctl start uo_regulations_metadata_cleanup.service
+```
+
+查看最近清理紀錄：
+
+```bash
+journalctl -u uo_regulations_metadata_cleanup.service --no-pager -n 100
 ```
 
 ## 7. 部署常見問題

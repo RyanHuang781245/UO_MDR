@@ -7,6 +7,8 @@ FLOW_WORKER_SERVICE="uo_regulations_flow_worker"
 BATCH_WORKER_SERVICE="uo_regulations_batch_worker"
 ADOPTION_UPDATE_SERVICE="adoption-standard-update.service"
 TIMER_SERVICE="adoption-standard-update.timer"
+CLEANUP_SERVICE="uo_regulations_metadata_cleanup.service"
+CLEANUP_TIMER_SERVICE="uo_regulations_metadata_cleanup.timer"
 WORKER_SERVICES=("$WORKER_SERVICE" "$FLOW_WORKER_SERVICE" "$BATCH_WORKER_SERVICE")
 APP_DIR="${APP_DIR:-/home/NE025/UO_MDR}"
 APP_ROOT="${APP_ROOT:-$APP_DIR}"
@@ -20,6 +22,7 @@ MANAGE_SYSTEMD_SERVICES="${MANAGE_SYSTEMD_SERVICES:-auto}"
 WEB_WORKERS="${WEB_WORKERS:-2}"
 WEB_BIND="${WEB_BIND:-127.0.0.1:8000}"
 UPDATE_ON_CALENDAR="${UPDATE_ON_CALENDAR:-daily}"
+CLEANUP_ON_CALENDAR="${CLEANUP_ON_CALENDAR:-*-*-* 03:30:00}"
 NGINX_TEMPLATE="${NGINX_TEMPLATE:-$APP_ROOT/deploy/nginx-site.conf.template}"
 NGINX_SITE_NAME="${NGINX_SITE_NAME:-$APP_NAME}"
 NGINX_FILE="${NGINX_FILE:-$APP_ROOT/build/nginx/$NGINX_SITE_NAME}"
@@ -128,6 +131,7 @@ fi
 if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
   log "停止排程 timer，避免部署中觸發"
   sudo systemctl stop "$TIMER_SERVICE" || true
+  sudo systemctl stop "$CLEANUP_TIMER_SERVICE" || true
 
   log "停止應用服務"
   for service in "${WORKER_SERVICES[@]}"; do
@@ -145,6 +149,7 @@ if [[ "$INSTALL_SYSTEMD_UNITS" == "1" && "$SYSTEMD_ENABLED" == "1" ]]; then
     --web-bind "$WEB_BIND"
     --web-workers "$WEB_WORKERS"
     --update-on-calendar "$UPDATE_ON_CALENDAR"
+    --cleanup-on-calendar "$CLEANUP_ON_CALENDAR"
   )
   if [[ -n "$APP_USER" ]]; then
     systemd_args+=(--app-user "$APP_USER")
@@ -188,6 +193,7 @@ if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
 
   log "啟動 Timer"
   sudo systemctl restart "$TIMER_SERVICE"
+  sudo systemctl restart "$CLEANUP_TIMER_SERVICE"
 
   log "查看服務狀態"
   sudo systemctl status "$APP_NAME" --no-pager
@@ -196,6 +202,8 @@ if [[ "$SYSTEMD_ENABLED" == "1" ]]; then
   done
   sudo systemctl status "$ADOPTION_UPDATE_SERVICE" --no-pager || true
   sudo systemctl status "$TIMER_SERVICE" --no-pager
+  sudo systemctl status "$CLEANUP_SERVICE" --no-pager || true
+  sudo systemctl status "$CLEANUP_TIMER_SERVICE" --no-pager
 else
   log "略過服務啟動與狀態檢查；請在容器內手動執行 gunicorn/flask worker，或用 docker compose 管理程序"
 fi

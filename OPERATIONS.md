@@ -20,6 +20,8 @@ Use the repo script to render or install the systemd unit files:
 - `uo_regulations_jobs_worker.service`
 - `uo_regulations_flow_worker.service`
 - `uo_regulations_batch_worker.service`
+- `uo_regulations_metadata_cleanup.service`
+- `uo_regulations_metadata_cleanup.timer`
 - `adoption-standard-update.service`
 - `adoption-standard-update.timer`
 
@@ -44,7 +46,8 @@ sudo bash scripts/install_systemd_units.sh \
   --env-file /home/NE025/UO_MDR/.env \
   --web-bind 127.0.0.1:8000 \
   --web-workers 2 \
-  --update-on-calendar 'daily'
+  --update-on-calendar 'daily' \
+  --cleanup-on-calendar '*-*-* 03:30:00'
 ```
 
 If `--app-user` is not provided, the script uses the owner of `--app-root` for systemd `User=`.
@@ -53,7 +56,7 @@ Use `--app-user USER` only when the service should run as a different account.
 After install:
 
 ```bash
-sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker adoption-standard-update.timer
+sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker uo_regulations_metadata_cleanup.timer adoption-standard-update.timer
 ```
 
 The rendered unit files should be reviewed for the expected deployment values:
@@ -68,6 +71,24 @@ rg -n "User=|WorkingDirectory=|EnvironmentFile=" /tmp/uo-systemd
 sudo systemctl status adoption-standard-update.service --no-pager
 sudo systemctl start adoption-standard-update.service
 ```
+
+`uo_regulations_metadata_cleanup.service` is also a `oneshot` unit. The recurring schedule is enabled through `uo_regulations_metadata_cleanup.timer`; start the service manually only when you want to run cleanup immediately:
+
+```bash
+sudo systemctl status uo_regulations_metadata_cleanup.service --no-pager
+sudo systemctl status uo_regulations_metadata_cleanup.timer --no-pager
+sudo systemctl start uo_regulations_metadata_cleanup.service
+```
+
+The cleanup service runs:
+
+```bash
+flask --app app.py jobs-cleanup
+flask --app app.py system-error-cleanup
+flask --app app.py audit-cleanup
+```
+
+The default cleanup schedule is daily at 03:30. Retention defaults are controlled by `JOB_METADATA_RETENTION_DAYS`, `SYSTEM_ERROR_LOG_RETENTION_DAYS`, and `AUDIT_LOG_RETENTION_DAYS`.
 
 ## Nginx site config
 

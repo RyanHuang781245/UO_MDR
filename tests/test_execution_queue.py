@@ -4,7 +4,7 @@ import json
 import shutil
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -13,8 +13,8 @@ from app import create_app
 from app.extensions import ldap_manager
 from app.extensions import db
 from app.jobs.executor import enqueue_single_flow_job
-from app.models.execution import JobArtifactRecord, JobRecord
-from app.services.execution_service import MAPPING_OPERATION_JOB, cancel_job, claim_next_job, enqueue_job, retry_job, run_job_by_id
+from app.models.execution import JobArtifactRecord, JobEventRecord, JobRecord
+from app.services.execution_service import MAPPING_OPERATION_JOB, cancel_job, claim_next_job, cleanup_job_metadata, enqueue_job, retry_job, run_job_by_id
 
 
 @pytest.fixture
@@ -109,6 +109,93 @@ def test_claim_next_job_respects_queue_filter(app, monkeypatch) -> None:
     batch_record = db.session.get(JobRecord, batch_job_id)
     assert batch_record is not None
     assert batch_record.status == "queued"
+
+
+def test_cleanup_job_metadata_dry_run_keeps_expired_terminal_jobs(app) -> None:
+    now = datetime.now()
+    db.session.add(
+        JobRecord(
+            job_id="oldjob01",
+            job_type="cleanup-test",
+            queue_name="default",
+            status="completed",
+            created_at=now - timedelta(days=220),
+            completed_at=now - timedelta(days=200),
+        )
+    )
+    db.session.add(JobArtifactRecord(job_id="oldjob01", artifact_type="log_json", rel_path="task/jobs/oldjob01/log.json"))
+    db.session.add(JobEventRecord(job_id="oldjob01", event_type="completed"))
+    db.session.commit()
+
+    result = cleanup_job_metadata(retention_days=180, dry_run=True)
+
+    assert result["matched_jobs"] == 1
+    assert result["matched_artifacts"] == 1
+    assert result["matched_events"] == 1
+    assert result["deleted_jobs"] == 0
+    assert JobRecord.query.filter_by(job_id="oldjob01").count() == 1
+    assert JobArtifactRecord.query.filter_by(job_id="oldjob01").count() == 1
+    assert JobEventRecord.query.filter_by(job_id="oldjob01").count() == 1
+
+
+def test_jobs_cleanup_cli_deletes_only_expired_terminal_jobs(app) -> None:
+    now = datetime.now()
+    rows = [
+        JobRecord(
+            job_id="oldjob02",
+            job_type="cleanup-test",
+            queue_name="default",
+            status="completed",
+            created_at=now - timedelta(days=220),
+            completed_at=now - timedelta(days=200),
+        ),
+        JobRecord(
+            job_id="recent01",
+            job_type="cleanup-test",
+            queue_name="default",
+            status="completed",
+            created_at=now - timedelta(days=10),
+            completed_at=now - timedelta(days=5),
+        ),
+        JobRecord(
+            job_id="active01",
+            job_type="cleanup-test",
+            queue_name="default",
+            status="running",
+            created_at=now - timedelta(days=220),
+            started_at=now - timedelta(days=200),
+        ),
+        JobRecord(
+            job_id="legacy01",
+            job_type="cleanup-test",
+            queue_name="default",
+            status="failed",
+            created_at=now - timedelta(days=220),
+            completed_at=None,
+        ),
+    ]
+    db.session.add_all(rows)
+    db.session.add(JobArtifactRecord(job_id="oldjob02", artifact_type="log_json", rel_path="task/jobs/oldjob02/log.json"))
+    db.session.add(JobEventRecord(job_id="oldjob02", event_type="completed"))
+    db.session.add(JobArtifactRecord(job_id="legacy01", artifact_type="log_json", rel_path="task/jobs/legacy01/log.json"))
+    db.session.add(JobEventRecord(job_id="legacy01", event_type="failed"))
+    db.session.commit()
+
+    runner = app.test_cli_runner()
+    result = runner.invoke(args=["jobs-cleanup", "--days", "180"])
+
+    assert result.exit_code == 0
+    assert "matched_jobs=2" in result.output
+    assert "deleted_jobs=2" in result.output
+    assert "deleted_artifacts=2" in result.output
+    assert "deleted_events=2" in result.output
+
+    assert JobRecord.query.filter_by(job_id="oldjob02").count() == 0
+    assert JobRecord.query.filter_by(job_id="legacy01").count() == 0
+    assert JobArtifactRecord.query.filter_by(job_id="oldjob02").count() == 0
+    assert JobEventRecord.query.filter_by(job_id="legacy01").count() == 0
+    assert JobRecord.query.filter_by(job_id="recent01").count() == 1
+    assert JobRecord.query.filter_by(job_id="active01").count() == 1
 
 
 def test_enqueue_single_flow_job_forwards_enable_figure_reference_flag(app, monkeypatch) -> None:

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run UO_Regulations Metadata Cleanup on schedule
+
+[Timer]
+OnCalendar={{CLEANUP_ON_CALENDAR}}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

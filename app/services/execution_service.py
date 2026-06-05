@@ -11,6 +11,7 @@ from typing import Any
 
 import click
 from flask import current_app
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
@@ -43,6 +44,13 @@ ACTIVE_JOB_STATUSES = {
     JOB_STATUS_QUEUED,
     JOB_STATUS_CLAIMED,
     JOB_STATUS_RUNNING,
+}
+
+TERMINAL_JOB_STATUSES = {
+    JOB_STATUS_COMPLETED,
+    JOB_STATUS_FAILED,
+    JOB_STATUS_CANCELED,
+    JOB_STATUS_TIMEOUT,
 }
 
 ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
@@ -109,6 +117,25 @@ def register_execution_cli(app) -> None:
         app_obj = current_app._get_current_object()
         count = requeue_stale_jobs(app_obj)
         click.echo(f"requeued_jobs={count}")
+
+    @app.cli.command("jobs-cleanup")
+    @click.option("--days", default=None, type=int, help="Retention period in days. Defaults to JOB_METADATA_RETENTION_DAYS.")
+    @click.option("--dry-run", is_flag=True, help="Show how many rows would be deleted without deleting them.")
+    def jobs_cleanup_command(days: int | None, dry_run: bool) -> None:
+        retention_days = int(days or current_app.config.get("JOB_METADATA_RETENTION_DAYS") or 180)
+        result = cleanup_job_metadata(retention_days=retention_days, dry_run=dry_run)
+        click.echo(
+            "jobs_cleanup "
+            f"retention_days={result['retention_days']} "
+            f"cutoff={result['cutoff'].strftime('%Y-%m-%d %H:%M:%S')} "
+            f"matched_jobs={result['matched_jobs']} "
+            f"matched_artifacts={result['matched_artifacts']} "
+            f"matched_events={result['matched_events']} "
+            f"deleted_jobs={result['deleted_jobs']} "
+            f"deleted_artifacts={result['deleted_artifacts']} "
+            f"deleted_events={result['deleted_events']} "
+            f"dry_run={'1' if result['dry_run'] else '0'}"
+        )
 
 
 def _json_dumps(payload: Any) -> str:
@@ -367,6 +394,58 @@ def delete_job_record(job_id: str) -> None:
     JobEventRecord.query.filter_by(job_id=job_id).delete(synchronize_session=False)
     db.session.delete(record)
     db.session.commit()
+
+
+def cleanup_job_metadata(*, retention_days: int, dry_run: bool = False) -> dict[str, Any]:
+    days = int(retention_days)
+    if days <= 0:
+        raise ValueError("retention_days must be greater than 0")
+
+    cutoff = _utcnow() - timedelta(days=days)
+    expired_query = JobRecord.query.filter(
+        JobRecord.status.in_(list(TERMINAL_JOB_STATUSES)),
+        or_(
+            JobRecord.completed_at < cutoff,
+            (JobRecord.completed_at.is_(None) & (JobRecord.created_at < cutoff)),
+        ),
+    )
+    job_ids = [row[0] for row in expired_query.with_entities(JobRecord.job_id).all()]
+    matched_jobs = len(job_ids)
+    matched_artifacts = 0
+    matched_events = 0
+
+    if job_ids:
+        matched_artifacts = JobArtifactRecord.query.filter(JobArtifactRecord.job_id.in_(job_ids)).count()
+        matched_events = JobEventRecord.query.filter(JobEventRecord.job_id.in_(job_ids)).count()
+
+    if dry_run or not job_ids:
+        return {
+            "retention_days": days,
+            "cutoff": cutoff,
+            "matched_jobs": matched_jobs,
+            "matched_artifacts": matched_artifacts,
+            "matched_events": matched_events,
+            "deleted_jobs": 0,
+            "deleted_artifacts": 0,
+            "deleted_events": 0,
+            "dry_run": dry_run,
+        }
+
+    JobArtifactRecord.query.filter(JobArtifactRecord.job_id.in_(job_ids)).delete(synchronize_session=False)
+    JobEventRecord.query.filter(JobEventRecord.job_id.in_(job_ids)).delete(synchronize_session=False)
+    JobRecord.query.filter(JobRecord.job_id.in_(job_ids)).delete(synchronize_session=False)
+    db.session.commit()
+    return {
+        "retention_days": days,
+        "cutoff": cutoff,
+        "matched_jobs": matched_jobs,
+        "matched_artifacts": matched_artifacts,
+        "matched_events": matched_events,
+        "deleted_jobs": matched_jobs,
+        "deleted_artifacts": matched_artifacts,
+        "deleted_events": matched_events,
+        "dry_run": dry_run,
+    }
 
 
 def acquire_task_lock(task_id: str, job_id: str, ttl_seconds: int | None = None) -> bool:

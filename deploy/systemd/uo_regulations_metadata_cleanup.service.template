@@ -10,6 +10,7 @@ WorkingDirectory={{APP_ROOT}}
 EnvironmentFile={{ENV_FILE}}
 Environment="PATH={{APP_ROOT}}/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
 Environment="APP_ENV=production"
+ExecStart={{APP_ROOT}}/.venv/bin/flask --app app.py mapping-check-cleanup
 ExecStart={{APP_ROOT}}/.venv/bin/flask --app app.py system-error-cleanup
 ExecStart={{APP_ROOT}}/.venv/bin/flask --app app.py audit-cleanup
 StandardOutput=journal

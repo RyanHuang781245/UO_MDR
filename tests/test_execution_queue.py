@@ -14,7 +14,7 @@ from app.extensions import ldap_manager
 from app.extensions import db
 from app.jobs.executor import enqueue_single_flow_job
 from app.models.execution import JobArtifactRecord, JobEventRecord, JobRecord
-from app.services.execution_service import MAPPING_OPERATION_JOB, cancel_job, claim_next_job, cleanup_job_metadata, enqueue_job, retry_job, run_job_by_id
+from app.services.execution_service import MAPPING_OPERATION_JOB, cancel_job, claim_next_job, cleanup_failed_mapping_check_jobs, cleanup_job_metadata, enqueue_job, retry_job, run_job_by_id
 
 
 @pytest.fixture
@@ -196,6 +196,109 @@ def test_jobs_cleanup_cli_deletes_only_expired_terminal_jobs(app) -> None:
     assert JobEventRecord.query.filter_by(job_id="legacy01").count() == 0
     assert JobRecord.query.filter_by(job_id="recent01").count() == 1
     assert JobRecord.query.filter_by(job_id="active01").count() == 1
+
+
+def test_mapping_check_cleanup_deletes_only_expired_failed_validation_jobs(app) -> None:
+    now = datetime.now()
+    task_id = "mapping-check-cleanup"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    workspace_dir = task_dir / "_mapping_sessions" / "tester" / "client"
+    validation_dir = workspace_dir / "_validation" / "oldcheck1"
+    ops_dir = workspace_dir / "_ops"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    ops_dir.mkdir(parents=True, exist_ok=True)
+    (validation_dir / "mapping_check_log.json").write_text("{}", encoding="utf-8")
+    (ops_dir / "oldcheck1.json").write_text("{}", encoding="utf-8")
+    db.session.add_all(
+        [
+            JobRecord(
+                job_id="oldcheck1",
+                job_type=MAPPING_OPERATION_JOB,
+                queue_name="light",
+                task_id=task_id,
+                status="failed",
+                payload_json=json.dumps({"action": "check", "workspace_dir": str(workspace_dir)}, ensure_ascii=False),
+                created_at=now - timedelta(days=45),
+                completed_at=now - timedelta(days=40),
+            ),
+            JobRecord(
+                job_id="recentck",
+                job_type=MAPPING_OPERATION_JOB,
+                queue_name="light",
+                task_id=task_id,
+                status="failed",
+                payload_json=json.dumps({"action": "check_extract", "workspace_dir": str(workspace_dir)}, ensure_ascii=False),
+                created_at=now - timedelta(days=5),
+                completed_at=now - timedelta(days=4),
+            ),
+            JobRecord(
+                job_id="failedrun",
+                job_type=MAPPING_OPERATION_JOB,
+                queue_name="heavy",
+                task_id=task_id,
+                status="failed",
+                payload_json=json.dumps({"action": "run_cached", "workspace_dir": str(workspace_dir)}, ensure_ascii=False),
+                created_at=now - timedelta(days=45),
+                completed_at=now - timedelta(days=40),
+            ),
+        ]
+    )
+    db.session.add(JobArtifactRecord(job_id="oldcheck1", artifact_type="log_json", rel_path=f"{task_id}/_mapping_sessions/log.json"))
+    db.session.add(JobEventRecord(job_id="oldcheck1", event_type="failed"))
+    db.session.commit()
+
+    result = cleanup_failed_mapping_check_jobs(retention_days=30, dry_run=True)
+
+    assert result["matched_jobs"] == 1
+    assert result["matched_artifacts"] == 1
+    assert result["matched_events"] == 1
+    assert result["matched_validation_dirs"] == 1
+    assert result["matched_op_files"] == 1
+    assert JobRecord.query.filter_by(job_id="oldcheck1").count() == 1
+    assert validation_dir.is_dir()
+
+    result = cleanup_failed_mapping_check_jobs(retention_days=30)
+
+    assert result["deleted_jobs"] == 1
+    assert result["deleted_artifacts"] == 1
+    assert result["deleted_events"] == 1
+    assert result["deleted_validation_dirs"] == 1
+    assert result["deleted_op_files"] == 1
+    assert JobRecord.query.filter_by(job_id="oldcheck1").count() == 0
+    assert JobArtifactRecord.query.filter_by(job_id="oldcheck1").count() == 0
+    assert JobEventRecord.query.filter_by(job_id="oldcheck1").count() == 0
+    assert JobRecord.query.filter_by(job_id="recentck").count() == 1
+    assert JobRecord.query.filter_by(job_id="failedrun").count() == 1
+    assert not validation_dir.exists()
+    assert not (ops_dir / "oldcheck1.json").exists()
+
+
+def test_mapping_check_cleanup_cli_deletes_expired_failed_validation_jobs(app) -> None:
+    now = datetime.now()
+    task_id = "mapping-check-cleanup-cli"
+    db.session.add(
+        JobRecord(
+            job_id="oldcheck2",
+            job_type=MAPPING_OPERATION_JOB,
+            queue_name="light",
+            task_id=task_id,
+            status="failed",
+            payload_json=json.dumps({"action": "check"}, ensure_ascii=False),
+            created_at=now - timedelta(days=45),
+            completed_at=now - timedelta(days=40),
+        )
+    )
+    db.session.add(JobEventRecord(job_id="oldcheck2", event_type="failed"))
+    db.session.commit()
+
+    runner = app.test_cli_runner()
+    result = runner.invoke(args=["mapping-check-cleanup", "--days", "30"])
+
+    assert result.exit_code == 0
+    assert "matched_jobs=1" in result.output
+    assert "deleted_jobs=1" in result.output
+    assert JobRecord.query.filter_by(job_id="oldcheck2").count() == 0
+    assert JobEventRecord.query.filter_by(job_id="oldcheck2").count() == 0
 
 
 def test_enqueue_single_flow_job_forwards_enable_figure_reference_flag(app, monkeypatch) -> None:

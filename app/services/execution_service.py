@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import threading
 import time
@@ -134,6 +135,29 @@ def register_execution_cli(app) -> None:
             f"deleted_jobs={result['deleted_jobs']} "
             f"deleted_artifacts={result['deleted_artifacts']} "
             f"deleted_events={result['deleted_events']} "
+            f"dry_run={'1' if result['dry_run'] else '0'}"
+        )
+
+    @app.cli.command("mapping-check-cleanup")
+    @click.option("--days", default=None, type=int, help="Retention period in days. Defaults to MAPPING_CHECK_JOB_RETENTION_DAYS.")
+    @click.option("--dry-run", is_flag=True, help="Show how many rows would be deleted without deleting them.")
+    def mapping_check_cleanup_command(days: int | None, dry_run: bool) -> None:
+        retention_days = int(days or current_app.config.get("MAPPING_CHECK_JOB_RETENTION_DAYS") or 30)
+        result = cleanup_failed_mapping_check_jobs(retention_days=retention_days, dry_run=dry_run)
+        click.echo(
+            "mapping_check_cleanup "
+            f"retention_days={result['retention_days']} "
+            f"cutoff={result['cutoff'].strftime('%Y-%m-%d %H:%M:%S')} "
+            f"matched_jobs={result['matched_jobs']} "
+            f"matched_artifacts={result['matched_artifacts']} "
+            f"matched_events={result['matched_events']} "
+            f"matched_validation_dirs={result['matched_validation_dirs']} "
+            f"matched_op_files={result['matched_op_files']} "
+            f"deleted_jobs={result['deleted_jobs']} "
+            f"deleted_artifacts={result['deleted_artifacts']} "
+            f"deleted_events={result['deleted_events']} "
+            f"deleted_validation_dirs={result['deleted_validation_dirs']} "
+            f"deleted_op_files={result['deleted_op_files']} "
             f"dry_run={'1' if result['dry_run'] else '0'}"
         )
 
@@ -446,6 +470,98 @@ def cleanup_job_metadata(*, retention_days: int, dry_run: bool = False) -> dict[
         "deleted_events": matched_events,
         "dry_run": dry_run,
     }
+
+
+def _safe_mapping_workspace_cleanup_paths(job: JobRecord, payload: dict) -> tuple[str, str]:
+    workspace_dir = str(payload.get("workspace_dir") or "").strip()
+    if not workspace_dir:
+        return "", ""
+    task_id = str(job.task_id or "").strip()
+    if not task_id:
+        return "", ""
+    task_dir = os.path.abspath(os.path.join(current_app.config["TASK_FOLDER"], task_id))
+    workspace_abs = os.path.abspath(workspace_dir)
+    if not workspace_abs.startswith(task_dir + os.sep):
+        return "", ""
+    validation_dir = os.path.join(workspace_abs, "_validation", str(job.job_id or "").strip())
+    op_file = os.path.join(workspace_abs, "_ops", f"{str(job.job_id or '').strip()}.json")
+    return validation_dir, op_file
+
+
+def cleanup_failed_mapping_check_jobs(*, retention_days: int, dry_run: bool = False) -> dict[str, Any]:
+    days = int(retention_days)
+    if days <= 0:
+        raise ValueError("retention_days must be greater than 0")
+
+    cutoff = _utcnow() - timedelta(days=days)
+    rows = JobRecord.query.filter(
+        JobRecord.job_type == MAPPING_OPERATION_JOB,
+        JobRecord.status == JOB_STATUS_FAILED,
+        or_(
+            JobRecord.completed_at < cutoff,
+            (JobRecord.completed_at.is_(None) & (JobRecord.created_at < cutoff)),
+        ),
+    ).all()
+    matched_jobs: list[JobRecord] = []
+    validation_dirs: list[str] = []
+    op_files: list[str] = []
+    for row in rows:
+        payload = get_job_payload(row)
+        if str(payload.get("action") or "").strip() not in {"check", "check_extract"}:
+            continue
+        matched_jobs.append(row)
+        validation_dir, op_file = _safe_mapping_workspace_cleanup_paths(row, payload)
+        if validation_dir and os.path.isdir(validation_dir):
+            validation_dirs.append(validation_dir)
+        if op_file and os.path.isfile(op_file):
+            op_files.append(op_file)
+
+    job_ids = [row.job_id for row in matched_jobs]
+    matched_artifacts = 0
+    matched_events = 0
+    if job_ids:
+        matched_artifacts = JobArtifactRecord.query.filter(JobArtifactRecord.job_id.in_(job_ids)).count()
+        matched_events = JobEventRecord.query.filter(JobEventRecord.job_id.in_(job_ids)).count()
+
+    result = {
+        "retention_days": days,
+        "cutoff": cutoff,
+        "matched_jobs": len(job_ids),
+        "matched_artifacts": matched_artifacts,
+        "matched_events": matched_events,
+        "matched_validation_dirs": len(validation_dirs),
+        "matched_op_files": len(op_files),
+        "deleted_jobs": 0,
+        "deleted_artifacts": 0,
+        "deleted_events": 0,
+        "deleted_validation_dirs": 0,
+        "deleted_op_files": 0,
+        "dry_run": dry_run,
+    }
+    if dry_run or not job_ids:
+        return result
+
+    for path in validation_dirs:
+        shutil.rmtree(path, ignore_errors=True)
+        if not os.path.isdir(path):
+            result["deleted_validation_dirs"] += 1
+    for path in op_files:
+        try:
+            os.remove(path)
+            result["deleted_op_files"] += 1
+        except FileNotFoundError:
+            result["deleted_op_files"] += 1
+        except OSError:
+            current_app.logger.warning("Failed to delete mapping check op file: %s", path, exc_info=True)
+
+    JobArtifactRecord.query.filter(JobArtifactRecord.job_id.in_(job_ids)).delete(synchronize_session=False)
+    JobEventRecord.query.filter(JobEventRecord.job_id.in_(job_ids)).delete(synchronize_session=False)
+    JobRecord.query.filter(JobRecord.job_id.in_(job_ids)).delete(synchronize_session=False)
+    db.session.commit()
+    result["deleted_jobs"] = len(job_ids)
+    result["deleted_artifacts"] = matched_artifacts
+    result["deleted_events"] = matched_events
+    return result
 
 
 def acquire_task_lock(task_id: str, job_id: str, ttl_seconds: int | None = None) -> bool:

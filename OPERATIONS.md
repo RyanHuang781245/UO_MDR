@@ -83,11 +83,14 @@ sudo systemctl start uo_regulations_metadata_cleanup.service
 The cleanup service runs:
 
 ```bash
+flask --app app.py mapping-check-cleanup
 flask --app app.py system-error-cleanup
 flask --app app.py audit-cleanup
 ```
 
-The default cleanup schedule is daily at 03:30. Retention defaults are controlled by `SYSTEM_ERROR_LOG_RETENTION_DAYS` and `AUDIT_LOG_RETENTION_DAYS`.
+The default cleanup schedule is daily at 03:30. Retention defaults are controlled by `MAPPING_CHECK_JOB_RETENTION_DAYS`, `SYSTEM_ERROR_LOG_RETENTION_DAYS`, and `AUDIT_LOG_RETENTION_DAYS`.
+
+`mapping-check-cleanup` only deletes failed Mapping validation jobs (`mapping_operation` with `action=check` or `action=check_extract`) after the retention period. It also removes the matching `_mapping_sessions` validation run directory and op file when they are still present.
 
 `jobs-cleanup` remains available for manual maintenance, but it is not included in the scheduled cleanup service because job records point to task output files and visible run history. Run it only after confirming that old run metadata and its remaining files can be handled separately:
 

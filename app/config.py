@@ -56,6 +56,7 @@ class BaseConfig:
     JOB_LOCK_TTL_SECONDS = int(os.environ.get("JOB_LOCK_TTL_SECONDS") or 14400)
     JOB_STALE_AFTER_SECONDS = int(os.environ.get("JOB_STALE_AFTER_SECONDS") or 21600)
     JOB_METADATA_RETENTION_DAYS = int(os.environ.get("JOB_METADATA_RETENTION_DAYS") or 180)
+    MAPPING_CHECK_JOB_RETENTION_DAYS = int(os.environ.get("MAPPING_CHECK_JOB_RETENTION_DAYS") or 30)
 
     AUTH_ENABLED = parse_bool(os.environ.get("AUTH_ENABLED"), True)
     SESSION_COOKIE_NAME = os.environ.get("SESSION_COOKIE_NAME", "uo_mdr_session")

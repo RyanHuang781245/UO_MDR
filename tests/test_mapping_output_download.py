@@ -10,7 +10,7 @@ from flask import url_for
 from app import create_app
 from app.extensions import ldap_manager
 from app.extensions import db
-from app.models.execution import JobRecord
+from app.models.execution import JobArtifactRecord, JobRecord
 from app.services.execution_service import MAPPING_OPERATION_JOB
 from datetime import datetime, timedelta
 
@@ -447,6 +447,7 @@ def test_mapping_check_error_marks_job_record_failed(app, client, monkeypatch) -
     record = JobRecord.query.filter_by(task_id=task_id, job_type=MAPPING_OPERATION_JOB).first()
     assert record is not None
     assert record.status == "failed"
+    assert JobArtifactRecord.query.filter_by(job_id=record.job_id).count() == 0
 
 
 def test_mapping_route_blocks_workspace_reset_when_active_op_exists(app, client, monkeypatch) -> None:
@@ -568,6 +569,9 @@ def test_mapping_route_reuses_same_run_id_across_check_extract_and_run(app, clie
     assert Path(calls[0]["output_dir"]).parent.name == "_validation"
     assert Path(calls[1]["output_dir"]).parent.name == "_validation"
     assert Path(calls[2]["output_dir"]).parent.name == "mapping_job"
+    artifacts = JobArtifactRecord.query.order_by(JobArtifactRecord.created_at.asc()).all()
+    assert len(artifacts) == 1
+    assert artifacts[0].rel_path.startswith(f"{task_id}/mapping_job/")
     run_dirs = [p for p in (task_dir / "mapping_job").iterdir() if p.is_dir()]
     assert [p.name for p in run_dirs] == [run_ids[0]]
     run_dir = task_dir / "mapping_job" / run_ids[0]

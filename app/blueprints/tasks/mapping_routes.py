@@ -937,18 +937,19 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
         if manage_workspace_state and action == "run_cached" and not current_has_error:
             _delete_mapping_workspace(workspace_dir)
         artifacts = []
-        for artifact_type, filename in (("log_json", log_file_raw), ("result_zip", zip_file_raw)):
-            if not filename:
-                continue
-            path = os.path.join(run_out_dir, filename)
-            if os.path.isfile(path):
-                artifacts.append(
-                    {
-                        "artifact_type": artifact_type,
-                        "rel_path": _task_relative_path(path),
-                        "size_bytes": os.path.getsize(path),
-                    }
-                )
+        if action == "run_cached":
+            for artifact_type, filename in (("log_json", log_file_raw), ("result_zip", zip_file_raw)):
+                if not filename:
+                    continue
+                path = os.path.join(run_out_dir, filename)
+                if os.path.isfile(path):
+                    artifacts.append(
+                        {
+                            "artifact_type": artifact_type,
+                            "rel_path": _task_relative_path(path),
+                            "size_bytes": os.path.getsize(path),
+                        }
+                    )
         _record_mapping_audit(
             _mapping_action_result_to_audit_action(action, "failed" if current_has_error else "completed"),
             task_id,

@@ -12,10 +12,14 @@ from flask import current_app
 from app.services.audit_service import record_audit
 from app.services.execution_service import (
     JobCanceledError,
+    MAPPING_OPERATION_JOB,
     MAPPING_SCHEME_RUN_JOB,
+    delete_job_record,
     enqueue_job,
     ensure_job_not_canceled,
     find_active_job,
+    get_job,
+    get_job_payload,
 )
 from app.services.mapping_metadata_service import sync_run_payload, sync_scheme_payload, delete_mapping_scheme_record
 
@@ -275,7 +279,21 @@ def load_scheduled_mapping_scheme(task_id: str) -> dict | None:
     return scheme
 
 
+def _delete_validation_job_record(task_id: str, run_id: str) -> None:
+    validation_run_id = str(run_id or "").strip()
+    if not validation_run_id:
+        return
+    record = get_job(validation_run_id)
+    if not record or record.task_id != task_id or record.job_type != MAPPING_OPERATION_JOB:
+        return
+    payload = get_job_payload(record)
+    if str(payload.get("action") or "").strip() not in {"check", "check_extract"}:
+        return
+    delete_job_record(validation_run_id)
+
+
 def delete_mapping_scheme(task_id: str, scheme_id: str) -> bool:
+    scheme = load_mapping_scheme(task_id, scheme_id)
     scheme_dir = mapping_scheme_dir(task_id, scheme_id)
     if not os.path.isdir(scheme_dir):
         return False
@@ -293,6 +311,8 @@ def delete_mapping_scheme(task_id: str, scheme_id: str) -> bool:
 
     shutil.rmtree(scheme_dir, ignore_errors=True)
     delete_mapping_scheme_record(scheme_id)
+    if scheme:
+        _delete_validation_job_record(task_id, str(scheme.get("validated_run_id") or ""))
     return not os.path.exists(scheme_dir)
 
 

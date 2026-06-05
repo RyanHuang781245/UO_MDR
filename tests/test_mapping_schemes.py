@@ -11,7 +11,8 @@ from flask import url_for
 from app import create_app
 from app.blueprints.flows.global_batch_routes import _write_global_batch_status
 from app.blueprints.tasks.mapping_scheme_helpers import save_mapping_scheme, set_scheduled_mapping_scheme
-from app.extensions import ldap_manager
+from app.extensions import db, ldap_manager
+from app.models.execution import JobArtifactRecord, JobEventRecord, JobRecord
 from app.services.global_batch_items import encode_batch_item
 from app.services.execution_service import MAPPING_OPERATION_JOB
 
@@ -562,9 +563,23 @@ def test_can_delete_saved_mapping_scheme(app, client) -> None:
             "mapping_display_name": "Mapping_delete.xlsx",
             "reference_ok": True,
             "extract_ok": True,
+            "run_id": "checkdel1",
         },
         actor={"work_id": "A123", "label": "Tester"},
     )
+    db.session.add(
+        JobRecord(
+            job_id="checkdel1",
+            job_type=MAPPING_OPERATION_JOB,
+            queue_name="light",
+            task_id=task_id,
+            status="completed",
+            payload_json=json.dumps({"action": "check_extract"}, ensure_ascii=False),
+        )
+    )
+    db.session.add(JobArtifactRecord(job_id="checkdel1", artifact_type="log_json", rel_path=f"{task_id}/mapping_check_extract_log.json"))
+    db.session.add(JobEventRecord(job_id="checkdel1", event_type="completed"))
+    db.session.commit()
 
     with app.test_request_context():
         url = url_for("tasks_bp.task_mapping", task_id=task_id, mapping_tab="saved")
@@ -576,6 +591,9 @@ def test_can_delete_saved_mapping_scheme(app, client) -> None:
     assert "刪除測試方案" not in html
     assert "尚未保存任何 Mapping 方案" in html
     assert not (task_dir / "mappings" / scheme["id"]).exists()
+    assert JobRecord.query.filter_by(job_id="checkdel1").count() == 0
+    assert JobArtifactRecord.query.filter_by(job_id="checkdel1").count() == 0
+    assert JobEventRecord.query.filter_by(job_id="checkdel1").count() == 0
 
 
 def test_can_rename_saved_mapping_scheme(app, client) -> None:

@@ -278,6 +278,8 @@ journalctl -u adoption-standard-update.service --no-pager -n 100
 sudo systemctl start uo_regulations_metadata_cleanup.service
 ```
 
+此排程只會清理 `system_error_logs` 與 `audit_logs`。`jobs-cleanup` 保留為手動維護指令，因為 `job_records` 會對應前端執行紀錄與 task output 實體檔案；若只清資料表、不處理檔案，可能留下無對應紀錄的檔案。
+
 查看最近清理紀錄：
 
 ```bash

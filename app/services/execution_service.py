@@ -814,6 +814,10 @@ def _run_claimed_job(job: JobRecord, worker_id: str) -> bool:
                 str(artifact.get("rel_path") or ""),
                 artifact.get("size_bytes"),
             )
+        requested_status = str(result.get("job_status") or "").strip().lower()
+        if requested_status == JOB_STATUS_FAILED:
+            mark_job_failed(job.job_id, str(result.get("error_summary") or "").strip() or "Job failed")
+            return False
         mark_job_completed(job.job_id)
         return True
     except JobCanceledError as exc:

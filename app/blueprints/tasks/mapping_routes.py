@@ -972,6 +972,8 @@ def _run_mapping_operation_job(op_id: str, payload: dict) -> dict:
             "artifact_root": _task_relative_path(run_out_dir),
             "artifacts": artifacts,
             "result_payload": run_result_payload,
+            "job_status": "failed" if current_has_error else "completed",
+            "error_summary": first_error,
         }
         
         

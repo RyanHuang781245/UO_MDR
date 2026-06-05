@@ -11,6 +11,7 @@ from app import create_app
 from app.extensions import ldap_manager
 from app.extensions import db
 from app.models.execution import JobRecord
+from app.services.execution_service import MAPPING_OPERATION_JOB
 from datetime import datetime, timedelta
 
 
@@ -400,6 +401,52 @@ def test_mapping_check_extract_records_failed_audit_with_error_details(app, clie
     assert failed_audit["detail"]["mapping_file"] == "mapping.xlsx"
     assert failed_audit["detail"]["extract_ok"] is False
     assert failed_audit["detail"]["error"] == "extract check failed"
+
+
+def test_mapping_check_error_marks_job_record_failed(app, client, monkeypatch) -> None:
+    task_id = "mapping-check-error-job-status"
+    task_dir = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_dir.exists():
+        shutil.rmtree(task_dir)
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    def fake_process_mapping_excel(
+        mapping_path,
+        task_files_dir,
+        output_dir,
+        log_dir=None,
+        validate_only=False,
+        validate_extract_only=False,
+    ):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        Path(log_dir or output_dir).mkdir(parents=True, exist_ok=True)
+        (Path(log_dir or output_dir) / "mapping_log.json").write_text(
+            '{"messages":["ERROR: reference failed"],"runs":[]}',
+            encoding="utf-8",
+        )
+        return {
+            "logs": ["ERROR: reference failed"],
+            "outputs": [],
+            "log_file": "mapping_log.json",
+            "zip_file": None,
+        }
+
+    monkeypatch.setattr("modules.mapping_processor.process_mapping_excel", fake_process_mapping_excel)
+
+    with app.test_request_context():
+        url = url_for("tasks_bp.task_mapping", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={"action": "check", "mapping_file": (BytesIO(b"dummy"), "mapping.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    record = JobRecord.query.filter_by(task_id=task_id, job_type=MAPPING_OPERATION_JOB).first()
+    assert record is not None
+    assert record.status == "failed"
 
 
 def test_mapping_route_blocks_workspace_reset_when_active_op_exists(app, client, monkeypatch) -> None:

@@ -8,11 +8,16 @@ from app.services.auth_hooks_service import register_auth_context, register_logi
 from app.services.schema_control import auto_schema_management_enabled, tables_exist
 from app.services.authn_service import (
     LDAPUserInfo,
+    apply_default_local_password,
+    authenticate_local_user,
     bootstrap_admins,
     build_ldap_profile,
+    get_auth_mode,
     is_allowed_group_member,
     register_ldap_handlers,
     search_ad_users,
+    search_local_users,
+    set_local_password,
 )
 from app.services.authz_service import sanitize_next_url, user_has_permission, user_is_admin
 
@@ -49,8 +54,11 @@ def init_auth(app) -> None:
 
 __all__ = [
     "LDAPUserInfo",
+    "apply_default_local_password",
+    "authenticate_local_user",
     "bootstrap_auth",
     "build_ldap_profile",
+    "get_auth_mode",
     "init_admin",
     "init_auth",
     "is_allowed_group_member",
@@ -59,6 +67,8 @@ __all__ = [
     "register_login_enforcement",
     "sanitize_next_url",
     "search_ad_users",
+    "search_local_users",
+    "set_local_password",
     "user_has_permission",
     "user_is_admin",
 ]

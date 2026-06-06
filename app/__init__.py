@@ -39,6 +39,12 @@ def _resolve_config_class(config_name: str | None):
 
 
 def _configure_app(app: Flask, base_dir: Path) -> None:
+    auth_mode = str(app.config.get("AUTH_MODE") or "ldap").strip().lower()
+    if auth_mode not in {"ldap", "local"}:
+        app.logger.warning("Unsupported AUTH_MODE=%s; falling back to ldap.", auth_mode)
+        auth_mode = "ldap"
+    app.config["AUTH_MODE"] = auth_mode
+
     if (
         str(app.config.get("APP_ENV") or "").strip().lower() == "production"
         and str(app.config.get("JOB_EXECUTOR_MODE") or "").strip().lower() == "inline"
@@ -139,7 +145,7 @@ def create_app(config_name: str | None = None, *, init_auth: bool = True) -> Fla
     operations_service.register_operations_cli(app)
     if init_auth:
         login_manager.init_app(app)
-        if app.config.get("AUTH_ENABLED", True):
+        if app.config.get("AUTH_ENABLED", True) and app.config.get("AUTH_MODE") == "ldap":
             ldap_manager.init_app(app)
 
     nas_service.init_nas_config(app)

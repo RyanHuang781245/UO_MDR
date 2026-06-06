@@ -7,6 +7,8 @@ from typing import Optional
 from flask import current_app
 from ldap3 import BASE, SUBTREE, Connection, Server
 from ldap3.utils.conv import escape_filter_chars
+from sqlalchemy import or_
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import ldap_manager, login_manager
 from app.models.auth import (
@@ -17,6 +19,7 @@ from app.models.auth import (
     commit_session,
     db,
     get_user_by_id,
+    get_user_by_work_id,
     upsert_user_role,
 )
 
@@ -44,6 +47,11 @@ def register_ldap_handlers() -> None:
             return get_user_by_id(int(user_id))
         except Exception:
             return None
+
+
+def get_auth_mode() -> str:
+    mode = str(current_app.config.get("AUTH_MODE") or "ldap").strip().lower()
+    return mode if mode in {"ldap", "local"} else "ldap"
 
 
 def _normalize_ldap_value(value: object) -> Optional[str]:
@@ -125,6 +133,79 @@ def search_ad_users(keyword: str) -> list[dict]:
         conn.unbind()
 
 
+def search_local_users(keyword: str) -> list[dict]:
+    keyword = (keyword or "").strip()
+    if not keyword:
+        return []
+
+    pattern = f"%{keyword}%"
+    users = (
+        User.query.filter(
+            or_(
+                User.work_id.ilike(pattern),
+                User.display_name.ilike(pattern),
+                User.email.ilike(pattern),
+            )
+        )
+        .order_by(User.work_id)
+        .limit(50)
+        .all()
+    )
+    results = [
+        {
+            "work_id": user.work_id,
+            "display_name": user.display_name,
+            "email": user.email,
+            "dn": "",
+        }
+        for user in users
+    ]
+    if not results:
+        results.append(
+            {
+                "work_id": keyword,
+                "display_name": "",
+                "email": "",
+                "dn": "",
+            }
+        )
+    return results
+
+
+def set_local_password(user: User, password: str) -> None:
+    password_text = str(password or "")
+    if not password_text:
+        raise ValueError("Local password cannot be empty")
+    user.password_hash = generate_password_hash(password_text)
+
+
+def apply_default_local_password(user: User) -> bool:
+    if user.password_hash:
+        return False
+    password = current_app.config.get("LOCAL_AUTH_DEFAULT_PASSWORD")
+    if not password:
+        return False
+    set_local_password(user, password)
+    return True
+
+
+def authenticate_local_user(work_id: str, password: str) -> tuple[Optional[User], str]:
+    normalized_work_id = (work_id or "").strip()
+    if not normalized_work_id or not password:
+        return None, "invalid_credentials"
+
+    user = get_user_by_work_id(normalized_work_id)
+    if not user:
+        return None, "invalid_credentials"
+    if not user.password_hash:
+        return None, "password_not_set"
+    if not check_password_hash(user.password_hash, password):
+        return None, "invalid_credentials"
+    if not user.is_active:
+        return user, "user_inactive"
+    return user, ""
+
+
 def build_ldap_profile(ldap_user: LDAPUserInfo) -> LDAPProfile:
     data = ldap_user.data or {}
     display_name = _normalize_ldap_value(
@@ -187,6 +268,9 @@ def bootstrap_admins() -> None:
             user = User(work_id=work_id, active=True)
             db.session.add(user)
             db.session.flush()
+        bootstrap_password = current_app.config.get("LOCAL_AUTH_BOOTSTRAP_PASSWORD")
+        if bootstrap_password and not user.password_hash:
+            set_local_password(user, bootstrap_password)
         upsert_user_role(user, admin_role)
 
     commit_session()

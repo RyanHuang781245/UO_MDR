@@ -7,8 +7,7 @@ from pathlib import Path
 from flask import abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user
 
-from app.blueprints.tasks.mapping_routes import _safe_uploaded_filename
-from app.blueprints.tasks.standard_mapping_routes import (
+from app.blueprints.standard_mapping.routes import (
     _MANUAL_HEADER_FIELD_ORDER,
     _STANDARD_PRIORITY_FIELDS,
     _build_stats,
@@ -25,6 +24,7 @@ from app.blueprints.tasks.standard_mapping_routes import (
     _format_target_table_index_display,
     _normalize_target_scope_rows,
 )
+from app.blueprints.task_mapping.upload_helpers import _safe_uploaded_filename
 from app.services.standard_mapping_service import (
     DEFAULT_ENABLED_STANDARD_LEVELS,
     DEFAULT_ISO_PRIORITY,
@@ -294,7 +294,7 @@ def _render_mapping_page(
         }]
     active_target_scope_rows = _normalize_target_scope_rows(active_target_scopes)
     return render_template(
-        "tasks/standard_mapping.html",
+        "standard_mapping/standard_mapping.html",
         task_id=task_id,
         task={"id": task_id, "name": task.get("name", task_id)},
         page_title="標準更新",

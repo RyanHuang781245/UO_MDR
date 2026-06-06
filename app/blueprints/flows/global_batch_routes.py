@@ -11,7 +11,7 @@ from datetime import datetime
 
 from flask import current_app, flash, redirect, render_template, request, send_file, url_for
 
-from app.blueprints.tasks.mapping_scheme_helpers import (
+from app.blueprints.task_mapping.scheme_helpers import (
     enqueue_saved_mapping_scheme_run,
     list_mapping_schemes,
 )

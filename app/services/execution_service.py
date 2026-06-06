@@ -669,11 +669,11 @@ def _dispatch_job(job: JobRecord) -> dict | None:
 
         return run_single_flow_job(job.job_id, payload)
     if job.job_type == MAPPING_OPERATION_JOB:
-        from app.blueprints.tasks.mapping_routes import _run_mapping_operation_job
+        from app.blueprints.task_mapping.routes import _run_mapping_operation_job
 
         return _run_mapping_operation_job(job.job_id, payload)
     if job.job_type == MAPPING_SCHEME_RUN_JOB:
-        from app.blueprints.tasks.mapping_scheme_helpers import run_saved_mapping_scheme_job
+        from app.blueprints.task_mapping.scheme_helpers import run_saved_mapping_scheme_job
 
         return run_saved_mapping_scheme_job(job.job_id, payload)
     if job.job_type == GLOBAL_BATCH_JOB:

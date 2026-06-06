@@ -14,7 +14,10 @@ from .flows import (
     register_flow_routes,
 )
 from .nas import nas_bp, register_nas_routes
+from .standard_mapping import standard_mapping_bp
 from .standard_updates import register_standard_update_routes, standard_updates_bp
+from .task_compare import task_compare_bp
+from .task_mapping import task_mapping_bp
 from .tasks import register_task_routes, tasks_bp
 
 
@@ -26,7 +29,10 @@ def register_blueprints(app) -> None:
     register_flow_routes()
     app.register_blueprint(auth_bp)
     app.register_blueprint(nas_bp)
+    app.register_blueprint(standard_mapping_bp)
     app.register_blueprint(standard_updates_bp)
+    app.register_blueprint(task_compare_bp)
+    app.register_blueprint(task_mapping_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(flow_builder_bp)
     app.register_blueprint(flow_crud_bp)

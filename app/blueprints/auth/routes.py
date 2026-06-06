@@ -15,7 +15,13 @@ from app.models.auth import (
     upsert_user_role,
 )
 from app.services.audit_service import record_audit
-from app.services.auth_service import build_ldap_profile, is_allowed_group_member, sanitize_next_url
+from app.services.auth_service import (
+    authenticate_local_user,
+    build_ldap_profile,
+    get_auth_mode,
+    is_allowed_group_member,
+    sanitize_next_url,
+)
 
 from .blueprint import auth_bp
 
@@ -29,6 +35,11 @@ def _login_actor_payload(username: str = "", *, label: str = "") -> dict[str, st
     }
 
 
+class _LocalLoginForm:
+    def hidden_tag(self) -> str:
+        return ""
+
+
 @auth_bp.route("/login", methods=["GET", "POST"], endpoint="login")
 def login():
     if not current_app.config.get("AUTH_ENABLED", True):
@@ -37,12 +48,47 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for("tasks_bp.launcher"))
 
-    form = LDAPLoginForm()
+    auth_mode = get_auth_mode()
+    form = LDAPLoginForm() if auth_mode == "ldap" else _LocalLoginForm()
     error = ""
 
     if request.method == "POST":
         attempted_username = (request.form.get("username") or "").strip()
         try:
+            if auth_mode == "local":
+                password = request.form.get("password") or ""
+                user, reason = authenticate_local_user(attempted_username, password)
+                if not user:
+                    error = "憑證無效，請確認工號和密碼是否正確"
+                    if reason == "password_not_set":
+                        error = "您的帳號尚未設定本機密碼"
+                    record_audit(
+                        action="auth_login_failed",
+                        actor=_login_actor_payload(attempted_username),
+                        detail={"reason": reason or "invalid_credentials", "username": attempted_username},
+                    )
+                    return render_template("auth/login.html", error=error, form=form, auth_mode=auth_mode)
+
+                if reason == "user_inactive":
+                    error = "您的帳號已被停用"
+                    record_audit(
+                        action="auth_login_failed",
+                        actor=_login_actor_payload(user.work_id, label=user.display_name),
+                        detail={"reason": "user_inactive", "username": user.work_id},
+                    )
+                    return render_template("auth/login.html", error=error, form=form, auth_mode=auth_mode)
+
+                user.last_login_at = datetime.utcnow()
+                commit_session()
+                login_user(user)
+                record_audit(
+                    action="auth_login",
+                    actor=_login_actor_payload(user.work_id, label=user.display_name),
+                    detail={"username": user.work_id, "auth_mode": "local"},
+                )
+                next_url = sanitize_next_url(request.args.get("next"))
+                return redirect(next_url or url_for("tasks_bp.launcher"))
+
             if not form.validate_on_submit():
                 current_app.logger.debug("LDAP form errors: %s", form.errors)
                 error = "憑證無效"
@@ -51,7 +97,7 @@ def login():
                     actor=_login_actor_payload(attempted_username),
                     detail={"reason": "form_invalid", "username": attempted_username},
                 )
-                return render_template("auth/login.html", error=error, form=form)
+                return render_template("auth/login.html", error=error, form=form, auth_mode=auth_mode)
 
             ldap_user = form.user
             if not ldap_user:
@@ -61,7 +107,7 @@ def login():
                     actor=_login_actor_payload(attempted_username),
                     detail={"reason": "invalid_credentials", "username": attempted_username},
                 )
-                return render_template("auth/login.html", error=error, form=form)
+                return render_template("auth/login.html", error=error, form=form, auth_mode=auth_mode)
 
             if not is_allowed_group_member(ldap_user.dn):
                 error = "您的帳號不在允許的登入群組中"
@@ -70,7 +116,7 @@ def login():
                     actor=_login_actor_payload(attempted_username),
                     detail={"reason": "group_not_allowed", "username": attempted_username},
                 )
-                return render_template("auth/login.html", error=error, form=form)
+                return render_template("auth/login.html", error=error, form=form, auth_mode=auth_mode)
 
             profile = build_ldap_profile(ldap_user)
             user = get_user_by_work_id(profile.work_id)
@@ -81,7 +127,7 @@ def login():
                     actor=_login_actor_payload(profile.work_id, label=profile.display_name),
                     detail={"reason": "user_not_authorized", "username": profile.work_id},
                 )
-                return render_template("auth/login.html", error=error, form=form)
+                return render_template("auth/login.html", error=error, form=form, auth_mode=auth_mode)
 
             if profile.display_name and user.display_name != profile.display_name:
                 user.display_name = profile.display_name
@@ -102,7 +148,7 @@ def login():
                     actor=_login_actor_payload(user.work_id, label=user.display_name),
                     detail={"reason": "user_inactive", "username": user.work_id},
                 )
-                return render_template("auth/login.html", error=error, form=form)
+                return render_template("auth/login.html", error=error, form=form, auth_mode=auth_mode)
 
             user.last_login_at = datetime.utcnow()
             commit_session()
@@ -126,7 +172,7 @@ def login():
             )
             error = "登入失敗。請聯絡管理員"
 
-    return render_template("auth/login.html", error=error, form=form)
+    return render_template("auth/login.html", error=error, form=form, auth_mode=auth_mode)
 
 
 @auth_bp.get("/logout", endpoint="logout")

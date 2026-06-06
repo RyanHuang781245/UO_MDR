@@ -12,7 +12,7 @@ from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_login import current_user
 from markupsafe import Markup
-from wtforms import SelectField
+from wtforms import PasswordField, SelectField
 
 from app.models.auth import (
     LDAPProfile,
@@ -33,7 +33,13 @@ from app.models.auth import (
 )
 from app.models.settings import SystemSetting
 from app.services.audit_service import record_audit
-from app.services.authn_service import search_ad_users
+from app.services.authn_service import (
+    apply_default_local_password,
+    get_auth_mode,
+    search_ad_users,
+    search_local_users,
+    set_local_password,
+)
 from app.services.authz_service import sanitize_next_url, user_is_admin
 from app.services.execution_service import is_inline_execution_enabled
 from app.services.standard_update_service import (
@@ -445,8 +451,11 @@ class UserAdminView(SecureModelView):
         "last_login_at": "最後登入",
         "role_name": "角色",
     }
-    form_extra_fields = {"role": SelectField("角色", coerce=int)}
-    form_columns = ("work_id", "display_name", "active", "role")
+    form_extra_fields = {
+        "role": SelectField("角色", coerce=int),
+        "local_password": PasswordField("Local password"),
+    }
+    form_columns = ("work_id", "display_name", "active", "role", "local_password")
     form_widget_args = {
         "work_id": {"readonly": True},
         "display_name": {"readonly": True},
@@ -504,6 +513,8 @@ class UserAdminView(SecureModelView):
             if self._is_last_admin_change(model, role):
                 flash("Cannot remove the last admin.", "danger")
                 return False
+            if getattr(form, "local_password", None) and form.local_password.data:
+                set_local_password(model, form.local_password.data)
             upsert_user_role(model, role)
             commit_session()
             _record_user_admin_audit(
@@ -682,6 +693,8 @@ class ADSearchView(BaseView):
                 else:
                     user.display_name = profile.display_name or user.display_name
                     user.email = profile.email or user.email
+                if get_auth_mode() == "local":
+                    apply_default_local_password(user)
                 upsert_user_role(user, role)
                 commit_session()
             except Exception as exc:
@@ -699,7 +712,10 @@ class ADSearchView(BaseView):
         query = (request.args.get("q") or "").strip()
         if query:
             try:
-                results = search_ad_users(query)
+                if get_auth_mode() == "local":
+                    results = search_local_users(query)
+                else:
+                    results = search_ad_users(query)
             except Exception as exc:
                 current_app.logger.exception("AD search failed")
                 error = str(exc)
@@ -715,6 +731,7 @@ class ADSearchView(BaseView):
             results=results,
             roles=roles,
             error=error,
+            auth_mode=get_auth_mode(),
         )
 
 

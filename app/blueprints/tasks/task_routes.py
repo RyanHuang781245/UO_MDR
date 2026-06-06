@@ -24,8 +24,8 @@ from app.services.task_service import (
     task_name_exists,
 )
 from app.services.user_context_service import get_actor_info as _get_actor_info
+from app.blueprints.task_mapping.upload_helpers import _safe_uploaded_filename
 from .blueprint import tasks_bp
-from .mapping_routes import _safe_uploaded_filename
 
 TASK_TEXT_LIMIT = 50
 

@@ -18,25 +18,3 @@ server {
         proxy_send_timeout 300s;
     }
 }
-
-server {
-    listen 81;
-
-    client_max_body_size 200M;
-
-    location /static/ {
-        alias /home/NE025/pdf_ocr_translate/static/;
-        access_log off;
-        expires 7d;
-        add_header Cache-Control "public";
-    }
-
-    location / {
-        include proxy_params;
-        proxy_pass http://unix:/home/NE025/pdf_ocr_translate/uo_regulations_translate.sock;
-
-        proxy_connect_timeout 30s;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-    }
-}

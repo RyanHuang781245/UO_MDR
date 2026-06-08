@@ -16,6 +16,9 @@
 - Metadata 清理排程服務：
   - `uo_regulations_metadata_cleanup.service`
   - `uo_regulations_metadata_cleanup.timer`
+- 備份排程服務：
+  - `uo_regulations_backup.service`
+  - `uo_regulations_backup.timer`
 - 標準更新服務：
   - `adoption-standard-update.service`
   - `adoption-standard-update.timer`
@@ -175,6 +178,12 @@ bash deploy.sh
 RUN_DB_BACKUP=1 bash deploy.sh
 ```
 
+備份排程預設每日 02:00 執行，會先執行 MSSQL `.bak` 備份，再執行檔案 archive 備份。若要調整排程時間：
+
+```bash
+BACKUP_ON_CALENDAR='*-*-* 02:00:00' bash deploy.sh
+```
+
 部署預設會執行 `scripts/install_noto_cjk_fonts.sh`，將 Noto CJK 繁中字體安裝到目前使用者的 font 目錄，腳本可重複執行。若要略過字體安裝：
 
 ```bash
@@ -236,6 +245,8 @@ sudo systemctl status uo_regulations_flow_worker --no-pager
 sudo systemctl status uo_regulations_batch_worker --no-pager
 sudo systemctl status uo_regulations_metadata_cleanup.service --no-pager
 sudo systemctl status uo_regulations_metadata_cleanup.timer --no-pager
+sudo systemctl status uo_regulations_backup.service --no-pager
+sudo systemctl status uo_regulations_backup.timer --no-pager
 sudo systemctl status adoption-standard-update.service --no-pager
 sudo systemctl status adoption-standard-update.timer --no-pager
 ```
@@ -304,6 +315,25 @@ sudo systemctl start uo_regulations_metadata_cleanup.service
 
 ```bash
 journalctl -u uo_regulations_metadata_cleanup.service --no-pager -n 100
+```
+
+`uo_regulations_backup.service` 是 `oneshot` 服務，平常由 `uo_regulations_backup.timer` 依排程觸發，預設每日 02:00 執行。若要立即執行一次備份，才手動執行：
+
+```bash
+sudo systemctl start uo_regulations_backup.service
+```
+
+此排程會依序執行：
+
+```bash
+bash scripts/backup_mssql_full.sh
+bash scripts/backup.sh
+```
+
+查看最近備份紀錄：
+
+```bash
+journalctl -u uo_regulations_backup.service --no-pager -n 100
 ```
 
 ## 7. 部署常見問題

@@ -27,6 +27,8 @@ Use the repo script to render or install the systemd unit files:
 - `uo_regulations_batch_worker.service`
 - `uo_regulations_metadata_cleanup.service`
 - `uo_regulations_metadata_cleanup.timer`
+- `uo_regulations_backup.service`
+- `uo_regulations_backup.timer`
 - `adoption-standard-update.service`
 - `adoption-standard-update.timer`
 
@@ -52,7 +54,8 @@ sudo bash scripts/install_systemd_units.sh \
   --web-bind 127.0.0.1:8000 \
   --web-workers 2 \
   --update-on-calendar 'daily' \
-  --cleanup-on-calendar '*-*-* 03:30:00'
+  --cleanup-on-calendar '*-*-* 03:30:00' \
+  --backup-on-calendar '*-*-* 02:00:00'
 ```
 
 If `--app-user` is not provided, the script uses the owner of `--app-root` for systemd `User=`.
@@ -61,7 +64,7 @@ Use `--app-user USER` only when the service should run as a different account.
 After install:
 
 ```bash
-sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker uo_regulations_metadata_cleanup.timer adoption-standard-update.timer
+sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker uo_regulations_metadata_cleanup.timer uo_regulations_backup.timer adoption-standard-update.timer
 ```
 
 The rendered unit files should be reviewed for the expected deployment values:
@@ -91,6 +94,21 @@ The cleanup service runs:
 flask --app app.py mapping-check-cleanup
 flask --app app.py system-error-cleanup
 flask --app app.py audit-cleanup
+```
+
+`uo_regulations_backup.service` is also a `oneshot` unit. The recurring schedule is enabled through `uo_regulations_backup.timer`; start the service manually only when you want to run a backup immediately:
+
+```bash
+sudo systemctl status uo_regulations_backup.service --no-pager
+sudo systemctl status uo_regulations_backup.timer --no-pager
+sudo systemctl start uo_regulations_backup.service
+```
+
+The default backup schedule is daily at 02:00. The service runs:
+
+```bash
+bash scripts/backup_mssql_full.sh
+bash scripts/backup.sh
 ```
 
 The default cleanup schedule is daily at 03:30. Retention defaults are controlled by `MAPPING_CHECK_JOB_RETENTION_DAYS`, `SYSTEM_ERROR_LOG_RETENTION_DAYS`, and `AUDIT_LOG_RETENTION_DAYS`.
@@ -218,10 +236,10 @@ export MSSQL_BACKUP_DIR='D:\MSSQL\Backup'
 bash scripts/backup_mssql_full.sh
 ```
 
-Sample cron entry for daily full backup:
+Scheduled full backups are installed through `uo_regulations_backup.timer` by default. If you need to use cron in a non-systemd environment, use:
 
 ```cron
-0 2 * * * cd /home/NE025/UO_MDR && ./.venv/bin/bash scripts/backup_mssql_full.sh >> logs/mssql_backup.log 2>&1
+0 2 * * * cd /home/NE025/UO_MDR && bash scripts/backup_mssql_full.sh >> logs/mssql_backup.log 2>&1
 ```
 
 For tighter RPO, add SQL Server-native differential and transaction-log backups through SQL Agent or a DBA-managed schedule.

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run UO_Regulations Backup on schedule
+
+[Timer]
+OnCalendar={{BACKUP_ON_CALENDAR}}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

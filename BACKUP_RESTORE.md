@@ -170,6 +170,19 @@ bash scripts/backup_mssql_full.sh
 bash scripts/backup.sh
 ```
 
+正式環境部署後會安裝 `uo_regulations_backup.timer`，預設每日 02:00 自動執行上述兩個備份腳本。若要調整排程時間：
+
+```bash
+BACKUP_ON_CALENDAR='*-*-* 02:00:00' bash deploy.sh
+```
+
+若要立即執行一次定期備份服務：
+
+```bash
+sudo systemctl start uo_regulations_backup.service
+journalctl -u uo_regulations_backup.service --no-pager -n 100
+```
+
 ## 6. 完整還原前準備
 
 還原前先確認：
@@ -192,6 +205,8 @@ cd /home/NE025/UO_MDR
 ```bash
 sudo systemctl stop adoption-standard-update.timer
 sudo systemctl stop adoption-standard-update.service
+sudo systemctl stop uo_regulations_backup.timer
+sudo systemctl stop uo_regulations_backup.service
 sudo systemctl stop uo_regulations_jobs_worker
 sudo systemctl stop uo_regulations_flow_worker
 sudo systemctl stop uo_regulations_batch_worker
@@ -339,6 +354,7 @@ sudo systemctl start uo_regulations
 sudo systemctl start uo_regulations_jobs_worker
 sudo systemctl start uo_regulations_flow_worker
 sudo systemctl start uo_regulations_batch_worker
+sudo systemctl start uo_regulations_backup.timer
 sudo systemctl start adoption-standard-update.timer
 ```
 
@@ -349,6 +365,8 @@ sudo systemctl status uo_regulations --no-pager
 sudo systemctl status uo_regulations_jobs_worker --no-pager
 sudo systemctl status uo_regulations_flow_worker --no-pager
 sudo systemctl status uo_regulations_batch_worker --no-pager
+sudo systemctl status uo_regulations_backup.service --no-pager
+sudo systemctl status uo_regulations_backup.timer --no-pager
 sudo systemctl status adoption-standard-update.service --no-pager
 sudo systemctl status adoption-standard-update.timer --no-pager
 ```
@@ -552,6 +570,8 @@ cd /home/NE025/UO_MDR
 
 sudo systemctl stop adoption-standard-update.timer
 sudo systemctl stop adoption-standard-update.service
+sudo systemctl stop uo_regulations_backup.timer
+sudo systemctl stop uo_regulations_backup.service
 sudo systemctl stop uo_regulations_jobs_worker
 sudo systemctl stop uo_regulations_flow_worker
 sudo systemctl stop uo_regulations_batch_worker
@@ -574,6 +594,7 @@ sudo systemctl start uo_regulations
 sudo systemctl start uo_regulations_jobs_worker
 sudo systemctl start uo_regulations_flow_worker
 sudo systemctl start uo_regulations_batch_worker
+sudo systemctl start uo_regulations_backup.timer
 sudo systemctl start adoption-standard-update.timer
 
 sudo systemctl status uo_regulations --no-pager
@@ -608,4 +629,4 @@ curl -i http://127.0.0.1/tasks | sed -n '1,20p'
 2. 將 `.bak` 從 SQL Server 主機自動搬回 VM 或 NAS
 3. 增加完整 task attachment 備份策略
 4. 增加 restore smoke test 腳本
-5. 增加定期備份排程與保留策略
+5. 增加 MSSQL `.bak` 保留策略與過期清理流程

@@ -1,0 +1,20 @@
+[Unit]
+Description=UO_Regulations Scheduled Backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User={{APP_USER}}
+WorkingDirectory={{APP_ROOT}}
+EnvironmentFile={{ENV_FILE}}
+Environment="APP_ROOT={{APP_ROOT}}"
+Environment="ENV_FILE={{ENV_FILE}}"
+Environment="PATH={{APP_ROOT}}/.venv/bin:/opt/mssql-tools18/bin:/opt/mssql-tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/usr/bin/env bash {{APP_ROOT}}/scripts/backup_mssql_full.sh
+ExecStart=/usr/bin/env bash {{APP_ROOT}}/scripts/backup.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

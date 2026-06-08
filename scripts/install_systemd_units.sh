@@ -14,7 +14,8 @@ ENV_FILE_EXPLICIT=0
 WEB_BIND="unix:uo_regulations.sock"
 WEB_WORKERS="4"
 UPDATE_ON_CALENDAR="*-*-* 8:00:00"
-CLEANUP_ON_CALENDAR="*-*-* 03:30:00"
+CLEANUP_ON_CALENDAR="*-*-* 7:30:00"
+BACKUP_ON_CALENDAR="*-*-* 02:00:00"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 
 usage() {
@@ -33,11 +34,12 @@ Options:
   --web-workers N           Gunicorn worker count. Default: 4
   --update-on-calendar EXPR systemd timer OnCalendar. Default: *-*-* 8:00:00
   --cleanup-on-calendar EXPR systemd metadata cleanup timer OnCalendar. Default: *-*-* 03:30:00
+  --backup-on-calendar EXPR systemd backup timer OnCalendar. Default: *-*-* 02:00:00
   --help                    Show this help
 
 Examples:
   bash scripts/install_systemd_units.sh --output-dir /tmp/systemd-units
-  sudo bash scripts/install_systemd_units.sh --install --update-on-calendar 'Mon..Fri 03:00' --cleanup-on-calendar '*-*-* 03:30:00'
+  sudo bash scripts/install_systemd_units.sh --install --update-on-calendar 'Mon..Fri 03:00' --cleanup-on-calendar '*-*-* 03:30:00' --backup-on-calendar '*-*-* 02:00:00'
 EOF
 }
 
@@ -85,6 +87,10 @@ while [[ $# -gt 0 ]]; do
       CLEANUP_ON_CALENDAR="$2"
       shift 2
       ;;
+    --backup-on-calendar)
+      BACKUP_ON_CALENDAR="$2"
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -128,7 +134,7 @@ require_path "$ENV_FILE" "Environment file"
 
 mkdir -p "$OUTPUT_DIR"
 
-export APP_ROOT APP_USER ENV_FILE WEB_BIND WEB_WORKERS UPDATE_ON_CALENDAR CLEANUP_ON_CALENDAR TEMPLATE_DIR OUTPUT_DIR
+export APP_ROOT APP_USER ENV_FILE WEB_BIND WEB_WORKERS UPDATE_ON_CALENDAR CLEANUP_ON_CALENDAR BACKUP_ON_CALENDAR TEMPLATE_DIR OUTPUT_DIR
 
 python3 - <<'PY'
 from __future__ import annotations
@@ -146,6 +152,7 @@ mapping = {
     "WEB_WORKERS": os.environ["WEB_WORKERS"],
     "UPDATE_ON_CALENDAR": os.environ["UPDATE_ON_CALENDAR"],
     "CLEANUP_ON_CALENDAR": os.environ["CLEANUP_ON_CALENDAR"],
+    "BACKUP_ON_CALENDAR": os.environ["BACKUP_ON_CALENDAR"],
 }
 
 for template_path in sorted(template_dir.glob("*.template")):
@@ -165,6 +172,8 @@ if [[ "$INSTALL_MODE" -eq 1 ]]; then
   install -m 0644 "$OUTPUT_DIR"/uo_regulations_batch_worker.service "$UNIT_TARGET_DIR"/uo_regulations_batch_worker.service
   install -m 0644 "$OUTPUT_DIR"/uo_regulations_metadata_cleanup.service "$UNIT_TARGET_DIR"/uo_regulations_metadata_cleanup.service
   install -m 0644 "$OUTPUT_DIR"/uo_regulations_metadata_cleanup.timer "$UNIT_TARGET_DIR"/uo_regulations_metadata_cleanup.timer
+  install -m 0644 "$OUTPUT_DIR"/uo_regulations_backup.service "$UNIT_TARGET_DIR"/uo_regulations_backup.service
+  install -m 0644 "$OUTPUT_DIR"/uo_regulations_backup.timer "$UNIT_TARGET_DIR"/uo_regulations_backup.timer
   install -m 0644 "$OUTPUT_DIR"/adoption-standard-update.service "$UNIT_TARGET_DIR"/adoption-standard-update.service
   install -m 0644 "$OUTPUT_DIR"/adoption-standard-update.timer "$UNIT_TARGET_DIR"/adoption-standard-update.timer
   "$SYSTEMCTL_BIN" daemon-reload
@@ -180,15 +189,20 @@ if [[ "$INSTALL_MODE" -eq 1 ]]; then
   echo "  uo_regulations_batch_worker.service"
   echo "  uo_regulations_metadata_cleanup.service"
   echo "  uo_regulations_metadata_cleanup.timer"
+  echo "  uo_regulations_backup.service"
+  echo "  uo_regulations_backup.timer"
   echo "  adoption-standard-update.service"
   echo "  adoption-standard-update.timer"
   echo "Next:"
-  echo "  sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker uo_regulations_metadata_cleanup.timer adoption-standard-update.timer"
-  echo "  sudo systemctl start uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker uo_regulations_metadata_cleanup.timer adoption-standard-update.timer"
+  echo "  sudo systemctl enable uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker uo_regulations_metadata_cleanup.timer uo_regulations_backup.timer adoption-standard-update.timer"
+  echo "  sudo systemctl start uo_regulations uo_regulations_jobs_worker uo_regulations_flow_worker uo_regulations_batch_worker uo_regulations_metadata_cleanup.timer uo_regulations_backup.timer adoption-standard-update.timer"
   echo "  sudo systemctl status uo_regulations_metadata_cleanup.service --no-pager"
+  echo "  sudo systemctl status uo_regulations_backup.service --no-pager"
   echo "  sudo systemctl status adoption-standard-update.service --no-pager"
   echo "Run metadata cleanup immediately only when needed:"
   echo "  sudo systemctl start uo_regulations_metadata_cleanup.service"
+  echo "Run backup immediately only when needed:"
+  echo "  sudo systemctl start uo_regulations_backup.service"
   echo "Run adoption update immediately only when needed:"
   echo "  sudo systemctl start adoption-standard-update.service"
 else

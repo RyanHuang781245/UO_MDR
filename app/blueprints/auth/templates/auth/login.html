@@ -19,9 +19,6 @@
     <form method="post" class="card card-body shadow-sm">
       {{ form.hidden_tag() }}
       <h1 class="h3 fw-bold mb-3">登入系統</h1>
-      {% if auth_mode == "local" %}
-        <div class="alert alert-info py-2 mb-3">使用本機帳號登入</div>
-      {% endif %}
       <div class="mb-3">
         <label class="form-label">工號</label>
         <input class="form-control" name="username" autocomplete="username" required>

@@ -26,7 +26,6 @@ class User(db.Model, UserMixin):
     work_id = db.Column(db.String(100), nullable=False, unique=True)
     display_name = db.Column(db.String(200))
     email = db.Column(db.String(200))
-    password_hash = db.Column(db.String(255))
     active = db.Column("is_active", db.Boolean, nullable=False, server_default="1")
     created_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
     last_login_at = db.Column(db.DateTime)
@@ -178,8 +177,6 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE users ADD display_name NVARCHAR(200) NULL;"))
             if "email" not in existing_columns:
                 conn.execute(text("ALTER TABLE users ADD email NVARCHAR(200) NULL;"))
-            if "password_hash" not in existing_columns:
-                conn.execute(text("ALTER TABLE users ADD password_hash NVARCHAR(255) NULL;"))
             if "last_login_at" not in existing_columns:
                 conn.execute(text("ALTER TABLE users ADD last_login_at DATETIME2 NULL;"))
             if "created_at" not in existing_columns:
@@ -259,8 +256,6 @@ def ensure_schema() -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN display_name VARCHAR(200);"))
             if "email" not in existing_columns:
                 conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(200);"))
-            if "password_hash" not in existing_columns:
-                conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);"))
             if "last_login_at" not in existing_columns:
                 conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME;"))
             if "created_at" not in existing_columns:

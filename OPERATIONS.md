@@ -114,32 +114,22 @@ export FLASK_APP=app.py
 
 `seed-bootstrap` does **not** create tables. If schema is missing, it exits non-zero.
 
-## Auth modes
+## Authentication
 
-By default the web app uses LDAP authentication:
-
-```bash
-AUTH_ENABLED=1
-AUTH_MODE=ldap
-```
-
-For use outside the company intranet, switch to local database authentication:
+The web app uses LDAP authentication:
 
 ```bash
 AUTH_ENABLED=1
-AUTH_MODE=local
-LOCAL_AUTH_BOOTSTRAP_PASSWORD='change-me-first'
-BOOTSTRAP_ADMIN=NE025
 ```
 
-Run migrations and seed data after changing the mode:
+Run migrations and seed data after changing auth-related settings:
 
 ```bash
 alembic upgrade head
 flask seed-bootstrap
 ```
 
-`AUTH_MODE=local` does not connect to LDAP during app startup or login. Users still need to exist in the system database and have roles. Admins can set or reset a user's local password from the user admin page. `LOCAL_AUTH_DEFAULT_PASSWORD` can be used temporarily when adding local users from the account search page; remove it after initial setup.
+Users still need to exist in the system database and have roles. `BOOTSTRAP_ADMIN` can be used to create initial admin RBAC entries for LDAP work IDs.
 
 ## Alembic migration flow
 

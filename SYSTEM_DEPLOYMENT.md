@@ -158,20 +158,34 @@ bash deploy.sh
 1. 進入 `APP_ROOT`，預設 `/home/NE025/UO_MDR`，如果路徑不同需修改，否則會找不到路徑
 2. 載入 `.env`
 3. 執行 `uv sync --frozen` 建立或同步 Python `.venv`
-4. 視設定執行部署前 DB 備份
-5. 停止 timer 與主要 worker/web service
-6. 安裝或更新 systemd units
-7. 視設定更新 Nginx
-8. 執行 Alembic migration
-9. 執行 schema preflight
-10. 初始化預設資料
-11. 重啟 service
-12. 顯示 service 狀態
+4. 安裝或更新 Noto CJK 繁中字體，供 LibreOffice preview 正確顯示中文
+5. 視設定執行部署前 DB 備份
+6. 停止 timer 與主要 worker/web service
+7. 安裝或更新 systemd units
+8. 視設定更新 Nginx
+9. 執行 Alembic migration
+10. 執行 schema preflight
+11. 初始化預設資料
+12. 重啟 service
+13. 顯示 service 狀態
 
 常用部署參數：
 
 ```bash
 RUN_DB_BACKUP=1 bash deploy.sh
+```
+
+部署預設會執行 `scripts/install_noto_cjk_fonts.sh`，將 Noto CJK 繁中字體安裝到目前使用者的 font 目錄，腳本可重複執行。若要略過字體安裝：
+
+```bash
+INSTALL_NOTO_CJK_FONTS=0 bash deploy.sh
+```
+
+若要強制重新下載字體，或指定安裝目錄：
+
+```bash
+INSTALL_NOTO_CJK_FONTS_FORCE=1 bash deploy.sh
+NOTO_CJK_FONTS_DIR=/home/NE025/.local/share/fonts/noto-cjk bash deploy.sh
 ```
 
 如果部署目錄不是預設路徑，可用 `APP_ROOT` 指定；systemd `User=` 會預設使用 `APP_ROOT` 的目錄 owner：

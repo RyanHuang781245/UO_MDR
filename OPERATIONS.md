@@ -6,11 +6,14 @@ Use this order for production deployments:
 
 1. Run a deployment-time database backup.
 2. Deploy the new application code.
-3. Run database migrations.
-4. Run schema verification.
-5. Run seed/bootstrap for default data.
-6. Restart web and worker processes.
-7. Run smoke tests.
+3. Install or refresh Noto CJK fonts for LibreOffice preview rendering.
+4. Run database migrations.
+5. Run schema verification.
+6. Run seed/bootstrap for default data.
+7. Restart web and worker processes.
+8. Run smoke tests.
+
+`deploy.sh` runs `scripts/install_noto_cjk_fonts.sh` by default. Use `INSTALL_NOTO_CJK_FONTS=0 bash deploy.sh` to skip it, `INSTALL_NOTO_CJK_FONTS_FORCE=1 bash deploy.sh` to force re-downloads, or `NOTO_CJK_FONTS_DIR=/path/to/fonts bash deploy.sh` to override the install directory.
 
 ## systemd unit generation
 

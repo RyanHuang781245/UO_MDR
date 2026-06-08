@@ -17,6 +17,9 @@ APP_USER="${APP_USER:-}"
 BRANCH="${DEPLOY_BRANCH:-main}"
 RUN_GIT_PULL="${RUN_GIT_PULL:-0}"
 RUN_DB_BACKUP="${RUN_DB_BACKUP:-0}"
+INSTALL_NOTO_CJK_FONTS="${INSTALL_NOTO_CJK_FONTS:-1}"
+INSTALL_NOTO_CJK_FONTS_FORCE="${INSTALL_NOTO_CJK_FONTS_FORCE:-0}"
+NOTO_CJK_FONTS_DIR="${NOTO_CJK_FONTS_DIR:-}"
 INSTALL_SYSTEMD_UNITS="${INSTALL_SYSTEMD_UNITS:-1}"
 MANAGE_SYSTEMD_SERVICES="${MANAGE_SYSTEMD_SERVICES:-auto}"
 WEB_WORKERS="${WEB_WORKERS:-2}"
@@ -115,6 +118,21 @@ require_cmd "$UV_BIN"
 require_file "$VENV_PYTHON"
 require_file "$ALEMBIC_BIN"
 require_file "$FLASK_BIN"
+
+if [[ "$INSTALL_NOTO_CJK_FONTS" == "1" ]]; then
+  require_file "$APP_ROOT/scripts/install_noto_cjk_fonts.sh"
+  log "安裝或更新 Noto CJK 繁中字體"
+  font_args=()
+  if [[ "$INSTALL_NOTO_CJK_FONTS_FORCE" == "1" ]]; then
+    font_args+=(--force)
+  fi
+  if [[ -n "$NOTO_CJK_FONTS_DIR" ]]; then
+    font_args+=(--install-dir "$NOTO_CJK_FONTS_DIR")
+  fi
+  bash "$APP_ROOT/scripts/install_noto_cjk_fonts.sh" "${font_args[@]}"
+else
+  log "略過 Noto CJK 字體安裝；如需安裝，請用 INSTALL_NOTO_CJK_FONTS=1 bash deploy.sh"
+fi
 
 if should_manage_systemd; then
   SYSTEMD_ENABLED=1

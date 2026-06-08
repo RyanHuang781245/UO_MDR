@@ -15,6 +15,8 @@ Use this order for production deployments:
 
 `deploy.sh` runs `scripts/install_noto_cjk_fonts.sh` by default. Use `INSTALL_NOTO_CJK_FONTS=0 bash deploy.sh` to skip it, `INSTALL_NOTO_CJK_FONTS_FORCE=1 bash deploy.sh` to force re-downloads, or `NOTO_CJK_FONTS_DIR=/path/to/fonts bash deploy.sh` to override the install directory.
 
+When systemd is available, `deploy.sh` installs unit files and enables the web, worker, and timer units by default so they start after host reboot. Use `ENABLE_SYSTEMD_UNITS=0 bash deploy.sh` to skip the enable step for test hosts or manually controlled environments.
+
 ## systemd unit generation
 
 Use the repo script to render or install the systemd unit files:

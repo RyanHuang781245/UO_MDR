@@ -161,7 +161,7 @@ bash deploy.sh
 4. 安裝或更新 Noto CJK 繁中字體，供 LibreOffice preview 正確顯示中文
 5. 視設定執行部署前 DB 備份
 6. 停止 timer 與主要 worker/web service
-7. 安裝或更新 systemd units
+7. 安裝或更新 systemd units，預設 enable 開機自動啟動
 8. 視設定更新 Nginx
 9. 執行 Alembic migration
 10. 執行 schema preflight
@@ -186,6 +186,12 @@ INSTALL_NOTO_CJK_FONTS=0 bash deploy.sh
 ```bash
 INSTALL_NOTO_CJK_FONTS_FORCE=1 bash deploy.sh
 NOTO_CJK_FONTS_DIR=/home/NE025/.local/share/fonts/noto-cjk bash deploy.sh
+```
+
+部署預設會在安裝 systemd units 後執行 `systemctl enable`，讓 Web、worker 與 timer 在主機重開後自動啟動。若只想安裝 unit 並啟動本次服務，但不要設定開機自動啟動：
+
+```bash
+ENABLE_SYSTEMD_UNITS=0 bash deploy.sh
 ```
 
 如果部署目錄不是預設路徑，可用 `APP_ROOT` 指定；systemd `User=` 會預設使用 `APP_ROOT` 的目錄 owner：

@@ -113,6 +113,10 @@ bash scripts/backup.sh
 
 The default cleanup schedule is daily at 03:30. Retention defaults are controlled by `MAPPING_CHECK_JOB_RETENTION_DAYS`, `SYSTEM_ERROR_LOG_RETENTION_DAYS`, and `AUDIT_LOG_RETENTION_DAYS`.
 
+Application log rotation is controlled by `APP_LOG_MAX_MB` and `APP_LOG_BACKUP_COUNT`. `APP_LOG_MAX_MB` defaults to `10`.
+
+`system-error-fallback.jsonl` is capped by `SYSTEM_ERROR_FALLBACK_MAX_BYTES` and is truncated before writing a new fallback entry when the next write would exceed the limit. The default cap is 50MB; set it to `0` to disable the cap.
+
 `mapping-check-cleanup` only deletes failed Mapping validation jobs (`mapping_operation` with `action=check` or `action=check_extract`) after the retention period. It also removes the matching `_mapping_sessions` validation run directory and op file when they are still present.
 
 `jobs-cleanup` remains available for manual maintenance, but it is not included in the scheduled cleanup service because job records point to task output files and visible run history. Run it only after confirming that old run metadata and its remaining files can be handled separately:

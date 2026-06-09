@@ -15,7 +15,8 @@ from app.utils import parse_bool
 _CONFIGURED_ATTR = "_uo_mdr_logging_configured"
 _PROCESS_ROLE_ATTR = "_uo_mdr_process_role"
 _DEFAULT_LEVEL = "INFO"
-_DEFAULT_MAX_BYTES = 10 * 1024 * 1024
+_DEFAULT_MAX_MB = 10
+_DEFAULT_MAX_BYTES = _DEFAULT_MAX_MB * 1024 * 1024
 _DEFAULT_BACKUP_COUNT = 10
 
 
@@ -98,10 +99,7 @@ def _resolve_settings(base_dir: Path, *, role: str, config: Mapping[str, Any] | 
     level_name = str(_get_setting(config, "APP_LOG_LEVEL", "APP_LOG_LEVEL", _DEFAULT_LEVEL)).strip().upper()
     log_to_file = _as_bool(_get_setting(config, "APP_LOG_TO_FILE", "APP_LOG_TO_FILE", not testing), not testing)
     stdout_enabled = _as_bool(_get_setting(config, "APP_LOG_STDOUT", "APP_LOG_STDOUT", not testing), not testing)
-    max_bytes = _as_int(
-        _get_setting(config, "APP_LOG_MAX_BYTES", "APP_LOG_MAX_BYTES", _DEFAULT_MAX_BYTES),
-        _DEFAULT_MAX_BYTES,
-    )
+    max_bytes = _resolve_max_bytes(config)
     backup_count = _as_int(
         _get_setting(config, "APP_LOG_BACKUP_COUNT", "APP_LOG_BACKUP_COUNT", _DEFAULT_BACKUP_COUNT),
         _DEFAULT_BACKUP_COUNT,
@@ -183,6 +181,11 @@ def _get_setting(config: Mapping[str, Any] | None, key: str, env_key: str, defau
     if config is not None and key in config and config[key] is not None:
         return config[key]
     return os.environ.get(env_key, default)
+
+
+def _resolve_max_bytes(config: Mapping[str, Any] | None) -> int:
+    max_mb = _get_setting(config, "APP_LOG_MAX_MB", "APP_LOG_MAX_MB", _DEFAULT_MAX_MB)
+    return _as_int(max_mb, _DEFAULT_MAX_MB) * 1024 * 1024
 
 
 def _as_bool(value: Any, default: bool) -> bool:

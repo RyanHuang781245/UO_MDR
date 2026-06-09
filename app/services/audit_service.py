@@ -83,11 +83,18 @@ def record_audit(
             current_app.logger.critical(f"CRITICAL: Both DB and JSONL audit failed! Error: {str(e)}")
 
 
-def _append_jsonl(path: str, payload: Dict[str, Any]) -> None:
+def _append_jsonl(path: str, payload: Dict[str, Any], *, max_bytes: int | None = None) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(payload, ensure_ascii=False))
-        f.write("\n")
+    line = json.dumps(payload, ensure_ascii=False) + "\n"
+    mode = "a"
+    if max_bytes is not None and max_bytes > 0 and os.path.exists(path):
+        try:
+            if os.path.getsize(path) + len(line.encode("utf-8")) > max_bytes:
+                mode = "w"
+        except OSError:
+            mode = "a"
+    with open(path, mode, encoding="utf-8") as f:
+        f.write(line)
 
 
 def _ensure_system_error_table() -> None:
@@ -122,6 +129,13 @@ def _system_error_fallback_path() -> str:
     if task_root:
         return os.path.join(task_root, "system-error-fallback.jsonl")
     return os.path.join(os.getcwd(), "system-error-fallback.jsonl")
+
+
+def _system_error_fallback_max_bytes() -> int:
+    try:
+        return int(current_app.config.get("SYSTEM_ERROR_FALLBACK_MAX_BYTES") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def record_system_error(
@@ -185,7 +199,11 @@ def record_system_error(
                 "task_id": (str(task_id or "").strip() or None),
                 "fallback": True,
             }
-            _append_jsonl(_system_error_fallback_path(), fallback_payload)
+            _append_jsonl(
+                _system_error_fallback_path(),
+                fallback_payload,
+                max_bytes=_system_error_fallback_max_bytes(),
+            )
             return True
         except Exception:
             current_app.logger.critical(

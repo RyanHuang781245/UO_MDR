@@ -131,6 +131,38 @@ def test_record_system_error_falls_back_to_jsonl_when_db_write_fails(app, monkey
     assert payload["level"] == "ERROR"
 
 
+def test_system_error_fallback_jsonl_truncates_when_size_limit_exceeded(app, monkeypatch, tmp_path):
+    fallback_path = Path(tmp_path) / "system-error-fallback.jsonl"
+    fallback_path.write_text("old-entry\n" * 20, encoding="utf-8")
+    app.config["APP_LOG_DIR"] = str(tmp_path)
+    app.config["SYSTEM_ERROR_FALLBACK_MAX_BYTES"] = fallback_path.stat().st_size
+
+    with app.app_context():
+        original_commit = type(app.extensions["sqlalchemy"].session).commit
+
+        def failing_commit(_session):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(type(app.extensions["sqlalchemy"].session), "commit", failing_commit)
+        try:
+            ok = record_system_error(
+                "manual.fallback.limit",
+                "Fallback system error test after limit",
+                detail={"source": "fallback-limit-test"},
+                exc=RuntimeError("db failure"),
+            )
+        finally:
+            monkeypatch.setattr(type(app.extensions["sqlalchemy"].session), "commit", original_commit)
+
+    assert ok is True
+    lines = fallback_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert "old-entry" not in lines[0]
+    payload = json.loads(lines[0])
+    assert payload["component"] == "manual.fallback.limit"
+    assert payload["fallback"] is True
+
+
 def test_unhandled_web_exception_records_system_error_log(app):
     app.config["PROPAGATE_EXCEPTIONS"] = False
 

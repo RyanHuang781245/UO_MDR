@@ -80,3 +80,24 @@ def test_configure_process_logging_writes_worker_log(tmp_path: Path, isolated_ro
     assert log_path == tmp_path / "app-worker.log"
     assert log_path.is_file()
     assert "worker log entry" in log_path.read_text(encoding="utf-8")
+
+
+def test_configure_process_logging_accepts_max_mb(tmp_path: Path, isolated_root_logger) -> None:
+    log_path = configure_process_logging(
+        tmp_path,
+        role="web",
+        config={
+            "APP_LOG_DIR": str(tmp_path),
+            "APP_LOG_TO_FILE": True,
+            "APP_LOG_STDOUT": False,
+            "APP_LOG_LEVEL": "INFO",
+            "APP_LOG_MAX_MB": 1,
+        },
+    )
+
+    file_handlers = [handler for handler in isolated_root_logger.handlers if getattr(handler, "baseFilename", None)]
+
+    assert log_path == tmp_path / "app-web.log"
+    assert len(file_handlers) == 1
+    assert file_handlers[0].maxBytes == 1024 * 1024
+

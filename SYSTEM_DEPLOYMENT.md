@@ -230,12 +230,12 @@ ENABLE_NGINX=1 RUN_DB_BACKUP=1 bash deploy.sh
 Nginx 分工：
 
 - `/etc/nginx/nginx.conf` 是全域設定，部署腳本不會修改；初次建機或需要調整全域效能參數時手動維護。
-- 初次建機若 Nginx 預設站台仍啟用，先停用 `/etc/nginx/sites-enabled/default`，避免 request 被預設站台接走。保留 `/etc/nginx/sites-available/default` 作為套件範本即可。
+- `ENABLE_NGINX=1 bash deploy.sh` 會預設停用 `/etc/nginx/sites-enabled/default`，避免首次部署時 request 被預設站台接走。若主機刻意保留 default site，使用 `DISABLE_NGINX_DEFAULT_SITE=0 bash deploy.sh`。保留 `/etc/nginx/sites-available/default` 作為套件範本即可。
 - `deploy/nginx-site.conf.template` 是 UO MDR site config template。
 - `ENABLE_NGINX=1` 時，`deploy.sh` 會用 `sudo bash scripts/install_nginx_site.sh --install ...`，以 `APP_ROOT` 產生 `build/nginx/uo_regulations`。
 - 產生後的 site config 會安裝到 `/etc/nginx/sites-available/uo_regulations`，建立或更新 `/etc/nginx/sites-enabled/uo_regulations` symlink，通過 `nginx -t` 後 reload nginx。
 
-初次建機停用 default site：
+若要手動確認或停用 default site：
 
 ```bash
 sudo rm -f /etc/nginx/sites-enabled/default

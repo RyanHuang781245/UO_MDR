@@ -132,7 +132,7 @@ The app deployment manages only the UO MDR site config, not the global nginx con
 
 - Keep `/etc/nginx/nginx.conf` as a manually maintained host-level file.
 - Ensure `/etc/nginx/nginx.conf` includes `/etc/nginx/sites-enabled/*`.
-- On first-time hosts, disable the default nginx site if it is enabled: `sudo rm -f /etc/nginx/sites-enabled/default`. Keep `/etc/nginx/sites-available/default` as the packaged reference unless the host policy says otherwise.
+- `ENABLE_NGINX=1 bash deploy.sh` disables `/etc/nginx/sites-enabled/default` by default before installing the app site, so first-time deployments are not served by the packaged nginx default site. Set `DISABLE_NGINX_DEFAULT_SITE=0` only when the host intentionally keeps that site enabled. `/etc/nginx/sites-available/default` is left untouched as the packaged reference.
 - Keep the app site template in `deploy/nginx-site.conf.template`.
 - Run `ENABLE_NGINX=1 bash deploy.sh`; it calls `sudo bash scripts/install_nginx_site.sh --install ...` to render `build/nginx/uo_regulations`, install it into `/etc/nginx/sites-available/uo_regulations`, update the enabled-site symlink, run `nginx -t`, and reload nginx.
 

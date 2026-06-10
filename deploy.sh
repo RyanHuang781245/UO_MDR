@@ -34,6 +34,8 @@ NGINX_TEMPLATE="${NGINX_TEMPLATE:-$APP_ROOT/deploy/nginx-site.conf.template}"
 NGINX_SITE_NAME="${NGINX_SITE_NAME:-$APP_NAME}"
 NGINX_FILE="${NGINX_FILE:-$APP_ROOT/build/nginx/$NGINX_SITE_NAME}"
 ENABLE_NGINX="${ENABLE_NGINX:-1}"
+DISABLE_NGINX_DEFAULT_SITE="${DISABLE_NGINX_DEFAULT_SITE:-1}"
+NGINX_DEFAULT_SITE_LINK="${NGINX_DEFAULT_SITE_LINK:-/etc/nginx/sites-enabled/default}"
 UV_BIN="${UV_BIN:-uv}"
 UV_SYNC_ARGS="${UV_SYNC_ARGS:---frozen}"
 VENV_PYTHON="$APP_ROOT/.venv/bin/python"
@@ -197,6 +199,12 @@ fi
 
 if [[ "$ENABLE_NGINX" == "1" ]]; then
   require_file "$NGINX_TEMPLATE"
+  if [[ "$DISABLE_NGINX_DEFAULT_SITE" == "1" ]]; then
+    log "停用 Nginx default site，避免首次部署 request 被預設站台接走"
+    sudo rm -f "$NGINX_DEFAULT_SITE_LINK"
+  else
+    log "保留 Nginx default site；如需停用，請用 DISABLE_NGINX_DEFAULT_SITE=1 bash deploy.sh"
+  fi
   log "安裝或更新 Nginx 站台設定"
   sudo bash "$APP_ROOT/scripts/install_nginx_site.sh" \
     --install \

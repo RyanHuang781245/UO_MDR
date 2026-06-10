@@ -8,11 +8,11 @@ from app.services.auth_hooks_service import register_auth_context, register_logi
 from app.services.schema_control import auto_schema_management_enabled, tables_exist
 from app.services.authn_service import (
     LDAPUserInfo,
-    bootstrap_admins,
     build_ldap_profile,
     is_allowed_group_member,
     register_ldap_handlers,
     search_ad_users,
+    seed_initial_admins,
 )
 from app.services.authz_service import sanitize_next_url, user_has_permission, user_is_admin
 
@@ -26,7 +26,7 @@ def bootstrap_auth(app) -> None:
                 app.logger.info("Skipping auth schema bootstrap because AUTO_SCHEMA_MANAGEMENT is disabled.")
                 return
             seed_roles()
-            bootstrap_admins()
+            seed_initial_admins()
         except Exception as exc:
             db.session.rollback()
             record_system_error(

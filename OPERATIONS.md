@@ -165,7 +165,7 @@ export FLASK_APP=app.py
 
 `seed-bootstrap` only inserts default data:
 - auth roles
-- bootstrap admins from `BOOTSTRAP_ADMIN`
+- initial admins from `INITIAL_ADMIN_WORK_IDS`
 - default system settings
 - default regulation sync state
 

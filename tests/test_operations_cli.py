@@ -25,7 +25,7 @@ def test_schema_preflight_fails_when_required_tables_missing(app, monkeypatch):
 
 def test_seed_bootstrap_populates_defaults(app, monkeypatch):
     app.config["AUTH_ENABLED"] = True
-    monkeypatch.setenv("BOOTSTRAP_ADMIN", "NE025")
+    monkeypatch.setenv("INITIAL_ADMIN_WORK_IDS", "NE025")
 
     with app.app_context():
         ensure_auth_schema()

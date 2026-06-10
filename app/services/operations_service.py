@@ -13,7 +13,7 @@ from app.models.settings import (
 )
 from app.models.execution import JobArtifactRecord, JobEventRecord, JobRecord
 from app.models.mapping_metadata import MappingRunRecord, MappingSchemeRecord
-from app.services.authn_service import bootstrap_admins
+from app.services.authn_service import seed_initial_admins
 from app.services.execution_service import MAPPING_OPERATION_JOB, MAPPING_SCHEME_RUN_JOB
 from app.services.schema_control import missing_schema_groups, required_schema_groups
 
@@ -52,7 +52,7 @@ def run_seed_bootstrap(app, *, include_auth: bool | None = None, include_system:
         }
         if include_auth:
             seed_roles()
-            bootstrap_admins()
+            seed_initial_admins()
             result["role_count"] = Role.query.count()
             result["admin_count"] = count_admins()
         if include_system:

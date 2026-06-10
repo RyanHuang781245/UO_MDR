@@ -169,8 +169,8 @@ def is_allowed_group_member(user_dn: str) -> bool:
         conn.unbind()
 
 
-def bootstrap_admins() -> None:
-    raw = os.environ.get("BOOTSTRAP_ADMIN", "")
+def seed_initial_admins() -> None:
+    raw = os.environ.get("INITIAL_ADMIN_WORK_IDS", "")
     work_ids = [entry.strip() for entry in raw.split(",") if entry.strip()]
     if not work_ids:
         return

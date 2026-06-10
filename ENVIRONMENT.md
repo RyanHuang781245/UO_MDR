@@ -45,6 +45,9 @@
 | `JOB_METADATA_RETENTION_DAYS` | Job metadata 保留天數。 | 變更後需重啟相關服務。 |
 | `SYSTEM_ERROR_LOG_RETENTION_DAYS` | DB 內 system error log 保留天數。 | 由 cleanup service / CLI 清理 DB 紀錄。 |
 | `AUDIT_LOG_RETENTION_DAYS` | Audit log 保留天數。 | 由 cleanup service / CLI 清理 DB 紀錄。 |
+| `UPDATE_ON_CALENDAR` | 採認標準更新 timer 排程。 | systemd `OnCalendar` 格式；值含空白時 `.env` 內需加引號，例如 `"*-*-* 08:00:00"`。 |
+| `CLEANUP_ON_CALENDAR` | metadata cleanup timer 排程。 | systemd `OnCalendar` 格式；值含空白時 `.env` 內需加引號，例如 `"*-*-* 23:00:00"`。 |
+| `BACKUP_ON_CALENDAR` | 檔案與 MSSQL 備份 timer 排程。 | systemd `OnCalendar` 格式；值含空白時 `.env` 內需加引號，例如 `"*-*-* 02:00:00"`。 |
 
 ## AD / LDAP
 

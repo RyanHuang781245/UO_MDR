@@ -49,6 +49,7 @@ def _configure_app(app: Flask, base_dir: Path) -> None:
     reference_storage = standard_update_service.resolve_harmonised_reference_storage(
         base_dir,
         app.config.get("REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED", ""),
+        app.config.get("REGULATION_EU_2017_745_REFERENCE_FALLBACK_FOLDER", ""),
     )
     app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] = reference_storage["effective_root"]
     app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER_FALLBACK"] = reference_storage["fallback_root"]

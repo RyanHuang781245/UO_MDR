@@ -110,8 +110,13 @@ def _ensure_storage_available(path: str | os.PathLike) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def resolve_harmonised_reference_storage(base_dir: str | os.PathLike, configured_path: str) -> dict:
-    fallback_root = str(Path(base_dir) / "harmonised_store")
+def resolve_harmonised_reference_storage(
+    base_dir: str | os.PathLike,
+    configured_path: str,
+    fallback_path: str = "",
+) -> dict:
+    fallback_value = str(fallback_path or "").strip()
+    fallback_root = str(Path(fallback_value).expanduser()) if fallback_value else str(Path(base_dir) / "harmonised_store")
     configured_root = (configured_path or "").strip()
 
     if configured_root:

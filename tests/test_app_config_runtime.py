@@ -35,3 +35,21 @@ def test_production_disables_startup_schema_bootstrap(monkeypatch):
     app = create_app("production", init_auth=False)
 
     assert app.config["AUTO_SCHEMA_MANAGEMENT"] is False
+
+
+def test_configured_harmonised_fallback_folder_is_used_when_primary_unavailable(monkeypatch, tmp_path):
+    primary_path = tmp_path / "primary-is-file"
+    primary_path.write_text("not a directory", encoding="utf-8")
+    fallback_path = tmp_path / "custom-fallback"
+
+    monkeypatch.setattr(ProductionConfig, "SQLALCHEMY_DATABASE_URI", "sqlite:///:memory:")
+    monkeypatch.setattr(ProductionConfig, "AUTH_ENABLED", False)
+    monkeypatch.setattr(ProductionConfig, "APP_ENV", "production")
+    monkeypatch.setattr(ProductionConfig, "REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED", str(primary_path))
+    monkeypatch.setattr(ProductionConfig, "REGULATION_EU_2017_745_REFERENCE_FALLBACK_FOLDER", str(fallback_path))
+
+    app = create_app("production", init_auth=False)
+
+    assert app.config["REGULATION_EU_2017_745_REFERENCE_STORAGE_MODE"] == "fallback"
+    assert app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER"] == str(fallback_path)
+    assert app.config["REGULATION_EU_2017_745_REFERENCE_FOLDER_FALLBACK"] == str(fallback_path)

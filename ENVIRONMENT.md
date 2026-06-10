@@ -24,6 +24,7 @@
 | `ALLOWED_NAS_ROOTS_LINUX` | Linux 環境允許瀏覽與使用的 NAS 根目錄。 | 首次啟動且 `nas_roots` 表為空時，會匯入 DB 作為初始資料。 |
 | `NAS_MAX_COPY_FILE_SIZE_MB` | NAS 複製單檔大小限制，單位 MB。 | `0` 表示不限制。 |
 | `REGULATION_EU_2017_745_REFERENCE_FOLDER` | 歐盟採認標準文件主要資料夾路徑。 | 用於標準更新與採認標準同步。 |
+| `REGULATION_EU_2017_745_REFERENCE_FALLBACK_FOLDER` | 歐盟採認標準文件備援資料夾路徑。 | 主要路徑不可用時使用；未設定時預設為專案內 `harmonised_store`。 |
 
 ## 系統 Log
 
@@ -90,4 +91,3 @@
 | 參數 | 用途 | 備註 |
 | --- | --- | --- |
 | `JOB_EXECUTOR_MODE` | Job 執行模式。 | 正式環境建議 `worker`；`inline` 主要給測試使用，production 會強制改回 `worker`。 |
-

@@ -135,7 +135,10 @@ def get_table(table_name: str) -> Table:
 
 def resolve_save_dir() -> tuple[Path, str]:
     configured_root = (os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or "").strip()
-    fallback_root = BASE_DIR / "harmonised_store"
+    fallback_root = Path(
+        (os.environ.get("REGULATION_EU_2017_745_REFERENCE_FALLBACK_FOLDER") or "").strip()
+        or BASE_DIR / "harmonised_store"
+    )
 
     def _is_writable(path: Path) -> bool:
         try:

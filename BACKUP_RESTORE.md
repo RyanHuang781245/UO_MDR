@@ -29,16 +29,10 @@ scripts/restore_files.sh
 
 ## 2. 備份環境設定
 
-正式環境設定放在：
-
-```bash
-/home/NE025/UO_MDR/.env
-```
-
 資料庫連線目前使用 SQLAlchemy URL：
 
 ```env
-DATABASE_URL='mssql+pyodbc://user:password@10.30.12.162/regulations_filesystem_prod?driver=ODBC Driver 18 for SQL Server&TrustServerCertificate=yes'
+DATABASE_URL='mssql+pyodbc://user:password@ip/databasename?driver=ODBC Driver 18 for SQL Server&TrustServerCertificate=yes'
 ```
 
 MSSQL `.bak` 備份需要：
@@ -47,7 +41,7 @@ MSSQL `.bak` 備份需要：
 MSSQL_BACKUP_DIR='D:\MSSQL\Backup'
 ```
 
-注意：`MSSQL_BACKUP_DIR` 是 SQL Server 主機看得到、且 SQL Server service account 有權限寫入的路徑，不是 VM 本機路徑。
+注意：`MSSQL_BACKUP_DIR` 是 SQL Server 主機看得到，不是 VM 本機路徑。
 
 如果要指定還原檔，需在執行還原前 export：
 
@@ -142,26 +136,6 @@ bash scripts/backup.sh
 
 ## 5. 建議備份策略
 
-正式環境至少建議保留：
-
-- MSSQL `.bak`
-- file archive `.tar.gz`
-- file archive `.sha256`
-- 部署版本或 git commit
-- 備份時間
-- 操作者
-
-建議紀錄格式：
-
-```text
-date=2026-06-03 09:00
-git_commit=<commit>
-db_backup=D:\MSSQL\Backup\regulations_filesystem_prod_2026-06-03_090000_copyonly_full.bak
-file_backup=/home/NE025/UO_MDR/backups/files/uochcldc01_files_2026-06-03_090100.tar.gz
-operator=NE025
-note=before deployment
-```
-
 日常備份範例：
 
 ```bash
@@ -170,7 +144,7 @@ bash scripts/backup_mssql_full.sh
 bash scripts/backup.sh
 ```
 
-正式環境部署後會安裝 `uo_regulations_backup.timer`，預設每日 02:00 自動執行上述兩個備份腳本。若要調整排程時間：
+`uo_regulations_backup.timer`，預設每日 02:00 自動執行上述兩個備份腳本。若要調整排程時間：
 
 ```bash
 BACKUP_ON_CALENDAR='*-*-* 02:00:00' bash deploy.sh
@@ -211,12 +185,6 @@ sudo systemctl stop uo_regulations_jobs_worker
 sudo systemctl stop uo_regulations_flow_worker
 sudo systemctl stop uo_regulations_batch_worker
 sudo systemctl stop uo_regulations
-```
-
-建議在還原前先備份目前檔案狀態：
-
-```bash
-bash scripts/backup.sh
 ```
 
 ## 7. 資料庫還原流程
@@ -354,6 +322,7 @@ sudo systemctl start uo_regulations
 sudo systemctl start uo_regulations_jobs_worker
 sudo systemctl start uo_regulations_flow_worker
 sudo systemctl start uo_regulations_batch_worker
+sudo systemctl start uo_regulations_metadata_cleanup.timer
 sudo systemctl start uo_regulations_backup.timer
 sudo systemctl start adoption-standard-update.timer
 ```
@@ -365,6 +334,8 @@ sudo systemctl status uo_regulations --no-pager
 sudo systemctl status uo_regulations_jobs_worker --no-pager
 sudo systemctl status uo_regulations_flow_worker --no-pager
 sudo systemctl status uo_regulations_batch_worker --no-pager
+sudo systemctl status uo_regulations_metadata_cleanup.service --no-pager
+sudo systemctl status uo_regulations_metadata_cleanup.timer --no-pager
 sudo systemctl status uo_regulations_backup.service --no-pager
 sudo systemctl status uo_regulations_backup.timer --no-pager
 sudo systemctl status adoption-standard-update.service --no-pager
@@ -594,39 +565,10 @@ sudo systemctl start uo_regulations
 sudo systemctl start uo_regulations_jobs_worker
 sudo systemctl start uo_regulations_flow_worker
 sudo systemctl start uo_regulations_batch_worker
+sudo systemctl start uo_regulations_metadata_cleanup.timer
 sudo systemctl start uo_regulations_backup.timer
 sudo systemctl start adoption-standard-update.timer
 
 sudo systemctl status uo_regulations --no-pager
 curl -i http://127.0.0.1/tasks | sed -n '1,20p'
 ```
-
-## 13. 目前備份流程的限制與後續建議
-
-目前已有：
-
-- MSSQL `.bak` 備份
-- `.bak` verify
-- MSSQL restore
-- 檔案 archive backup
-- 檔案 checksum
-- 檔案 restore
-- 還原前 current-state file backup
-
-目前限制：
-
-- `task_store/*/files/*` 不會被一般檔案備份包含
-- `task_store/*/jobs/*` 不會被一般檔案備份包含
-- `task_store/*/mappings` 不會被一般檔案備份包含
-- `task_store/*/mapping_job` 不會被一般檔案備份包含
-- `.bak` 會先落在 SQL Server 主機，不會自動搬回 VM
-- 尚未有統一的備份 manifest
-- 尚未有自動遠端保存流程
-
-建議下一步：
-
-1. 增加備份 manifest，例如 `backups/manifest/YYYY-MM-DD.json`
-2. 將 `.bak` 從 SQL Server 主機自動搬回 VM 或 NAS
-3. 增加完整 task attachment 備份策略
-4. 增加 restore smoke test 腳本
-5. 增加 MSSQL `.bak` 保留策略與過期清理流程

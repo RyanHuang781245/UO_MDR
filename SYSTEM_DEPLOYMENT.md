@@ -53,7 +53,7 @@
 資料庫連線目前使用 SQLAlchemy URL：
 
 ```env
-DATABASE_URL='mssql+pyodbc://user:password@10.30.12.162/regulations_filesystem_prod?driver=ODBC Driver 18 for SQL Server&TrustServerCertificate=yes'
+DATABASE_URL='mssql+pyodbc://user:password@ip/databasename?driver=ODBC Driver 18 for SQL Server&TrustServerCertificate=yes'
 ```
 
 如果部署時要執行資料庫備份，`.env` 也需要設定：
@@ -230,9 +230,18 @@ ENABLE_NGINX=1 RUN_DB_BACKUP=1 bash deploy.sh
 Nginx 分工：
 
 - `/etc/nginx/nginx.conf` 是全域設定，部署腳本不會修改；初次建機或需要調整全域效能參數時手動維護。
+- 初次建機若 Nginx 預設站台仍啟用，先停用 `/etc/nginx/sites-enabled/default`，避免 request 被預設站台接走。保留 `/etc/nginx/sites-available/default` 作為套件範本即可。
 - `deploy/nginx-site.conf.template` 是 UO MDR site config template。
 - `ENABLE_NGINX=1` 時，`deploy.sh` 會用 `sudo bash scripts/install_nginx_site.sh --install ...`，以 `APP_ROOT` 產生 `build/nginx/uo_regulations`。
 - 產生後的 site config 會安裝到 `/etc/nginx/sites-available/uo_regulations`，建立或更新 `/etc/nginx/sites-enabled/uo_regulations` symlink，通過 `nginx -t` 後 reload nginx。
+
+初次建機停用 default site：
+
+```bash
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
 ## 6. 部署後檢查
 

@@ -10,7 +10,7 @@
 <style>
   .standard-mapping-summary {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 0.875rem;
   }
   .standard-summary-card {
@@ -40,6 +40,13 @@
   }
   .standard-summary-card--missing .standard-summary-card__value {
     color: #b91c1c;
+  }
+  .standard-summary-card--harmonised-fallback {
+    background: #f0f9ff;
+    border-color: #bae6fd;
+  }
+  .standard-summary-card--harmonised-fallback .standard-summary-card__value {
+    color: #0369a1;
   }
   .standard-summary-card--override {
     background: #fffbeb;
@@ -565,6 +572,119 @@
     font-size: 0.8125rem;
     white-space: nowrap;
   }
+  .standard-preview-controls {
+    position: relative;
+    top: auto;
+    z-index: 60;
+    overflow: visible;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }
+  .standard-preview-controls-placeholder {
+    display: none;
+  }
+  .standard-preview-controls.is-fixed {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    position: fixed;
+    top: auto;
+    bottom: 0.75rem;
+    z-index: 1000;
+    margin-bottom: 0 !important;
+    padding: 0.75rem 1rem;
+  }
+  .standard-preview-controls.is-fixed .standard-preview-bar {
+    display: none;
+  }
+  .standard-preview-compact-summary {
+    display: none;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem 0;
+  }
+  .standard-preview-controls.is-fixed .standard-preview-compact-summary {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    padding: 0;
+  }
+  .standard-preview-compact-summary__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 1.8rem;
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 999px;
+    background: white;
+    padding: 0.2rem 0.65rem;
+    color: var(--bs-gray-600);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .standard-preview-compact-summary__item strong {
+    color: var(--bs-gray-900);
+    font-size: 0.9rem;
+  }
+  .standard-preview-compact-summary__item--updated {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+  }
+  .standard-preview-compact-summary__item--same {
+    border-color: #a7f3d0;
+    background: #ecfdf5;
+  }
+  .standard-preview-compact-summary__item--missing {
+    border-color: #fecaca;
+    background: #fef2f2;
+  }
+  .standard-preview-compact-summary__item--harmonised {
+    border-color: #bae6fd;
+    background: #f0f9ff;
+  }
+  .standard-preview-compact-summary__item--override {
+    border-color: #fde68a;
+    background: #fffbeb;
+  }
+  .standard-preview-compact-summary__item--edit {
+    border-color: #ddd6fe;
+    background: #f5f3ff;
+  }
+  .standard-preview-controls.is-fixed .standard-preview-filters {
+    flex: 1 1 auto;
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, 180px) minmax(180px, 1fr) auto;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0;
+  }
+  .standard-preview-controls.is-fixed .standard-preview-filter-actions {
+    gap: 0.5rem;
+    flex-wrap: nowrap;
+  }
+  .standard-preview-controls.is-fixed .standard-preview-filter-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.375rem;
+    height: 2.375rem;
+    padding: 0 !important;
+  }
+  .standard-preview-controls.is-fixed .standard-preview-filter-actions .btn-label {
+    display: none;
+  }
+  .standard-preview-controls.is-fixed #downloadSubmitBtn [data-submit-default],
+  .standard-preview-controls.is-fixed #downloadSubmitBtn [data-submit-loading] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .standard-preview-controls.is-fixed #downloadSubmitBtn .spinner-border {
+    margin-right: 0 !important;
+  }
+  .standard-preview-workspace {
+    overflow: visible;
+  }
   .standard-preview-navigator {
     position: sticky;
     top: 0.75rem;
@@ -815,6 +935,34 @@
   .standard-table tr.status-not_found {
     background: rgba(37, 99, 235, 0.02);
   }
+  .standard-table tr.status-harmonised_yes_fallback:not(.row-selected) > td {
+    background: #f0f9ff;
+  }
+  .standard-table tr.status-harmonised_yes_fallback:not(.row-selected) > td:first-child {
+    box-shadow: inset 3px 0 0 #0284c7;
+  }
+  .standard-table tr.row-manual-edited > td {
+    background: #f5f3ff;
+  }
+  .standard-table tr.row-manual-edited > td:first-child {
+    box-shadow: inset 3px 0 0 #7c3aed;
+  }
+  .standard-table tr.row-manual-edited.status-harmonised_yes_fallback > td:first-child {
+    box-shadow:
+      inset 3px 0 0 #7c3aed,
+      inset 6px 0 0 #0284c7;
+  }
+  .standard-table tr.row-manual-edited.row-selected > td:first-child {
+    box-shadow:
+      inset 3px 0 0 #7c3aed,
+      inset 6px 0 0 #f59e0b;
+  }
+  .standard-table tr.row-manual-edited.status-harmonised_yes_fallback.row-selected > td:first-child {
+    box-shadow:
+      inset 3px 0 0 #7c3aed,
+      inset 6px 0 0 #0284c7,
+      inset 9px 0 0 #f59e0b;
+  }
   .preview-cell.has-reference {
     cursor: pointer;
     position: relative;
@@ -862,7 +1010,14 @@
     display: flex;
     flex-direction: column;
   }
-  .reference-tooltip-scroll {
+  .reference-tooltip-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .reference-tooltip-body {
+    flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
   }
@@ -873,6 +1028,7 @@
     gap: 0.75rem;
     padding: 1rem 1rem 0.9rem;
     border-bottom: 1px solid var(--bs-gray-200);
+    flex-shrink: 0;
   }
   .reference-tooltip-kicker {
     color: var(--bs-gray-500);
@@ -909,12 +1065,45 @@
     background: #fef2f2;
     color: #b91c1c;
   }
+  .reference-tooltip-status.is-harmonised-fallback {
+    background: #f0f9ff;
+    color: #0369a1;
+    border-color: #bae6fd;
+  }
+  .reference-tooltip-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-top: 0.625rem;
+  }
+  .reference-tooltip-flag {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .reference-tooltip-flag.is-override {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #b45309;
+  }
+  .reference-tooltip-flag.is-edit {
+    background: #f5f3ff;
+    border-color: #ddd6fe;
+    color: #6d28d9;
+  }
   .reference-tooltip-grid {
     display: grid;
     grid-template-columns: 96px 1fr;
     gap: 0.5rem 0.875rem;
     padding: 1rem;
     border-bottom: 1px solid var(--bs-gray-200);
+    flex-shrink: 0;
   }
   .reference-tooltip-label {
     color: var(--bs-gray-500);
@@ -930,6 +1119,35 @@
     padding: 1rem;
     min-height: 0;
   }
+  .reference-tooltip-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.98);
+    border-bottom: 1px solid var(--bs-gray-200);
+  }
+  .reference-tooltip-tab {
+    border: 1px solid var(--bs-gray-200);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--bs-gray-600);
+    font-size: 0.8125rem;
+    font-weight: 800;
+    line-height: 1.2;
+    padding: 0.5rem 0.75rem;
+  }
+  .reference-tooltip-tab.is-active {
+    background: var(--bs-blue-50);
+    border-color: var(--bs-blue-200);
+    color: var(--bs-blue-700);
+  }
+  .reference-tooltip-panel[hidden] {
+    display: none;
+  }
   .reference-tooltip-section__title {
     margin-bottom: 0.75rem;
     font-size: 0.75rem;
@@ -938,8 +1156,6 @@
     text-transform: uppercase;
   }
   .reference-candidate-list {
-    max-height: 360px;
-    overflow: auto;
     display: grid;
     gap: 0.625rem;
   }
@@ -1062,6 +1278,15 @@
     }
   }
   @media (max-width: 991.98px) {
+    .standard-preview-controls {
+      position: static;
+      top: auto;
+    }
+    .standard-preview-controls.is-fixed {
+      position: static;
+      width: auto !important;
+      left: auto !important;
+    }
     .standard-form-grid,
     .reference-candidate__row,
     .reference-edit-grid {
@@ -1222,9 +1447,6 @@
     .reference-edit-actions .btn {
       width: 100%;
     }
-    .reference-candidate-list {
-      max-height: min(45dvh, 320px);
-    }
   }
   [data-bs-theme="dark"] .standard-summary-card,
   [data-bs-theme="dark"] .standard-source-panel,
@@ -1283,6 +1505,47 @@
     background: rgba(239, 68, 68, 0.16) !important;
     border-color: rgba(239, 68, 68, 0.4) !important;
   }
+  [data-bs-theme="dark"] .standard-summary-card--harmonised-fallback {
+    background: rgba(14, 165, 233, 0.16) !important;
+    border-color: rgba(14, 165, 233, 0.42) !important;
+  }
+  [data-bs-theme="dark"] .standard-preview-compact-summary__item {
+    background: var(--app-card-bg);
+    border-color: var(--app-border);
+    color: var(--bs-gray-400);
+  }
+  [data-bs-theme="dark"] .standard-preview-compact-summary__item strong {
+    color: var(--app-text);
+  }
+  [data-bs-theme="dark"] .standard-table tr.row-manual-edited > td {
+    background: rgba(124, 58, 237, 0.14);
+  }
+  [data-bs-theme="dark"] .standard-table tr.row-manual-edited.row-selected > td:first-child {
+    box-shadow:
+      inset 3px 0 0 #a78bfa,
+      inset 6px 0 0 #f59e0b;
+  }
+  [data-bs-theme="dark"] .standard-table tr.row-manual-edited.status-harmonised_yes_fallback > td:first-child {
+    box-shadow:
+      inset 3px 0 0 #a78bfa,
+      inset 6px 0 0 #38bdf8;
+  }
+  [data-bs-theme="dark"] .standard-table tr.row-manual-edited.status-harmonised_yes_fallback.row-selected > td:first-child {
+    box-shadow:
+      inset 3px 0 0 #a78bfa,
+      inset 6px 0 0 #38bdf8,
+      inset 9px 0 0 #f59e0b;
+  }
+  [data-bs-theme="dark"] .reference-tooltip-flag.is-override {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(245, 158, 11, 0.38);
+    color: #fbbf24;
+  }
+  [data-bs-theme="dark"] .reference-tooltip-flag.is-edit {
+    background: rgba(124, 58, 237, 0.18);
+    border-color: rgba(124, 58, 237, 0.42);
+    color: #c4b5fd;
+  }
   [data-bs-theme="dark"] .standard-summary-card--override,
   [data-bs-theme="dark"] .standard-precheck-card--manual {
     background: rgba(245, 158, 11, 0.18) !important;
@@ -1308,6 +1571,20 @@
   [data-bs-theme="dark"] .reference-tooltip-header,
   [data-bs-theme="dark"] .reference-tooltip-grid {
     border-color: var(--app-border);
+  }
+  [data-bs-theme="dark"] .reference-tooltip-tabs {
+    background: var(--app-card-bg);
+    border-bottom-color: var(--app-border);
+  }
+  [data-bs-theme="dark"] .reference-tooltip-tab {
+    background: var(--app-bg);
+    border-color: var(--app-border);
+    color: var(--app-muted);
+  }
+  [data-bs-theme="dark"] .reference-tooltip-tab.is-active {
+    background: rgba(37, 99, 235, 0.18);
+    border-color: rgba(96, 165, 250, 0.4);
+    color: #93c5fd;
   }
   [data-bs-theme="dark"] .reference-tooltip-card {
     box-shadow: 0 20px 40px rgba(2, 6, 23, 0.45);
@@ -1618,6 +1895,54 @@
               </div>
             </details>
 
+            {% if table_checks %}
+              <details class="standard-settings-group" open>
+                <summary>
+                  <div class="standard-settings-group__summary">
+                    <div class="standard-settings-group__title">
+                      <i class="bi bi-clipboard-check text-primary"></i>
+                      表格預檢結果
+                    </div>
+                    <span class="standard-settings-group__toggle" aria-hidden="true"></span>
+                  </div>
+                </summary>
+                <div class="standard-settings-group__body">
+                  <div class="standard-settings-group__body-inner">
+                    <div class="standard-priority-summary mt-0 mb-3">完整符合預設四欄格式的表格可直接更新，其餘格式需先完成手動對應欄位設定</div>
+                    <div class="standard-precheck-grid">
+                      {% for table_check in table_checks %}
+                        <div class="standard-precheck-card standard-precheck-card--{{ table_check.status }}">
+                          <div class="d-flex align-items-center justify-content-between gap-3">
+                            <div class="fw-bold">{{ table_check.table_label }}</div>
+                            <span class="standard-precheck-card__status">{{ table_check.status_label }}</span>
+                          </div>
+                          <div class="standard-precheck-card__headers">
+                            偵測欄位：{{ table_check.detected_headers | join('、') if table_check.detected_headers else '未辨識到欄位' }}
+                          </div>
+                          <div class="small text-muted mt-2">{{ table_check.message }}</div>
+                          {% if table_check.needs_manual_mapping %}
+                            <div class="standard-manual-mapping-summary">
+                              <div><strong>手動對應欄位：</strong>請至下方設定區指定 {{ table_check.table_label }} 的欄位對應</div>
+                              {% for label, field_id in manual_header_field_order %}
+                                {% if table_check.manual_mapping.get(label) %}
+                                  <div><strong>{{ label }}</strong>：{{ table_check.manual_mapping.get(label) }}</div>
+                                {% endif %}
+                              {% endfor %}
+                              <div>
+                                <a class="link-primary text-decoration-none fw-semibold" href="#manualHeaderMappingSettings" data-open-settings="manualHeaderMappingSettings">
+                                  前往設定手動對應
+                                </a>
+                              </div>
+                            </div>
+                          {% endif %}
+                        </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+              </details>
+            {% endif %}
+
             <details class="standard-settings-group" id="manualHeaderMappingSettings" {% if table_checks %}open{% endif %}>
               <summary>
                 <div class="standard-settings-group__summary">
@@ -1762,50 +2087,6 @@
     </div>
   </details>
 
-  {% if table_checks %}
-    <details class="standard-source-panel mb-3" open>
-      <summary>
-        <div class="standard-source-panel__summary">
-          <div class="standard-source-panel__files">
-            <div class="fw-bold">表格預檢結果</div>
-            <div class="standard-source-panel__file">完整符合預設四欄格式的表格可直接更新，其餘格式需先完成手動對應欄位設定</div>
-          </div>
-          <div class="standard-source-panel__hint">展開或收合</div>
-        </div>
-      </summary>
-      <div class="standard-source-panel__body">
-        <div class="standard-precheck-grid">
-          {% for table_check in table_checks %}
-            <div class="standard-precheck-card standard-precheck-card--{{ table_check.status }}">
-              <div class="d-flex align-items-center justify-content-between gap-3">
-                <div class="fw-bold">{{ table_check.table_label }}</div>
-                <span class="standard-precheck-card__status">{{ table_check.status_label }}</span>
-              </div>
-              <div class="standard-precheck-card__headers">
-                偵測欄位：{{ table_check.detected_headers | join('、') if table_check.detected_headers else '未辨識到欄位' }}
-              </div>
-              <div class="small text-muted mt-2">{{ table_check.message }}</div>
-              {% if table_check.needs_manual_mapping %}
-                <div class="standard-manual-mapping-summary">
-                  <div><strong>手動對應欄位：</strong>請至下方設定區指定 {{ table_check.table_label }} 的欄位對應</div>
-                  {% for label, field_id in manual_header_field_order %}
-                    {% if table_check.manual_mapping.get(label) %}
-                      <div><strong>{{ label }}</strong>：{{ table_check.manual_mapping.get(label) }}</div>
-                    {% endif %}
-                  {% endfor %}
-                  <div>
-                    <a class="link-primary text-decoration-none fw-semibold" href="#manualHeaderMappingSettings" data-open-settings="manualHeaderMappingSettings">
-                      前往設定手動對應
-                    </a>
-                  </div>
-                </div>
-              {% endif %}
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-    </details>
-  {% endif %}
   {% if preview_tables %}
     <!-- <div class="standard-preview-scope">
     <div class="main-card mb-3 standard-preview-navigator">
@@ -1839,6 +2120,11 @@
         <div class="standard-summary-card__value">{{ stats.missing }}</div>
         <div class="standard-summary-card__depiction">未找到符合標準，保留原始值並使用藍字標記</div>
       </div>
+      <div class="standard-summary-card standard-summary-card--harmonised-fallback">
+        <div class="standard-summary-card__label">歐盟標準未採認改選欄位數</div>
+        <div class="standard-summary-card__value">{{ stats.harmonised_fallback }}</div>
+        <div class="standard-summary-card__depiction">原選定標準因歐盟標準還未採認，退選為歐盟有採認的標準</div>
+      </div>
       <div class="standard-summary-card standard-summary-card--override">
         <div class="standard-summary-card__label">人工改選欄位數</div>
         <div class="standard-summary-card__value" id="overrideCount">0</div>
@@ -1847,15 +2133,17 @@
       <div class="standard-summary-card standard-summary-card--edit">
         <div class="standard-summary-card__label">人工編輯列數</div>
         <div class="standard-summary-card__value" id="editCount">0</div>
-        <div class="standard-summary-card__depiction">人工編輯的欄位，使用黃色標記編輯欄位</div>
+        <div class="standard-summary-card__depiction">人工編輯的資料列，使用紫色標記並以人工內容輸出</div>
       </div>
     </div>
 
-    <div class="main-card mb-3">
+    <div class="standard-preview-workspace">
+    <div class="standard-preview-controls-placeholder" id="standardPreviewControlsPlaceholder" aria-hidden="true"></div>
+    <div class="main-card mb-3 standard-preview-controls" id="standardPreviewControls">
       <div class="standard-preview-bar">
         <div class="standard-preview-bar__main">
           <div class="standard-preview-bar__title mb-2">
-            目前規則：核心編號比對後，先比年份，再依 {{ iso_priority | join(' > ') }}{% if target_scope_display %}，限定 {{ target_scope_display }}{% elif target_chapter_ref %}，限定章節 {{ target_chapter_ref }}{% if target_table_index_display %}，表格索引 {{ target_table_index_display }}{% endif %}{% endif %}
+            目前規則：核心編號比對後，先比年份(如果有勾選)，再依 {{ iso_priority | join(' > ') }}{% if target_scope_display %}，限定 {{ target_scope_display }}{% elif target_chapter_ref %}，限定章節 {{ target_chapter_ref }}{% if target_table_index_display %}，表格索引 {{ target_table_index_display }}{% endif %}{% endif %}
           </div>
           <div class="standard-preview-status-row">
             <div id="filterBar" class="standard-preview-note" aria-hidden="false">
@@ -1874,6 +2162,14 @@
           </div>
         </div>
       </div>
+      <div class="standard-preview-compact-summary" aria-label="簡易統計">
+        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--updated">已更新 <strong>{{ stats.updated }}</strong></span>
+        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--same">無需更新 <strong>{{ stats.same }}</strong></span>
+        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--missing">查無 <strong>{{ stats.missing }}</strong></span>
+        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--harmonised">EU退選 <strong>{{ stats.harmonised_fallback }}</strong></span>
+        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--override">改選 <strong id="fixedOverrideCount">0</strong></span>
+        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--edit">編輯 <strong id="fixedEditCount">0</strong></span>
+      </div>
       <div class="standard-preview-filters">
         <div class="search-wrapper">
           <i class="bi bi-search"></i>
@@ -1881,10 +2177,13 @@
         </div>
         <select id="standardStatusFilter" class="form-select form-control-custom rounded-2">
           <option value="all">全部狀態</option>
-          <option value="updated">只看已更新</option>
-          <option value="same">只看無需更新</option>
-          <option value="missing">只看查無來源</option>
-          <option value="overridden">只看人工改選</option>
+          <option value="updated">已更新</option>
+          <option value="same">無需更新</option>
+          <option value="missing">查無標準</option>
+          <option value="harmonised-fallback">歐盟標準未採認改選</option>
+          <option value="overridden">人工改選</option>
+          <option value="edited">人工編輯</option>
+          <option value="overridden-edited">人工改選後人工編輯</option>
         </select>
         <select class="form-select form-control-custom rounded-2 standard-preview-navigator__select" id="previewTableJumpSelect">
           <option value="">跳轉到指定表格</option>
@@ -1893,20 +2192,26 @@
           {% endfor %}
         </select>
         <div class="standard-preview-filter-actions">
-          <button class="btn btn-outline-secondary px-3" type="button" id="collapseAllPreviewTablesBtn">收合全部</button>
-          <button class="btn btn-outline-primary px-3" type="button" id="expandAllPreviewTablesBtn">展開全部</button>
-          <button class="btn btn-outline-primary px-3 export-overrides-btn" type="button">
-            <i class="bi bi-file-earmark-text"></i>
-            匯出改選 Log
+          <button class="btn btn-outline-secondary px-3" type="button" id="collapseAllPreviewTablesBtn" title="收合全部" aria-label="收合全部">
+            <i class="bi bi-arrows-collapse"></i>
+            <span class="btn-label">收合全部</span>
           </button>
-          <button class="btn btn-primary px-3" id="downloadSubmitBtn" form="downloadForm" type="submit">
+          <button class="btn btn-outline-primary px-3" type="button" id="expandAllPreviewTablesBtn" title="展開全部" aria-label="展開全部">
+            <i class="bi bi-arrows-expand"></i>
+            <span class="btn-label">展開全部</span>
+          </button>
+          <button class="btn btn-outline-primary px-3 export-overrides-btn" type="button" title="匯出改選 Log" aria-label="匯出改選 Log">
+            <i class="bi bi-file-earmark-text"></i>
+            <span class="btn-label">匯出改選 Log</span>
+          </button>
+          <button class="btn btn-primary px-3" id="downloadSubmitBtn" form="downloadForm" type="submit" title="下載目前結果" aria-label="下載目前結果">
             <span data-submit-default>
               <i class="bi bi-file-earmark-word"></i>
-              下載目前結果
+              <span class="btn-label">下載目前結果</span>
             </span>
             <span data-submit-loading class="d-none">
               <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
-              下載中...
+              <span class="btn-label">下載中...</span>
             </span>
           </button>
         </div>
@@ -1980,7 +2285,7 @@
                 <tr
                   class="{{ ' '.join(row.classes) }}"
                   {% if is_data_row %}data-row-key="{{ row.row_key }}"{% endif %}
-                  data-row-status="{% if 'status-updated' in row.classes %}updated{% elif 'status-not_found' in row.classes %}missing{% elif 'status-same_no_update' in row.classes %}same{% else %}neutral{% endif %}"
+                  data-row-status="{% if 'status-harmonised_yes_fallback' in row.classes %}harmonised-fallback{% elif 'status-updated' in row.classes %}updated{% elif 'status-not_found' in row.classes %}missing{% elif 'status-same_no_update' in row.classes %}same{% else %}neutral{% endif %}"
                 >
                   {% for cell in row.cells %}
                     <{{ cell.tag }}
@@ -2006,14 +2311,13 @@
         </div>
       </details>
     {% endfor %}
+    </div>
   {% endif %}
 </div>
 
 <div class="reference-tooltip" id="referenceTooltip" hidden>
   <div class="reference-tooltip-card">
-    <div class="reference-tooltip-scroll">
-      <div id="referenceTooltipContent"></div>
-    </div>
+    <div class="reference-tooltip-content" id="referenceTooltipContent"></div>
   </div>
 </div>
 
@@ -2027,6 +2331,7 @@
   const previewTableJumpSelect = document.getElementById("previewTableJumpSelect");
   const collapseAllPreviewTablesBtn = document.getElementById("collapseAllPreviewTablesBtn");
   const expandAllPreviewTablesBtn = document.getElementById("expandAllPreviewTablesBtn");
+  const previewTableJumpTopOffset = 75;
   const resetPriorityDefaultsBtn = document.getElementById("resetPriorityDefaultsBtn");
   const defaultIsoPriority = {{ default_iso_priority | tojson }};
   const defaultEnabledStandardLevels = new Set({{ default_enabled_standard_levels | tojson }});
@@ -2139,7 +2444,9 @@
       if (target.tagName === "DETAILS") {
         target.open = true;
       }
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      const targetTop = window.scrollY + target.getBoundingClientRect().top - previewTableJumpTopOffset;
+      window.scrollTo({ top: Math.max(targetTop, 0), behavior: "smooth" });
+      previewTableJumpSelect.value = "";
     });
   }
 
@@ -2147,12 +2454,14 @@
     document.querySelectorAll(".standard-preview-table-card").forEach((card) => {
       card.open = false;
     });
+    updateFixedPreviewControls();
   });
 
   expandAllPreviewTablesBtn?.addEventListener("click", () => {
     document.querySelectorAll(".standard-preview-table-card").forEach((card) => {
       card.open = true;
     });
+    updateFixedPreviewControls();
   });
 
   const refreshPriorityRanks = () => {
@@ -2540,8 +2849,12 @@
   const standardSearchInput = document.getElementById("standardSearchInput");
   const standardStatusFilter = document.getElementById("standardStatusFilter");
   const standardPreviewEmpty = document.getElementById("standardPreviewEmpty");
+  const standardPreviewWorkspace = document.querySelector(".standard-preview-workspace");
+  const standardPreviewControls = document.getElementById("standardPreviewControls");
+  const standardPreviewControlsPlaceholder = document.getElementById("standardPreviewControlsPlaceholder");
   const overrideSelections = {};
   const editSelections = {};
+  const tooltipPanelSelections = {};
   const originalCellHtml = {};
   const referenceKeysByRow = Object.entries(referencePayload).reduce((acc, [referenceKey, meta]) => {
     const rowKey = meta?.row_key || "";
@@ -2572,6 +2885,46 @@
     if (!rowKey || !manualEdits || typeof manualEdits !== "object" || editSelections[rowKey]) return;
     editSelections[rowKey] = { ...manualEdits };
   });
+
+  function updateFixedPreviewControls() {
+    if (!standardPreviewWorkspace || !standardPreviewControls || !standardPreviewControlsPlaceholder) return;
+    if (window.innerWidth <= 991) {
+      standardPreviewControls.classList.remove("is-fixed");
+      standardPreviewControls.style.left = "";
+      standardPreviewControls.style.width = "";
+      standardPreviewControlsPlaceholder.style.display = "none";
+      standardPreviewControlsPlaceholder.style.height = "";
+      standardPreviewWorkspace.style.paddingBottom = "";
+      return;
+    }
+    const topOffset = 12;
+    const workspaceRect = standardPreviewWorkspace.getBoundingClientRect();
+    const controlsHeight = standardPreviewControls.offsetHeight;
+    const placeholderHeight = standardPreviewControls.classList.contains("is-fixed")
+      ? (parseFloat(standardPreviewControlsPlaceholder.style.height) || controlsHeight)
+      : controlsHeight;
+    const workspaceTop = window.scrollY + workspaceRect.top;
+    const workspaceBottom = window.scrollY + workspaceRect.bottom;
+    const shouldFix = (
+      window.scrollY + topOffset > workspaceTop
+      && window.scrollY + topOffset + controlsHeight < workspaceBottom
+    );
+    if (!shouldFix) {
+      standardPreviewControls.classList.remove("is-fixed");
+      standardPreviewControls.style.left = "";
+      standardPreviewControls.style.width = "";
+      standardPreviewControlsPlaceholder.style.display = "none";
+      standardPreviewControlsPlaceholder.style.height = "";
+      standardPreviewWorkspace.style.paddingBottom = "";
+      return;
+    }
+    standardPreviewControlsPlaceholder.style.display = "block";
+    standardPreviewControlsPlaceholder.style.height = `${placeholderHeight}px`;
+    standardPreviewControls.classList.add("is-fixed");
+    standardPreviewControls.style.left = `${workspaceRect.left}px`;
+    standardPreviewControls.style.width = `${workspaceRect.width}px`;
+    standardPreviewWorkspace.style.paddingBottom = `${standardPreviewControls.offsetHeight + 12}px`;
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -2909,7 +3262,7 @@
       }
     }
     if (row) {
-      row.classList.add("row-selected");
+      row.classList.toggle("row-selected", hasManualOverride);
     }
   }
 
@@ -2918,6 +3271,7 @@
     const statusMap = {
       UPDATED: ["已更新", "is-updated"],
       SAME_NO_UPDATE: ["已比對，無需更新", "is-same"],
+      HARMONISED_YES_FALLBACK: ["原候選標準未被歐盟採用，改採用歐盟採認候選標準", "is-harmonised-fallback"],
       NOT_FOUND: ["查無參考來源", "is-missing"],
     };
     const [statusLabel, statusClass] = statusMap[meta.status] || [meta.status || "未知", "is-neutral"];
@@ -2926,6 +3280,26 @@
     const matchedNo = meta.matched_standard_no || "無";
     const excelYear = meta.excel_year || "無";
     const fieldLabel = meta.field_label || "";
+    const rowKey = meta.row_key || "";
+    const hasManualOverride = Boolean(rowKey && overrideSelections[rowKey]);
+    const editFieldLabels = {
+      standards: "Standards",
+      issued_year: "Issued Year",
+      harmonised: "EU Harmonised",
+      title: "Title",
+    };
+    const manualEditFields = rowKey && editSelections[rowKey]
+      ? Object.keys(editSelections[rowKey]).map((field) => editFieldLabels[field] || field)
+      : [];
+    const hasManualEdit = manualEditFields.length > 0;
+    const hasCandidates = (meta.all_candidates || []).length > 0;
+    const activePanel = hasCandidates
+      ? (tooltipPanelSelections[rowKey] || "candidates")
+      : "edit";
+    const stateFlags = [
+      hasManualOverride ? `<span class="reference-tooltip-flag is-override">已改選</span>` : "",
+      hasManualEdit ? `<span class="reference-tooltip-flag is-edit">人工編輯：${escapeHtml(manualEditFields.join("、"))}</span>` : "",
+    ].filter(Boolean).join("");
     const rowKeys = referenceKeysByRow[meta.row_key || ""] || {};
     const availableFields = {
       standards: Boolean(rowKeys.standards),
@@ -2985,6 +3359,7 @@
         <div>
           <div class="reference-tooltip-kicker">欄位</div>
           <div class="reference-tooltip-source">${escapeHtml(fieldLabel)}</div>
+          ${stateFlags ? `<div class="reference-tooltip-flags">${stateFlags}</div>` : ""}
         </div>
         <div class="d-flex align-items-center gap-2">
           <span class="reference-tooltip-status ${statusClass}">${escapeHtml(statusLabel)}</span>
@@ -3001,12 +3376,33 @@
         <div class="reference-tooltip-label">更新年份</div>
         <div class="reference-tooltip-value">${escapeHtml(String(excelYear))}</div>
       </div>
-      ${(meta.all_candidates || []).length ? `
-        <div class="reference-tooltip-section">
+      <div class="reference-tooltip-body">
+        <div class="reference-tooltip-tabs" role="tablist">
+          <button
+            class="reference-tooltip-tab ${activePanel === "candidates" ? "is-active" : ""}"
+            type="button"
+            data-action="switch-reference-panel"
+            data-row-key="${escapeHtml(rowKey)}"
+            data-panel="candidates"
+            ${hasCandidates ? "" : "disabled"}
+          >候選清單</button>
+          <button
+            class="reference-tooltip-tab ${activePanel === "edit" ? "is-active" : ""}"
+            type="button"
+            data-action="switch-reference-panel"
+            data-row-key="${escapeHtml(rowKey)}"
+            data-panel="edit"
+          >編輯欄位</button>
+        </div>
+      ${hasCandidates ? `
+        <div class="reference-tooltip-panel" data-reference-panel="candidates" ${activePanel === "candidates" ? "" : "hidden"}>
+          <div class="reference-tooltip-section">
           <div class="reference-tooltip-section__title">候選清單</div>
           <div class="reference-candidate-list">${candidates}</div>
+          </div>
         </div>
       ` : ""}
+      <div class="reference-tooltip-panel" data-reference-panel="edit" ${activePanel === "edit" ? "" : "hidden"}>
       <div class="reference-tooltip-section">
         <div class="reference-tooltip-section__title">編輯欄位</div>
         <div class="reference-edit-grid">
@@ -3036,6 +3432,8 @@
           <button class="btn btn-sm btn-primary" type="button" data-action="save-edit" data-row-key="${escapeHtml(meta.row_key || "")}" data-reference-key="${escapeHtml(meta.reference_key || "")}">保存此列</button>
           <button class="btn btn-sm btn-secondary" type="button" data-action="close" data-row-key="${escapeHtml(meta.row_key || "")}" data-reference-key="${escapeHtml(meta.reference_key || "")}">關閉</button>
         </div>
+      </div>
+      </div>
       </div>
     `;
   }
@@ -3073,6 +3471,14 @@
     return Object.values(editSelections).filter((fields) => fields && Object.keys(fields).length > 0).length;
   }
 
+  function syncManualEditRowStyles() {
+    document.querySelectorAll("tr[data-row-key]").forEach((row) => {
+      const rowKey = row.dataset.rowKey || "";
+      const hasEdit = Boolean(editSelections[rowKey] && Object.keys(editSelections[rowKey]).length > 0);
+      row.classList.toggle("row-manual-edited", hasEdit);
+    });
+  }
+
   function syncInteractiveState() {
     const generatedAt = new Date().toISOString();
     const overridePayload = { generated_at: generatedAt, overrides: overrideSelections };
@@ -3083,13 +3489,19 @@
     if (editCount) editCount.textContent = String(editSelectionCount);
     actionOverrideCount.textContent = String(overrideSelectionCount);
     if (actionEditCount) actionEditCount.textContent = String(editSelectionCount);
+    const fixedOverrideCount = document.getElementById("fixedOverrideCount");
+    const fixedEditCount = document.getElementById("fixedEditCount");
+    if (fixedOverrideCount) fixedOverrideCount.textContent = String(overrideSelectionCount);
+    if (fixedEditCount) fixedEditCount.textContent = String(editSelectionCount);
     overridesJsonInput.value = JSON.stringify(overridePayload);
     if (editsJsonInput) editsJsonInput.value = JSON.stringify(editPayload);
     const hasInteractiveChanges = overrideSelectionCount > 0 || editSelectionCount > 0;
     filterBar.setAttribute("aria-hidden", hasInteractiveChanges ? "true" : "false");
     actionBar.setAttribute("aria-hidden", hasInteractiveChanges ? "false" : "true");
+    syncManualEditRowStyles();
     Object.keys(referenceKeysByRow).forEach((rowKey) => updateRowPreview(rowKey));
     applyPreviewFilters();
+    updateFixedPreviewControls();
   }
 
   function syncActiveReferenceCell() {
@@ -3185,11 +3597,14 @@
         const text = row.innerText.toLowerCase();
         const rowStatus = (row.dataset.rowStatus || "neutral").toLowerCase();
         const overridden = Boolean(rowKey && overrideSelections[rowKey]);
+        const edited = Boolean(rowKey && editSelections[rowKey] && Object.keys(editSelections[rowKey]).length > 0);
         const keywordMatch = !keyword || text.includes(keyword);
         const statusMatch = (
           status === "all"
           || rowStatus === status
           || (status === "overridden" && overridden)
+          || (status === "edited" && edited)
+          || (status === "overridden-edited" && overridden && edited)
         );
         const visible = keywordMatch && statusMatch;
         row.hidden = !visible;
@@ -3246,6 +3661,16 @@
     if (closeButton) hideTooltip(true);
   });
   tooltipContent.addEventListener("click", (event) => {
+    const panelButton = event.target.closest("[data-action='switch-reference-panel']");
+    if (panelButton) {
+      event.stopPropagation();
+      const rowKey = panelButton.dataset.rowKey || "";
+      const panel = panelButton.dataset.panel || "";
+      if (!rowKey || !panel || panelButton.disabled) return;
+      tooltipPanelSelections[rowKey] = panel;
+      renderActiveTooltip();
+      return;
+    }
     const button = event.target.closest(".candidate-select-btn");
     if (button) {
       event.stopPropagation();
@@ -3255,6 +3680,13 @@
       if (!rowKey || !referenceKey || !candidateId) return;
       const meta = getEffectiveMeta(referenceKey);
       const autoSelectedId = meta?.auto_selected_candidate_id || "";
+      const currentSelectedId = overrideSelections[rowKey] || meta?.selected_candidate_id || autoSelectedId;
+      const hasManualEdit = Boolean(editSelections[rowKey] && Object.keys(editSelections[rowKey]).length > 0);
+      if (hasManualEdit && candidateId !== currentSelectedId) {
+        const confirmed = window.confirm("此列已有人工編輯內容。改選其他候選會清除此列人工編輯，並改用候選標準資料。是否繼續？");
+        if (!confirmed) return;
+        delete editSelections[rowKey];
+      }
       if (candidateId === autoSelectedId) {
         delete overrideSelections[rowKey];
       } else {
@@ -3336,12 +3768,21 @@
     window.__standardMappingResizeTimer__ = window.setTimeout(() => {
       refreshAllCellOverflows();
       applyPreviewFilters();
+      updateFixedPreviewControls();
     }, 120);
   });
+  window.addEventListener("scroll", updateFixedPreviewControls, { passive: true });
   refreshAllCellOverflows();
-  standardSearchInput?.addEventListener("input", applyPreviewFilters);
-  standardStatusFilter?.addEventListener("change", applyPreviewFilters);
+  standardSearchInput?.addEventListener("input", () => {
+    applyPreviewFilters();
+    updateFixedPreviewControls();
+  });
+  standardStatusFilter?.addEventListener("change", () => {
+    applyPreviewFilters();
+    updateFixedPreviewControls();
+  });
   syncInteractiveState();
+  updateFixedPreviewControls();
 </script>
 {% endif %}
 {% if mapping_route_endpoint == 'standard_updates_bp.mapping' %}

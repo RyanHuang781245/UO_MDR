@@ -265,6 +265,7 @@ def _build_audit_summary_lines(*, action_name: str, detail: dict) -> list[dict[s
     updated_count = detail.get("updated_count")
     same_count = detail.get("same_count")
     missing_count = detail.get("missing_count")
+    harmonised_fallback_count = detail.get("harmonised_fallback_count")
 
     lines: list[dict[str, str]] = []
     if task_name:
@@ -277,10 +278,15 @@ def _build_audit_summary_lines(*, action_name: str, detail: dict) -> list[dict[s
         if target_table_index:
             scope = f"{scope} / 表格 {target_table_index}"
         lines.append(_audit_summary_line(f"範圍：{scope}"))
-    if updated_count is not None or same_count is not None or missing_count is not None:
+    if (
+        updated_count is not None
+        or same_count is not None
+        or missing_count is not None
+        or harmonised_fallback_count is not None
+    ):
         lines.append(
             _audit_summary_line(
-                f"統計：更新 {updated_count or 0}、相同 {same_count or 0}、缺漏 {missing_count or 0}"
+                f"統計：更新 {updated_count or 0}、相同 {same_count or 0}、缺漏 {missing_count or 0}、EU YES 退選更新 {harmonised_fallback_count or 0}"
             )
         )
     if output_path:

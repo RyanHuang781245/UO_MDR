@@ -56,6 +56,22 @@ def test_build_audit_entry_suppresses_standard_update_download_summary(app):
     assert entry["status_badge"]["text"] == "COMPLETED"
 
 
+def test_build_audit_entry_includes_harmonised_fallback_count_in_preview_summary(app):
+    detail = {
+        "updated_count": 3,
+        "same_count": 1,
+        "missing_count": 2,
+        "harmonised_fallback_count": 5,
+    }
+
+    with app.test_request_context():
+        entry = _build_audit_entry(_fake_log(action="task_standard_mapping_preview"), detail)
+
+    summary_texts = [line["text"] for line in entry["summary_lines"]]
+
+    assert "統計：更新 3、相同 1、缺漏 2、EU YES 退選更新 5" in summary_texts
+
+
 def test_build_audit_entry_uses_chinese_labels_for_task_and_flow_actions(app):
     with app.test_request_context():
         task_entry = _build_audit_entry(_fake_log(action="task_create"), {})

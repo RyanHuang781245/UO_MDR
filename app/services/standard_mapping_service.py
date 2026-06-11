@@ -184,6 +184,11 @@ def extract_harmonised_reference_year(entry: str) -> int | None:
     return extract_latest_year_from_en_iso_style(entry)
 
 
+def is_accepted_eu_harmonised_form(std_no: str) -> bool:
+    normalized = normalize_key_for_search(std_no)
+    return bool(re.match(r"^(?:BS\s+EN\s+ISO|EN\s+ISO|EN\s+IEC)\b", normalized))
+
+
 def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> dict[str, set[int]] | None:
     path = Path(reference_path or "")
     if not path.is_file():
@@ -292,6 +297,8 @@ def load_regulation_reference_index(reference_path: str | os.PathLike | None = N
 
 def is_harmonised_standard(std_no: str, title: str, harmonised_reference_index: dict[str, set[int]] | None, *, year=None) -> bool:
     if not harmonised_reference_index:
+        return False
+    if not is_accepted_eu_harmonised_form(std_no):
         return False
     normalized = normalize_harmonised_standard_text(std_no)
     match_key = extract_standard_match_key(std_no, "")
@@ -406,12 +413,12 @@ def classify_standard_level(std_no: str) -> tuple[str, int]:
     s = normalize_key_for_search(std_no)
     if re.match(r"^BS\s*EN\s*ISO(?=\s|\d|\b)", s):
         return "BS EN ISO", 7
+    if re.match(r"^(?:DIN\s*EN\s*ISO|EN\s*ISO)(?=\s|\d|\b)", s):
+        return "EN ISO", 4
     if re.match(r"^(?:BS\s*EN|DIN\s*EN)(?=\s|\d|\b)", s):
         return "BS EN", 6
     if re.match(r"^EN(?=\s|\d|\b)", s):
         return "EN", 5
-    if re.match(r"^(?:DIN\s*EN\s*ISO|EN\s*ISO)(?=\s|\d|\b)", s):
-        return "EN ISO", 4
     if re.match(r"^BS\s*ISO(?=\s|\d|\b)", s):
         return "BS ISO", 3
     if re.match(r"^ISO(?=\s|\d|\b)", s):
@@ -635,14 +642,23 @@ def build_diff_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
             (prefix_space, False),
             (old_text, False),
         ])
-    matcher = SequenceMatcher(a=old_text, b=new_text)
-    segments = []
-    for tag, _, _, j1, j2 in matcher.get_opcodes():
-        if tag == "equal":
-            segments.append((new_text[j1:j2], False))
-        elif tag in {"replace", "insert"}:
-            segments.append((new_text[j1:j2], True))
-    return merge_text_segments(segments)
+    prefix_length = 0
+    max_prefix = min(len(old_text), len(new_text))
+    while prefix_length < max_prefix and old_text[prefix_length] == new_text[prefix_length]:
+        prefix_length += 1
+    suffix_length = 0
+    max_suffix = min(len(old_text) - prefix_length, len(new_text) - prefix_length)
+    while (
+        suffix_length < max_suffix
+        and old_text[len(old_text) - 1 - suffix_length] == new_text[len(new_text) - 1 - suffix_length]
+    ):
+        suffix_length += 1
+    suffix_start = len(new_text) - suffix_length if suffix_length else len(new_text)
+    return merge_text_segments([
+        (new_text[:prefix_length], False),
+        (new_text[prefix_length:suffix_start], bool(new_text[prefix_length:suffix_start])),
+        (new_text[suffix_start:], False),
+    ])
 
 
 def build_year_segments(old_text: str, new_text: str) -> list[tuple[str, bool]]:
@@ -1021,7 +1037,7 @@ def find_latest_year_from_excel(
     all_candidates = [dict(item) for item in candidates]
 
     def same_type_sort_key(candidate: dict) -> tuple:
-        return (candidate.get("latest_year") or 0, -len(candidate.get("matched_standard_no", "")))
+        return (candidate.get("latest_year") or 0,)
 
     if family in {"ISO_FAMILY", "IEC_FAMILY"}:
         priority_index = {label: idx for idx, label in enumerate(normalized_iso_priority)}
@@ -1069,32 +1085,50 @@ def find_latest_year_from_excel(
 
         def candidate_sort_key(candidate: dict) -> tuple:
             latest_year = candidate.get("latest_year") or 0
-            name_length = len(candidate.get("matched_standard_no", ""))
             priority_rank = len(normalized_iso_priority) - priority_index.get(candidate["standard_level"], len(normalized_iso_priority))
             prioritized = 1 if candidate["standard_level"] in normalized_iso_priority else 0
             if has_checked_candidates:
-                return (latest_year, priority_rank, prioritized, -name_length)
-            return (priority_rank, prioritized, -name_length, latest_year)
+                return (latest_year, priority_rank, prioritized)
+            return (priority_rank, prioritized, latest_year)
     else:
         for candidate in all_candidates:
             candidate["decision_reason"] = "符合查詢條件，進入最終排序"
 
         def candidate_sort_key(candidate: dict) -> tuple:
             latest_year = candidate.get("latest_year") or 0
-            name_length = len(candidate.get("matched_standard_no", ""))
-            return (1, 0, latest_year, name_length)
+            return (1, 0, latest_year)
 
     if not candidates:
         return None
 
     candidates.sort(key=candidate_sort_key, reverse=True)
-    selected = candidates[0]
-    for candidate in candidates[1:]:
+    default_selected = candidates[0]
+    selectable_candidates = candidates
+    if harmonised_reference_index is not None:
+        harmonised_yes_candidates = [
+            candidate
+            for candidate in all_candidates
+            if normalize_harmonised_yes_no(candidate.get("candidate_harmonised", "")) == "YES"
+        ]
+        if harmonised_yes_candidates:
+            selectable_candidates = sorted(harmonised_yes_candidates, key=candidate_sort_key, reverse=True)
+
+    selected = selectable_candidates[0]
+    harmonised_yes_fallback = selected is not default_selected
+    for candidate in all_candidates:
+        if candidate is selected:
+            continue
         if candidate.get("decision") != "excluded":
             candidate["decision"] = "kept"
             candidate["decision_reason"] = "通過篩選，但排序結果未被選用"
+    if harmonised_yes_fallback:
+        default_selected["decision_reason"] = "此標準為最高順位候選，但歐盟標準還未採認，因此不使用此候選標準更新"
     selected["decision"] = "selected"
-    if family in {"ISO_FAMILY", "IEC_FAMILY"}:
+    if harmonised_yes_fallback:
+        selected["decision_reason"] = "最終採用：原最高順位候選因歐盟標準還未採認，改採用此已被採認的候選標準"
+    elif normalize_harmonised_yes_no(selected.get("candidate_harmonised", "")) == "YES":
+        selected["decision_reason"] = "最終採用：歐盟標準已採認，依候選排序選中"
+    elif family in {"ISO_FAMILY", "IEC_FAMILY"}:
         if selected.get("apply_year_comparison"):
             selected["decision_reason"] = "最終採用：此類型已勾選，依年份比較後再按優先級選中"
         else:
@@ -1104,19 +1138,38 @@ def find_latest_year_from_excel(
 
     for candidate in all_candidates:
         candidate["candidate_id"] = make_candidate_id(candidate)
+
+    def display_candidate_sort_key(candidate: dict) -> tuple:
+        latest_year = candidate.get("latest_year") or 0
+        level = candidate.get("standard_level", "")
+        priority_rank = len(normalized_iso_priority) - priority_index.get(level, len(normalized_iso_priority)) if family in {"ISO_FAMILY", "IEC_FAMILY"} else 0
+        prioritized = 1 if family not in {"ISO_FAMILY", "IEC_FAMILY"} or level in normalized_iso_priority else 0
+        checked = 1 if candidate.get("apply_year_comparison") else 0
+        if family in {"ISO_FAMILY", "IEC_FAMILY"} and not has_checked_candidates:
+            return (
+                checked,
+                prioritized,
+                priority_rank,
+                latest_year,
+            )
+        return (
+            checked,
+            prioritized,
+            latest_year,
+            priority_rank,
+        )
+
     ordered_candidates = sorted(
         all_candidates,
-        key=lambda x: (
-            1 if x.get("decision") == "selected" else 0,
-            1 if x.get("decision") == "kept" else 0,
-            *candidate_sort_key(x),
-        ),
+        key=display_candidate_sort_key,
         reverse=True,
     )
     result = dict(selected)
     result["all_candidates"] = ordered_candidates
     result["selected_candidate_id"] = make_candidate_id(selected)
     result["auto_selected_candidate_id"] = make_candidate_id(selected)
+    result["harmonised_yes_fallback"] = harmonised_yes_fallback
+    result["harmonised_rejected_candidate_id"] = make_candidate_id(default_selected) if harmonised_yes_fallback else ""
     result["matched_harmonised"] = (
         ""
         if harmonised_reference_index is None
@@ -1151,7 +1204,7 @@ def find_latest_year_from_regulation_reference(
         return None
 
     def candidate_sort_key(candidate: dict) -> tuple:
-        return (candidate.get("latest_year") or 0, -len(candidate.get("matched_standard_no", "")))
+        return (candidate.get("latest_year") or 0,)
 
     candidates.sort(key=candidate_sort_key, reverse=True)
     selected = candidates[0]
@@ -2174,6 +2227,87 @@ def process_document(
         updated_count = 0
         row_reference_map = {}
 
+        def apply_manual_row_edits(rec: dict, row_key: str, row_edits: dict, match_info: dict | None = None) -> None:
+            nonlocal updated_count
+            standards = rec["standards"]
+            word_year_text = normalize_text(rec["issued_year"])
+            word_harmonised_text = normalize_harmonised_yes_no(rec["harmonised"])
+            word_title_text = normalize_text(rec["title"])
+            base_standard = standards
+            base_year = word_year_text
+            base_title = word_title_text
+            base_harmonised = word_harmonised_text
+            if match_info:
+                matched_standard_no = match_info["matched_standard_no"]
+                base_standard = match_info["matched_display_standard_no"]
+                base_year = "" if match_info.get("latest_year") in {None, ""} else str(match_info["latest_year"])
+                base_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
+                base_harmonised = (
+                    "YES"
+                    if harmonised_reference_index and is_harmonised_standard(
+                        base_standard,
+                        base_title,
+                        harmonised_reference_index,
+                        year=base_year,
+                    )
+                    else "NO"
+                ) if harmonised_reference_index is not None else word_harmonised_text
+            edited_standard = row_edits.get("standards", base_standard)
+            edited_year = row_edits.get("issued_year", base_year)
+            edited_harmonised = row_edits.get("harmonised", base_harmonised)
+            edited_title = row_edits.get("title", base_title)
+            standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(edited_standard)
+            year_needs_update = word_year_text != edited_year
+            harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(edited_harmonised)
+            title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(edited_title)
+            applied_standards_update = standards_needs_update and rec["standards_tc"] is not None
+            applied_year_update = year_needs_update and rec["issued_year_tc"] is not None
+            applied_harmonised_update = harmonised_needs_update and rec["harmonised_tc"] is not None
+            applied_title_update = title_needs_update and rec["title_tc"] is not None
+            if applied_standards_update:
+                rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, edited_standard))
+            if applied_year_update:
+                rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, edited_year))
+            if applied_harmonised_update:
+                rebuild_cell_with_segments(rec["harmonised_tc"], build_plain_replacement_segments(word_harmonised_text, edited_harmonised))
+            if applied_title_update:
+                rebuild_cell_with_segments(rec["title_tc"], build_word_diff_segments(word_title_text, edited_title))
+            row_updated = applied_standards_update or applied_year_update or applied_harmonised_update or applied_title_update
+            if row_updated:
+                updated_count += 1
+            status = "UPDATED" if row_updated else "SAME_NO_UPDATE"
+            row_reference_map[(rec["table_index"], rec["row_index"])] = {
+                "row_key": row_key,
+                "status": status,
+                "sheet_name": match_info.get("sheet_name", "") if match_info else "",
+                "excel_col_letter": match_info.get("excel_col_letter", "") if match_info else "",
+                "excel_row_index": match_info.get("excel_row_index", "") if match_info else "",
+                "matched_standard_no": edited_standard,
+                "matched_display_standard_no": edited_standard,
+                "matched_harmonised": edited_harmonised,
+                "matched_title": edited_title,
+                "excel_year": edited_year,
+                "word_standard": standards,
+                "word_year": word_year_text,
+                "word_harmonised": word_harmonised_text,
+                "word_title": word_title_text,
+                "all_candidates": match_info.get("all_candidates", []) if match_info else [],
+                "selected_candidate_id": match_info.get("selected_candidate_id", "") if match_info else "",
+                "auto_selected_candidate_id": match_info.get("auto_selected_candidate_id", "") if match_info else "",
+                "manual_edits": row_edits,
+            }
+            report.append({
+                "status": status,
+                "category": rec["category"],
+                "standards": standards,
+                "word_year": word_year_text,
+                "excel_year": edited_year,
+                "sheet_name": match_info.get("sheet_name", "") if match_info else "",
+                "excel_col_letter": match_info.get("excel_col_letter", "") if match_info else "",
+                "excel_row_index": match_info.get("excel_row_index", "") if match_info else "",
+                "matched_standard_no": edited_standard,
+            })
+
         for rec in records:
             row_key = make_row_key(rec["table_index"], rec["row_index"])
             row_edits = normalized_edit_map.get(row_key, {})
@@ -2199,74 +2333,11 @@ def process_document(
             if match_info:
                 match_info = apply_candidate_override(match_info, override_map.get(row_key))
 
+            if row_edits:
+                apply_manual_row_edits(rec, row_key, row_edits, match_info)
+                continue
+
             if not match_info:
-                edited_standard = row_edits.get("standards", standards)
-                edited_year = row_edits.get("issued_year", word_year_text)
-                auto_harmonised = (
-                    "YES"
-                    if harmonised_reference_index and is_harmonised_standard(
-                        edited_standard,
-                        word_title_text,
-                        harmonised_reference_index,
-                        year=edited_year,
-                    )
-                    else "NO"
-                ) if harmonised_reference_index else word_harmonised_text
-                edited_harmonised = row_edits.get("harmonised", auto_harmonised)
-                edited_title = row_edits.get("title", word_title_text)
-                standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(edited_standard)
-                year_needs_update = ("issued_year" in row_edits and word_year_text != edited_year)
-                harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(edited_harmonised)
-                title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(edited_title)
-                applied_standards_update = standards_needs_update and rec["standards_tc"] is not None
-                applied_year_update = year_needs_update and rec["issued_year_tc"] is not None
-                applied_harmonised_update = harmonised_needs_update and rec["harmonised_tc"] is not None
-                applied_title_update = title_needs_update and rec["title_tc"] is not None
-                if row_edits:
-                    if applied_standards_update:
-                        rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, edited_standard))
-                    if applied_year_update:
-                        rebuild_cell_with_segments(rec["issued_year_tc"], build_year_segments(word_year_text, edited_year))
-                    if applied_harmonised_update:
-                        rebuild_cell_with_segments(rec["harmonised_tc"], build_plain_replacement_segments(word_harmonised_text, edited_harmonised))
-                    if applied_title_update:
-                        rebuild_cell_with_segments(rec["title_tc"], build_word_diff_segments(word_title_text, edited_title))
-                    row_updated = applied_standards_update or applied_year_update or applied_harmonised_update or applied_title_update
-                    if row_updated:
-                        updated_count += 1
-                    status = "UPDATED" if row_updated else "SAME_NO_UPDATE"
-                    row_reference_map[(rec["table_index"], rec["row_index"])] = {
-                        "row_key": row_key,
-                        "status": status,
-                        "sheet_name": "",
-                        "excel_col_letter": "",
-                        "excel_row_index": "",
-                        "matched_standard_no": edited_standard,
-                        "matched_display_standard_no": edited_standard,
-                        "matched_harmonised": edited_harmonised,
-                        "matched_title": edited_title,
-                        "excel_year": edited_year,
-                        "word_standard": standards,
-                        "word_year": word_year_text,
-                        "word_harmonised": word_harmonised_text,
-                        "word_title": word_title_text,
-                        "all_candidates": [],
-                        "selected_candidate_id": "",
-                        "auto_selected_candidate_id": "",
-                        "manual_edits": row_edits,
-                    }
-                    report.append({
-                        "status": status,
-                        "category": rec["category"],
-                        "standards": standards,
-                        "word_year": word_year_text,
-                        "excel_year": edited_year,
-                        "sheet_name": "",
-                        "excel_col_letter": "",
-                        "excel_row_index": "",
-                        "matched_standard_no": edited_standard,
-                    })
-                    continue
                 if rec["standards_tc"] is not None:
                     rebuild_cell_with_single_color(rec["standards_tc"], standards, BLUE_COLOR)
                 row_reference_map[(rec["table_index"], rec["row_index"])] = {
@@ -2306,12 +2377,11 @@ def process_document(
             latest_year = "" if match_info.get("latest_year") in {None, ""} else str(match_info["latest_year"])
             matched_standard_no = match_info["matched_standard_no"]
             matched_display_standard_no = match_info["matched_display_standard_no"]
-            matched_harmonised = normalize_harmonised_yes_no(match_info.get("matched_harmonised", ""))
             matched_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
-            final_standard = row_edits.get("standards", matched_display_standard_no)
-            final_year = row_edits.get("issued_year", latest_year)
-            final_title = row_edits.get("title", matched_title)
-            auto_harmonised = (
+            final_standard = matched_display_standard_no
+            final_year = latest_year
+            final_title = matched_title
+            final_harmonised = (
                 "YES"
                 if harmonised_reference_index and is_harmonised_standard(
                     final_standard,
@@ -2321,15 +2391,52 @@ def process_document(
                 )
                 else "NO"
             ) if harmonised_reference_index is not None else word_harmonised_text
-            final_harmonised = row_edits.get("harmonised", auto_harmonised)
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(final_standard)
-            year_needs_update = (("issued_year" in row_edits) and word_year_text != final_year) or (bool(final_year) and "issued_year" not in row_edits and word_year_text != final_year)
+            year_needs_update = bool(final_year) and word_year_text != final_year
             harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(final_harmonised)
             title_needs_update = normalize_key_for_search(word_title_text) != normalize_key_for_search(final_title)
             applied_standards_update = standards_needs_update and rec["standards_tc"] is not None
             applied_year_update = year_needs_update and rec["issued_year_tc"] is not None
             applied_harmonised_update = harmonised_needs_update and rec["harmonised_tc"] is not None
             applied_title_update = title_needs_update and rec["title_tc"] is not None
+            row_would_update = applied_standards_update or applied_year_update or applied_harmonised_update or applied_title_update
+            harmonised_yes_to_no = (
+                normalize_harmonised_yes_no(word_harmonised_text) == "YES"
+                and normalize_harmonised_yes_no(final_harmonised) == "NO"
+            )
+            if row_would_update and harmonised_yes_to_no:
+                row_reference_map[(rec["table_index"], rec["row_index"])] = {
+                    "row_key": row_key,
+                    "status": "SAME_NO_UPDATE",
+                    "sheet_name": match_info["sheet_name"],
+                    "excel_col_letter": match_info["excel_col_letter"],
+                    "excel_row_index": match_info["excel_row_index"],
+                    "matched_standard_no": standards,
+                    "matched_display_standard_no": standards,
+                    "matched_harmonised": word_harmonised_text,
+                    "matched_title": word_title_text,
+                    "excel_year": word_year_text,
+                    "word_standard": standards,
+                    "word_year": word_year_text,
+                    "word_harmonised": word_harmonised_text,
+                    "word_title": word_title_text,
+                    "all_candidates": match_info.get("all_candidates", []),
+                    "selected_candidate_id": match_info.get("selected_candidate_id", ""),
+                    "auto_selected_candidate_id": match_info.get("auto_selected_candidate_id", ""),
+                    "manual_edits": {},
+                }
+                report.append({
+                    "status": "SAME_NO_UPDATE",
+                    "category": rec["category"],
+                    "standards": standards,
+                    "word_year": word_year_text,
+                    "excel_year": word_year_text,
+                    "sheet_name": match_info["sheet_name"],
+                    "excel_col_letter": match_info["excel_col_letter"],
+                    "excel_row_index": match_info["excel_row_index"],
+                    "matched_standard_no": standards,
+                })
+                continue
 
             if applied_standards_update:
                 rebuild_cell_with_segments(rec["standards_tc"], build_diff_segments(standards, final_standard))
@@ -2344,7 +2451,13 @@ def process_document(
             if row_updated:
                 updated_count += 1
 
-            status = "UPDATED" if row_updated else "SAME_NO_UPDATE"
+            status = (
+                "HARMONISED_YES_FALLBACK"
+                if match_info.get("harmonised_yes_fallback")
+                else "UPDATED"
+                if row_updated
+                else "SAME_NO_UPDATE"
+            )
             row_reference_map[(rec["table_index"], rec["row_index"])] = {
                 "row_key": row_key,
                 "status": status,
@@ -2363,7 +2476,7 @@ def process_document(
                 "all_candidates": match_info.get("all_candidates", []),
                 "selected_candidate_id": match_info.get("selected_candidate_id", ""),
                 "auto_selected_candidate_id": match_info.get("auto_selected_candidate_id", ""),
-                "manual_edits": row_edits,
+                "manual_edits": {},
             }
             report.append({
                 "status": status,

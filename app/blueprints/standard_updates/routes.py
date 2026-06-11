@@ -312,7 +312,7 @@ def _render_mapping_page(
         preview_tables=(preview_result or {}).get("preview_tables", []),
         table_checks=table_checks,
         reference_payload=reference_payload,
-        stats=_build_stats((preview_result or {}).get("report", [])) if preview_result else {"updated": 0, "same": 0, "missing": 0, "total": 0},
+        stats=_build_stats((preview_result or {}).get("report", [])) if preview_result else {"updated": 0, "same": 0, "missing": 0, "harmonised_fallback": 0, "total": 0},
         interactive_rows=interactive_rows,
         interactive_fields=len(reference_payload),
         has_preview=bool(preview_result and (preview_result.get("preview_tables") or [])),
@@ -887,6 +887,7 @@ def mapping(task_id: str):
                     "updated_count": preview_stats.get("updated", 0),
                     "same_count": preview_stats.get("same", 0),
                     "missing_count": preview_stats.get("missing", 0),
+                    "harmonised_fallback_count": preview_stats.get("harmonised_fallback", 0),
                 },
             )
         if limit_to_chapter and not result.get("table_checks"):
@@ -1087,6 +1088,7 @@ def download_result(task_id: str):
                 "updated_count": download_stats.get("updated", 0),
                 "same_count": download_stats.get("same", 0),
                 "missing_count": download_stats.get("missing", 0),
+                "harmonised_fallback_count": download_stats.get("harmonised_fallback", 0),
                 "output_path": output_path,
             },
         )

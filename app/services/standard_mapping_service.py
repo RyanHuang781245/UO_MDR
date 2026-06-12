@@ -2227,7 +2227,13 @@ def process_document(
         updated_count = 0
         row_reference_map = {}
 
-        def apply_manual_row_edits(rec: dict, row_key: str, row_edits: dict, match_info: dict | None = None) -> None:
+        def apply_manual_row_edits(
+            rec: dict,
+            row_key: str,
+            row_edits: dict,
+            match_info: dict | None = None,
+            row_harmonised_reference_index: dict[str, set[int]] | None = None,
+        ) -> None:
             nonlocal updated_count
             standards = rec["standards"]
             word_year_text = normalize_text(rec["issued_year"])
@@ -2244,14 +2250,14 @@ def process_document(
                 base_title = build_title_with_amendment(match_info.get("matched_title", ""), matched_standard_no)
                 base_harmonised = (
                     "YES"
-                    if harmonised_reference_index and is_harmonised_standard(
+                    if row_harmonised_reference_index and is_harmonised_standard(
                         base_standard,
                         base_title,
-                        harmonised_reference_index,
+                        row_harmonised_reference_index,
                         year=base_year,
                     )
                     else "NO"
-                ) if harmonised_reference_index is not None else word_harmonised_text
+                ) if row_harmonised_reference_index is not None else word_harmonised_text
             edited_standard = row_edits.get("standards", base_standard)
             edited_year = row_edits.get("issued_year", base_year)
             edited_harmonised = row_edits.get("harmonised", base_harmonised)
@@ -2315,6 +2321,7 @@ def process_document(
             word_year_text = normalize_text(rec["issued_year"])
             word_harmonised_text = normalize_harmonised_yes_no(rec["harmonised"])
             word_title_text = normalize_text(rec["title"])
+            row_harmonised_reference_index = harmonised_reference_index if rec["harmonised_tc"] is not None else None
             match_info = None
             if is_regulation_lookup_target(standards):
                 match_info = find_latest_year_from_regulation_reference(
@@ -2327,14 +2334,14 @@ def process_document(
                     excel_index,
                     normalized_iso_priority,
                     normalized_enabled_levels,
-                    harmonised_reference_index=harmonised_reference_index,
+                    harmonised_reference_index=row_harmonised_reference_index,
                     prefer_latest_en_variants=prefer_latest_en_variants,
                 )
             if match_info:
                 match_info = apply_candidate_override(match_info, override_map.get(row_key))
 
             if row_edits:
-                apply_manual_row_edits(rec, row_key, row_edits, match_info)
+                apply_manual_row_edits(rec, row_key, row_edits, match_info, row_harmonised_reference_index)
                 continue
 
             if not match_info:
@@ -2383,14 +2390,14 @@ def process_document(
             final_title = matched_title
             final_harmonised = (
                 "YES"
-                if harmonised_reference_index and is_harmonised_standard(
+                if row_harmonised_reference_index and is_harmonised_standard(
                     final_standard,
                     final_title,
-                    harmonised_reference_index,
+                    row_harmonised_reference_index,
                     year=final_year,
                 )
                 else "NO"
-            ) if harmonised_reference_index is not None else word_harmonised_text
+            ) if row_harmonised_reference_index is not None else word_harmonised_text
             standards_needs_update = normalize_key_for_search(standards) != normalize_key_for_search(final_standard)
             year_needs_update = bool(final_year) and word_year_text != final_year
             harmonised_needs_update = normalize_key_for_search(word_harmonised_text) != normalize_key_for_search(final_harmonised)

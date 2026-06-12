@@ -730,6 +730,53 @@ def test_process_document_marks_harmonised_yes_fallback_update(tmp_path):
     assert stats["harmonised_fallback"] == 1
 
 
+def test_process_document_does_not_apply_harmonised_fallback_without_harmonised_column(tmp_path):
+    word_path = tmp_path / "input_no_harmonised_column.docx"
+    standard_excel_path = tmp_path / "standards_no_harmonised_column.xlsx"
+    harmonised_path = tmp_path / "harmonised_no_harmonised_column.xlsx"
+    output_path = tmp_path / "output_no_harmonised_column.docx"
+
+    doc = Document()
+    table = doc.add_table(rows=2, cols=3)
+    headers = ["Standards", "Issued Year", "Title"]
+    for col_idx, header in enumerate(headers):
+        table.cell(0, col_idx).text = header
+    for col_idx, value in enumerate(["ISO 14971", "2018", "Old Title"]):
+        table.cell(1, col_idx).text = value
+    doc.save(word_path)
+
+    _write_standard_workbook_rows(
+        standard_excel_path,
+        [
+            ("BS EN ISO 14971:2021", "Newer non-harmonised"),
+            ("EN ISO 14971:2019", "Older harmonised"),
+        ],
+    )
+    _write_harmonised_workbook(
+        harmonised_path,
+        "EN ISO 14971:2019\nApplication of risk management to medical devices",
+    )
+
+    result = process_document(
+        str(word_path),
+        str(standard_excel_path),
+        harmonised_reference_path=str(harmonised_path),
+        required_headers=("Standards", "Issued Year", "Title"),
+        output_path=str(output_path),
+    )
+    stats = _build_stats(result["report"])
+    row_meta = next(iter(result["reference_payload"].values()))
+    output_doc = Document(output_path)
+    updated_values = [cell.text for cell in output_doc.tables[0].rows[1].cells]
+
+    assert row_meta["status"] == "UPDATED"
+    assert row_meta["matched_standard_no"] == "BS EN ISO 14971"
+    assert row_meta["excel_year"] == "2021"
+    assert updated_values == ["BS EN ISO 14971", "2021", "Newer non-harmonised"]
+    assert stats["updated"] == 1
+    assert stats["harmonised_fallback"] == 0
+
+
 def test_process_document_applies_manual_edits_even_when_harmonised_changes_yes_to_no(tmp_path):
     word_path = tmp_path / "input_manual_edit.docx"
     standard_excel_path = tmp_path / "standards_manual_edit.xlsx"

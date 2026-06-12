@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}{% if mapping_route_endpoint == 'standard_updates_bp.mapping' %}法規文件轉換平台 - 標準更新{% else %}法規文件轉換平台 - 標準更新{% endif %}{% endblock %}
 {% block sidebar %}
   {% if mapping_route_endpoint == 'standard_updates_bp.mapping' %}
     {% include "partials/sidebar_standard_updates.html" %}

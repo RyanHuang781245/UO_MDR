@@ -2165,8 +2165,8 @@
       <div class="standard-preview-compact-summary" aria-label="簡易統計">
         <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--updated">已更新 <strong>{{ stats.updated }}</strong></span>
         <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--same">無需更新 <strong>{{ stats.same }}</strong></span>
-        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--missing">查無 <strong>{{ stats.missing }}</strong></span>
-        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--harmonised">EU退選 <strong>{{ stats.harmonised_fallback }}</strong></span>
+        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--missing">查無標準 <strong>{{ stats.missing }}</strong></span>
+        <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--harmonised">標準未採認改選 <strong>{{ stats.harmonised_fallback }}</strong></span>
         <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--override">改選 <strong id="fixedOverrideCount">0</strong></span>
         <span class="standard-preview-compact-summary__item standard-preview-compact-summary__item--edit">編輯 <strong id="fixedEditCount">0</strong></span>
       </div>
@@ -2852,6 +2852,9 @@
   const standardPreviewWorkspace = document.querySelector(".standard-preview-workspace");
   const standardPreviewControls = document.getElementById("standardPreviewControls");
   const standardPreviewControlsPlaceholder = document.getElementById("standardPreviewControlsPlaceholder");
+  const standardPreviewMain = standardPreviewWorkspace?.closest("main");
+  const sidebarMenu = document.getElementById("sidebarMenu");
+  const sidebarToggle = document.getElementById("sidebarToggle");
   const overrideSelections = {};
   const editSelections = {};
   const tooltipPanelSelections = {};
@@ -2924,6 +2927,13 @@
     standardPreviewControls.style.left = `${workspaceRect.left}px`;
     standardPreviewControls.style.width = `${workspaceRect.width}px`;
     standardPreviewWorkspace.style.paddingBottom = `${standardPreviewControls.offsetHeight + 12}px`;
+  }
+
+  function scheduleFixedPreviewControlsUpdate(delay = 0) {
+    window.clearTimeout(window.__standardMappingFixedControlsTimer__);
+    window.__standardMappingFixedControlsTimer__ = window.setTimeout(() => {
+      window.requestAnimationFrame(updateFixedPreviewControls);
+    }, delay);
   }
 
   function escapeHtml(value) {
@@ -3772,6 +3782,23 @@
     }, 120);
   });
   window.addEventListener("scroll", updateFixedPreviewControls, { passive: true });
+  if (window.ResizeObserver && standardPreviewWorkspace) {
+    const fixedControlsResizeObserver = new ResizeObserver(() => {
+      scheduleFixedPreviewControlsUpdate();
+    });
+    fixedControlsResizeObserver.observe(standardPreviewWorkspace);
+    if (standardPreviewMain) fixedControlsResizeObserver.observe(standardPreviewMain);
+  }
+  if (sidebarMenu && window.MutationObserver) {
+    const sidebarObserver = new MutationObserver(() => {
+      scheduleFixedPreviewControlsUpdate();
+    });
+    sidebarObserver.observe(sidebarMenu, { attributes: true, attributeFilter: ["class"] });
+  }
+  sidebarToggle?.addEventListener("click", () => {
+    scheduleFixedPreviewControlsUpdate();
+    scheduleFixedPreviewControlsUpdate(80);
+  });
   refreshAllCellOverflows();
   standardSearchInput?.addEventListener("input", () => {
     applyPreviewFilters();

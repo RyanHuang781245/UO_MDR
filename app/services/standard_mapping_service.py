@@ -11,6 +11,7 @@ from pathlib import Path
 
 from lxml import etree
 from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 from modules.chapter_section_parse import parse_chapter_section_expression
 from modules.docx_toc import extract_toc_entries_from_parts
 from modules.extract_word_chapter import (
@@ -97,6 +98,8 @@ HEADER_KEYWORDS = {
 }
 
 EXCEL_TITLE_HEADER_ALIASES = ("標準名稱", "TITLE", "STANDARD TITLE")
+PRODUCT_RELEVANCE_HEADER_ALIASES = ("與公司產品有無關聯", "与公司产品有无关联")
+PRODUCT_RELEVANCE_FALLBACK_COL_INDEX = 3
 HARMONISED_REFERENCE_HEADERS = ("Reference and title Provision",)
 
 
@@ -189,11 +192,28 @@ def is_accepted_eu_harmonised_form(std_no: str) -> bool:
     return bool(re.match(r"^(?:BS\s+EN\s+ISO|EN\s+ISO|EN\s+IEC)\b", normalized))
 
 
+def is_excel_lock_file(path_or_name: str | os.PathLike | None) -> bool:
+    return Path(str(path_or_name or "")).name.startswith("~$")
+
+
+def load_excel_workbook(path: str | os.PathLike, *, data_only: bool = True, read_only: bool = False):
+    excel_path = Path(path)
+    if is_excel_lock_file(excel_path):
+        raise ValueError(f"Excel 檔案「{excel_path.name}」是暫存檔，請關閉 Excel 後重新選擇正式檔案")
+    try:
+        return load_workbook(excel_path, data_only=data_only, read_only=read_only)
+    except (zipfile.BadZipFile, InvalidFileException, OSError) as exc:
+        raise ValueError(
+            f"Excel 檔案「{excel_path.name}」無法讀取，可能檔案仍在 Excel 中開啟、是暫存檔，或不是有效的 xlsx 檔；"
+            "請關閉檔案後重新上傳或重新選擇正式檔案"
+        ) from exc
+
+
 def load_harmonised_reference_index(reference_path: str | os.PathLike | None = None) -> dict[str, set[int]] | None:
     path = Path(reference_path or "")
     if not path.is_file():
         return None
-    wb = load_workbook(path, data_only=True, read_only=True)
+    wb = load_excel_workbook(path, data_only=True, read_only=True)
     try:
         lookup: dict[str, set[int]] = {}
 
@@ -258,7 +278,7 @@ def load_regulation_reference_index(reference_path: str | os.PathLike | None = N
     path = Path(reference_path or "")
     if not path.is_file():
         return {}
-    wb = load_workbook(path, data_only=True, read_only=True)
+    wb = load_excel_workbook(path, data_only=True, read_only=True)
     try:
         index: dict[str, list[dict]] = {}
         for ws in wb.worksheets:
@@ -913,6 +933,9 @@ def build_sheet_records(ws, std_col_index: int = EXCEL_STANDARD_COL_INDEX) -> li
     if not rows:
         return []
     title_col_index = find_excel_header_col_index(rows, EXCEL_TITLE_HEADER_ALIASES)
+    product_relevance_col_index = find_excel_header_col_index(rows, PRODUCT_RELEVANCE_HEADER_ALIASES)
+    if product_relevance_col_index is None:
+        product_relevance_col_index = PRODUCT_RELEVANCE_FALLBACK_COL_INDEX
     records = []
     for row_idx, row in enumerate(rows[1:], start=2):
         if row is None:
@@ -920,6 +943,13 @@ def build_sheet_records(ws, std_col_index: int = EXCEL_STANDARD_COL_INDEX) -> li
         values = list(row)
         std_val = values[std_col_index] if std_col_index < len(values) else None
         title_val = values[title_col_index] if title_col_index is not None and title_col_index < len(values) else None
+        product_relevance_val = (
+            values[product_relevance_col_index]
+            if product_relevance_col_index is not None and product_relevance_col_index < len(values)
+            else None
+        )
+        if product_relevance_col_index is not None and normalize_text(product_relevance_val) != "是":
+            continue
         if std_val is None:
             continue
         std_val = normalize_text(std_val)
@@ -943,16 +973,19 @@ def build_sheet_records(ws, std_col_index: int = EXCEL_STANDARD_COL_INDEX) -> li
 
 
 def load_excel_index(excel_path: str) -> dict:
-    wb = load_workbook(excel_path, data_only=True)
-    needed_sheets = ["BS-EN-DIN(歐洲國家標準)", "ISO", "ASTM"]
-    index = {}
-    for sheet_name in needed_sheets:
-        if sheet_name not in wb.sheetnames:
-            raise ValueError(f"Excel 缺少工作表: {sheet_name}")
-        index[sheet_name] = build_sheet_records(wb[sheet_name], EXCEL_STANDARD_COL_INDEX)
-    if IEC_REFERENCE_SHEET in wb.sheetnames:
-        index[IEC_REFERENCE_SHEET] = build_sheet_records(wb[IEC_REFERENCE_SHEET], EXCEL_STANDARD_COL_INDEX)
-    return index
+    wb = load_excel_workbook(excel_path, data_only=True)
+    try:
+        needed_sheets = ["BS-EN-DIN(歐洲國家標準)", "ISO", "ASTM"]
+        index = {}
+        for sheet_name in needed_sheets:
+            if sheet_name not in wb.sheetnames:
+                raise ValueError(f"Excel 缺少工作表: {sheet_name}")
+            index[sheet_name] = build_sheet_records(wb[sheet_name], EXCEL_STANDARD_COL_INDEX)
+        if IEC_REFERENCE_SHEET in wb.sheetnames:
+            index[IEC_REFERENCE_SHEET] = build_sheet_records(wb[IEC_REFERENCE_SHEET], EXCEL_STANDARD_COL_INDEX)
+        return index
+    finally:
+        wb.close()
 
 
 def find_latest_year_from_excel(
@@ -1228,7 +1261,12 @@ def find_latest_year_from_regulation_reference(
     return result
 
 
-def apply_candidate_override(match_info: dict, override_candidate_id: str | None) -> dict:
+def apply_candidate_override(
+    match_info: dict,
+    override_candidate_id: str | None,
+    *,
+    force_manual_override: bool = False,
+) -> dict:
     result = copy.deepcopy(match_info)
     candidates = result.get("all_candidates") or []
     if not candidates:
@@ -1248,7 +1286,7 @@ def apply_candidate_override(match_info: dict, override_candidate_id: str | None
             candidate["decision"] = "selected"
             candidate["decision_reason"] = (
                 "最終採用：依自動規則選中"
-                if candidate["candidate_id"] == auto_selected_id
+                if candidate["candidate_id"] == auto_selected_id and not force_manual_override
                 else "人工覆寫：使用者改選此候選"
             )
         elif candidate["candidate_id"] == auto_selected_id and selected["candidate_id"] != auto_selected_id:
@@ -1267,7 +1305,7 @@ def apply_candidate_override(match_info: dict, override_candidate_id: str | None
     result["all_candidates"] = candidates
     result["selected_candidate_id"] = selected["candidate_id"]
     result["auto_selected_candidate_id"] = auto_selected_id
-    result["manually_overridden"] = selected["candidate_id"] != auto_selected_id
+    result["manually_overridden"] = force_manual_override or selected["candidate_id"] != auto_selected_id
     return result
 
 
@@ -2317,6 +2355,8 @@ def process_document(
         for rec in records:
             row_key = make_row_key(rec["table_index"], rec["row_index"])
             row_edits = normalized_edit_map.get(row_key, {})
+            override_candidate_id = override_map.get(row_key)
+            row_has_override = bool(str(override_candidate_id or "").strip())
             standards = rec["standards"]
             word_year_text = normalize_text(rec["issued_year"])
             word_harmonised_text = normalize_harmonised_yes_no(rec["harmonised"])
@@ -2338,7 +2378,11 @@ def process_document(
                     prefer_latest_en_variants=prefer_latest_en_variants,
                 )
             if match_info:
-                match_info = apply_candidate_override(match_info, override_map.get(row_key))
+                match_info = apply_candidate_override(
+                    match_info,
+                    override_candidate_id,
+                    force_manual_override=row_has_override,
+                )
 
             if row_edits:
                 apply_manual_row_edits(rec, row_key, row_edits, match_info, row_harmonised_reference_index)
@@ -2411,7 +2455,7 @@ def process_document(
                 normalize_harmonised_yes_no(word_harmonised_text) == "YES"
                 and normalize_harmonised_yes_no(final_harmonised) == "NO"
             )
-            if row_would_update and harmonised_yes_to_no:
+            if row_would_update and harmonised_yes_to_no and not row_has_override:
                 row_reference_map[(rec["table_index"], rec["row_index"])] = {
                     "row_key": row_key,
                     "status": "SAME_NO_UPDATE",
@@ -2430,6 +2474,7 @@ def process_document(
                     "all_candidates": match_info.get("all_candidates", []),
                     "selected_candidate_id": match_info.get("selected_candidate_id", ""),
                     "auto_selected_candidate_id": match_info.get("auto_selected_candidate_id", ""),
+                    "harmonised_yes_to_no_rollback": True,
                     "manual_edits": {},
                 }
                 report.append({

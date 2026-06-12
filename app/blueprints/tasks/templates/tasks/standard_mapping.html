@@ -1030,6 +1030,17 @@
     border-bottom: 1px solid var(--bs-gray-200);
     flex-shrink: 0;
   }
+  .reference-tooltip-header-main {
+    min-width: 0;
+  }
+  .reference-tooltip-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
   .reference-tooltip-kicker {
     color: var(--bs-gray-500);
     font-size: 0.75rem;
@@ -1044,13 +1055,17 @@
     line-height: 1.3;
   }
   .reference-tooltip-status {
-    flex-shrink: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 13rem;
     padding: 0.45rem 0.65rem;
     border-radius: 999px;
     font-size: 0.75rem;
     font-weight: 700;
     border: 1px solid transparent;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .reference-tooltip-status.is-updated {
     background: var(--bs-blue-50);
@@ -1069,6 +1084,11 @@
     background: #f0f9ff;
     color: #0369a1;
     border-color: #bae6fd;
+  }
+  .reference-tooltip-status.is-override {
+    background: #fffbeb;
+    color: #b45309;
+    border-color: #fde68a;
   }
   .reference-tooltip-flags {
     display: flex;
@@ -1091,6 +1111,26 @@
     background: #fffbeb;
     border-color: #fde68a;
     color: #b45309;
+  }
+  .reference-tooltip-flag.is-status-updated {
+    background: var(--bs-blue-50);
+    border-color: var(--bs-blue-100);
+    color: var(--bs-blue-600);
+  }
+  .reference-tooltip-flag.is-status-same {
+    background: var(--bs-emerald-50);
+    border-color: #bbf7d0;
+    color: var(--bs-emerald-700);
+  }
+  .reference-tooltip-flag.is-status-missing {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
+  }
+  .reference-tooltip-flag.is-status-harmonised-fallback {
+    background: #f0f9ff;
+    border-color: #bae6fd;
+    color: #0369a1;
   }
   .reference-tooltip-flag.is-edit {
     background: #f5f3ff;
@@ -1245,6 +1285,7 @@
     gap: 0.5rem;
   }
   .tooltip-close {
+    flex: 0 0 auto;
     border: 0;
     background: transparent;
     color: var(--bs-gray-500);
@@ -1637,7 +1678,27 @@
             <div class="standard-source-panel__file" title="{{ selected_excel }}">
               <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
               {{ selected_excel }}
-            </div>  
+            </div>
+            {% if mapping_route_endpoint == 'standard_updates_bp.mapping' and selected_regulation_excel %}
+              <div class="standard-source-panel__file" title="{{ selected_regulation_excel }}">
+                <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
+                {{ selected_regulation_excel }}
+              </div>
+            {% endif %}
+            {% if use_system_harmonised and harmonised_system_release %}
+              <div class="standard-source-panel__file" title="{{ harmonised_system_release.file_name }}">
+                <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
+                {{ harmonised_system_release.file_name }}
+                {% if harmonised_system_release.version_label %}
+                  <span class="badge text-bg-light border ms-1">{{ harmonised_system_release.version_label }}</span>
+                {% endif %}
+              </div>
+            {% elif selected_harmonised_excel %}
+              <div class="standard-source-panel__file" title="{{ selected_harmonised_excel }}">
+                <i class="bi bi-file-earmark-excel text-success flex-shrink-0"></i>
+                {{ selected_harmonised_excel }}
+              </div>
+            {% endif %}
           {% endif %}
         </div>
         <div class="standard-source-panel__hint">
@@ -2872,6 +2933,8 @@
   let activeReferenceKey = "";
   let hideTimer = null;
   let isTooltipPinned = false;
+  let fixedPreviewControlsActive = false;
+  let fixedPreviewControlsPlaceholderHeight = 0;
 
   document.querySelectorAll("[data-reference-key]").forEach((cell) => {
     const referenceKey = cell.dataset.referenceKey || "";
@@ -2892,6 +2955,7 @@
   function updateFixedPreviewControls() {
     if (!standardPreviewWorkspace || !standardPreviewControls || !standardPreviewControlsPlaceholder) return;
     if (window.innerWidth <= 991) {
+      fixedPreviewControlsActive = false;
       standardPreviewControls.classList.remove("is-fixed");
       standardPreviewControls.style.left = "";
       standardPreviewControls.style.width = "";
@@ -2902,17 +2966,22 @@
     }
     const topOffset = 12;
     const workspaceRect = standardPreviewWorkspace.getBoundingClientRect();
+    const wasFixed = fixedPreviewControlsActive;
     const controlsHeight = standardPreviewControls.offsetHeight;
-    const placeholderHeight = standardPreviewControls.classList.contains("is-fixed")
-      ? (parseFloat(standardPreviewControlsPlaceholder.style.height) || controlsHeight)
+    const placeholderHeight = wasFixed
+      ? (fixedPreviewControlsPlaceholderHeight || parseFloat(standardPreviewControlsPlaceholder.style.height) || controlsHeight)
       : controlsHeight;
     const workspaceTop = window.scrollY + workspaceRect.top;
     const workspaceBottom = window.scrollY + workspaceRect.bottom;
-    const shouldFix = (
-      window.scrollY + topOffset > workspaceTop
-      && window.scrollY + topOffset + controlsHeight < workspaceBottom
-    );
+    const viewportAnchor = window.scrollY + topOffset;
+    const enterOffset = workspaceTop + 8;
+    const exitOffset = workspaceTop - 24;
+    const shouldFixTop = wasFixed ? viewportAnchor > exitOffset : viewportAnchor > enterOffset;
+    const shouldFixBottom = window.scrollY + topOffset + controlsHeight < workspaceBottom;
+    const shouldFix = shouldFixTop && shouldFixBottom;
     if (!shouldFix) {
+      fixedPreviewControlsActive = false;
+      fixedPreviewControlsPlaceholderHeight = 0;
       standardPreviewControls.classList.remove("is-fixed");
       standardPreviewControls.style.left = "";
       standardPreviewControls.style.width = "";
@@ -2921,12 +2990,28 @@
       standardPreviewWorkspace.style.paddingBottom = "";
       return;
     }
-    standardPreviewControlsPlaceholder.style.display = "block";
-    standardPreviewControlsPlaceholder.style.height = `${placeholderHeight}px`;
+    fixedPreviewControlsActive = true;
+    fixedPreviewControlsPlaceholderHeight = placeholderHeight;
+    const placeholderHeightValue = `${placeholderHeight}px`;
+    if (standardPreviewControlsPlaceholder.style.display !== "block") {
+      standardPreviewControlsPlaceholder.style.display = "block";
+    }
+    if (standardPreviewControlsPlaceholder.style.height !== placeholderHeightValue) {
+      standardPreviewControlsPlaceholder.style.height = placeholderHeightValue;
+    }
     standardPreviewControls.classList.add("is-fixed");
-    standardPreviewControls.style.left = `${workspaceRect.left}px`;
-    standardPreviewControls.style.width = `${workspaceRect.width}px`;
-    standardPreviewWorkspace.style.paddingBottom = `${standardPreviewControls.offsetHeight + 12}px`;
+    const leftValue = `${workspaceRect.left}px`;
+    const widthValue = `${workspaceRect.width}px`;
+    if (standardPreviewControls.style.left !== leftValue) {
+      standardPreviewControls.style.left = leftValue;
+    }
+    if (standardPreviewControls.style.width !== widthValue) {
+      standardPreviewControls.style.width = widthValue;
+    }
+    const paddingBottomValue = `${standardPreviewControls.offsetHeight + 12}px`;
+    if (standardPreviewWorkspace.style.paddingBottom !== paddingBottomValue) {
+      standardPreviewWorkspace.style.paddingBottom = paddingBottomValue;
+    }
   }
 
   function scheduleFixedPreviewControlsUpdate(delay = 0) {
@@ -2961,11 +3046,13 @@
     if (!source) return null;
     const meta = cloneMeta(source);
     const rowKey = meta.row_key || "";
+    const hasManualOverride = Boolean(rowKey && overrideSelections[rowKey]);
     const selectedCandidateId = overrideSelections[rowKey] || meta.selected_candidate_id || meta.auto_selected_candidate_id || "";
     const autoSelectedId = meta.auto_selected_candidate_id || "";
     const selectedCandidate = (meta.all_candidates || []).find((item) => item.candidate_id === selectedCandidateId);
+    const isHarmonisedRollback = Boolean(meta.harmonised_yes_to_no_rollback && !hasManualOverride);
 
-    if (selectedCandidate) {
+    if (selectedCandidate && !isHarmonisedRollback) {
       meta.sheet_name = selectedCandidate.sheet_name || "";
       meta.excel_col_letter = selectedCandidate.excel_col_letter || "";
       meta.excel_row_index = selectedCandidate.excel_row_index || "";
@@ -3278,20 +3365,28 @@
 
   function renderReferenceCard(meta) {
     if (!meta) return "";
+    const rowKey = meta.row_key || "";
+    const hasManualOverride = Boolean(rowKey && overrideSelections[rowKey]);
     const statusMap = {
       UPDATED: ["已更新", "is-updated"],
       SAME_NO_UPDATE: ["已比對，無需更新", "is-same"],
       HARMONISED_YES_FALLBACK: ["原候選標準未被歐盟採用，改採用歐盟採認候選標準", "is-harmonised-fallback"],
       NOT_FOUND: ["查無參考來源", "is-missing"],
     };
-    const [statusLabel, statusClass] = statusMap[meta.status] || [meta.status || "未知", "is-neutral"];
+    const [statusLabel, statusClass] = hasManualOverride
+      ? ["已人工改選", "is-override"]
+      : (
+        meta.harmonised_yes_to_no_rollback
+          ? ["原候選標準未被歐盟採認，已退回原標準", "is-harmonised-fallback"]
+          : (statusMap[meta.status] || [meta.status || "未知", "is-neutral"])
+      );
+    const statusFlagClass = statusClass === "is-override"
+      ? "is-override"
+      : `is-status-${statusClass.replace(/^is-/, "")}`;
     const referenceCell = meta.excel_col_letter && meta.excel_row_index ? `${meta.excel_col_letter}${meta.excel_row_index}` : "無";
     const sourceLabel = meta.sheet_name || "未找到對應工作表";
     const matchedNo = meta.matched_standard_no || "無";
     const excelYear = meta.excel_year || "無";
-    const fieldLabel = meta.field_label || "";
-    const rowKey = meta.row_key || "";
-    const hasManualOverride = Boolean(rowKey && overrideSelections[rowKey]);
     const editFieldLabels = {
       standards: "Standards",
       issued_year: "Issued Year",
@@ -3307,7 +3402,7 @@
       ? (tooltipPanelSelections[rowKey] || "candidates")
       : "edit";
     const stateFlags = [
-      hasManualOverride ? `<span class="reference-tooltip-flag is-override">已改選</span>` : "",
+      `<span class="reference-tooltip-flag ${escapeHtml(statusFlagClass)}" title="${escapeHtml(statusLabel)}">${escapeHtml(statusLabel)}</span>`,
       hasManualEdit ? `<span class="reference-tooltip-flag is-edit">人工編輯：${escapeHtml(manualEditFields.join("、"))}</span>` : "",
     ].filter(Boolean).join("");
     const rowKeys = referenceKeysByRow[meta.row_key || ""] || {};
@@ -3326,7 +3421,10 @@
     const candidates = (meta.all_candidates || []).map((candidate) => {
       let decisionLabel = "已排除";
       let decisionClass = "is-excluded";
-      if (candidate.decision === "selected") {
+      if (meta.harmonised_yes_to_no_rollback && !hasManualOverride && candidate.candidate_id === meta.selected_candidate_id) {
+        decisionLabel = "未採用";
+        decisionClass = "is-excluded";
+      } else if (candidate.decision === "selected") {
         decisionLabel = "選用";
         decisionClass = "is-selected";
       } else if (candidate.decision === "kept") {
@@ -3366,13 +3464,10 @@
 
     return `
       <div class="reference-tooltip-header">
-        <div>
-          <div class="reference-tooltip-kicker">欄位</div>
-          <div class="reference-tooltip-source">${escapeHtml(fieldLabel)}</div>
+        <div class="reference-tooltip-header-main">
           ${stateFlags ? `<div class="reference-tooltip-flags">${stateFlags}</div>` : ""}
         </div>
-        <div class="d-flex align-items-center gap-2">
-          <span class="reference-tooltip-status ${statusClass}">${escapeHtml(statusLabel)}</span>
+        <div class="reference-tooltip-header-actions">
           <button class="tooltip-close" type="button" data-action="close">&times;</button>
         </div>
       </div>
@@ -3697,7 +3792,7 @@
         if (!confirmed) return;
         delete editSelections[rowKey];
       }
-      if (candidateId === autoSelectedId) {
+      if (candidateId === autoSelectedId && !meta?.harmonised_yes_to_no_rollback) {
         delete overrideSelections[rowKey];
       } else {
         overrideSelections[rowKey] = candidateId;

@@ -61,6 +61,10 @@ _WINDOWS_RESERVED_FILE_NAMES = {
 }
 
 
+def is_excel_lock_file(path_or_name: str | os.PathLike | None) -> bool:
+    return Path(str(path_or_name or "")).name.startswith("~$")
+
+
 def _safe_uploaded_filename(filename: str, default_stem: str = "upload") -> str:
     raw_name = os.path.basename((filename or "").replace("\\", "/")).strip()
     cleaned = "".join(
@@ -809,6 +813,8 @@ def save_uploaded_input(task_id: str, upload, *, kind: str) -> str:
     allowed_exts = ALLOWED_WORD_EXTENSIONS if kind == "word" else ALLOWED_EXCEL_EXTENSIONS
     if ext not in allowed_exts:
         raise ValueError("檔案類型不支援")
+    if kind != "word" and is_excel_lock_file(upload.filename):
+        raise ValueError("請不要上傳 Excel 暫存檔（~$ 開頭）；請關閉 Excel 後重新選擇正式檔案")
     normalized_kind = (
         "word"
         if kind == "word"
@@ -829,7 +835,11 @@ def available_input_files(task_id: str) -> tuple[list[str], list[str]]:
     word_options = list_files(word_dir) if os.path.isdir(word_dir) else []
     excel_options = list_files(excel_dir) if os.path.isdir(excel_dir) else []
     word_options = [rel for rel in word_options if Path(rel).suffix.lower() in ALLOWED_WORD_EXTENSIONS]
-    excel_options = [rel for rel in excel_options if Path(rel).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS]
+    excel_options = [
+        rel
+        for rel in excel_options
+        if Path(rel).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS and not is_excel_lock_file(rel)
+    ]
     return word_options, excel_options
 
 
@@ -846,6 +856,8 @@ def input_file_history(task_id: str, *, kind: str, current_file: str = "") -> li
         for rel_path in list_files(input_dir):
             abs_path = os.path.join(input_dir, rel_path.replace("/", os.sep))
             if Path(rel_path).suffix.lower() not in allowed_exts or not os.path.isfile(abs_path):
+                continue
+            if normalized_kind != "word" and is_excel_lock_file(rel_path):
                 continue
             stat = os.stat(abs_path)
             items.append(
@@ -979,7 +991,11 @@ def get_latest_harmonised_release_in_dir(folder: str) -> dict:
     candidates = []
     for entry in os.listdir(target_folder):
         abs_path = os.path.join(target_folder, entry)
-        if os.path.isfile(abs_path) and Path(entry).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS:
+        if (
+            os.path.isfile(abs_path)
+            and Path(entry).suffix.lower() in ALLOWED_EXCEL_EXTENSIONS
+            and not is_excel_lock_file(entry)
+        ):
             candidates.append(abs_path)
     if not candidates:
         return {}

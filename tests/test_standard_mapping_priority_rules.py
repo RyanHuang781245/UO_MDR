@@ -28,6 +28,7 @@ from app.services.standard_mapping_service import (
     resolve_target_table_indexes,
 )
 from app.blueprints.tasks.standard_mapping_routes import _build_stats
+from app.services.standard_update_service import get_latest_harmonised_release_in_dir
 
 
 def _add_single_cell_table(doc: Document, text: str) -> None:
@@ -42,8 +43,10 @@ def _write_standard_workbook(path, standard_no: str, title: str = "New Title") -
     for sheet_name in ("BS-EN-DIN(歐洲國家標準)", "ISO", "ASTM"):
         ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
         ws.cell(row=1, column=1, value="標準名稱")
+        ws.cell(row=1, column=4, value="與公司產品有無關聯")
         ws.cell(row=1, column=6, value="Standards")
     ws = wb["BS-EN-DIN(歐洲國家標準)"]
+    ws.cell(row=2, column=4, value="是")
     ws.cell(row=2, column=1, value=title)
     ws.cell(row=2, column=6, value=standard_no)
     wb.save(path)
@@ -65,9 +68,11 @@ def _write_standard_workbook_rows(path, rows: list[tuple[str, str]]) -> None:
     for sheet_name in ("BS-EN-DIN(歐洲國家標準)", "ISO", "ASTM"):
         ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
         ws.cell(row=1, column=1, value="標準名稱")
+        ws.cell(row=1, column=4, value="與公司產品有無關聯")
         ws.cell(row=1, column=6, value="Standards")
     ws = wb["BS-EN-DIN(歐洲國家標準)"]
     for row_idx, (standard_no, title) in enumerate(rows, start=2):
+        ws.cell(row=row_idx, column=4, value="是")
         ws.cell(row=row_idx, column=1, value=title)
         ws.cell(row=row_idx, column=6, value=standard_no)
     wb.save(path)
@@ -190,6 +195,90 @@ def test_extract_harmonised_reference_entries_collects_all_standard_lines():
         "EN ISO 13485:2016/AC:2018",
         "EN ISO 13485:2016/A11:2021",
     ]
+
+
+def test_load_harmonised_reference_index_rejects_invalid_excel(tmp_path):
+    invalid_path = tmp_path / "broken.xlsx"
+    invalid_path.write_text("not a valid xlsx", encoding="utf-8")
+
+    try:
+        load_harmonised_reference_index(invalid_path)
+    except ValueError as exc:
+        assert "無法讀取" in str(exc)
+        assert invalid_path.name in str(exc)
+    else:
+        raise AssertionError("Expected invalid Excel to raise ValueError")
+
+
+def test_latest_harmonised_release_ignores_excel_lock_file(tmp_path):
+    official_path = tmp_path / "SummaryListForLegislation.xlsx"
+    lock_path = tmp_path / "~$SummaryListForLegislation.xlsx"
+    _write_harmonised_workbook(
+        official_path,
+        "EN ISO 14971:2019\nApplication of risk management to medical devices",
+    )
+    lock_path.write_text("excel lock", encoding="utf-8")
+    newer_time = official_path.stat().st_mtime + 60
+    os.utime(lock_path, (newer_time, newer_time))
+
+    result = get_latest_harmonised_release_in_dir(str(tmp_path))
+
+    assert result["path"] == str(official_path)
+    assert result["file_name"] == official_path.name
+
+
+def test_load_excel_index_only_keeps_product_relevant_rows(tmp_path):
+    standard_excel_path = tmp_path / "standards_relevance.xlsx"
+
+    wb = Workbook()
+    default = wb.active
+    default.title = "BS-EN-DIN(歐洲國家標準)"
+    for sheet_name in ("BS-EN-DIN(歐洲國家標準)", "ISO", "ASTM"):
+        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
+        ws.cell(row=1, column=1, value="標準名稱")
+        ws.cell(row=1, column=4, value="與公司產品有無關聯")
+        ws.cell(row=1, column=6, value="Standards")
+    ws = wb["ISO"]
+    ws.cell(row=2, column=1, value="Relevant title")
+    ws.cell(row=2, column=4, value="是")
+    ws.cell(row=2, column=6, value="ISO 10993-1:2018")
+    ws.cell(row=3, column=1, value="Irrelevant title")
+    ws.cell(row=3, column=4, value="否")
+    ws.cell(row=3, column=6, value="ISO 10993-4:2017")
+    wb.save(standard_excel_path)
+
+    index = load_excel_index(str(standard_excel_path))
+    iso_standards = [record["standard_no"] for record in index["ISO"]]
+
+    assert "ISO 10993-1:2018" in iso_standards
+    assert "ISO 10993-4:2017" not in iso_standards
+
+
+def test_load_excel_index_falls_back_to_column_d_for_product_relevance(tmp_path):
+    standard_excel_path = tmp_path / "standards_relevance_fallback.xlsx"
+
+    wb = Workbook()
+    default = wb.active
+    default.title = "BS-EN-DIN(歐洲國家標準)"
+    for sheet_name in ("BS-EN-DIN(歐洲國家標準)", "ISO", "ASTM"):
+        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
+        ws.cell(row=1, column=1, value="標準名稱")
+        ws.cell(row=1, column=4, value="關聯")
+        ws.cell(row=1, column=6, value="Standards")
+    ws = wb["ISO"]
+    ws.cell(row=2, column=1, value="Relevant title")
+    ws.cell(row=2, column=4, value="是")
+    ws.cell(row=2, column=6, value="ISO 10993-1:2018")
+    ws.cell(row=3, column=1, value="Irrelevant title")
+    ws.cell(row=3, column=4, value="否")
+    ws.cell(row=3, column=6, value="ISO 10993-4:2017")
+    wb.save(standard_excel_path)
+
+    index = load_excel_index(str(standard_excel_path))
+    iso_standards = [record["standard_no"] for record in index["ISO"]]
+
+    assert "ISO 10993-1:2018" in iso_standards
+    assert "ISO 10993-4:2017" not in iso_standards
 
 
 def test_build_stats_counts_harmonised_yes_fallback_as_updated():
@@ -677,6 +766,134 @@ def test_process_document_skips_entire_row_when_harmonised_result_is_no(tmp_path
     assert updated_values == original_values
     assert row_meta["status"] == "SAME_NO_UPDATE"
     assert row_meta["matched_standard_no"] == "ISO 14971"
+    assert row_meta["harmonised_yes_to_no_rollback"] is True
+
+
+def test_process_document_marks_harmonised_yes_to_no_rollback_for_en_iso_to_iso(tmp_path):
+    word_path = tmp_path / "input_en_iso_to_iso.docx"
+    standard_excel_path = tmp_path / "standards_en_iso_to_iso.xlsx"
+    harmonised_path = tmp_path / "harmonised_en_iso_to_iso.xlsx"
+    output_path = tmp_path / "output_en_iso_to_iso.docx"
+
+    doc = Document()
+    table = doc.add_table(rows=2, cols=4)
+    headers = [
+        "Standards",
+        "Issued Year",
+        "EU Harmonised Standards under MDR 2017/745 (YES/NO)",
+        "Title",
+    ]
+    original_values = ["EN ISO 10993-4", "2017", "YES", "Old Title"]
+    for col_idx, header in enumerate(headers):
+        table.cell(0, col_idx).text = header
+        table.cell(1, col_idx).text = original_values[col_idx]
+    doc.save(word_path)
+
+    wb = Workbook()
+    default = wb.active
+    default.title = "BS-EN-DIN(歐洲國家標準)"
+    for sheet_name in ("BS-EN-DIN(歐洲國家標準)", "ISO", "ASTM"):
+        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
+        ws.cell(row=1, column=1, value="標準名稱")
+        ws.cell(row=1, column=4, value="與公司產品有無關聯")
+        ws.cell(row=1, column=6, value="Standards")
+    ws = wb["ISO"]
+    ws.cell(row=2, column=1, value="Selection of tests for interactions with blood")
+    ws.cell(row=2, column=4, value="是")
+    ws.cell(row=2, column=6, value="ISO 10993-4:2017")
+    wb.save(standard_excel_path)
+    _write_harmonised_workbook(
+        harmonised_path,
+        "EN ISO 13485:2016\nMedical devices - Quality management systems",
+    )
+
+    result = process_document(
+        str(word_path),
+        str(standard_excel_path),
+        harmonised_reference_path=str(harmonised_path),
+        output_path=str(output_path),
+    )
+    row_meta = next(iter(result["reference_payload"].values()))
+    output_doc = Document(output_path)
+    updated_values = [cell.text for cell in output_doc.tables[0].rows[1].cells]
+
+    assert result["updated_count"] == 0
+    assert updated_values == original_values
+    assert row_meta["status"] == "SAME_NO_UPDATE"
+    assert row_meta["matched_standard_no"] == "EN ISO 10993-4"
+    assert row_meta["harmonised_yes_to_no_rollback"] is True
+    assert any(
+        candidate["matched_standard_no"] == "ISO 10993-4:2017"
+        for candidate in row_meta["all_candidates"]
+    )
+
+
+def test_process_document_manual_override_applies_rolled_back_candidate(tmp_path):
+    word_path = tmp_path / "input_en_iso_override.docx"
+    standard_excel_path = tmp_path / "standards_en_iso_override.xlsx"
+    harmonised_path = tmp_path / "harmonised_en_iso_override.xlsx"
+    output_path = tmp_path / "output_en_iso_override.docx"
+    override_output_path = tmp_path / "output_en_iso_override_applied.docx"
+
+    doc = Document()
+    table = doc.add_table(rows=2, cols=4)
+    headers = [
+        "Standards",
+        "Issued Year",
+        "EU Harmonised Standards under MDR 2017/745 (YES/NO)",
+        "Title",
+    ]
+    original_values = ["EN ISO 10993-4", "2017", "YES", "Old Title"]
+    for col_idx, header in enumerate(headers):
+        table.cell(0, col_idx).text = header
+        table.cell(1, col_idx).text = original_values[col_idx]
+    doc.save(word_path)
+
+    wb = Workbook()
+    default = wb.active
+    default.title = "BS-EN-DIN(歐洲國家標準)"
+    for sheet_name in ("BS-EN-DIN(歐洲國家標準)", "ISO", "ASTM"):
+        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
+        ws.cell(row=1, column=1, value="標準名稱")
+        ws.cell(row=1, column=4, value="與公司產品有無關聯")
+        ws.cell(row=1, column=6, value="Standards")
+    ws = wb["ISO"]
+    ws.cell(row=2, column=1, value="Selection of tests for interactions with blood")
+    ws.cell(row=2, column=4, value="是")
+    ws.cell(row=2, column=6, value="ISO 10993-4:2017")
+    wb.save(standard_excel_path)
+    _write_harmonised_workbook(
+        harmonised_path,
+        "EN ISO 13485:2016\nMedical devices - Quality management systems",
+    )
+
+    preview = process_document(
+        str(word_path),
+        str(standard_excel_path),
+        harmonised_reference_path=str(harmonised_path),
+        output_path=str(output_path),
+    )
+    row_meta = next(iter(preview["reference_payload"].values()))
+    row_key = row_meta["row_key"]
+    candidate_id = row_meta["auto_selected_candidate_id"]
+
+    result = process_document(
+        str(word_path),
+        str(standard_excel_path),
+        harmonised_reference_path=str(harmonised_path),
+        override_map={row_key: candidate_id},
+        output_path=str(override_output_path),
+    )
+
+    output_doc = Document(override_output_path)
+    updated_values = [cell.text for cell in output_doc.tables[0].rows[1].cells]
+    updated_meta = next(iter(result["reference_payload"].values()))
+
+    assert updated_values[:3] == ["ISO 10993-4", "2017", "NO"]
+    assert result["updated_count"] == 1
+    assert updated_meta["matched_standard_no"] == "ISO 10993-4"
+    assert updated_meta["matched_harmonised"] == "NO"
+    assert not updated_meta.get("harmonised_yes_to_no_rollback")
 
 
 def test_process_document_marks_harmonised_yes_fallback_update(tmp_path):

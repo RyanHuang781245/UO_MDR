@@ -14,7 +14,7 @@ test.ipynb
 test.py
 .vscode/
 .env
-.env.staging
+.env.bk
 .playwright_env/
 node_modules/
 AGENTS.md

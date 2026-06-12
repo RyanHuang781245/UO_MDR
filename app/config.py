@@ -6,8 +6,10 @@ from pathlib import Path
 from ldap3 import BASE, LEVEL, SUBTREE
 
 from app.utils import parse_bool
+from modules.env_loader import load_dotenv_if_present
 
 BASE_DIR = Path(__file__).resolve().parents[1]
+load_dotenv_if_present(str(BASE_DIR))
 
 
 def _resolve_ldap_scope():

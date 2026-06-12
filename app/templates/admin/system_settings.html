@@ -118,6 +118,16 @@
                 </div>
               </div>
               {% endif %}
+              {% if active_release_on_fallback and not using_fallback_reference %}
+              <div class="alert alert-info">
+                <div class="font-weight-bold mb-1">
+                  <i class="fa fa-info-circle mr-1"></i> 目前 active 採認標準檔案仍在備援路徑
+                </div>
+                <div class="small mb-0">
+                  主要存取路徑目前可用，系統存取路徑已是 <code>{{ regulation_reference_root }}</code>。若要將 active 版本移回主要存取路徑，請執行「備援路徑同步至主要路徑」。
+                </div>
+              </div>
+              {% endif %}
               <div class="card card-light mb-3">
                 <div class="card-header py-2">
                   <h3 class="card-title font-weight-bold">存取路徑狀態</h3>

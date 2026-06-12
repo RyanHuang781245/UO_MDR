@@ -43,6 +43,7 @@ from app.services.standard_update_service import (
     harmonised_reference_configured_root,
     harmonised_reference_fallback_root,
     harmonised_reference_root,
+    harmonised_reference_storage_mode,
     harmonised_reference_status_message,
     test_harmonised_reference_storage,
 )
@@ -906,6 +907,7 @@ class SystemSettingView(BaseView):
         active_release = get_active_harmonised_release()
         reference_root = harmonised_reference_root()
         configured_reference_root = harmonised_reference_configured_root()
+        reference_storage_mode = harmonised_reference_storage_mode()
         effective_download_page_url = (
             (setting.regulation_download_page_url or "").strip()
             or (current_app.config.get("REGULATION_DOWNLOAD_PAGE_URL") or "").strip()
@@ -924,7 +926,7 @@ class SystemSettingView(BaseView):
             and _is_within_path(active_release.get("path", ""), local_reference_root)
             and not _is_within_path(active_release.get("path", ""), configured_reference_root)
         )
-        using_fallback_reference = active_release_on_fallback
+        using_fallback_reference = reference_storage_mode == "fallback"
         can_switch_to_primary = bool(
             configured_reference_root
             and fallback_release.get("path")
@@ -944,6 +946,7 @@ class SystemSettingView(BaseView):
             primary_storage_ok=primary_storage_ok,
             primary_storage_message=primary_storage_message,
             using_fallback_reference=using_fallback_reference,
+            active_release_on_fallback=active_release_on_fallback,
             can_switch_to_primary=can_switch_to_primary,
         )
 

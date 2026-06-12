@@ -3515,6 +3515,14 @@ function renderTaskFilePickerField({ sid, key, label, value, accept, colClass = 
   </div>`;
 }
 
+const WORD_DOCX_ONLY_HELP_TEXT = "僅支援 .docx 格式；.doc 為舊版二進位格式，請先另存或轉換為 .docx 後再使用";
+const WORD_DOCX_ONLY_HELP_STEPS = new Set([
+  "extract_word_all_content",
+  "extract_word_chapter",
+  "extract_specific_figure_from_word",
+  "extract_specific_table_from_word",
+]);
+
 function renderOutputFolderPickerField({ sid, key, label, value, placeholder, colClass = "col-md-6", helpText = "" }){
   const inputName = `step_${sid}_${key}`;
   return `<div class="${colClass}">
@@ -4223,7 +4231,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
               來源與章節設定
             </div>
             <div class="row g-3">
-              ${renderTaskFilePickerField({ sid, key: "input_file", label: fileLabel, value: fileVal, accept: fileAccept, colClass: "col-12", required: true })}
+              ${renderTaskFilePickerField({ sid, key: "input_file", label: fileLabel, value: fileVal, accept: fileAccept, colClass: "col-12", required: true, helpText: WORD_DOCX_ONLY_HELP_TEXT })}
               <div class="col-12">
                 <div class="form-label d-flex justify-content-between align-items-center">
                   <span>${buildLabelHtml(sectionLabel, true)}</span>
@@ -4261,7 +4269,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                 <input type="hidden" name="step_${sid}_continuous_extract" value="${continuousExtractHiddenValue}">
                 <input type="hidden" name="step_${sid}_explicit_end_number" value="${explicitEndNumVal}">
                 <input type="hidden" name="step_${sid}_explicit_end_title" value="${explicitVal}">
-                <div class="form-text">可直接輸入完整章節參考，例如 <code>2. Materials</code> 或 <code>6.13.4 EO Sterilization validation</code>。</div>
+                <div class="form-text">可直接輸入完整章節參考，例如 <code>2. Materials</code> 或 <code>6.13.4 EO Sterilization validation</code></div>
               </div>
             </div>
           </div>
@@ -4442,7 +4450,8 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         value: val,
         accept: acceptFile,
         colClass: "col-12",
-        required
+        required,
+        helpText: WORD_DOCX_ONLY_HELP_TEXT
       });
     }
 
@@ -4630,6 +4639,9 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
                <input class="form-control" type="number" step="any"${minAttr} name="step_${sid}_${k}" value="${val}" placeholder="${placeholder}"></div>`;
     }
     if (accept.startsWith("file")){
+      const fileHelpText = k === "input_file" && WORD_DOCX_ONLY_HELP_STEPS.has(typeKey)
+        ? WORD_DOCX_ONLY_HELP_TEXT
+        : helpText;
       return renderTaskFilePickerField({
         sid,
         key: k,
@@ -4638,7 +4650,7 @@ function addStep(typeKey, rawPreset = {}, refSid=null, position='end'){
         accept,
         colClass: "col-md-6",
         required,
-        helpText,
+        helpText: fileHelpText,
       });
     }
     if (k === "align"){

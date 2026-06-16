@@ -10,6 +10,7 @@ from app.services.flow_service import (
     DEFAULT_ENABLE_FIGURE_REFERENCE,
     DEFAULT_LINE_SPACING_KEY,
     DEFAULT_LINE_SPACING,
+    DOCUMENT_FORMAT_PRESETS,
     coerce_line_spacing,
     normalize_document_format,
 )
@@ -82,7 +83,22 @@ def save_flow_payload(flow_path: str, payload: dict) -> None:
 
 
 def should_apply_formatting(document_format: str, line_spacing_raw: str) -> bool:
-    return document_format != "none" and str(line_spacing_raw or "").strip().lower() != "none"
+    return document_format != "none" or str(line_spacing_raw or "").strip().lower() != "none"
+
+
+def build_basic_style_kwargs(document_format: str, line_spacing_raw: str, line_spacing: float) -> dict:
+    preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or {}
+    fallback = DOCUMENT_FORMAT_PRESETS.get(DEFAULT_DOCUMENT_FORMAT_KEY) or {}
+    apply_font = document_format != "none"
+    apply_spacing = str(line_spacing_raw or "").strip().lower() != "none"
+    return {
+        "western_font": (preset.get("western_font") or "") if apply_font else None,
+        "east_asian_font": (preset.get("east_asian_font") or "") if apply_font else None,
+        "font_size": int(preset.get("font_size") or 12) if apply_font else None,
+        "line_spacing": line_spacing if apply_spacing else None,
+        "space_before": int((preset or fallback).get("space_before") or 6) if apply_spacing else None,
+        "space_after": int((preset or fallback).get("space_after") or 6) if apply_spacing else None,
+    }
 
 
 def load_saved_flow_execution_context(flow_path: str) -> dict:

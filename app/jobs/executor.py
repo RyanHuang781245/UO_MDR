@@ -14,7 +14,7 @@ from app.services.execution_service import FLOW_SINGLE_JOB, JobCanceledError, en
 from app.services.audit_service import record_audit
 from app.services.flow_service import (
     DEFAULT_DOCUMENT_FORMAT_KEY,
-    DOCUMENT_FORMAT_PRESETS,
+    DEFAULT_LINE_SPACING_KEY,
     SKIP_DOCX_CLEANUP,
     apply_basic_style,
     collect_titles_to_hide,
@@ -22,6 +22,7 @@ from app.services.flow_service import (
     remove_hidden_runs,
     run_workflow,
 )
+from app.services.flow_definition_service import build_basic_style_kwargs
 from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
 from app.utils import normalize_docx_output_path
 
@@ -67,6 +68,7 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
     runtime_steps = list(payload.get("runtime_steps") or [])
     template_cfg = payload.get("template_cfg")
     document_format = str(payload.get("document_format") or DEFAULT_DOCUMENT_FORMAT_KEY)
+    line_spacing_value = str(payload.get("line_spacing_value") or DEFAULT_LINE_SPACING_KEY)
     line_spacing = float(payload.get("line_spacing") or 1.5)
     apply_formatting = bool(payload.get("apply_formatting"))
     enable_figure_reference = bool(payload.get("enable_figure_reference", True))
@@ -115,17 +117,11 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
         log_entries = workflow_result.get("log_json", []) or []
         has_step_error = any(entry.get("status") == "error" for entry in log_entries)
         titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-        if apply_formatting and document_format != "none":
+        if apply_formatting:
             _check_canceled()
-            preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
             apply_basic_style(
                 result_path,
-                western_font=preset.get("western_font") or "",
-                east_asian_font=preset.get("east_asian_font") or "",
-                font_size=int(preset.get("font_size") or 12),
-                line_spacing=line_spacing,
-                space_before=int(preset.get("space_before") or 6),
-                space_after=int(preset.get("space_after") or 6),
+                **build_basic_style_kwargs(document_format, line_spacing_value, line_spacing),
             )
         if not SKIP_DOCX_CLEANUP:
             _check_canceled()
@@ -220,6 +216,7 @@ def enqueue_single_flow_job(
     output_filename: str = "",
     source: str = "manual",
     enable_figure_reference: bool = True,
+    line_spacing_value: str = DEFAULT_LINE_SPACING_KEY,
 ) -> str:
     target_name = flow_name or "未命名流程"
     existing = find_active_job(
@@ -264,6 +261,7 @@ def enqueue_single_flow_job(
         "template_cfg": template_cfg,
         "document_format": document_format,
         "line_spacing": line_spacing,
+        "line_spacing_value": line_spacing_value,
         "apply_formatting": apply_formatting,
         "enable_figure_reference": enable_figure_reference,
         "actor": actor,

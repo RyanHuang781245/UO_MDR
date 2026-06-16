@@ -85,7 +85,7 @@ def run_flow(task_id):
     line_spacing_value = (line_spacing_raw or DEFAULT_LINE_SPACING_KEY).strip()
     line_spacing_none = line_spacing_value.lower() == "none"
     line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
-    apply_formatting = document_format != "none" and not line_spacing_none
+    apply_formatting = document_format != "none" or not line_spacing_none
     enable_figure_reference = parse_bool(
         request.form.get("enable_figure_reference"),
         DEFAULT_ENABLE_FIGURE_REFERENCE,
@@ -187,6 +187,7 @@ def run_flow(task_id):
         template_cfg=template_cfg,
         document_format=document_format,
         line_spacing=line_spacing,
+        line_spacing_value=line_spacing_value,
         apply_formatting=apply_formatting,
         enable_figure_reference=enable_figure_reference,
         actor={"work_id": work_id, "label": label},
@@ -216,6 +217,7 @@ def execute_flow(task_id, flow_name):
     )
     workflow = context["workflow"]
     document_format = context["document_format"]
+    line_spacing_value = context["line_spacing_value"]
     line_spacing = context["line_spacing"]
     apply_formatting = context["apply_formatting"]
     enable_figure_reference = context["enable_figure_reference"]
@@ -254,6 +256,7 @@ def execute_flow(task_id, flow_name):
         template_cfg=template_cfg,
         document_format=document_format,
         line_spacing=line_spacing,
+        line_spacing_value=line_spacing_value,
         apply_formatting=apply_formatting,
         enable_figure_reference=enable_figure_reference,
         actor={"work_id": work_id, "label": label},

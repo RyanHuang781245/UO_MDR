@@ -745,26 +745,32 @@ def remove_paragraphs_with_text(
 
 def apply_basic_style(
     input_file: str,
-    western_font: str = "Times New Roman",
-    east_asian_font: str = "新細明體",
-    font_size: int = 12,
-    line_spacing: float = 1.5,
-    space_before: int = 6,
-    space_after: int = 6,
+    western_font: str | None = "Times New Roman",
+    east_asian_font: str | None = "新細明體",
+    font_size: int | None = 12,
+    line_spacing: float | None = 1.5,
+    space_before: int | None = 6,
+    space_after: int | None = 6,
 ) -> bool:
     """為整份文件套用基本字型與行距設定。"""
     try:
         doc = DocxDocument(input_file)
         for para in _iter_paragraphs(doc):
-            pf = para.paragraph_format
-            pf.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
-            pf.line_spacing = line_spacing
-            pf.space_before = Pt(space_before)
-            pf.space_after = Pt(space_after)
+            if line_spacing is not None:
+                pf = para.paragraph_format
+                pf.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+                pf.line_spacing = line_spacing
+                if space_before is not None:
+                    pf.space_before = Pt(space_before)
+                if space_after is not None:
+                    pf.space_after = Pt(space_after)
             for run in para.runs:
-                run.font.name = western_font
-                set_run_font_eastasia(run, east_asian_font)
-                run.font.size = Pt(font_size)
+                if western_font:
+                    run.font.name = western_font
+                if east_asian_font:
+                    set_run_font_eastasia(run, east_asian_font)
+                if font_size is not None:
+                    run.font.size = Pt(font_size)
         doc.save(input_file)
         return True
     except Exception as e:

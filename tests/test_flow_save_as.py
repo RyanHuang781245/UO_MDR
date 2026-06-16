@@ -249,6 +249,52 @@ def test_flow_save_derives_apply_formatting_from_selects(app, client) -> None:
     assert payload["apply_formatting"] is True
 
 
+@pytest.mark.parametrize(
+    ("document_format", "line_spacing"),
+    [
+        ("modern", "none"),
+        ("none", "2"),
+    ],
+)
+def test_flow_save_applies_formatting_when_either_select_is_set(
+    app,
+    client,
+    document_format,
+    line_spacing,
+) -> None:
+    task_id = f"flow-save-partial-format-{document_format}-{line_spacing}"
+    tdir = Path(app.config["TASK_FOLDER"]) / task_id
+    if tdir.exists():
+        import shutil
+        shutil.rmtree(tdir)
+    files_dir = tdir / "files"
+    flow_dir = tdir / "flows"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    flow_dir.mkdir(parents=True, exist_ok=True)
+
+    with app.test_request_context():
+        url = url_for("flow_execution_bp.run_flow", task_id=task_id)
+
+    response = client.post(
+        url,
+        data={
+            "action": "save",
+            "flow_name": "部分格式流程",
+            "ordered_ids": "",
+            "template_file": "",
+            "output_filename": "",
+            "document_format": document_format,
+            "line_spacing": line_spacing,
+        },
+    )
+
+    assert response.status_code == 302
+    payload = json.loads((flow_dir / "部分格式流程.json").read_text(encoding="utf-8"))
+    assert payload["document_format"] == document_format
+    assert payload["line_spacing"] == line_spacing
+    assert payload["apply_formatting"] is True
+
+
 def test_execute_saved_flow_uses_saved_format_settings(app, client, monkeypatch) -> None:
     task_id = "flow-execute-saved-format"
     tdir = Path(app.config["TASK_FOLDER"]) / task_id

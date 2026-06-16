@@ -27,7 +27,6 @@ from app.services.flow_service import (
     DEFAULT_ENABLE_FIGURE_REFERENCE,
     DEFAULT_LINE_SPACING_KEY,
     DEFAULT_LINE_SPACING,
-    DOCUMENT_FORMAT_PRESETS,
     SKIP_DOCX_CLEANUP,
     SUPPORTED_STEPS,
     apply_basic_style,
@@ -39,7 +38,7 @@ from app.services.flow_service import (
     remove_hidden_runs,
     run_workflow,
 )
-from app.services.flow_definition_service import should_apply_formatting
+from app.services.flow_definition_service import build_basic_style_kwargs, should_apply_formatting
 from app.services.flow_version_service import flow_version_count as _flow_version_count
 from app.services.notification_service import send_batch_notification
 from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
@@ -100,6 +99,7 @@ def _execute_saved_flow(
     with open(flow_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
+    line_spacing_value = DEFAULT_LINE_SPACING_KEY
     line_spacing = DEFAULT_LINE_SPACING
     template_file = None
     apply_formatting = False
@@ -110,6 +110,7 @@ def _execute_saved_flow(
         workflow = data.get("steps", [])
         document_format = normalize_document_format(data.get("document_format"))
         line_spacing_raw = str(data.get("line_spacing", DEFAULT_LINE_SPACING_KEY))
+        line_spacing_value = line_spacing_raw
         line_spacing_none = line_spacing_raw.strip().lower() == "none"
         line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
         apply_formatting = should_apply_formatting(document_format, line_spacing_raw)
@@ -189,16 +190,10 @@ def _execute_saved_flow(
     log_entries = workflow_result.get("log_json", []) or []
     has_step_error = any(e.get("status") == "error" for e in log_entries)
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
-    if apply_formatting and document_format != "none":
-        preset = DOCUMENT_FORMAT_PRESETS.get(document_format) or DOCUMENT_FORMAT_PRESETS[DEFAULT_DOCUMENT_FORMAT_KEY]
+    if apply_formatting:
         apply_basic_style(
             result_path,
-            western_font=preset.get("western_font") or "",
-            east_asian_font=preset.get("east_asian_font") or "",
-            font_size=int(preset.get("font_size") or 12),
-            line_spacing=line_spacing,
-            space_before=int(preset.get("space_before") or 6),
-            space_after=int(preset.get("space_after") or 6),
+            **build_basic_style_kwargs(document_format, line_spacing_value, line_spacing),
         )
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)

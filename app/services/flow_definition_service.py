@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import Callable
 
 from app.services.flow_service import (
-    DEFAULT_APPLY_FORMATTING,
     DEFAULT_DOCUMENT_FORMAT_KEY,
     DEFAULT_ENABLE_FIGURE_REFERENCE,
+    DEFAULT_LINE_SPACING_KEY,
     DEFAULT_LINE_SPACING,
     coerce_line_spacing,
     normalize_document_format,
@@ -81,11 +81,16 @@ def save_flow_payload(flow_path: str, payload: dict) -> None:
         json.dump(payload, file_obj, ensure_ascii=False, indent=2)
 
 
+def should_apply_formatting(document_format: str, line_spacing_raw: str) -> bool:
+    return document_format != "none" and str(line_spacing_raw or "").strip().lower() != "none"
+
+
 def load_saved_flow_execution_context(flow_path: str) -> dict:
     data = load_flow_file(flow_path)
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
+    line_spacing_value = DEFAULT_LINE_SPACING_KEY
     line_spacing = DEFAULT_LINE_SPACING
-    apply_formatting = DEFAULT_APPLY_FORMATTING
+    apply_formatting = False
     enable_figure_reference = DEFAULT_ENABLE_FIGURE_REFERENCE
     output_filename = ""
     template_file = None
@@ -93,11 +98,12 @@ def load_saved_flow_execution_context(flow_path: str) -> dict:
     if isinstance(data, dict):
         workflow = data.get("steps", [])
         document_format = normalize_document_format(data.get("document_format"))
-        line_spacing_raw = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
+        line_spacing_raw = str(data.get("line_spacing", DEFAULT_LINE_SPACING_KEY))
+        line_spacing_value = line_spacing_raw
         line_spacing_none = line_spacing_raw.strip().lower() == "none"
         line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
         template_file = data.get("template_file")
-        apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        apply_formatting = should_apply_formatting(document_format, line_spacing_raw)
         enable_figure_reference = parse_bool(
             data.get("enable_figure_reference"),
             DEFAULT_ENABLE_FIGURE_REFERENCE,
@@ -105,8 +111,6 @@ def load_saved_flow_execution_context(flow_path: str) -> dict:
         output_filename, output_filename_error = normalize_docx_output_path(data.get("output_filename"), default="")
         if output_filename_error:
             output_filename = ""
-        if document_format == "none" or line_spacing_none:
-            apply_formatting = False
     else:
         workflow = data
 
@@ -114,6 +118,7 @@ def load_saved_flow_execution_context(flow_path: str) -> dict:
         "raw_data": data,
         "workflow": workflow,
         "document_format": document_format,
+        "line_spacing_value": line_spacing_value,
         "line_spacing": line_spacing,
         "apply_formatting": apply_formatting,
         "enable_figure_reference": enable_figure_reference,
@@ -127,33 +132,31 @@ def apply_execution_overrides(
     *,
     document_format_raw: str | None,
     line_spacing_raw: str | None,
-    apply_formatting_raw,
 ) -> dict:
     document_format = context["document_format"]
     line_spacing = context["line_spacing"]
-    apply_formatting = context["apply_formatting"]
-    line_spacing_none = False
+    line_spacing_value = str(context.get("line_spacing_value") or DEFAULT_LINE_SPACING_KEY)
 
     if document_format_raw is not None:
         document_format = normalize_document_format(document_format_raw)
     if line_spacing_raw is not None:
-        line_spacing_value = (line_spacing_raw or f"{DEFAULT_LINE_SPACING:g}").strip()
+        line_spacing_value = (line_spacing_raw or DEFAULT_LINE_SPACING_KEY).strip()
         line_spacing_none = line_spacing_value.lower() == "none"
         line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
-    if apply_formatting_raw is not None:
-        apply_formatting = parse_bool(apply_formatting_raw, DEFAULT_APPLY_FORMATTING)
-    if document_format == "none" or line_spacing_none:
-        apply_formatting = False
+    else:
+        line_spacing_none = line_spacing_value.lower() == "none"
+    apply_formatting = should_apply_formatting(document_format, line_spacing_value)
 
     return {
         **context,
         "document_format": document_format,
+        "line_spacing_value": line_spacing_value,
         "line_spacing": line_spacing,
         "apply_formatting": apply_formatting,
     }
 
 
-def update_flow_format_payload(flow_path: str, *, document_format: str, line_spacing_value: str, apply_formatting_param) -> dict:
+def update_flow_format_payload(flow_path: str, *, document_format: str, line_spacing_value: str) -> dict:
     try:
         data = load_flow_file(flow_path)
     except json.JSONDecodeError:
@@ -168,12 +171,9 @@ def update_flow_format_payload(flow_path: str, *, document_format: str, line_spa
     else:
         payload = {"steps": []}
 
-    current_apply = parse_bool(payload.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
-    new_apply = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING) if apply_formatting_param is not None else current_apply
-
     payload["document_format"] = document_format
     payload["line_spacing"] = line_spacing_value
-    payload["apply_formatting"] = new_apply
+    payload["apply_formatting"] = should_apply_formatting(document_format, line_spacing_value)
     payload.pop("center_titles", None)
 
     if "created" not in payload:

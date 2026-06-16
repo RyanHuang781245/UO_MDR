@@ -7,10 +7,9 @@ from datetime import datetime
 from flask import current_app, url_for
 
 from app.services.flow_service import (
-    DEFAULT_APPLY_FORMATTING,
     DEFAULT_DOCUMENT_FORMAT_KEY,
     DEFAULT_ENABLE_FIGURE_REFERENCE,
-    DEFAULT_LINE_SPACING,
+    DEFAULT_LINE_SPACING_KEY,
     DOCUMENT_FORMAT_PRESETS,
     LINE_SPACING_CHOICES,
     SUPPORTED_STEPS,
@@ -18,6 +17,7 @@ from app.services.flow_service import (
     parse_template_paragraphs,
 )
 from app.services.flow_validation_service import FLOW_VALIDATION_RULES
+from app.services.flow_definition_service import should_apply_formatting
 from app.services.flow_version_service import (
     FLOW_VERSION_LIMIT,
     flow_version_display_name as _flow_version_display_name,
@@ -120,8 +120,8 @@ def build_flow_builder_context(task_id: str, args) -> dict:
     template_file = None
     template_paragraphs: list[dict] = []
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
-    line_spacing = f"{DEFAULT_LINE_SPACING:g}"
-    apply_formatting = DEFAULT_APPLY_FORMATTING
+    line_spacing = DEFAULT_LINE_SPACING_KEY
+    apply_formatting = False
     enable_figure_reference = DEFAULT_ENABLE_FIGURE_REFERENCE
     output_filename = ""
     loaded_name = args.get("flow")
@@ -154,8 +154,8 @@ def build_flow_builder_context(task_id: str, args) -> dict:
                 steps_data = data.get("steps", [])
                 template_file = data.get("template_file")
                 document_format = normalize_document_format(data.get("document_format"))
-                line_spacing = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
-                apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+                line_spacing = str(data.get("line_spacing", DEFAULT_LINE_SPACING_KEY))
+                apply_formatting = should_apply_formatting(document_format, line_spacing)
                 enable_figure_reference = parse_bool(
                     data.get("enable_figure_reference"),
                     DEFAULT_ENABLE_FIGURE_REFERENCE,

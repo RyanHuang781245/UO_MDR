@@ -13,8 +13,8 @@ from app.services.flow_definition_service import (
     update_flow_format_payload,
 )
 from app.services.flow_service import (
-    DEFAULT_APPLY_FORMATTING,
     DEFAULT_ENABLE_FIGURE_REFERENCE,
+    DEFAULT_LINE_SPACING_KEY,
     DEFAULT_LINE_SPACING,
     SUPPORTED_STEPS,
     coerce_line_spacing,
@@ -82,17 +82,14 @@ def run_flow(task_id):
             return "模板路徑不合法", 400
     document_format = normalize_document_format(request.form.get("document_format"))
     line_spacing_raw = request.form.get("line_spacing")
-    line_spacing_value = (line_spacing_raw or f"{DEFAULT_LINE_SPACING:g}").strip()
+    line_spacing_value = (line_spacing_raw or DEFAULT_LINE_SPACING_KEY).strip()
     line_spacing_none = line_spacing_value.lower() == "none"
     line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
-    apply_formatting_param = request.form.get("apply_formatting")
-    apply_formatting = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING)
+    apply_formatting = document_format != "none" and not line_spacing_none
     enable_figure_reference = parse_bool(
         request.form.get("enable_figure_reference"),
         DEFAULT_ENABLE_FIGURE_REFERENCE,
     )
-    if document_format == "none" or line_spacing_none:
-        apply_formatting = False
 
     try:
         workflow = build_workflow_from_form(request.form, SUPPORTED_STEPS, _normalize_step_file_value)
@@ -216,7 +213,6 @@ def execute_flow(task_id, flow_name):
         context,
         document_format_raw=request.form.get("document_format"),
         line_spacing_raw=request.form.get("line_spacing"),
-        apply_formatting_raw=request.form.get("apply_formatting"),
     )
     workflow = context["workflow"]
     document_format = context["document_format"]
@@ -278,20 +274,15 @@ def update_flow_format(task_id, flow_name):
 
     document_format = normalize_document_format(request.form.get("document_format"))
     line_spacing_raw = request.form.get("line_spacing")
-    line_spacing_value = (line_spacing_raw or f"{DEFAULT_LINE_SPACING:g}").strip()
+    line_spacing_value = (line_spacing_raw or DEFAULT_LINE_SPACING_KEY).strip()
     line_spacing_none = line_spacing_value.lower() == "none"
     _line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_value)
-    apply_formatting_param = request.form.get("apply_formatting")
-    apply_formatting = parse_bool(apply_formatting_param, DEFAULT_APPLY_FORMATTING)
-    if document_format == "none" or line_spacing_none:
-        apply_formatting = False
 
     try:
         update_flow_format_payload(
             flow_path,
             document_format=document_format,
             line_spacing_value=line_spacing_value,
-            apply_formatting_param=apply_formatting_param,
         )
     except ValueError as exc:
         return str(exc), 400

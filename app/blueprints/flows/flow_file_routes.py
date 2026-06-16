@@ -8,7 +8,11 @@ from datetime import datetime
 
 from flask import current_app, request, send_file
 
-from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
+from app.services.task_service import (
+    build_task_output_path,
+    is_ignored_source_file,
+    load_task_context as _load_task_context,
+)
 
 from .flow_file_blueprint import flow_file_bp
 from .flow_file_helpers import (
@@ -58,6 +62,8 @@ def api_flow_list_task_files(task_id):
     files = []
     for name in sorted(os.listdir(abs_dir), key=str.lower):
         if scope == "output" and name in _HIDDEN_FLOW_OUTPUT_FILES:
+            continue
+        if is_ignored_source_file(name):
             continue
         full = os.path.join(abs_dir, name)
         child_rel = f"{rel_path}/{name}" if rel_path else name

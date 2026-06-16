@@ -85,12 +85,12 @@
 
                     <div class="px-4 py-4 border-bottom">
                         <div class="row g-3">
-                            <div class="col-12 col-lg-7 col-xl-6">
+                            <div class="col-12 col-lg-6">
                                 <label class="form-label small fw-bold text-uppercase text-muted">流程名稱<span class="required-marker" aria-hidden="true">*</span></label>
                                 <input class="form-control form-control-custom rounded-2" id="flowNameInput" name="flow_name" placeholder="請輸入流程名稱 (最多 50 字)" value="{{ loaded_name or '' }}" maxlength="50" pattern="[^/\\\\]+" title="流程名稱不可包含 / 或 \\" required {% if is_version_preview %}disabled{% endif %}>
                                 <div class="form-text text-end small" id="flowNameCount">0/50</div>
                             </div>
-                            <div class="col-12 col-lg-7 col-xl-6">
+                            <div class="col-12 col-lg-6">
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="checkbox" id="enableOutputFilenameInput" {% if output_filename %}checked{% endif %} {% if is_version_preview %}disabled{% endif %}>
                                     <label class="form-check-label small fw-bold text-uppercase text-muted" for="enableOutputFilenameInput">輸出檔案路徑<span class="required-marker {% if not output_filename %}d-none{% endif %}" id="outputFilenameRequiredMarker" aria-hidden="true">*</span></label>
@@ -99,6 +99,22 @@
                                     <input class="form-control form-control-custom rounded-2" id="outputFilenameInput" name="output_filename" placeholder="例 : Device Description/Annex 3_Device Description.docx" value="{{ output_filename or '' }}" title='可輸入相對路徑與檔名，系統會自動補上 .docx' {% if is_version_preview %}disabled{% endif %}>
                                     <div class="form-text text-end small">流程完成後輸出至輸出存放空間；未輸入副檔名時會自動補上 .docx</div>
                                 </div>
+                            </div>
+                            <div class="col-12 col-lg-3">
+                                <label class="form-label small fw-bold text-uppercase text-muted" for="documentFormatSelect">字型格式</label>
+                                <select class="form-select form-control-custom rounded-2" id="documentFormatSelect" name="document_format" {% if is_version_preview %}disabled{% endif %}>
+                                  {% for key, preset in document_format_presets.items() %}
+                                  <option value="{{ key }}" {% if document_format == key %}selected{% endif %}>{{ preset.label }}</option>
+                                  {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12 col-lg-3">
+                                <label class="form-label small fw-bold text-uppercase text-muted" for="lineSpacingSelect">行距</label>
+                                <select class="form-select form-control-custom rounded-2" id="lineSpacingSelect" name="line_spacing" {% if is_version_preview %}disabled{% endif %}>
+                                  {% for key, label in line_spacing_choices %}
+                                  <option value="{{ key }}" {% if line_spacing == key %}selected{% endif %}>{{ label }}</option>
+                                  {% endfor %}
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -224,16 +240,12 @@
                                     <td class="text-end pe-4">
                                         <div class="d-flex justify-content-end gap-1">
                                             <form action="{{ url_for('flow_execution_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" method="post" class="d-inline" {% if f.has_copy %}onsubmit="return confirm('流程包含複製步驟，執行前請確認 NAS 與任務資料夾內容一致')"{% endif %}>
-                                                <input type="hidden" name="apply_formatting" value="false">
                                                 <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
                                                 <button class="btn-action-icon text-success" type="submit" title="快速執行">
                                                     <i class="bi bi-play-circle-fill"></i><span class="d-none d-lg-inline small fw-semibold">執行</span>
                                                 </button>
                                             </form>
 
-                                            <button class="btn-action-icon apply-formatting-btn" type="button" data-bs-toggle="modal" data-bs-target="#applyFormattingModal" data-flow="{{ f.name }}" data-action="{{ url_for('flow_execution_bp.execute_flow', task_id=task.id, flow_name=f.name) }}" title="套用格式並執行">
-                                                <i class="bi bi-text-paragraph"></i><span class="d-none d-lg-inline small fw-semibold">套用格式並執行</span>
-                                            </button>
                                             <a class="btn-action-icon" href="{{ url_for('flow_builder_bp.flow_builder', task_id=task.id, flow=f.name) }}" title="編輯流程">
                                                 <i class="bi bi-pencil-square"></i><span class="d-none d-lg-inline small fw-semibold">編輯</span>
                                             </a>
@@ -502,43 +514,6 @@
           </div>
         </div>
       </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="applyFormattingModal" tabindex="-1" aria-labelledby="applyFormattingModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <form id="applyFormattingForm" method="post">
-        <div class="modal-header">
-          <h5 class="modal-title" id="applyFormattingModalLabel">套用字型/行距</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <input type="hidden" name="apply_formatting" value="true">
-          <input type="hidden" name="fpage" value="{{ flow_pagination.page }}">
-          <div class="mb-4">
-            <label class="form-label small fw-bold text-uppercase text-muted">選擇字型格式</label>
-            <select class="form-select form-control-custom" name="document_format">
-              {% for key, preset in document_format_presets.items() %}
-              <option value="{{ key }}" {% if document_format == key %}selected{% endif %}>{{ preset.label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="mb-0">
-            <label class="form-label small fw-bold text-uppercase text-muted">選擇行距</label>
-            <select class="form-select form-control-custom" name="line_spacing">
-              {% for key, label in line_spacing_choices %}
-              <option value="{{ key }}" {% if line_spacing == key %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-        <div class="modal-footer border-0 pt-0">
-          <button type="button" class="btn btn-white border" data-bs-dismiss="modal">取消</button>
-          <button type="submit" class="btn btn-success fw-bold px-3">套用並執行</button>
-        </div>
-      </form>
     </div>
   </div>
 </div>
@@ -2149,21 +2124,6 @@ const selectedSavedFlowsStorageKey = `selectedSavedFlows:${TASK_ID}`;
 const mergeFlowMappingModalEl = document.getElementById("mergeFlowMappingModal");
 const mergeFlowOrderList = document.getElementById("mergeFlowOrderList");
 const confirmMergeFlowMappingBtn = document.getElementById("confirmMergeFlowMappingBtn");
-const applyFormattingModal = document.getElementById("applyFormattingModal");
-const applyFormattingForm = document.getElementById("applyFormattingForm");
-const applyFormattingTitle = document.getElementById("applyFormattingModalLabel");
-if (applyFormattingModal) {
-  applyFormattingModal.addEventListener("show.bs.modal", (event) => {
-    const btn = event.relatedTarget;
-    if (!btn) return;
-    const action = btn.getAttribute("data-action");
-    const flowName = btn.getAttribute("data-flow");
-    if (applyFormattingForm && action) applyFormattingForm.action = action;
-    if (applyFormattingTitle && flowName) {
-      applyFormattingTitle.textContent = `套用字型/行距 - ${flowName}`;
-    }
-  });
-}
 
 const { submitPostForm, escapeHtml } = window.UiUtils;
 

@@ -23,9 +23,9 @@ from app.models.execution import JobRecord
 from app.services.execution_service import FLOW_SINGLE_JOB, MAPPING_OPERATION_JOB, MAPPING_SCHEME_RUN_JOB, get_job_payload, get_job_result_payload
 from app.services.audit_service import record_audit
 from app.services.flow_service import (
-    DEFAULT_APPLY_FORMATTING,
     DEFAULT_DOCUMENT_FORMAT_KEY,
     DEFAULT_ENABLE_FIGURE_REFERENCE,
+    DEFAULT_LINE_SPACING_KEY,
     DEFAULT_LINE_SPACING,
     DOCUMENT_FORMAT_PRESETS,
     SKIP_DOCX_CLEANUP,
@@ -39,6 +39,7 @@ from app.services.flow_service import (
     remove_hidden_runs,
     run_workflow,
 )
+from app.services.flow_definition_service import should_apply_formatting
 from app.services.flow_version_service import flow_version_count as _flow_version_count
 from app.services.notification_service import send_batch_notification
 from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
@@ -101,23 +102,21 @@ def _execute_saved_flow(
     document_format = DEFAULT_DOCUMENT_FORMAT_KEY
     line_spacing = DEFAULT_LINE_SPACING
     template_file = None
-    apply_formatting = DEFAULT_APPLY_FORMATTING
+    apply_formatting = False
     enable_figure_reference = DEFAULT_ENABLE_FIGURE_REFERENCE
     output_filename = ""
     template_cfg = None
     if isinstance(data, dict):
         workflow = data.get("steps", [])
         document_format = normalize_document_format(data.get("document_format"))
-        line_spacing_raw = str(data.get("line_spacing", f"{DEFAULT_LINE_SPACING:g}"))
+        line_spacing_raw = str(data.get("line_spacing", DEFAULT_LINE_SPACING_KEY))
         line_spacing_none = line_spacing_raw.strip().lower() == "none"
         line_spacing = DEFAULT_LINE_SPACING if line_spacing_none else coerce_line_spacing(line_spacing_raw)
-        apply_formatting = parse_bool(data.get("apply_formatting"), DEFAULT_APPLY_FORMATTING)
+        apply_formatting = should_apply_formatting(document_format, line_spacing_raw)
         enable_figure_reference = parse_bool(
             data.get("enable_figure_reference"),
             DEFAULT_ENABLE_FIGURE_REFERENCE,
         )
-        if document_format == "none" or line_spacing_none:
-            apply_formatting = False
         template_file = data.get("template_file")
         output_filename, output_filename_error = normalize_docx_output_path(
             data.get("output_filename"),

@@ -132,6 +132,26 @@ def test_flow_list_task_files_endpoint_reads_output_scope(app, client) -> None:
     assert all(item["name"] != ".uo_flow_copy_registry.json" for item in data["files"])
 
 
+def test_flow_list_task_files_endpoint_hides_office_lock_files(app, client) -> None:
+    task_id = "flow-hide-office-lock-files"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    files_dir = task_root / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "source.docx").write_text("ok", encoding="utf-8")
+    (files_dir / "~$source.docx").write_text("lock", encoding="utf-8")
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id)
+
+    response = client.get(url)
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert [item["name"] for item in data["files"]] == ["source.docx"]
+
+
 def test_flow_create_task_folder_endpoint_creates_output_scope_directory(app, client) -> None:
     task_id = "flow-output-create-folder"
     task_root = Path(app.config["TASK_FOLDER"]) / task_id

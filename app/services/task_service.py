@@ -56,6 +56,11 @@ def allowed_file(filename, kinds=("docx", "pdf", "zip", "excel", "image")):
         return True
     return False
 
+
+def is_ignored_source_file(filename: str) -> bool:
+    return os.path.basename(filename).startswith("~$")
+
+
 def list_files(base_dir):
     files = []
     for root, _, fns in os.walk(base_dir):
@@ -221,6 +226,8 @@ def can_delete_task(meta: dict) -> bool:
 def gather_available_files(files_dir):
     mapping = {"docx": [], "pdf": [], "zip": [], "dir": [], "path": [], "image": []}
     for rel in list_files(files_dir):
+        if is_ignored_source_file(rel):
+            continue
         ext = os.path.splitext(rel)[1].lower()
         if ext == ".docx":
             mapping["docx"].append(rel)

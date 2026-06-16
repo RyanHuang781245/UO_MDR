@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_ROOT="${APP_ROOT:-/home/NE025/UO_MDR}"
 BACKUP_ROOT="${BACKUP_ROOT:-$APP_ROOT/backups/files}"
-RETENTION_DAYS="${RETENTION_DAYS:-7}"
+BACKUP_RETENTION_COUNT="${BACKUP_RETENTION_COUNT:-3}"
 HOSTNAME_SHORT="${HOSTNAME_SHORT:-$(hostname -s)}"
 STAMP="$(date +%F_%H%M%S)"
 ARCHIVE_NAME="${ARCHIVE_NAME:-${HOSTNAME_SHORT}_files_${STAMP}.tar.gz}"
@@ -28,6 +28,34 @@ require_path() {
   fi
 }
 
+require_positive_integer() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "$name must be a positive integer: $value" >&2
+    exit 64
+  fi
+}
+
+rotate_file_backups() {
+  local keep_count="$1"
+  local -a archives=()
+  local entry
+  local archive
+  local index
+
+  while IFS= read -r -d '' entry; do
+    archives+=("${entry#* }")
+  done < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.gz" -printf '%T@ %p\0' | sort -zrn)
+
+  for ((index = keep_count; index < ${#archives[@]}; index++)); do
+    archive="${archives[$index]}"
+    rm -f "$archive" "${archive}.sha256"
+    log "Removed old backup: $archive"
+  done
+}
+
+require_positive_integer BACKUP_RETENTION_COUNT "$BACKUP_RETENTION_COUNT"
 mkdir -p "$BACKUP_ROOT"
 require_path "$APP_ROOT"
 
@@ -57,7 +85,7 @@ sha256sum "$ARCHIVE_PATH" > "$CHECKSUM_PATH"
 log "Archive created"
 log "Checksum written: $CHECKSUM_PATH"
 
-find "$BACKUP_ROOT" -type f \( -name "*.tar.gz" -o -name "*.tar.gz.sha256" \) -mtime +"$RETENTION_DAYS" -delete
+rotate_file_backups "$BACKUP_RETENTION_COUNT"
 
-log "Retention cleanup complete"
+log "Backup rotation complete; kept latest $BACKUP_RETENTION_COUNT archive(s)"
 printf 'backup_file=%s\n' "$ARCHIVE_PATH"

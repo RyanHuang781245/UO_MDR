@@ -118,6 +118,8 @@ bash scripts/backup.sh
 /UO_MDR/backups/files/*.tar.gz.sha256
 ```
 
+檔案備份預設使用輪替保留最新 3 份 archive，可用 `BACKUP_RETENTION_COUNT` 調整保留數量。每次新備份成功後，超過保留數量的舊 `.tar.gz` 與對應 `.sha256` 會被刪除。
+
 備份路徑如下：
 - `.env`
 - `task_store`
@@ -149,6 +151,8 @@ bash scripts/backup.sh
 ```bash
 BACKUP_ON_CALENDAR='*-*-* 02:00:00' bash deploy.sh
 ```
+
+資料庫 `.bak` 預設也保留最新 3 份，可用 `MSSQL_BACKUP_RETENTION_COUNT` 或共用的 `BACKUP_RETENTION_COUNT` 調整。此清理只會在 `MSSQL_BACKUP_DIR` 對執行腳本的主機是可存取目錄時執行；若 `MSSQL_BACKUP_DIR` 是 SQL Server 主機上的 Windows 路徑，需另由 SQL Server 主機或 DBA 維護 `.bak` 清理。
 
 若要立即執行一次定期備份服務：
 

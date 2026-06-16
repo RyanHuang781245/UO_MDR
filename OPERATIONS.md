@@ -111,6 +111,8 @@ bash scripts/backup_mssql_full.sh
 bash scripts/backup.sh
 ```
 
+Backup rotation keeps the latest 3 backup sets by default. File archives use `BACKUP_RETENTION_COUNT`; MSSQL `.bak` files use `MSSQL_BACKUP_RETENTION_COUNT` or fall back to `BACKUP_RETENTION_COUNT`. MSSQL cleanup only runs when `MSSQL_BACKUP_DIR` is locally accessible to the script runner.
+
 The default cleanup schedule is daily at 03:30. Retention defaults are controlled by `MAPPING_CHECK_JOB_RETENTION_DAYS`, `SYSTEM_ERROR_LOG_RETENTION_DAYS`, and `AUDIT_LOG_RETENTION_DAYS`.
 
 Application log rotation is controlled by `APP_LOG_MAX_MB` and `APP_LOG_BACKUP_COUNT`. `APP_LOG_MAX_MB` defaults to `10`.

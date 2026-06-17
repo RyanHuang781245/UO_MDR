@@ -41,6 +41,7 @@ from app.services.flow_service import (
 from app.services.flow_definition_service import build_basic_style_kwargs, should_apply_formatting
 from app.services.flow_version_service import flow_version_count as _flow_version_count
 from app.services.notification_service import send_batch_notification
+from app.services.flow_output_provenance import record_flow_output_provenance
 from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
 from app.utils import normalize_docx_output_path, parse_bool
 
@@ -68,7 +69,16 @@ def _resolve_flow_output_root(task_id: str) -> str:
     return os.path.abspath(raw_output_root) if raw_output_root else ""
 
 
-def _publish_flow_result_docx(output_root: str, result_path: str, output_filename: str) -> list[str]:
+def _publish_flow_result_docx(
+    output_root: str,
+    result_path: str,
+    output_filename: str,
+    *,
+    flow_name: str = "",
+    job_id: str = "",
+    started_at: str = "",
+    completed_at: str = "",
+) -> list[str]:
     published: list[str] = []
     normalized_output_path, output_path_error = normalize_docx_output_path(output_filename, default="")
     if output_path_error:
@@ -76,8 +86,18 @@ def _publish_flow_result_docx(output_root: str, result_path: str, output_filenam
     if not output_root or not normalized_output_path or not os.path.isfile(result_path):
         return published
     target_abs = os.path.abspath(os.path.join(output_root, normalized_output_path.replace("/", os.sep)))
+    overwrote_existing = os.path.exists(target_abs)
     os.makedirs(os.path.dirname(target_abs), exist_ok=True)
     shutil.copy2(result_path, target_abs)
+    record_flow_output_provenance(
+        output_root,
+        normalized_output_path,
+        flow_name=flow_name,
+        job_id=job_id,
+        started_at=started_at,
+        completed_at=completed_at,
+        overwrote_existing=overwrote_existing,
+    )
     published.append(target_abs)
     return published
 
@@ -165,6 +185,7 @@ def _execute_saved_flow(
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(tdir, "jobs", job_id)
     os.makedirs(job_dir, exist_ok=True)
+    started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _write_job_meta(
         job_dir,
         {
@@ -173,7 +194,7 @@ def _execute_saved_flow(
             "source": source,
             "global_batch_id": global_batch_id,
             "task_batch_id": task_batch_id,
-            "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "started_at": started_at,
             "output_filename": output_filename,
             "output_root": output_root,
         },
@@ -186,7 +207,16 @@ def _execute_saved_flow(
         pass
     workflow_result = run_workflow(runtime_steps, **run_kwargs)
     result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
-    published_outputs = _publish_flow_result_docx(output_root, result_path, output_filename)
+    completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    published_outputs = _publish_flow_result_docx(
+        output_root,
+        result_path,
+        output_filename,
+        flow_name=flow_name,
+        job_id=job_id,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
     log_entries = workflow_result.get("log_json", []) or []
     has_step_error = any(e.get("status") == "error" for e in log_entries)
     titles_to_hide = collect_titles_to_hide(workflow_result.get("log_json", []))
@@ -204,14 +234,14 @@ def _execute_saved_flow(
             status="failed",
             error="Workflow step failed",
             published_outputs=published_outputs,
-            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            completed_at=completed_at,
         )
     else:
         _update_job_meta(
             job_dir,
             status="completed",
             published_outputs=published_outputs,
-            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            completed_at=completed_at,
         )
     return job_id
 

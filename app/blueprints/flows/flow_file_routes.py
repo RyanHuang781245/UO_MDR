@@ -8,10 +8,18 @@ from datetime import datetime
 
 from flask import current_app, request, send_file
 
+from app.jobs.store import read_job_meta
 from app.services.task_service import (
     build_task_output_path,
     is_ignored_source_file,
     load_task_context as _load_task_context,
+)
+from app.services.flow_output_provenance import (
+    FLOW_OUTPUT_PROVENANCE_FILENAME,
+    load_flow_output_provenance,
+    remove_flow_output_provenance,
+    rename_flow_output_provenance,
+    save_flow_output_provenance,
 )
 
 from .flow_file_blueprint import flow_file_bp
@@ -22,7 +30,7 @@ from .flow_file_helpers import (
     _validate_new_folder_name,
 )
 
-_HIDDEN_FLOW_OUTPUT_FILES = {".uo_flow_copy_registry.json"}
+_HIDDEN_FLOW_OUTPUT_FILES = {".uo_flow_copy_registry.json", FLOW_OUTPUT_PROVENANCE_FILENAME}
 
 
 def _resolve_browser_root(task_id: str, scope_raw: str) -> tuple[str, str]:
@@ -42,6 +50,64 @@ def _resolve_browser_root(task_id: str, scope_raw: str) -> tuple[str, str]:
     return files_dir, "files"
 
 
+def _load_published_output_provenance_from_jobs(task_id: str, output_root: str) -> dict[str, dict]:
+    jobs_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id, "jobs")
+    output_root_abs = os.path.abspath(output_root)
+    if not os.path.isdir(jobs_dir):
+        return {}
+
+    records: dict[str, dict] = {}
+    for job_id in sorted(os.listdir(jobs_dir)):
+        job_dir = os.path.join(jobs_dir, job_id)
+        if not os.path.isdir(job_dir):
+            continue
+        meta = read_job_meta(job_dir)
+        published_outputs = meta.get("published_outputs") or []
+        if not isinstance(published_outputs, list):
+            continue
+        for output_path in published_outputs:
+            output_abs = os.path.abspath(str(output_path or ""))
+            try:
+                if os.path.commonpath([output_root_abs, output_abs]) != output_root_abs:
+                    continue
+            except ValueError:
+                continue
+            rel_path = os.path.relpath(output_abs, output_root_abs).replace("\\", "/")
+            if rel_path in {"", "."}:
+                continue
+            record = {
+                "flow_name": str(meta.get("flow_name") or "未命名流程").strip() or "未命名流程",
+                "job_id": job_id,
+                "started_at": str(meta.get("started_at") or "").strip(),
+                "completed_at": str(meta.get("completed_at") or "").strip(),
+                "published_at": str(meta.get("completed_at") or meta.get("started_at") or "").strip(),
+                "output_path": rel_path,
+                "overwrote_existing": False,
+            }
+            previous = records.get(rel_path)
+            previous_key = str((previous or {}).get("completed_at") or (previous or {}).get("started_at") or "")
+            current_key = str(record.get("completed_at") or record.get("started_at") or "")
+            if previous is None or current_key >= previous_key:
+                records[rel_path] = record
+    return records
+
+
+def _load_output_provenance_for_browser(task_id: str, output_root: str) -> dict[str, dict]:
+    provenance = load_flow_output_provenance(output_root)
+    fallback = _load_published_output_provenance_from_jobs(task_id, output_root)
+    changed = False
+    for path, record in fallback.items():
+        existing = provenance.get(path)
+        existing_key = str((existing or {}).get("completed_at") or (existing or {}).get("started_at") or "")
+        current_key = str(record.get("completed_at") or record.get("started_at") or "")
+        if existing is None or current_key >= existing_key:
+            provenance[path] = record
+            changed = True
+    if changed:
+        save_flow_output_provenance(output_root, provenance)
+    return provenance
+
+
 @flow_file_bp.get("", endpoint="api_flow_list_task_files")
 def api_flow_list_task_files(task_id):
     try:
@@ -58,6 +124,7 @@ def api_flow_list_task_files(task_id):
     except PermissionError:
         return {"ok": False, "error": "Permission denied"}, 403
 
+    provenance = _load_output_provenance_for_browser(task_id, root_dir) if scope == "output" else {}
     dirs = []
     files = []
     for name in sorted(os.listdir(abs_dir), key=str.lower):
@@ -71,7 +138,10 @@ def api_flow_list_task_files(task_id):
         if os.path.isdir(full):
             dirs.append({"name": name, "path": child_rel})
         elif os.path.isfile(full):
-            files.append({"name": name, "path": child_rel})
+            item = {"name": name, "path": child_rel}
+            if scope == "output" and child_rel in provenance:
+                item["provenance"] = provenance[child_rel]
+            files.append(item)
 
     parent = None
     if rel_path:
@@ -147,6 +217,8 @@ def api_flow_rename_task_folder(task_id):
         return {"ok": False, "error": "資料夾已存在"}, 409
 
     os.rename(target_abs, renamed_abs)
+    if scope == "output":
+        rename_flow_output_provenance(root_dir, target_rel, renamed_rel)
     return {"ok": True, "scope": scope, "path": renamed_rel, "name": folder_name}
 
 
@@ -168,6 +240,8 @@ def api_flow_delete_task_folder(task_id):
         return {"ok": False, "error": "Permission denied"}, 403
 
     shutil.rmtree(target_abs)
+    if scope == "output":
+        remove_flow_output_provenance(root_dir, target_rel)
     return {"ok": True, "scope": scope, "deleted": target_rel}
 
 
@@ -249,6 +323,8 @@ def api_flow_rename_task_entry(task_id):
         return {"ok": False, "error": "名稱已存在"}, 409
 
     os.rename(target_abs, renamed_abs)
+    if scope == "output":
+        rename_flow_output_provenance(root_dir, target_rel, renamed_rel)
     return {"ok": True, "scope": scope, "path": renamed_rel, "name": entry_name}
 
 
@@ -273,6 +349,8 @@ def api_flow_delete_task_entry(task_id):
         shutil.rmtree(target_abs)
     else:
         os.remove(target_abs)
+    if scope == "output":
+        remove_flow_output_provenance(root_dir, target_rel)
     return {"ok": True, "scope": scope, "deleted": target_rel}
 
 

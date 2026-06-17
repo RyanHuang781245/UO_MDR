@@ -40,19 +40,25 @@ def _split_rel_parts(path: str) -> list[str]:
     return [part for part in re.split(r"[\\/]+", str(path or "").strip()) if part and part != "."]
 
 
-def _find_files(base: str, filename: str) -> list[str]:
-    """Search *base* recursively for *filename* ignoring case."""
+def _find_files(base: str, filename: str, *, recursive: bool = True) -> list[str]:
+    """Search *base* for *filename* ignoring case."""
     target = filename.lower()
     matches: list[str] = []
-    for root, _dirs, files in os.walk(base):
-        for fn in files:
-            if fn.lower() == target:
-                matches.append(os.path.join(root, fn))
+    if recursive:
+        for root, _dirs, files in os.walk(base):
+            for fn in files:
+                if fn.lower() == target:
+                    matches.append(os.path.join(root, fn))
+    else:
+        for fn in os.listdir(base):
+            candidate = os.path.join(base, fn)
+            if os.path.isfile(candidate) and fn.lower() == target:
+                matches.append(candidate)
     return matches
 
 
-def _find_file(base: str, filename: str) -> str | None:
-    matches = _find_files(base, filename)
+def _find_file(base: str, filename: str, *, recursive: bool = True) -> str | None:
+    matches = _find_files(base, filename, recursive=recursive)
     return matches[0] if matches else None
 
 
@@ -73,13 +79,19 @@ def _find_directory(base: str, path: str) -> str | None:
     return current
 
 
-def _find_directories(base: str, dirname: str) -> list[str]:
+def _find_directories(base: str, dirname: str, *, recursive: bool = True) -> list[str]:
     target = dirname.lower()
     matches: list[str] = []
-    for root, dirs, _files in os.walk(base):
-        for name in dirs:
-            if name.lower() == target:
-                matches.append(os.path.join(root, name))
+    if recursive:
+        for root, dirs, _files in os.walk(base):
+            for name in dirs:
+                if name.lower() == target:
+                    matches.append(os.path.join(root, name))
+    else:
+        for name in os.listdir(base):
+            candidate = os.path.join(base, name)
+            if os.path.isdir(candidate) and name.lower() == target:
+                matches.append(candidate)
     return matches
 
 
@@ -106,7 +118,7 @@ def _resolve_relative_file(base: str, path: str) -> str | None:
     return None
 
 
-def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
+def _resolve_input_file(base: str, name: str, *, recursive: bool = True) -> tuple[str | None, str]:
     """Resolve *name* to a file path.
 
     If *name* includes an extension and contains path separators, it is treated
@@ -127,7 +139,7 @@ def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
             if resolved:
                 return resolved, ""
             return None, f"找不到檔案：{raw_name}"
-        matches = _find_files(base, raw_name)
+        matches = _find_files(base, raw_name, recursive=recursive)
         if not matches:
             return None, f"找不到檔案：{raw_name}"
         if len(matches) > 1:
@@ -145,7 +157,7 @@ def _resolve_input_file(base: str, name: str) -> tuple[str | None, str]:
     return None, f"資料夾中找不到 Word 檔案：{raw_name}"
 
 
-def _resolve_any_file(base: str, name: str) -> tuple[str | None, str]:
+def _resolve_any_file(base: str, name: str, *, recursive: bool = True) -> tuple[str | None, str]:
     raw_name = str(name or "").strip()
     if not raw_name:
         return None, "未填寫輸入名稱"
@@ -156,7 +168,7 @@ def _resolve_any_file(base: str, name: str) -> tuple[str | None, str]:
             return resolved, ""
         return None, f"找不到檔案：{raw_name}"
 
-    matches = _find_files(base, raw_name)
+    matches = _find_files(base, raw_name, recursive=recursive)
     if not matches:
         return None, f"找不到檔案：{raw_name}"
     if len(matches) > 1:
@@ -166,7 +178,7 @@ def _resolve_any_file(base: str, name: str) -> tuple[str | None, str]:
     return matches[0], ""
 
 
-def _resolve_input_directory(base: str, name: str) -> tuple[str | None, str]:
+def _resolve_input_directory(base: str, name: str, *, recursive: bool = True) -> tuple[str | None, str]:
     raw_name = str(name or "").strip()
     if not raw_name:
         return None, "未填寫輸入名稱"
@@ -179,7 +191,7 @@ def _resolve_input_directory(base: str, name: str) -> tuple[str | None, str]:
             return resolved, ""
         return None, f"找不到資料夾：{raw_name}"
 
-    matches = _find_directories(base, raw_name)
+    matches = _find_directories(base, raw_name, recursive=recursive)
     if not matches:
         return None, f"找不到資料夾：{raw_name}"
     if len(matches) > 1:
@@ -937,7 +949,7 @@ def process_mapping_excel(
 
         template_path = None
         if template_name:
-            template_path = _find_file(task_files_dir, template_name)
+            template_path, template_error = _resolve_any_file(task_files_dir, template_name)
             if not template_path:
                 _log("error", f"未找到模板文件: {template_name}", row_num, action_label, detail_label)
                 continue
@@ -983,11 +995,11 @@ def process_mapping_excel(
 
             if item_type == "copy_file":
                 if copy_keywords:
-                    source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name)
+                    source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name, recursive=False)
                 else:
-                    source_path, resolve_error = _resolve_any_file(task_files_dir, src_name)
+                    source_path, resolve_error = _resolve_any_file(task_files_dir, src_name, recursive=False)
             else:
-                source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name)
+                source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name, recursive=False)
             if not source_path:
                 _log("error", f"來源檔案解析失敗: {resolve_error}", row_num, action_label, detail_label)
                 continue
@@ -1044,7 +1056,7 @@ def process_mapping_excel(
                 os.makedirs(target_dir, exist_ok=True)
                 if item_type == "copy_file":
                     if copy_keywords:
-                        copied_paths = copy_files(source_path, target_dir, copy_keywords)
+                        copied_paths = copy_files(source_path, target_dir, copy_keywords, recursive=False)
                         copied_path = copied_paths[0] if copied_paths else target_dir
                         packaged_outputs.extend(copied_paths)
                         outputs.extend([p for p in copied_paths if p not in outputs])
@@ -1072,6 +1084,7 @@ def process_mapping_excel(
                             source_path,
                             target_dir,
                             copy_keywords,
+                            recursive=False,
                             copied_registry=copied_dir_registry,
                             registry_entry_factory=lambda src_path: {"row_num": row_num, "source": os.path.abspath(src_path)},
                         )

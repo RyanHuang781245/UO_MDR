@@ -23,6 +23,7 @@ from app.services.flow_service import (
     run_workflow,
 )
 from app.services.flow_definition_service import build_basic_style_kwargs
+from app.services.flow_output_provenance import record_flow_output_provenance
 from app.services.task_service import build_task_output_path, load_task_context as _load_task_context
 from app.utils import normalize_docx_output_path
 
@@ -49,7 +50,16 @@ def _resolve_flow_output_root(task_id: str) -> str:
     return os.path.abspath(raw_output_root)
 
 
-def _publish_flow_result_docx(output_root: str, result_path: str, output_filename: str) -> list[str]:
+def _publish_flow_result_docx(
+    output_root: str,
+    result_path: str,
+    output_filename: str,
+    *,
+    flow_name: str = "",
+    job_id: str = "",
+    started_at: str = "",
+    completed_at: str = "",
+) -> list[str]:
     published: list[str] = []
     normalized_output_path, output_path_error = normalize_docx_output_path(output_filename, default="")
     if output_path_error:
@@ -57,8 +67,18 @@ def _publish_flow_result_docx(output_root: str, result_path: str, output_filenam
     if not output_root or not normalized_output_path or not os.path.isfile(result_path):
         return published
     target_abs = os.path.abspath(os.path.join(output_root, normalized_output_path.replace("/", os.sep)))
+    overwrote_existing = os.path.exists(target_abs)
     os.makedirs(os.path.dirname(target_abs), exist_ok=True)
     shutil.copy2(result_path, target_abs)
+    record_flow_output_provenance(
+        output_root,
+        normalized_output_path,
+        flow_name=flow_name or "",
+        job_id=job_id,
+        started_at=started_at,
+        completed_at=completed_at,
+        overwrote_existing=overwrote_existing,
+    )
     published.append(target_abs)
     return published
 
@@ -110,7 +130,8 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
         return run_workflow(runtime_steps, **kwargs)
 
     try:
-        update_job_meta(job_dir, status="running", started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        update_job_meta(job_dir, status="running", started_at=started_at)
         _check_canceled()
         workflow_result = _run_workflow_with_cancel()
         result_path = workflow_result.get("result_docx") or os.path.join(job_dir, "result.docx")
@@ -128,7 +149,16 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
             remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
             hide_paragraphs_with_text(result_path, titles_to_hide)
         _check_canceled()
-        published_outputs = _publish_flow_result_docx(output_root, result_path, str(payload.get("output_filename") or ""))
+        completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        published_outputs = _publish_flow_result_docx(
+            output_root,
+            result_path,
+            str(payload.get("output_filename") or ""),
+            flow_name=flow_name or "",
+            job_id=job_id,
+            started_at=started_at,
+            completed_at=completed_at,
+        )
         _touch_task_last_edit(task_id, work_id=actor.get("work_id"), label=actor.get("label"))
         if has_step_error:
             update_job_meta(
@@ -136,7 +166,7 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
                 status="failed",
                 error="Workflow step failed",
                 published_outputs=published_outputs,
-                completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                completed_at=completed_at,
             )
             record_audit(
                 action="flow_run_single_failed",
@@ -150,7 +180,7 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
             job_dir,
             status="completed",
             published_outputs=published_outputs,
-            completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            completed_at=completed_at,
         )
         record_audit(
             action="flow_run_single_completed",

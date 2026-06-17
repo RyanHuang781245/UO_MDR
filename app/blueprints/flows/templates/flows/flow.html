@@ -177,11 +177,35 @@
                             </div>
                         </div>
                     </div>
-                    
                     <div class="flow-current-template-bar px-4 py-2 border-bottom small text-muted">
                         <i class="bi bi-file-earmark-text me-1"></i> 目前解析模板：<code class="text-primary fw-bold" id="currentTemplateLabel">{{ template_file or "未選擇" }}</code>
                     </div>
-
+                    <div class="flow-guidance-bar px-4 py-2 border-bottom">
+                        <button class="btn btn-link flow-guidance-toggle p-0 d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="collapse" data-bs-target="#flowGuidancePanel" aria-expanded="false" aria-controls="flowGuidancePanel">
+                            <i class="bi bi-info-circle text-primary me-1"></i>
+                            注意事項
+                            <i class="bi bi-chevron-down small ms-1"></i>
+                        </button>
+                        <div class="collapse mt-2" id="flowGuidancePanel">
+                            <div class="flow-guidance-content rounded-3 border px-3 py-2">
+                                <ul class="small text-muted mb-0 ps-3">
+                                    <li>圖表編號重排適用於文件內可讀取的一般文字，例如 Figure 1、Table 1；若來源是 Word 自動編號欄位，系統可能無法正確辨識或改寫。</li>
+                                    <li>需要重排圖表編號時，建議先在來源 Word 將自動編號轉為純文字，或確認輸出結果中的圖表標題與內文引用是否一致。</li>
+                                    <li>若內文引用使用交互參照、欄位代碼或超連結，重排後可能不會同步更新所有引用文字，請以輸出文件為準再次檢查。</li>
+                                    <li>指定章節、標題、子標題或圖片/表格標題時，文字需盡量與來源文件一致；標點、空白、全形半形或換行差異都可能影響擷取結果。</li>
+                                    <li>使用模板段落插入時，執行前必須先載入並解析模板；若模板檔案被移除、改名或替換，原本的段落索引可能不再對應同一段內容。</li>
+                                    <li>字型格式與行距可分別套用；下拉選單選擇「無」代表保留該項原格式。</li>
+                                    <li>套用字型或行距會改寫輸出文件中可處理的段落與 run；若來源文件本身有局部特殊樣式，可能被統一格式覆蓋。</li>
+                                    <li>流程包含複製檔案或資料夾步驟時，執行前請確認 NAS 與任務資料夾內容一致。</li>
+                                    <li>複製檔案或資料夾步驟若使用關鍵字，系統只會複製符合條件的項目；未填關鍵字則依步驟規則複製全部或整個資料夾。</li>
+                                    <li>輸出檔案路徑啟用後需填寫相對路徑；未輸入副檔名時會自動補上 <code>.docx</code>，同名檔案可能被新的執行結果覆蓋。</li>
+                                    <li>保存流程只保存流程定義與設定，不會立即執行；執行流程才會產生新的執行結果與輸出檔案。</li>
+                                    <li>流程版本只保存流程定義，不保存來源檔案當下內容；若來源檔案後續變更，同一版本流程再次執行也可能得到不同結果。</li>
+                                    <li>若步驟中有錯誤，執行結果可能仍產生部分文件；請查看執行紀錄與錯誤訊息後再判斷是否可使用。</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                     <div class="px-4 py-4">
                         <div id="steps" class="vstack gap-3"></div>
                     </div>
@@ -765,8 +789,24 @@
 }
 .flow-toolbar-surface,
 .flow-section-header,
-.flow-current-template-bar {
+.flow-current-template-bar,
+.flow-guidance-bar {
   background-color: var(--app-bg);
+  border-color: var(--app-border) !important;
+}
+.flow-guidance-toggle {
+  color: var(--app-text);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.flow-guidance-toggle:hover,
+.flow-guidance-toggle:focus {
+  color: var(--bs-blue-600);
+  text-decoration: none;
+}
+.flow-guidance-content {
+  background-color: var(--app-card-bg);
   border-color: var(--app-border) !important;
 }
 .flow-surface-panel {
@@ -1494,6 +1534,38 @@ function createOutputFileNode(entry, level){
   const item = createFlowFileNode(entry, level);
   const row = item.querySelector(".file-tree-row");
   if (!row) return item;
+  const provenance = entry.provenance && typeof entry.provenance === "object" ? entry.provenance : null;
+  if (provenance){
+    const meta = row.querySelector(".small.text-muted");
+    const flowName = String(provenance.flow_name || "未命名流程");
+    const jobId = String(provenance.job_id || "");
+    const startedAt = String(provenance.started_at || "");
+    const completedAt = String(provenance.completed_at || "");
+    const displayFlow = flowName.length > 32 ? `${flowName.slice(0, 32)}...` : flowName;
+    const compactParts = [`執行流程: ${displayFlow}`];
+    if (jobId) compactParts.push(`JobID: ${jobId}`);
+    if (completedAt) compactParts.push(`完成: ${completedAt}`);
+    const titleParts = [`由「${flowName}」產生`];
+    if (jobId) titleParts.push(`Job ID: ${jobId}`);
+    if (startedAt) titleParts.push(`開始: ${startedAt}`);
+    if (completedAt) titleParts.push(`完成: ${completedAt}`);
+    if (meta){
+      row.style.display = "grid";
+      row.style.gridTemplateColumns = "minmax(220px, 1fr) minmax(260px, 420px) auto";
+      row.style.alignItems = "center";
+      row.style.columnGap = "0.75rem";
+      const left = row.firstElementChild;
+      if (left){
+        left.style.minWidth = "0";
+      }
+      meta.classList.remove("flex-shrink-0");
+      meta.classList.add("text-truncate");
+      meta.style.minWidth = "0";
+      meta.style.whiteSpace = "nowrap";
+      meta.textContent = compactParts.join(" · ");
+      meta.title = titleParts.join(" · ");
+    }
+  }
   const actions = document.createElement("div");
   actions.className = "d-flex align-items-center gap-2 flex-shrink-0";
 

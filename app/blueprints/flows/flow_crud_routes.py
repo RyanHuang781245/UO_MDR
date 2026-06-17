@@ -417,7 +417,7 @@ def _build_mapping_workbook_from_rows(rows: list[dict], *, source_flow_name: str
         "擷取類型",
         "擷取段落",
         "包含標題",
-        "輸出路徑",
+        "輸出資料夾名稱",
         "輸出檔案名稱",
         "模板文件",
         "插入段落名稱",

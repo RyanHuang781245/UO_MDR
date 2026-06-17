@@ -15,6 +15,7 @@ from app.extensions import db
 from app.jobs.executor import enqueue_single_flow_job
 from app.models.execution import JobArtifactRecord, JobEventRecord, JobRecord
 from app.services.execution_service import MAPPING_OPERATION_JOB, cancel_job, claim_next_job, cleanup_failed_mapping_check_jobs, cleanup_job_metadata, enqueue_job, retry_job, run_job_by_id
+from app.services.flow_output_provenance import FLOW_OUTPUT_PROVENANCE_FILENAME
 
 
 @pytest.fixture
@@ -514,6 +515,12 @@ def test_enqueue_single_flow_job_publishes_flow_output_filename_to_task_output(a
     assert (output_root / "published" / "final-report.docx").read_bytes() == b"docx-output"
     meta = json.loads((task_dir / "jobs" / job_id / "meta.json").read_text(encoding="utf-8"))
     assert str(output_root / "published" / "final-report.docx") in (meta.get("published_outputs") or [])
+    provenance = json.loads((output_root / FLOW_OUTPUT_PROVENANCE_FILENAME).read_text(encoding="utf-8"))
+    published_record = provenance["published/final-report.docx"]
+    assert published_record["flow_name"] == "Publish Flow"
+    assert published_record["job_id"] == job_id
+    assert published_record["started_at"]
+    assert published_record["completed_at"]
     assert not (output_root / "published" / "chapter.docx").exists()
 
 
@@ -563,6 +570,12 @@ def test_execute_saved_flow_publishes_flow_output_filename_to_task_output(app, m
     assert (output_root / "published" / "final-report.docx").read_bytes() == b"docx-output"
     meta = json.loads((task_dir / "jobs" / job_id / "meta.json").read_text(encoding="utf-8"))
     assert str(output_root / "published" / "final-report.docx") in (meta.get("published_outputs") or [])
+    provenance = json.loads((output_root / FLOW_OUTPUT_PROVENANCE_FILENAME).read_text(encoding="utf-8"))
+    published_record = provenance["published/final-report.docx"]
+    assert published_record["flow_name"] == "PublishFlow"
+    assert published_record["job_id"] == job_id
+    assert published_record["started_at"]
+    assert published_record["completed_at"]
     assert not (output_root / "published" / "chapter.docx").exists()
 
 

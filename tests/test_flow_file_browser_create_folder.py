@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import json
 import pytest
 import shutil
 import zipfile
@@ -8,6 +9,7 @@ from flask import url_for
 
 from app import create_app
 from app.extensions import ldap_manager
+from app.services.flow_output_provenance import FLOW_OUTPUT_PROVENANCE_FILENAME, record_flow_output_provenance
 
 
 @pytest.fixture
@@ -117,6 +119,7 @@ def test_flow_list_task_files_endpoint_reads_output_scope(app, client) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "result.txt").write_text("ok", encoding="utf-8")
     (task_root / "output" / ".uo_flow_copy_registry.json").write_text("{}", encoding="utf-8")
+    (task_root / "output" / FLOW_OUTPUT_PROVENANCE_FILENAME).write_text("{}", encoding="utf-8")
 
     with app.test_request_context():
         url = url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id)
@@ -130,6 +133,127 @@ def test_flow_list_task_files_endpoint_reads_output_scope(app, client) -> None:
     assert data["path"] == "pkg"
     assert any(item["path"] == "pkg/files" for item in data["dirs"])
     assert all(item["name"] != ".uo_flow_copy_registry.json" for item in data["files"])
+    assert all(item["name"] != FLOW_OUTPUT_PROVENANCE_FILENAME for item in data["files"])
+
+
+def test_flow_list_task_files_endpoint_includes_output_provenance(app, client) -> None:
+    task_id = "flow-output-browser-provenance"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    output_root = task_root / "output"
+    output_file = output_root / "pkg" / "report.docx"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_bytes(b"docx")
+    record_flow_output_provenance(
+        str(output_root),
+        "pkg/report.docx",
+        flow_name="Publish Flow",
+        job_id="job12345",
+        started_at="2026-06-17 15:30:00",
+        completed_at="2026-06-17 15:42:10",
+        overwrote_existing=True,
+    )
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id)
+
+    response = client.get(url, query_string={"scope": "output", "path": "pkg"})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    report = next(item for item in data["files"] if item["path"] == "pkg/report.docx")
+    assert report["provenance"]["flow_name"] == "Publish Flow"
+    assert report["provenance"]["job_id"] == "job12345"
+    assert report["provenance"]["started_at"] == "2026-06-17 15:30:00"
+    assert report["provenance"]["completed_at"] == "2026-06-17 15:42:10"
+
+
+def test_flow_list_task_files_endpoint_backfills_output_provenance_from_job_meta(app, client) -> None:
+    task_id = "flow-output-browser-provenance-backfill"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    output_root = task_root / "output"
+    output_file = output_root / "test.docx"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_bytes(b"docx")
+    job_id = "jobold01"
+    job_dir = task_root / "jobs" / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "flow_name": "舊流程",
+                "started_at": "2026-06-17 15:30:00",
+                "completed_at": "2026-06-17 15:42:10",
+                "published_outputs": [str(output_file)],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id)
+
+    response = client.get(url, query_string={"scope": "output"})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    report = next(item for item in data["files"] if item["path"] == "test.docx")
+    assert report["provenance"]["flow_name"] == "舊流程"
+    assert report["provenance"]["job_id"] == job_id
+    assert report["provenance"]["started_at"] == "2026-06-17 15:30:00"
+    assert report["provenance"]["completed_at"] == "2026-06-17 15:42:10"
+
+
+def test_flow_list_task_files_endpoint_updates_stale_output_provenance_from_newer_job_meta(app, client) -> None:
+    task_id = "flow-output-browser-provenance-stale"
+    task_root = Path(app.config["TASK_FOLDER"]) / task_id
+    if task_root.exists():
+        shutil.rmtree(task_root)
+    output_root = task_root / "output"
+    output_file = output_root / "test.docx"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_bytes(b"new-docx")
+    record_flow_output_provenance(
+        str(output_root),
+        "test.docx",
+        flow_name="舊流程",
+        job_id="oldjob01",
+        started_at="2026-06-17 09:03:52",
+        completed_at="2026-06-17 09:03:53",
+        overwrote_existing=False,
+    )
+    job_id = "newjob02"
+    job_dir = task_root / "jobs" / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "flow_name": "新流程",
+                "started_at": "2026-06-17 09:10:00",
+                "completed_at": "2026-06-17 09:10:30",
+                "published_outputs": [str(output_file)],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with app.test_request_context():
+        url = url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id)
+
+    response = client.get(url, query_string={"scope": "output"})
+
+    assert response.status_code == 200
+    data = response.get_json()
+    report = next(item for item in data["files"] if item["path"] == "test.docx")
+    assert report["provenance"]["flow_name"] == "新流程"
+    assert report["provenance"]["job_id"] == job_id
+    assert report["provenance"]["started_at"] == "2026-06-17 09:10:00"
+    assert report["provenance"]["completed_at"] == "2026-06-17 09:10:30"
 
 
 def test_flow_list_task_files_endpoint_hides_office_lock_files(app, client) -> None:
@@ -201,6 +325,7 @@ def test_flow_output_scope_downloads_zip(app, client) -> None:
     target_file.parent.mkdir(parents=True, exist_ok=True)
     target_file.write_text("report", encoding="utf-8")
     (task_root / "output" / ".uo_flow_copy_registry.json").write_text("{}", encoding="utf-8")
+    (task_root / "output" / FLOW_OUTPUT_PROVENANCE_FILENAME).write_text("{}", encoding="utf-8")
 
     with app.test_request_context():
         url = url_for("flow_file_bp.api_flow_download_task_scope_zip", task_id=task_id)
@@ -212,6 +337,7 @@ def test_flow_output_scope_downloads_zip(app, client) -> None:
     assert len(response.data) > 20
     with zipfile.ZipFile(BytesIO(response.data), "r") as archive:
         assert ".uo_flow_copy_registry.json" not in archive.namelist()
+        assert FLOW_OUTPUT_PROVENANCE_FILENAME not in archive.namelist()
         assert "pkg/report.txt" in archive.namelist()
 
 

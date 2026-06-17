@@ -192,6 +192,7 @@
             {% else %}
             <span class="text-muted">未命名流程</span>
             {% endif %}
+            <div class="small text-muted">Job ID: <code>{{ run.job_id }}</code></div>
           </td>
           <td class="text-muted font-monospace">{{ run.started_at }}</td>
           <td class="run-status-cell">

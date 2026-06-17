@@ -864,7 +864,7 @@ def test_mapping_template_relative_path_resolves_nested_file(tmp_path: Path) -> 
     assert runs[0].get("template") == "templates/template.docx"
 
 
-def test_mapping_copy_file_plain_name_does_not_search_nested_files(tmp_path: Path) -> None:
+def test_mapping_copy_file_plain_name_searches_nested_files(tmp_path: Path) -> None:
     result, log_data = _run_validate_mapping(
         tmp_path,
         "",
@@ -872,9 +872,10 @@ def test_mapping_copy_file_plain_name_does_not_search_nested_files(tmp_path: Pat
         source_name="source.pdf",
         source_files=["nested/source.pdf"],
     )
-    assert any("找不到檔案：source.pdf" in msg for msg in result.get("logs", []))
-    runs = log_data.get("runs") or []
-    assert all(not (run.get("workflow_log") or []) for run in runs)
+    params = _first_step_params(log_data)
+    assert Path(str(params.get("source", ""))).name == "source.pdf"
+    assert "nested" in str(params.get("source", ""))
+    assert not any("ERROR:" in msg for msg in result.get("logs", []))
 
 
 def test_mapping_blank_output_path_defaults_to_output_root(tmp_path: Path) -> None:
@@ -1053,7 +1054,7 @@ def test_mapping_copy_outputs_use_conflict_suffix_and_zip(tmp_path: Path) -> Non
     ]
 
 
-def test_mapping_copy_folder_keywords_do_not_search_nested_subfolders(tmp_path: Path) -> None:
+def test_mapping_copy_folder_keywords_copy_matching_subfolders(tmp_path: Path) -> None:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"
     log_dir = tmp_path / "logs"
@@ -1084,8 +1085,14 @@ def test_mapping_copy_folder_keywords_do_not_search_nested_subfolders(tmp_path: 
     )
 
     assert result.get("log_file") == "mapping_log.json"
-    assert result.get("zip_file") in (None, "")
-    assert any("未找到符合條件的資料夾" in msg for msg in result.get("logs", []))
+    zip_file = result.get("zip_file")
+    assert zip_file
+    with zipfile.ZipFile(out_dir / zip_file, "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == [
+        "pkg/folders/IFU_hip/hip.txt",
+        "pkg/folders/IFU_knee/knee.txt",
+    ]
 
 
 def test_mapping_copy_folder_can_use_root_directory_path(tmp_path: Path) -> None:
@@ -1154,7 +1161,7 @@ def test_mapping_copy_file_keywords_copy_matching_files(tmp_path: Path) -> None:
     assert names == ["pkg/files/Shipping simulation test EO.pdf"]
 
 
-def test_mapping_copy_file_keywords_do_not_search_nested_files(tmp_path: Path) -> None:
+def test_mapping_copy_file_keywords_search_nested_files(tmp_path: Path) -> None:
     files_dir = tmp_path / "files"
     out_dir = tmp_path / "output"
     log_dir = tmp_path / "logs"
@@ -1180,8 +1187,11 @@ def test_mapping_copy_file_keywords_do_not_search_nested_files(tmp_path: Path) -
     )
 
     assert result.get("log_file") == "mapping_log.json"
-    assert result.get("zip_file") in (None, "")
-    assert any("未找到符合條件的檔案" in msg for msg in result.get("logs", []))
+    zip_file = result.get("zip_file")
+    assert zip_file
+    with zipfile.ZipFile(out_dir / zip_file, "r") as zf:
+        names = sorted(zf.namelist())
+    assert names == ["pkg/files/Shipping simulation test EO.pdf"]
 
 
 def test_mapping_copy_file_keywords_can_use_root_directory_path(tmp_path: Path) -> None:

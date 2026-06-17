@@ -995,11 +995,11 @@ def process_mapping_excel(
 
             if item_type == "copy_file":
                 if copy_keywords:
-                    source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name, recursive=False)
+                    source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name)
                 else:
-                    source_path, resolve_error = _resolve_any_file(task_files_dir, src_name, recursive=False)
+                    source_path, resolve_error = _resolve_any_file(task_files_dir, src_name)
             else:
-                source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name, recursive=False)
+                source_path, resolve_error = _resolve_input_directory(task_files_dir, src_name)
             if not source_path:
                 _log("error", f"來源檔案解析失敗: {resolve_error}", row_num, action_label, detail_label)
                 continue
@@ -1056,7 +1056,7 @@ def process_mapping_excel(
                 os.makedirs(target_dir, exist_ok=True)
                 if item_type == "copy_file":
                     if copy_keywords:
-                        copied_paths = copy_files(source_path, target_dir, copy_keywords, recursive=False)
+                        copied_paths = copy_files(source_path, target_dir, copy_keywords)
                         copied_path = copied_paths[0] if copied_paths else target_dir
                         packaged_outputs.extend(copied_paths)
                         outputs.extend([p for p in copied_paths if p not in outputs])
@@ -1084,7 +1084,6 @@ def process_mapping_excel(
                             source_path,
                             target_dir,
                             copy_keywords,
-                            recursive=False,
                             copied_registry=copied_dir_registry,
                             registry_entry_factory=lambda src_path: {"row_num": row_num, "source": os.path.abspath(src_path)},
                         )

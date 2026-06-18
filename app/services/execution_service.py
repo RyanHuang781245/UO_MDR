@@ -34,6 +34,7 @@ MAPPING_SCHEME_RUN_JOB = "mapping_scheme_run"
 GLOBAL_BATCH_JOB = "global_batch"
 GLOBAL_BATCH_ITEM_JOB = "global_batch_item"
 REGULATION_MANUAL_DOWNLOAD_JOB = "regulation_manual_download"
+TASK_SOURCE_SYNC_JOB = "task_source_sync"
 
 WRITE_LOCK_JOB_TYPES = {
     FLOW_SINGLE_JOB,
@@ -883,6 +884,10 @@ def _dispatch_job(job: JobRecord) -> dict | None:
         from app.jobs.adoption_standard_update import run_regulation_manual_download_job
 
         return run_regulation_manual_download_job(job.job_id, payload)
+    if job.job_type == TASK_SOURCE_SYNC_JOB:
+        from app.services.task_service import run_task_source_sync_job
+
+        return run_task_source_sync_job(job.job_id, payload)
     raise RuntimeError(f"Unsupported job type: {job.job_type}")
 
 

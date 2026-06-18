@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import json
+import uuid
 import zipfile
 from datetime import datetime
 
@@ -14,6 +15,7 @@ from app.models.auth import ROLE_ADMIN, commit_session, user_has_role
 from app.models.settings import SystemSetting
 from app.models.task import TaskRecord, ensure_schema as ensure_task_schema
 from app.services.audit_service import record_system_error
+from app.services.audit_service import record_audit
 from app.services.schema_control import auto_schema_management_enabled
 
 ALLOWED_DOCX = {".docx"}
@@ -21,6 +23,8 @@ ALLOWED_PDF = {".pdf"}
 ALLOWED_ZIP = {".zip"}
 ALLOWED_EXCEL = {".xlsx", ".xls"}
 ALLOWED_IMAGE = {".png", ".jpg", ".jpeg", ".bmp", ".gif"}
+TASK_SOURCE_SYNC_ACTIVE_STATUSES = {"queued", "running"}
+TASK_SOURCE_SYNC_READY_STATUSES = {"", "completed"}
 
 
 def _normalize_rel_path(rel_path: str) -> str:
@@ -29,6 +33,60 @@ def _normalize_rel_path(rel_path: str) -> str:
 
 def build_task_output_path(task_id: str) -> str:
     return os.path.join(current_app.config["TASK_FOLDER"], task_id, "output")
+
+
+def _task_meta_path(task_id: str) -> str:
+    return os.path.join(current_app.config["TASK_FOLDER"], task_id, "meta.json")
+
+
+def _load_task_meta(task_id: str) -> dict:
+    meta_path = _task_meta_path(task_id)
+    if not os.path.exists(meta_path):
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as file_obj:
+            data = json.load(file_obj)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_task_meta(task_id: str, payload: dict) -> None:
+    meta_path = _task_meta_path(task_id)
+    os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+    with open(meta_path, "w", encoding="utf-8") as file_obj:
+        json.dump(payload, file_obj, ensure_ascii=False, indent=2)
+
+
+def update_task_source_sync_status(
+    task_id: str,
+    status: str,
+    *,
+    job_id: str = "",
+    error: str = "",
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None,
+    file_count: int | None = None,
+) -> None:
+    meta = _load_task_meta(task_id)
+    meta["source_sync_status"] = (status or "").strip().lower()
+    if job_id:
+        meta["source_sync_job_id"] = job_id
+    if error:
+        meta["source_sync_error"] = error
+    else:
+        meta.pop("source_sync_error", None)
+    if started_at is not None:
+        meta["source_sync_started_at"] = started_at.strftime("%Y-%m-%d %H:%M:%S")
+    if completed_at is not None:
+        meta["source_sync_completed_at"] = completed_at.strftime("%Y-%m-%d %H:%M:%S")
+    if file_count is not None:
+        meta["source_sync_file_count"] = int(file_count)
+    _write_task_meta(task_id, meta)
+
+
+def is_task_source_ready(meta: dict) -> bool:
+    return str((meta or {}).get("source_sync_status") or "").strip().lower() in TASK_SOURCE_SYNC_READY_STATUSES
 
 
 def _parse_task_created_at(value: str | None) -> datetime | None:
@@ -149,6 +207,151 @@ def enforce_max_copy_size(path: str):
             if total_size > max_bytes:
                 current_app.logger.warning("資料夾總大小超過限制：%s", checked_path)
                 raise ValueError("資料夾總大小超過允許的大小限制，請分批處理或聯絡系統管理員")
+
+
+def normalize_task_copy_permissions(path: str) -> None:
+    """Keep local task copies writable after importing files from NAS."""
+    if not path or not os.path.exists(path):
+        return
+
+    dir_mode = 0o775
+    file_mode = 0o664
+
+    def _chmod(target: str, mode: int) -> None:
+        try:
+            os.chmod(target, mode)
+        except OSError:
+            current_app.logger.warning("Failed to normalize task copy permission: %s", target, exc_info=True)
+
+    if os.path.isfile(path):
+        _chmod(path, file_mode)
+        return
+
+    for root, dirs, files in os.walk(path):
+        _chmod(root, dir_mode)
+        for dirname in dirs:
+            _chmod(os.path.join(root, dirname), dir_mode)
+        for filename in files:
+            _chmod(os.path.join(root, filename), file_mode)
+
+
+def _copytree_with_count(src_dir: str, dest_dir: str) -> int:
+    copied = 0
+    os.makedirs(dest_dir, exist_ok=True)
+    normalize_task_copy_permissions(dest_dir)
+    for root, dirs, files in os.walk(src_dir):
+        rel_root = os.path.relpath(root, src_dir)
+        dest_root = dest_dir if rel_root == "." else os.path.join(dest_dir, rel_root)
+        os.makedirs(dest_root, exist_ok=True)
+        normalize_task_copy_permissions(dest_root)
+        for dirname in dirs:
+            dest_subdir = os.path.join(dest_root, dirname)
+            os.makedirs(dest_subdir, exist_ok=True)
+            normalize_task_copy_permissions(dest_subdir)
+        for filename in files:
+            src_file = os.path.join(root, filename)
+            dest_file = os.path.join(dest_root, filename)
+            shutil.copy2(src_file, dest_file)
+            normalize_task_copy_permissions(dest_file)
+            copied += 1
+    return copied
+
+
+def run_task_source_sync_job(job_id: str, payload: dict) -> dict:
+    task_id = str(payload.get("task_id") or "").strip()
+    source_path = str(payload.get("source_path") or "").strip()
+    actor = payload.get("actor") or {}
+    if not task_id:
+        raise RuntimeError("Missing task_id for task source sync job")
+    if not source_path:
+        raise RuntimeError("Missing source path for task source sync job")
+
+    task_dir = os.path.join(current_app.config["TASK_FOLDER"], task_id)
+    files_dir = os.path.join(task_dir, "files")
+    if not os.path.isdir(task_dir):
+        raise RuntimeError("找不到任務資料夾")
+
+    started_at = datetime.now()
+    update_task_source_sync_status(task_id, "running", job_id=job_id, started_at=started_at)
+    try:
+        source_dir = ensure_windows_long_path(source_path)
+        dest_dir = ensure_windows_long_path(files_dir)
+        if not os.path.isdir(source_dir):
+            raise RuntimeError("指定的 NAS 路徑不是資料夾")
+        enforce_max_copy_size(source_dir)
+        if os.path.isdir(dest_dir):
+            shutil.rmtree(dest_dir, ignore_errors=True)
+        copied_count = _copytree_with_count(source_dir, dest_dir)
+        completed_at = datetime.now()
+        update_task_source_sync_status(
+            task_id,
+            "completed",
+            job_id=job_id,
+            completed_at=completed_at,
+            file_count=copied_count,
+        )
+        record_audit(
+            action="task_source_sync_completed",
+            actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+            detail={
+                "task_id": task_id,
+                "job_id": job_id,
+                "source_path": source_path,
+                "file_count": copied_count,
+            },
+            task_id=task_id,
+        )
+        return {
+            "result_payload": {
+                "task_id": task_id,
+                "status": "completed",
+                "file_count": copied_count,
+            }
+        }
+    except PermissionError as exc:
+        error = "沒有足夠的權限讀取或複製指定路徑"
+        update_task_source_sync_status(task_id, "failed", job_id=job_id, error=error, completed_at=datetime.now())
+        record_audit(
+            action="task_source_sync_failed",
+            actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+            detail={"task_id": task_id, "job_id": job_id, "source_path": source_path, "error": error},
+            task_id=task_id,
+        )
+        raise RuntimeError(error) from exc
+    except Exception as exc:
+        error = str(exc) or "複製 NAS 目錄時發生錯誤"
+        current_app.logger.exception("Task source sync failed: task_id=%s job_id=%s", task_id, job_id)
+        update_task_source_sync_status(task_id, "failed", job_id=job_id, error=error, completed_at=datetime.now())
+        record_audit(
+            action="task_source_sync_failed",
+            actor={"work_id": actor.get("work_id", ""), "label": actor.get("label", "")},
+            detail={"task_id": task_id, "job_id": job_id, "source_path": source_path, "error": error},
+            task_id=task_id,
+        )
+        raise
+
+
+def enqueue_task_source_sync_job(task_id: str, source_path: str, actor: dict | None = None) -> str:
+    from app.services.execution_service import TASK_SOURCE_SYNC_JOB, enqueue_job
+
+    actor = actor or {}
+    payload = {
+        "task_id": task_id,
+        "source_path": source_path,
+        "actor": actor,
+    }
+    job_id = str(uuid.uuid4())[:8]
+    update_task_source_sync_status(task_id, "queued", job_id=job_id)
+    return enqueue_job(
+        TASK_SOURCE_SYNC_JOB,
+        payload,
+        task_id=task_id,
+        target_name="source_files",
+        actor=actor,
+        queue_name="default",
+        job_id=job_id,
+        artifact_root=os.path.join(task_id, "files").replace("\\", "/"),
+    )
 
 
 def _iter_task_dirs():
@@ -314,6 +517,10 @@ def list_tasks():
                 "last_edited": last_edited,
                 "nas_path": nas_path,
                 "output_path": output_path,
+                "source_sync_status": meta.get("source_sync_status", "") or "",
+                "source_sync_error": meta.get("source_sync_error", "") or "",
+                "source_sync_job_id": meta.get("source_sync_job_id", "") or "",
+                "source_sync_file_count": meta.get("source_sync_file_count"),
             }
         )
     task_list.sort(key=lambda x: x["created"], reverse=True)

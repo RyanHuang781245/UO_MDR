@@ -8,7 +8,12 @@ from flask import abort, current_app, flash, jsonify, redirect, url_for
 
 from app.services.audit_service import record_audit
 from app.services.nas_service import get_configured_nas_roots
-from app.services.task_service import ensure_windows_long_path, enforce_max_copy_size, list_files
+from app.services.task_service import (
+    ensure_windows_long_path,
+    enforce_max_copy_size,
+    list_files,
+    normalize_task_copy_permissions,
+)
 from app.services.user_context_service import get_actor_info as _get_actor_info
 from .blueprint import tasks_bp
 from .task_meta_helpers import _apply_last_edit
@@ -162,6 +167,7 @@ def sync_task_nas(task_id):
         diff_result = _build_nas_diff(dst_dir, src_dir)
         missing_dirs = {rel for rel in diff_result["removed"] if rel.endswith("/")}
         os.makedirs(dst_dir, exist_ok=True)
+        normalize_task_copy_permissions(dst_dir)
         copied = 0
         updated = 0
         deleted = 0
@@ -172,22 +178,26 @@ def sync_task_nas(task_id):
             dest_root = dst_dir if rel == "." else os.path.join(dst_dir, rel)
             if not os.path.exists(dest_root):
                 os.makedirs(dest_root, exist_ok=True)
+                normalize_task_copy_permissions(dest_root)
                 if rel != ".":
                     created_dirs += 1
             else:
                 os.makedirs(dest_root, exist_ok=True)
+                normalize_task_copy_permissions(dest_root)
             for fname in files:
                 src_file = os.path.join(root, fname)
                 dst_file = os.path.join(dest_root, fname)
                 try:
                     if not os.path.exists(dst_file):
                         shutil.copy2(src_file, dst_file)
+                        normalize_task_copy_permissions(dst_file)
                         copied += 1
                         continue
                     src_stat = os.stat(src_file)
                     dst_stat = os.stat(dst_file)
                     if src_stat.st_size != dst_stat.st_size or int(src_stat.st_mtime) > int(dst_stat.st_mtime):
                         shutil.copy2(src_file, dst_file)
+                        normalize_task_copy_permissions(dst_file)
                         updated += 1
                 except FileNotFoundError:
                     continue

@@ -107,6 +107,19 @@
                         {{ task.nas_path or "-" }}
                     </div>
                 </div>
+                <div class="col-md-2">
+                    <label class="small fw-bold text-uppercase text-muted d-block mb-1"><i class="bi bi-arrow-repeat me-1"></i>同步狀態</label>
+                    {% set sync_status = (task.source_sync_status or '')|lower %}
+                    {% if sync_status == 'queued' %}
+                        <span class="status-badge status-badge-queued"><i class="bi bi-hourglass-split"></i> 排隊中</span>
+                    {% elif sync_status == 'running' %}
+                        <span class="status-badge status-badge-running"><i class="bi bi-arrow-repeat"></i> 同步中</span>
+                    {% elif sync_status == 'failed' %}
+                        <span class="status-badge status-badge-failed" title="{{ task.source_sync_error or '' }}"><i class="bi bi-x-circle-fill"></i> 失敗</span>
+                    {% else %}
+                        <span class="status-badge status-badge-completed"><i class="bi bi-check-circle-fill"></i> 完成</span>
+                    {% endif %}
+                </div>
                 <!-- <div class="col-md-4">
                     <label class="small fw-bold text-uppercase text-muted d-block mb-1"><i class="bi bi-box-arrow-up-right me-1"></i>Output 路徑</label>
                     <div class="text-dark font-monospace overflow-x-auto pb-1 custom-scrollbar" style="white-space: nowrap;" title="{{ task.output_path }}">
@@ -140,8 +153,17 @@
         </div>
         <div class="px-4 pt-2 pb-4">
             <div class="alert alert-warning border-0 shadow-sm py-3 mb-4 d-none" id="nasDiffAlert"></div>
+            {% if not task.source_ready %}
+            <div class="alert alert-{{ 'danger' if (task.source_sync_status or '')|lower == 'failed' else 'info' }} border-0 shadow-sm py-3 mb-4">
+              {% if (task.source_sync_status or '')|lower == 'failed' %}
+                來源檔案同步失敗{% if task.source_sync_error %}：{{ task.source_sync_error }}{% endif %}
+              {% else %}
+                來源檔案正在背景同步，完成後會顯示檔案結構。
+              {% endif %}
+            </div>
+            {% endif %}
 
-            <div class="file-tree-container p-3 border rounded-3 bg-white" id="taskFileTreePanel" data-api-url="{{ files_api_url }}">
+            <div class="file-tree-container p-3 border rounded-3 bg-white" id="taskFileTreePanel" data-api-url="{{ files_api_url }}" data-source-ready="{{ '1' if task.source_ready else '0' }}">
               <p class="text-muted small mb-3">點擊資料夾名稱可展開。如需處理文件，請至「流程管理」頁面。</p>
               <div class="small text-muted mb-3" id="fileTreeStatus">載入檔案結構中...</div>
               <ul class="file-tree file-tree-root" id="taskFileTreeRoot"></ul>
@@ -356,6 +378,11 @@ function createDirNode(entry, level){
 
 async function loadRootDirectory(){
   if(!fileTreeRoot || !filesApiUrl){
+    return;
+  }
+  if(fileTreePanel?.dataset.sourceReady !== '1'){
+    setFileTreeStatus('來源檔案同步完成後會載入檔案結構。', 'muted');
+    fileTreeRoot.replaceChildren();
     return;
   }
 

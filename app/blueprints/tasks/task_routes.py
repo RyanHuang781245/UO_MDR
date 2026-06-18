@@ -16,8 +16,9 @@ from app.services.task_service import (
     can_delete_task as _can_delete_task,
     deduplicate_name,
     delete_task_record,
-    enforce_max_copy_size,
+    enqueue_task_source_sync_job,
     ensure_windows_long_path,
+    is_task_source_ready,
     list_tasks,
     load_task_context as _load_task_context,
     record_task_in_db,
@@ -96,6 +97,12 @@ def _build_task_listing_context() -> dict:
         "tasks": task_list,
         "pagination": pagination,
         "all_task_ids": [(t.get("id") or "").strip() for t in task_list_all if (t.get("id") or "").strip()],
+        "ready_task_ids": [
+            (t.get("id") or "").strip()
+            for t in task_list_all
+            if (t.get("id") or "").strip()
+            and str(t.get("source_sync_status") or "").strip().lower() in {"", "completed"}
+        ],
         "pin_scope_key": pin_scope_key or "anonymous",
         "pinned_task_ids": ",".join(
             task_id
@@ -137,7 +144,6 @@ def create_task():
         )
         if not os.path.isdir(resolved_path):
             return _fail("指定的 NAS 路徑不是資料夾")
-        enforce_max_copy_size(resolved_path)
     except ValueError as exc:
         return _fail(str(exc))
     except FileNotFoundError as exc:
@@ -150,6 +156,7 @@ def create_task():
     desc_error = _validate_limited_text(task_desc, "任務描述")
     if desc_error:
         return _fail(desc_error)
+    os.makedirs(current_app.config["TASK_FOLDER"], exist_ok=True)
     if task_name_exists(task_name):
         return _fail("任務名稱已存在")
     tid = str(uuid.uuid4())[:8]
@@ -158,26 +165,6 @@ def create_task():
     output_dir = build_task_output_path(tid)
     os.makedirs(files_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
-    src_dir = ensure_windows_long_path(resolved_path)
-    dest_dir = ensure_windows_long_path(files_dir)
-    try:
-        shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
-    except PermissionError:
-        shutil.rmtree(tdir, ignore_errors=True)
-        return _fail("沒有足夠的權限讀取或複製指定路徑")
-    except shutil.Error as exc:
-        current_app.logger.exception("複製 NAS 目錄失敗")
-        shutil.rmtree(tdir, ignore_errors=True)
-        detail = ""
-        if exc.args and isinstance(exc.args[0], list) and exc.args[0]:
-            first_error = exc.args[0][0]
-            if len(first_error) >= 3:
-                detail = f"：{first_error[2]}"
-        return _fail(f"複製 NAS 目錄時發生錯誤{detail or ''}，請稍後再試")
-    except Exception:
-        current_app.logger.exception("複製 NAS 目錄失敗")
-        shutil.rmtree(tdir, ignore_errors=True)
-        return _fail("複製 NAS 目錄時發生錯誤，請稍後再試")
     work_id, creator = _get_actor_info()
     display_nas_path = resolved_path
     if nas_root_index:
@@ -200,6 +187,7 @@ def create_task():
         "created": created_at.strftime("%Y-%m-%d %H:%M"),
         "nas_path": display_nas_path,
         "output_path": output_dir,
+        "source_sync_status": "queued",
     }
     if creator:
         meta_payload["creator"] = creator
@@ -231,12 +219,24 @@ def create_task():
     except Exception:
         shutil.rmtree(tdir, ignore_errors=True)
         return _fail("建立任務資料庫紀錄失敗，請稍後再試")
+    try:
+        sync_job_id = enqueue_task_source_sync_job(
+            tid,
+            resolved_path,
+            actor={"work_id": work_id, "label": creator},
+        )
+    except Exception:
+        current_app.logger.exception("建立任務來源同步工作失敗")
+        delete_task_record(tid)
+        shutil.rmtree(tdir, ignore_errors=True)
+        return _fail("建立任務來源同步工作失敗，請稍後再試")
     record_audit(
         action="task_create",
         actor={"work_id": work_id, "label": creator},
-        detail={"task_id": tid, "task_name": task_name, "nas_path": display_nas_path},
+        detail={"task_id": tid, "task_name": task_name, "nas_path": display_nas_path, "sync_job_id": sync_job_id},
         task_id=tid,
     )
+    flash("任務已建立，來源檔案正在背景同步。同步完成後即可執行流程。", "success")
     return redirect(url_for("tasks_bp.tasks"))
 
 @tasks_bp.post("/tasks/<task_id>/copy", endpoint="copy_task")
@@ -509,6 +509,9 @@ def task_detail(task_id):
     creator = ""
     nas_path = ""
     output_path = ""
+    source_sync_status = ""
+    source_sync_error = ""
+    source_sync_file_count = None
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
@@ -517,9 +520,24 @@ def task_detail(task_id):
             creator = meta.get("creator", "") or ""
             nas_path = meta.get("nas_path", "") or ""
             output_path = meta.get("output_path", "") or build_task_output_path(task_id)
+            source_sync_status = meta.get("source_sync_status", "") or ""
+            source_sync_error = meta.get("source_sync_error", "") or ""
+            source_sync_file_count = meta.get("source_sync_file_count")
+    task_meta = {
+        "id": task_id,
+        "name": name,
+        "description": description,
+        "creator": creator,
+        "nas_path": nas_path,
+        "output_path": output_path,
+        "source_sync_status": source_sync_status,
+        "source_sync_error": source_sync_error,
+        "source_sync_file_count": source_sync_file_count,
+    }
+    task_meta["source_ready"] = is_task_source_ready(task_meta)
     return render_template(
         "tasks/task_detail.html",
-        task={"id": task_id, "name": name, "description": description, "creator": creator, "nas_path": nas_path, "output_path": output_path},
+        task=task_meta,
         files_api_url=url_for("flow_file_bp.api_flow_list_task_files", task_id=task_id),
     )
 

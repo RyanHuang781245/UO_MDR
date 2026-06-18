@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 
 from app.extensions import db
+from app.models.execution import JobRecord
 from app.models.task import TaskRecord
+from app.services.execution_service import TASK_SOURCE_SYNC_JOB
 from app.services.task_service import list_tasks
 
 
@@ -79,3 +81,32 @@ def test_list_tasks_backfills_missing_task_records(app, tmp_path: Path) -> None:
     assert record.name == "歷史任務"
     assert record.description == "從檔案系統補齊"
     assert record.nas_path == r"D:\legacy-source"
+
+
+def test_create_task_queues_source_sync_without_copying_in_request(app, client, tmp_path: Path) -> None:
+    task_root = tmp_path / "tasks"
+    nas_root = tmp_path / "nas"
+    source_dir = nas_root / "project"
+    source_dir.mkdir(parents=True)
+    (source_dir / "sample.docx").write_text("copy later", encoding="utf-8")
+    app.config["TASK_FOLDER"] = str(task_root)
+    app.config["NAS_ALLOWED_ROOTS"] = [str(nas_root)]
+    app.config["ALLOWED_SOURCE_ROOTS"] = [str(nas_root)]
+    app.config["JOB_EXECUTOR_MODE"] = "worker"
+
+    response = client.post(
+        "/tasks",
+        data={"task_name": "背景同步任務", "task_desc": "", "nas_path": "project", "nas_root_index": "0"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    record = TaskRecord.query.filter_by(name="背景同步任務").one()
+    task_dir = task_root / record.id
+    meta = json.loads((task_dir / "meta.json").read_text(encoding="utf-8"))
+    assert meta["source_sync_status"] == "queued"
+    assert not (task_dir / "files" / "sample.docx").exists()
+
+    job = JobRecord.query.filter_by(task_id=record.id, job_type=TASK_SOURCE_SYNC_JOB).one()
+    assert job.status == "queued"
+    assert job.queue_name == "default"

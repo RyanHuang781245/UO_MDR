@@ -14,6 +14,18 @@
     .task-name-link {
         cursor: pointer;
     }
+    .task-sync-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-top: 0.25rem;
+        max-width: 100%;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+    .task-row.is-sync-pending .task-name-link {
+        color: var(--bs-gray-600) !important;
+    }
 
     /* Loading Overlay & Drawer */
     .task-loading-overlay {
@@ -318,14 +330,23 @@
                 </thead>
                 <tbody id="taskTableBody">
                     {% for t in tasks %}
-                    <tr class="task-row" data-task-id="{{ t.id }}">
+                    {% set sync_status = (t.source_sync_status or '')|lower %}
+                    {% set sync_ready = sync_status in ['', 'completed'] %}
+                    <tr class="task-row{% if not sync_ready %} is-sync-pending{% endif %}" data-task-id="{{ t.id }}" data-sync-status="{{ sync_status or 'completed' }}">
                         <td class="text-center">
-                            <input type="checkbox" class="form-check-input task-select" value="{{ t.id }}">
+                            <input type="checkbox" class="form-check-input task-select" value="{{ t.id }}" {% if not sync_ready %}disabled title="來源檔案同步完成後才能加入排程"{% endif %}>
                         </td>
                         <td class="text-start">
                             <a class="text-decoration-none fw-bold text-primary task-desc-truncate d-block task-name-link" href="{{ url_for('tasks_bp.task_detail', task_id=t.id) }}" title="{{ t.name }}">
                                 {{ t.name }}
                             </a>
+                            {% if sync_status == 'queued' %}
+                                <span class="task-sync-inline text-primary"><i class="bi bi-hourglass-split"></i>來源檔案排隊同步中</span>
+                            {% elif sync_status == 'running' %}
+                                <span class="task-sync-inline text-primary"><i class="bi bi-arrow-repeat"></i>來源檔案同步中</span>
+                            {% elif sync_status == 'failed' %}
+                                <span class="task-sync-inline text-danger" title="{{ t.source_sync_error or '' }}"><i class="bi bi-exclamation-triangle"></i>來源檔案同步失敗</span>
+                            {% endif %}
                         </td>
                         <td class="text-start">
                             {% if t.description %}
@@ -340,6 +361,8 @@
                             <span class="task-created-data d-none">{{ t.created }}</span>
                             <span class="task-last-editor-data d-none">{{ t.last_editor or "-" }}</span>
                             <span class="task-last-edited-data d-none">{{ t.last_edited or "-" }}</span>
+                            <span class="task-sync-status-data d-none">{{ sync_status or "completed" }}</span>
+                            <span class="task-sync-error-data d-none">{{ t.source_sync_error or "" }}</span>
                         </td>
                         <td class="text-muted" style="font-size: 0.875rem;">{{ t.creator or '-' }}</td>
                         <td class="text-muted font-monospace" style="font-size: 0.875rem;">{{ t.created }}</td>
@@ -637,8 +660,17 @@ function renderDetailBody(details){
   const copyTaskIdArg = JSON.stringify(details.id || "");
   const copyTaskNameArg = JSON.stringify(details.name || "");
   const copyTaskNasArg = JSON.stringify(details.nasPath || "");
+  const syncStatus = String(details.syncStatus || 'completed').toLowerCase();
+  const syncError = details.syncError || '';
+  const syncLabelMap = {
+    completed: '來源檔案同步完成',
+    queued: '來源檔案排隊同步中',
+    running: '來源檔案同步中',
+    failed: syncError ? `來源檔案同步失敗：${syncError}` : '來源檔案同步失敗',
+  };
   const rows = [
     { label: '任務 ID', value: details.id || '-' },
+    { label: '同步狀態', value: syncLabelMap[syncStatus] || '來源檔案同步完成' },
     { label: '建立人員', value: details.creator || '-' },
     { label: '建立時間', value: details.created || '-' },
     { label: '最後編輯人員', value: details.lastEditor || '-' },
@@ -1431,6 +1463,8 @@ function initTaskDescDrawer(){
     const lastEditor = getRowText(row, '.task-last-editor-data');
     const lastEdited = getRowText(row, '.task-last-edited-data');
     const nasPath = getRowText(row, '.task-nas-data');
+    const syncStatus = getRowText(row, '.task-sync-status-data');
+    const syncError = getRowText(row, '.task-sync-error-data');
     // const title = name ? `任務詳情 : ${name}` : '任務詳情';
     const title = '任務資訊';
     const detailHtml = renderDetailBody({
@@ -1441,7 +1475,9 @@ function initTaskDescDrawer(){
       lastEditor,
       lastEdited,
       nasPath,
-      desc
+      desc,
+      syncStatus,
+      syncError
     });
     openDrawer(title, '');
     bodyEl.innerHTML = detailHtml;
@@ -1491,6 +1527,7 @@ function initTaskDescDrawer(){
   const masterCheckbox = document.getElementById('masterCheckbox');
   const taskCheckboxes = () => Array.from(document.querySelectorAll('.task-select'));
   const allTaskIds = ({{ all_task_ids|tojson }});
+  const readyTaskIds = ({{ ready_task_ids|tojson }});
   const toolbarContainer = document.getElementById('taskToolbarContainer');
   const filterBar = document.getElementById('filterBar');
   const actionBar = document.getElementById('actionBar');
@@ -1601,7 +1638,7 @@ function initTaskDescDrawer(){
   }
 
   existingTaskIds.forEach(id => {
-      if (allTaskIds.includes(id)) selectedTaskIds.add(id);
+      if (readyTaskIds.includes(id)) selectedTaskIds.add(id);
   });
   loadPinnedTaskIds();
   normalizeTaskIdCsv(pageUrlParams.get('pinned_task_ids') || '')
@@ -1692,11 +1729,11 @@ function initTaskDescDrawer(){
       });
 
       if (masterCheckbox) {
-          masterCheckbox.disabled = allTaskIds.length === 0;
+          masterCheckbox.disabled = readyTaskIds.length === 0;
           if (selectedTaskIds.size === 0) {
               masterCheckbox.checked = false;
               masterCheckbox.indeterminate = false;
-          } else if (selectedTaskIds.size === allTaskIds.length) {
+          } else if (selectedTaskIds.size === readyTaskIds.length) {
               masterCheckbox.checked = true;
               masterCheckbox.indeterminate = false;
           } else {
@@ -1711,7 +1748,7 @@ function initTaskDescDrawer(){
   if (masterCheckbox) {
       masterCheckbox.addEventListener('change', (e) => {
           if (e.target.checked) {
-              allTaskIds.forEach(id => selectedTaskIds.add(id));
+              readyTaskIds.forEach(id => selectedTaskIds.add(id));
           } else {
               selectedTaskIds.clear();
           }
@@ -1737,7 +1774,7 @@ function initTaskDescDrawer(){
       taskTableBody.addEventListener('change', (e) => {
           if (e.target.classList.contains('task-select')) {
               const tid = e.target.value;
-              if (e.target.checked) selectedTaskIds.add(tid);
+              if (e.target.checked && readyTaskIds.includes(tid)) selectedTaskIds.add(tid);
               else selectedTaskIds.delete(tid);
               updateTaskUI();
           }
@@ -1768,6 +1805,9 @@ function initTaskDescDrawer(){
           }
           window.location.href = url.toString();
       });
+  }
+  if (document.querySelector('.task-row[data-sync-status="queued"], .task-row[data-sync-status="running"]')) {
+      window.setTimeout(() => window.location.reload(), 5000);
   }
   updateTaskUI();
 }

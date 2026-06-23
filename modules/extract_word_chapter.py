@@ -1528,6 +1528,9 @@ def _matches_structural_boundary(
     style_based: dict[str, str],
     style_heading_rank: dict[str, int] | None = None,
 ) -> bool:
+    if is_inside_table(p):
+        return False
+
     heading_depth = get_effective_heading_depth(
         p,
         style_outline,

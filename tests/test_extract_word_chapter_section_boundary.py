@@ -45,6 +45,15 @@ def _table_with_cell_texts(*texts: str) -> etree._Element:
     return tbl
 
 
+def _table_with_styled_cell_texts(style_id: str, ilvl: int, *texts: str) -> etree._Element:
+    tbl = etree.Element(qn("w:tbl"))
+    tr = etree.SubElement(tbl, qn("w:tr"))
+    for text in texts:
+        tc = etree.SubElement(tr, qn("w:tc"))
+        tc.append(_styled_paragraph(text, style_id=style_id, ilvl=ilvl))
+    return tbl
+
+
 def test_plain_text_number_boundary_requires_matching_prefix() -> None:
     assert _is_plain_text_number_boundary([6, 1], [6, 2]) is True
     assert _is_plain_text_number_boundary([6, 13], [7]) is True
@@ -69,6 +78,33 @@ def test_section_range_ignores_table_numeric_values_for_plain_text_boundary() ->
     )
 
     assert (start_idx, end_idx) == (0, len(body_children))
+
+
+def test_section_range_ignores_table_paragraph_styles_for_structural_boundary() -> None:
+    body_children = [
+        _styled_paragraph("Product Shelf life", style_id="S111", ilvl=2),
+        _paragraph("body A"),
+        _paragraph("Table 1. Shelf-life of United DM Acetabular System Components."),
+        _table_with_styled_cell_texts(
+            "S111",
+            0,
+            "Dual Mobility Cup, Press-fit, HA/PS+",
+            "XPE Mobile liner",
+        ),
+        _styled_paragraph("Stability/shelf-life validation on package performance", style_id="S111", ilvl=2),
+        _paragraph("body B"),
+    ]
+
+    start_idx, end_idx = find_section_range_children(
+        body_children=body_children,
+        start_heading_text="Product Shelf life",
+        start_number="1.1.1",
+        style_outline={"S111": 0},
+        style_based={},
+        style_heading_rank={"S111": 2},
+    )
+
+    assert (start_idx, end_idx) == (0, 4)
 
 
 def test_section_range_prefers_structured_heading_over_plain_duplicate_title() -> None:

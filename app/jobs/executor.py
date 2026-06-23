@@ -18,7 +18,6 @@ from app.services.flow_service import (
     SKIP_DOCX_CLEANUP,
     apply_basic_style,
     collect_titles_to_hide,
-    hide_paragraphs_with_text,
     remove_hidden_runs,
     run_workflow,
 )
@@ -147,7 +146,6 @@ def run_single_flow_job(job_id: str, payload: dict) -> dict:
         if not SKIP_DOCX_CLEANUP:
             _check_canceled()
             remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-            hide_paragraphs_with_text(result_path, titles_to_hide)
         _check_canceled()
         completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         published_outputs = _publish_flow_result_docx(

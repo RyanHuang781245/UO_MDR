@@ -51,7 +51,6 @@ def test_enqueue_single_flow_job_runs_inline_and_persists_job_metadata(app, monk
 
     monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
 
     job_id = enqueue_single_flow_job(
@@ -324,7 +323,6 @@ def test_enqueue_single_flow_job_forwards_enable_figure_reference_flag(app, monk
 
     monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
 
     enqueue_single_flow_job(
@@ -374,7 +372,6 @@ def test_enqueue_single_flow_job_publishes_copy_steps_to_task_output_path(app, m
 
     monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
 
     job_id = enqueue_single_flow_job(
@@ -464,7 +461,6 @@ def test_execute_saved_flow_remaps_copy_dest_to_task_output_path(app, monkeypatc
 
     monkeypatch.setattr("app.blueprints.flows.run_helpers.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.blueprints.flows.run_helpers.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.blueprints.flows.run_helpers.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.blueprints.flows.run_helpers.apply_basic_style", lambda *args, **kwargs: None)
 
     from app.blueprints.flows.run_helpers import _execute_saved_flow
@@ -494,7 +490,6 @@ def test_enqueue_single_flow_job_publishes_flow_output_filename_to_task_output(a
 
     monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
 
     job_id = enqueue_single_flow_job(
@@ -561,7 +556,6 @@ def test_execute_saved_flow_publishes_flow_output_filename_to_task_output(app, m
 
     monkeypatch.setattr("app.blueprints.flows.run_helpers.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.blueprints.flows.run_helpers.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.blueprints.flows.run_helpers.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.blueprints.flows.run_helpers.apply_basic_style", lambda *args, **kwargs: None)
 
     from app.blueprints.flows.run_helpers import _execute_saved_flow
@@ -635,7 +629,6 @@ def test_retry_job_requeues_failed_job_with_new_id(app, monkeypatch) -> None:
 
     monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
 
     failed_job_id = enqueue_single_flow_job(
@@ -692,7 +685,6 @@ def test_worker_heartbeat_touches_running_job(app, monkeypatch) -> None:
     monkeypatch.setattr("app.services.execution_service.touch_job_heartbeat", fake_touch_job_heartbeat)
     monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
 
     job_id = enqueue_single_flow_job(
@@ -735,7 +727,6 @@ def test_cancel_running_flow_job_marks_job_and_meta_as_canceled(app, monkeypatch
 
     monkeypatch.setattr("app.jobs.executor.run_workflow", fake_run_workflow)
     monkeypatch.setattr("app.jobs.executor.remove_hidden_runs", lambda *args, **kwargs: None)
-    monkeypatch.setattr("app.jobs.executor.hide_paragraphs_with_text", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.jobs.executor.apply_basic_style", lambda *args, **kwargs: None)
 
     job_id = enqueue_single_flow_job(

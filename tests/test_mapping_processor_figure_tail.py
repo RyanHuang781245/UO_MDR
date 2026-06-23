@@ -939,7 +939,6 @@ def test_mapping_outputs_are_packaged_into_zip(tmp_path: Path, monkeypatch) -> N
     monkeypatch.setattr("modules.mapping_processor.run_workflow", fake_run_workflow)
     monkeypatch.setattr("modules.mapping_processor.apply_basic_style", lambda *args, **kwargs: True)
     monkeypatch.setattr("modules.mapping_processor.remove_hidden_runs", lambda *args, **kwargs: True)
-    monkeypatch.setattr("modules.mapping_processor.hide_paragraphs_with_text", lambda *args, **kwargs: True)
 
     result = process_mapping_excel(
         str(mapping_path),
@@ -956,6 +955,50 @@ def test_mapping_outputs_are_packaged_into_zip(tmp_path: Path, monkeypatch) -> N
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = sorted(zf.namelist())
     assert names == ["pkg/A/a.docx", "pkg/B/b.docx"]
+
+
+def test_mapping_hidden_duplicate_title_does_not_hide_visible_match(tmp_path: Path, monkeypatch) -> None:
+    files_dir = tmp_path / "files"
+    out_dir = tmp_path / "output"
+    log_dir = tmp_path / "logs"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    src = files_dir / "source.docx"
+    src.write_text("dummy", encoding="utf-8")
+
+    mapping_path = tmp_path / "mapping.xlsx"
+    rows = [["source.docx", "1.1 Same Title", "", "Y", "", "result.docx", "", ""]]
+    _write_mapping(mapping_path, rows)
+
+    def fake_run_workflow(steps, workdir, template=None):
+        result_docx = Path(workdir) / "result.docx"
+        doc = DocxDocument()
+        doc.add_paragraph("Same Title")
+        hidden_para = doc.add_paragraph()
+        hidden_run = hidden_para.add_run("Same Title")
+        hidden_run.font.hidden = True
+        doc.save(result_docx)
+        return {
+            "result_docx": str(result_docx),
+            "log_json": [{"captured_titles": ["Same Title"]}],
+        }
+
+    monkeypatch.setattr("modules.mapping_processor.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("modules.mapping_processor.apply_basic_style", lambda *args, **kwargs: True)
+
+    process_mapping_excel(
+        str(mapping_path),
+        str(files_dir),
+        str(out_dir),
+        log_dir=str(log_dir),
+        validate_only=False,
+    )
+
+    doc = DocxDocument(out_dir / "result.docx")
+    assert doc.paragraphs[0].runs[0].font.hidden is not True
+    assert doc.paragraphs[1].runs[0].font.hidden is True
 
 
 def test_mapping_copy_outputs_use_conflict_suffix_and_zip(tmp_path: Path) -> None:

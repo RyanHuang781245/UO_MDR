@@ -18,7 +18,6 @@ from .Extract_AllFile_to_FinalWord import (
     extract_specific_table_from_word,
     apply_basic_style,
     remove_hidden_runs,
-    hide_paragraphs_with_text,
 )
 from .file_copier import copy_directories, copy_directory, copy_file, copy_files
 from .docx_merger import merge_word_docs
@@ -1608,7 +1607,6 @@ def process_mapping_excel(
             if not SKIP_DOCX_CLEANUP:
                 _check_canceled()
                 remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-                hide_paragraphs_with_text(result_path, titles_to_hide)
             _check_canceled()
             shutil.copyfile(result_path, output_path)
             outputs.append(output_path)

@@ -32,7 +32,6 @@ from app.services.flow_service import (
     apply_basic_style,
     collect_titles_to_hide,
     coerce_line_spacing,
-    hide_paragraphs_with_text,
     normalize_document_format,
     parse_template_paragraphs,
     remove_hidden_runs,
@@ -227,7 +226,6 @@ def _execute_saved_flow(
         )
     if not SKIP_DOCX_CLEANUP:
         remove_hidden_runs(result_path, preserve_texts=titles_to_hide)
-        hide_paragraphs_with_text(result_path, titles_to_hide)
     if has_step_error:
         _update_job_meta(
             job_dir,

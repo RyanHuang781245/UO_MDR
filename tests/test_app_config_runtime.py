@@ -1,8 +1,20 @@
 from __future__ import annotations
 
-from app import create_app
-from app.config import ProductionConfig
+from app import _resolve_config_class, create_app
+from app.config import ProductionConfig, TestingConfig
 from app.services import execution_service, mapping_metadata_service, nas_service, standard_update_service, system_service, task_service
+
+
+def test_config_resolution_uses_app_env_when_name_omitted(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+
+    assert _resolve_config_class(None) is ProductionConfig
+
+
+def test_explicit_config_name_overrides_app_env(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+
+    assert _resolve_config_class("testing") is TestingConfig
 
 
 def test_production_forces_worker_mode_when_inline_configured(monkeypatch):

@@ -36,7 +36,12 @@ def _build_flask_app(base_dir: Path) -> Flask:
 
 
 def _resolve_config_class(config_name: str | None):
-    config_key = (config_name or "default").lower()
+    config_key = (
+        config_name
+        or os.environ.get("APP_ENV")
+        or os.environ.get("FLASK_ENV")
+        or "default"
+    ).lower()
     return CONFIG_MAP.get(config_key, BaseConfig)
 
 

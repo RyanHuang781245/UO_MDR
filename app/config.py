@@ -18,6 +18,24 @@ def _resolve_ldap_scope():
     return scope_map.get(raw, SUBTREE)
 
 
+def _resolve_system_error_fallback_limits() -> tuple[int, int]:
+    mb_raw = os.environ.get("SYSTEM_ERROR_FALLBACK_MAX_MB")
+    if mb_raw is not None:
+        mb = int(mb_raw)
+        return mb, mb * 1024 * 1024
+
+    bytes_raw = os.environ.get("SYSTEM_ERROR_FALLBACK_MAX_BYTES")
+    if bytes_raw is not None:
+        max_bytes = int(bytes_raw)
+        mb = (max_bytes + 1024 * 1024 - 1) // (1024 * 1024) if max_bytes > 0 else 0
+        return mb, max_bytes
+
+    return 50, 50 * 1024 * 1024
+
+
+_SYSTEM_ERROR_FALLBACK_MAX_MB, _SYSTEM_ERROR_FALLBACK_MAX_BYTES = _resolve_system_error_fallback_limits()
+
+
 class BaseConfig:
     BASE_DIR = BASE_DIR
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
@@ -32,7 +50,8 @@ class BaseConfig:
     APP_LOG_BACKUP_COUNT = int(os.environ.get("APP_LOG_BACKUP_COUNT") or 10)
     AUDIT_LOG_RETENTION_DAYS = int(os.environ.get("AUDIT_LOG_RETENTION_DAYS") or 180)
     SYSTEM_ERROR_LOG_RETENTION_DAYS = int(os.environ.get("SYSTEM_ERROR_LOG_RETENTION_DAYS") or 180)
-    SYSTEM_ERROR_FALLBACK_MAX_BYTES = int(os.environ.get("SYSTEM_ERROR_FALLBACK_MAX_BYTES") or 50 * 1024 * 1024)
+    SYSTEM_ERROR_FALLBACK_MAX_MB = _SYSTEM_ERROR_FALLBACK_MAX_MB
+    SYSTEM_ERROR_FALLBACK_MAX_BYTES = _SYSTEM_ERROR_FALLBACK_MAX_BYTES
     SYSTEM_ERROR_DB_MIN_LEVEL = (os.environ.get("SYSTEM_ERROR_DB_MIN_LEVEL") or "ERROR").strip().upper()
     REGULATION_EU_2017_745_REFERENCE_FOLDER_CONFIGURED = (
         os.environ.get("REGULATION_EU_2017_745_REFERENCE_FOLDER") or ""

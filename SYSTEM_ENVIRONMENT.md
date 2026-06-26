@@ -129,6 +129,7 @@ systemctl list-timers | grep uo_regulations
 | 變數 | 用途 | 注意事項 |
 | --- | --- | --- |
 | `DATABASE_URL` | MSSQL 資料庫連線字串。 | 機敏資料，包含帳號密碼；部署、migration 與系統啟動皆依賴此設定。 |
+| `MSSQL_QUERY_TIMEOUT` | MSSQL 查詢執行 timeout，單位秒。 | 例如 `30`；控制 pyodbc query timeout，變更後需重啟服務。 |
 
 ### NAS 與檔案來源
 
@@ -155,6 +156,7 @@ systemctl list-timers | grep uo_regulations
 | `APP_LOG_MAX_MB` | 單一 log 檔案大小上限，單位為 MB。 | 達上限後依 logging 設定輪替。 |
 | `APP_LOG_BACKUP_COUNT` | 保留的輪替 log 檔案數量。 | 值越大，占用磁碟空間越多。 |
 | `SYSTEM_ERROR_DB_MIN_LEVEL` | 寫入 `system_error_logs` 資料表的最低 log level。 | 例如 `INFO`、`WARNING`、`ERROR`。 |
+| `SYSTEM_ERROR_FALLBACK_MAX_MB` | `system-error-fallback.jsonl` 大小上限，單位為 MB。 | 預設 `50`；當下一筆 fallback log 會超過上限時，檔案會被重寫為新的一筆。設為 `0` 代表不限制。 |
 
 ### 清理保留天數
 

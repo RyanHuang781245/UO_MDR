@@ -3,13 +3,14 @@
 import os
 from pathlib import Path
 
-from flask import Flask, render_template, request
+from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from app.blueprints import register_blueprints
 from app.config import CONFIG_MAP, BaseConfig
 from app.extensions import db, ldap_manager, login_manager
 from app.logging_config import configure_app_logging
+from app.services.frontend_error_service import classify_frontend_error, simple_error_html
 from app.services import (
     auth_service,
     audit_service,
@@ -22,6 +23,7 @@ from app.services import (
     task_service,
 )
 from modules.env_loader import load_dotenv_if_present
+from modules.mssql_timeout import apply_mssql_query_timeout
 
 
 def _build_flask_app(base_dir: Path) -> Flask:
@@ -92,19 +94,26 @@ def _register_error_handlers(app: Flask) -> None:
             code = int(getattr(exc, "code", 500) or 500)
             if code < 500:
                 return exc
-        audit_service.record_system_error(
-            "web.unhandled_exception",
-            "Unhandled web exception",
-            exc=exc,
-            task_id=str((getattr(request, "view_args", {}) or {}).get("task_id") or "").strip() or None,
-            detail={
-                "path": request.path,
-                "method": request.method,
-                "query_string": request.query_string.decode("utf-8", errors="ignore"),
-                "endpoint": request.endpoint or "",
-            },
-        )
-        return "Internal Server Error", 500
+        frontend_error = classify_frontend_error(exc)
+        if frontend_error.code == "database":
+            app.logger.exception("Unhandled database exception")
+        else:
+            audit_service.record_system_error(
+                "web.unhandled_exception",
+                "Unhandled web exception",
+                exc=exc,
+                task_id=str((getattr(request, "view_args", {}) or {}).get("task_id") or "").strip() or None,
+                detail={
+                    "path": request.path,
+                    "method": request.method,
+                    "query_string": request.query_string.decode("utf-8", errors="ignore"),
+                    "endpoint": request.endpoint or "",
+                    "frontend_error_code": frontend_error.code,
+                },
+            )
+        if request.accept_mimetypes.best == "application/json" or request.is_json:
+            return jsonify({"ok": False, "error": frontend_error.message}), 500
+        return simple_error_html(frontend_error.message), 500
 
 
 def create_job_app(config_name: str | None = None) -> Flask:
@@ -117,6 +126,8 @@ def create_job_app(config_name: str | None = None) -> Flask:
     configure_app_logging(app, role="worker")
     _configure_app(app, base_dir)
     db.init_app(app)
+    with app.app_context():
+        apply_mssql_query_timeout(db.engine)
     audit_service.register_audit_cli(app)
     operations_service.register_operations_cli(app)
     standard_update_service.init_standard_update_store(app)
@@ -136,6 +147,8 @@ def create_app(config_name: str | None = None, *, init_auth: bool = True) -> Fla
     _configure_app(app, base_dir)
 
     db.init_app(app)
+    with app.app_context():
+        apply_mssql_query_timeout(db.engine)
     audit_service.register_audit_cli(app)
     operations_service.register_operations_cli(app)
     if init_auth:

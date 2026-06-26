@@ -71,8 +71,32 @@ def _run_is_bold(rPr: etree._Element | None) -> bool:
     val = (b.get(qn("w:val")) or "").strip().lower()
     return val in ("", "1", "true")
 
+def _is_hidden_text_node(text_node: etree._Element) -> bool:
+    run = text_node.getparent()
+    while run is not None and run.tag != qn("w:r"):
+        run = run.getparent()
+    if run is None:
+        return False
+    rpr = run.find("w:rPr", namespaces=NS)
+    if rpr is None:
+        return False
+    vanish = rpr.find("w:vanish", namespaces=NS)
+    if vanish is None:
+        return False
+    val = (vanish.get(qn("w:val")) or "").strip().lower()
+    return val not in {"0", "false"}
+
+
 def get_all_text(node: etree._Element) -> str:
-    return "".join(node.xpath(".//w:t/text()", namespaces=NS)).strip()
+    try:
+        text_nodes = node.xpath(".//w:t", namespaces=NS)
+    except TypeError:
+        text_nodes = node.xpath(".//w:t")
+    return "".join(
+        text_node.text or ""
+        for text_node in text_nodes
+        if not _is_hidden_text_node(text_node)
+    ).strip()
 
 def get_pStyle(p: etree._Element) -> str | None:
     pPr = p.find("w:pPr", namespaces=NS)

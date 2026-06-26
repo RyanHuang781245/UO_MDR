@@ -28,6 +28,8 @@ from sqlalchemy.engine import Engine, URL, make_url
 from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from modules.mssql_timeout import apply_mssql_query_timeout
+
 
 ROLE_ADMIN = "admin"
 ROLE_EDITOR = "editor"
@@ -128,9 +130,13 @@ def build_mssql_engine_from_env() -> Engine:
 
                 url = url.set(query=query)
 
-            return create_engine(url, pool_pre_ping=True, future=True)
+            engine = create_engine(url, pool_pre_ping=True, future=True)
+            apply_mssql_query_timeout(engine)
+            return engine
         except Exception:
-            return create_engine(database_url, pool_pre_ping=True, future=True)
+            engine = create_engine(database_url, pool_pre_ping=True, future=True)
+            apply_mssql_query_timeout(engine)
+            return engine
 
     host = os.environ.get("MSSQL_SERVER") or os.environ.get("MSSQL_HOST")
     database = os.environ.get("MSSQL_DB") or os.environ.get("MSSQL_DATABASE")
@@ -170,7 +176,9 @@ def build_mssql_engine_from_env() -> Engine:
             query=query,
         )
 
-    return create_engine(url, pool_pre_ping=True, future=True)
+    engine = create_engine(url, pool_pre_ping=True, future=True)
+    apply_mssql_query_timeout(engine)
+    return engine
 
 
 def ensure_schema(engine: Engine) -> None:

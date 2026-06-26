@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from flask import current_app
+from flask import current_app, g, has_request_context
 from ldap3 import BASE, SUBTREE, Connection, Server
 from ldap3.utils.conv import escape_filter_chars
 
@@ -41,8 +41,19 @@ def register_ldap_handlers() -> None:
     @login_manager.user_loader
     def load_user(user_id: str) -> Optional[User]:
         try:
-            return get_user_by_id(int(user_id))
+            numeric_user_id = int(user_id)
+        except (TypeError, ValueError):
+            return None
+
+        try:
+            return get_user_by_id(numeric_user_id)
         except Exception:
+            if has_request_context():
+                g.auth_user_load_failed = True
+            current_app.logger.exception(
+                "Failed to load authenticated user from database. user_id=%s",
+                str(user_id or ""),
+            )
             return None
 
 

@@ -16,6 +16,7 @@ from app.models.auth import (
 )
 from app.services.audit_service import record_audit
 from app.services.auth_service import build_ldap_profile, is_allowed_group_member, sanitize_next_url
+from app.services.frontend_error_service import classify_frontend_error
 
 from .blueprint import auth_bp
 
@@ -39,6 +40,8 @@ def login():
 
     form = LDAPLoginForm()
     error = ""
+    if request.args.get("auth_error") == "database_unavailable":
+        error = "系統暫時無法連線資料庫，請聯絡管理員。"
 
     if request.method == "POST":
         attempted_username = (request.form.get("username") or "").strip()
@@ -116,15 +119,21 @@ def login():
             next_url = sanitize_next_url(request.args.get("next"))
             return redirect(next_url or url_for("tasks_bp.launcher"))
 
-        except Exception:
+        except Exception as exc:
             db.session.rollback()
             current_app.logger.exception("Login failed")
-            record_audit(
-                action="auth_login_failed",
-                actor=_login_actor_payload(attempted_username),
-                detail={"reason": "exception", "username": attempted_username},
-            )
-            error = "登入失敗。請聯絡管理員"
+            frontend_error = classify_frontend_error(exc)
+            if frontend_error.code != "database":
+                record_audit(
+                    action="auth_login_failed",
+                    actor=_login_actor_payload(attempted_username),
+                    detail={
+                        "reason": "exception",
+                        "username": attempted_username,
+                        "frontend_error_code": frontend_error.code,
+                    },
+                )
+            error = frontend_error.message
 
     return render_template("auth/login.html", error=error, form=form)
 

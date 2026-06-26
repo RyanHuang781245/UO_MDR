@@ -36,6 +36,7 @@ from app.services.audit_service import record_audit
 from app.services.authn_service import search_ad_users
 from app.services.authz_service import sanitize_next_url, user_is_admin
 from app.services.execution_service import is_inline_execution_enabled
+from app.services.frontend_error_service import frontend_error_message
 from app.services.standard_update_service import (
     activate_harmonised_release,
     get_active_harmonised_release,
@@ -693,9 +694,10 @@ class ADSearchView(BaseView):
                 commit_session()
             except Exception as exc:
                 db.session.rollback()
+                message = frontend_error_message(exc)
                 if is_ajax:
-                    return jsonify({"ok": False, "error": str(exc)}), 500
-                flash(str(exc), "danger")
+                    return jsonify({"ok": False, "error": message}), 500
+                flash(message, "danger")
                 return redirect(url_for("ad_search.index", q=query))
 
             if is_ajax:
@@ -709,7 +711,7 @@ class ADSearchView(BaseView):
                 results = search_ad_users(query)
             except Exception as exc:
                 current_app.logger.exception("AD search failed")
-                error = str(exc)
+                error = frontend_error_message(exc)
 
         for item in results:
             existing = get_user_by_work_id(item["work_id"])

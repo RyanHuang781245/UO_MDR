@@ -16,6 +16,7 @@
 | 參數 | 用途 | 備註 |
 | --- | --- | --- |
 | `DATABASE_URL` | SQLAlchemy 資料庫連線字串。 | 敏感資訊，包含 DB 帳密與連線位置。 |
+| `MSSQL_QUERY_TIMEOUT` | MSSQL 查詢執行 timeout，單位秒。 | 例如 `30`；控制 pyodbc query timeout，變更後需重啟服務。 |
 
 ## NAS / 檔案來源
 

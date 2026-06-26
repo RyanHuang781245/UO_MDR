@@ -218,7 +218,7 @@
             <div class="d-flex justify-content-center gap-1">
               {% if run.has_result %}
               <button type="button" class="btn-action-icon flow-run-detail-btn" data-bs-toggle="modal" data-bs-target="#{{ results_id_prefix }}DetailModal" data-detail-url="{{ url_for('flow_results_bp.flow_run_detail', task_id=results_task_id, job_id=run.job_id) }}" data-job-id="{{ run.job_id }}" onclick="if (window.__openFlowRunDetailModal) window.__openFlowRunDetailModal(this)" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></button>
-              <a href="{{ url_for('tasks_bp.task_compare', task_id=results_task_id, job_id=run.job_id) }}" class="btn-action-icon" title="來源比對"><i class="bi bi-layout-split"></i><span class="d-none d-lg-inline small fw-semibold">來源比對</span></a>
+              <a href="{{ url_for('tasks_bp.task_compare', task_id=results_task_id, job_id=run.job_id) }}" class="btn-action-icon flow-compare-link" title="來源比對"><i class="bi bi-layout-split"></i><span class="d-none d-lg-inline small fw-semibold">來源比對</span></a>
               <a href="{{ url_for('tasks_bp.task_download', task_id=results_task_id, job_id=run.job_id, kind='docx') }}" class="btn-action-icon" title="下載"><i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載</span></a>
               {% endif %}
               {% if run.has_log %}
@@ -477,6 +477,16 @@
     }
   });
 
+  byId("TableBody")?.addEventListener("click", (event) => {
+    const link = event.target.closest(".flow-compare-link");
+    if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    link.setAttribute("aria-disabled", "true");
+    link.classList.add("disabled");
+    link.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span class="small fw-semibold">轉檔中</span>';
+  });
+
   byId("ClearSelectionBtn")?.addEventListener("click", () => {
     runCheckboxes().forEach((checkbox) => {
       checkbox.checked = false;
@@ -594,7 +604,7 @@
       parts.push(`<button type="button" class="btn-action-icon flow-run-detail-btn" data-bs-toggle="modal" data-bs-target="#${prefix}DetailModal" data-detail-url="${detailUrl}" data-job-id="${jobId}" onclick="if (window.__openFlowRunDetailModal) window.__openFlowRunDetailModal(this)" title="查看詳情"><i class="bi bi-eye"></i><span class="d-none d-lg-inline small fw-semibold">詳情</span></button>`);
     }
     if (payload.has_result && compareUrl) {
-      parts.push(`<a href="${compareUrl}" class="btn-action-icon" title="來源比對"><i class="bi bi-layout-split"></i><span class="d-none d-lg-inline small fw-semibold">來源比對</span></a>`);
+      parts.push(`<a href="${compareUrl}" class="btn-action-icon flow-compare-link" title="來源比對"><i class="bi bi-layout-split"></i><span class="d-none d-lg-inline small fw-semibold">來源比對</span></a>`);
     }
     if (payload.has_result && docxUrl) {
       parts.push(`<a href="${docxUrl}" class="btn-action-icon" title="下載"><i class="bi bi-download"></i><span class="d-none d-lg-inline small fw-semibold">下載</span></a>`);

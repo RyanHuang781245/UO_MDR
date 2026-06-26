@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from flask import current_app, redirect, request, url_for
+from flask import current_app, g, redirect, request, url_for
 from flask_login import current_user
 
 from app.models.auth import (
@@ -63,4 +63,7 @@ def register_login_enforcement(app) -> None:
         if current_user.is_authenticated:
             return
 
-        return redirect(url_for("auth_bp.login", next=sanitize_next_url(request.full_path)))
+        query = {"next": sanitize_next_url(request.full_path)}
+        if getattr(g, "auth_user_load_failed", False):
+            query["auth_error"] = "database_unavailable"
+        return redirect(url_for("auth_bp.login", **query))
